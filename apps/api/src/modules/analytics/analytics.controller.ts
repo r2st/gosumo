@@ -1,0 +1,195 @@
+import { Controller, Get, Query, Logger } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { AnalyticsService } from './analytics.service';
+import { TenantId } from '../../common/decorators/tenant-id.decorator';
+import {
+  AnalyticsRangeQueryDto,
+  AnalyticsTopQueryDto,
+  AutonomyMetricsDto,
+  BookingMetricsDto,
+  ClientAcquisitionMetricsDto,
+  ClientRetentionMetricsDto,
+  ConfidenceDistributionDto,
+  ConversationMetricsDto,
+  DashboardSummaryDto,
+  EscalationReasonDto,
+  ResponseTimeMetricsDto,
+  RevenueMetricsDto,
+  StaffMetricsDto,
+  TopProductDto,
+} from './dto';
+
+/**
+ * AnalyticsController — read-only REST endpoints serving dashboard metrics.
+ *
+ * All routes are protected by the global JwtAuthGuard. The @TenantId()
+ * decorator supplies the businessId from the JWT-populated request context —
+ * every query is tenant-scoped at the repository layer.
+ *
+ * Routes (all GET, all under /analytics):
+ *   /dashboard                — high-level "today" summary (Redis-cached 5m)
+ *   /conversations            — volume, resolution, AI-vs-human split, by channel
+ *   /conversations/response-times — first-response + resolution latency
+ *   /revenue                  — gross/net revenue, AOV, time series
+ *   /revenue/top-products     — best sellers by revenue
+ *   /clients/acquisition      — new vs returning, by channel
+ *   /clients/retention        — churn & retention rate
+ *   /ai/autonomy              — autonomous resolution rate (primary KPI)
+ *   /ai/confidence            — confidence histogram + bands
+ *   /ai/escalations           — escalation reason breakdown
+ *   /team                     — per-agent productivity
+ *   /bookings                 — booking volume & completion
+ */
+@ApiTags('analytics')
+@Controller('analytics')
+export class AnalyticsController {
+  private readonly logger = new Logger(AnalyticsController.name);
+
+  constructor(private readonly analyticsService: AnalyticsService) {}
+
+  // ─────────────────────────────────────────────
+  // Dashboard
+  // ─────────────────────────────────────────────
+
+  @Get('dashboard')
+  @ApiOperation({ summary: 'Dashboard summary for today (cached 5 minutes)' })
+  @ApiResponse({ status: 200, description: 'Dashboard summary metrics' })
+  async getDashboard(@TenantId() tenantId: string): Promise<DashboardSummaryDto> {
+    return this.analyticsService.getDashboardSummary(tenantId);
+  }
+
+  // ─────────────────────────────────────────────
+  // Conversations
+  // ─────────────────────────────────────────────
+
+  @Get('conversations')
+  @ApiOperation({ summary: 'Conversation analytics: volume, resolution, by channel' })
+  @ApiResponse({ status: 200, description: 'Conversation metrics' })
+  @ApiResponse({ status: 422, description: 'Date range exceeds 365 days' })
+  async getConversations(
+    @TenantId() tenantId: string,
+    @Query() query: AnalyticsRangeQueryDto,
+  ): Promise<ConversationMetricsDto> {
+    return this.analyticsService.getConversationMetrics(tenantId, query);
+  }
+
+  @Get('conversations/response-times')
+  @ApiOperation({ summary: 'First-response and resolution latency metrics' })
+  @ApiResponse({ status: 200, description: 'Response-time metrics' })
+  async getResponseTimes(
+    @TenantId() tenantId: string,
+    @Query() query: AnalyticsRangeQueryDto,
+  ): Promise<ResponseTimeMetricsDto> {
+    return this.analyticsService.getResponseTimeMetrics(tenantId, query);
+  }
+
+  // ─────────────────────────────────────────────
+  // Revenue
+  // ─────────────────────────────────────────────
+
+  @Get('revenue')
+  @ApiOperation({ summary: 'Revenue analytics: gross/net, AOV, time series (paise)' })
+  @ApiResponse({ status: 200, description: 'Revenue metrics' })
+  async getRevenue(
+    @TenantId() tenantId: string,
+    @Query() query: AnalyticsRangeQueryDto,
+  ): Promise<RevenueMetricsDto> {
+    return this.analyticsService.getRevenueMetrics(tenantId, query);
+  }
+
+  @Get('revenue/top-products')
+  @ApiOperation({ summary: 'Top products by revenue' })
+  @ApiResponse({ status: 200, description: 'Ranked product list' })
+  async getTopProducts(
+    @TenantId() tenantId: string,
+    @Query() query: AnalyticsTopQueryDto,
+  ): Promise<TopProductDto[]> {
+    return this.analyticsService.getTopProducts(tenantId, query);
+  }
+
+  // ─────────────────────────────────────────────
+  // Clients
+  // ─────────────────────────────────────────────
+
+  @Get('clients/acquisition')
+  @ApiOperation({ summary: 'Client acquisition: new vs returning, by channel' })
+  @ApiResponse({ status: 200, description: 'Acquisition metrics' })
+  async getClientAcquisition(
+    @TenantId() tenantId: string,
+    @Query() query: AnalyticsRangeQueryDto,
+  ): Promise<ClientAcquisitionMetricsDto> {
+    return this.analyticsService.getClientAcquisitionMetrics(tenantId, query);
+  }
+
+  @Get('clients/retention')
+  @ApiOperation({ summary: 'Client retention and churn rate' })
+  @ApiResponse({ status: 200, description: 'Retention metrics' })
+  async getClientRetention(
+    @TenantId() tenantId: string,
+    @Query() query: AnalyticsRangeQueryDto,
+  ): Promise<ClientRetentionMetricsDto> {
+    return this.analyticsService.getClientRetentionMetrics(tenantId, query);
+  }
+
+  // ─────────────────────────────────────────────
+  // AI performance
+  // ─────────────────────────────────────────────
+
+  @Get('ai/autonomy')
+  @ApiOperation({ summary: 'AI autonomy rate — the primary GoSumo KPI' })
+  @ApiResponse({ status: 200, description: 'Autonomy metrics' })
+  async getAutonomy(
+    @TenantId() tenantId: string,
+    @Query() query: AnalyticsRangeQueryDto,
+  ): Promise<AutonomyMetricsDto> {
+    return this.analyticsService.getAutonomyMetrics(tenantId, query);
+  }
+
+  @Get('ai/confidence')
+  @ApiOperation({ summary: 'AI confidence distribution (histogram + bands)' })
+  @ApiResponse({ status: 200, description: 'Confidence distribution' })
+  async getConfidence(
+    @TenantId() tenantId: string,
+    @Query() query: AnalyticsRangeQueryDto,
+  ): Promise<ConfidenceDistributionDto> {
+    return this.analyticsService.getConfidenceDistribution(tenantId, query);
+  }
+
+  @Get('ai/escalations')
+  @ApiOperation({ summary: 'Escalation reason breakdown' })
+  @ApiResponse({ status: 200, description: 'Escalation reasons' })
+  async getEscalations(
+    @TenantId() tenantId: string,
+    @Query() query: AnalyticsRangeQueryDto,
+  ): Promise<EscalationReasonDto[]> {
+    return this.analyticsService.getEscalationReasons(tenantId, query);
+  }
+
+  // ─────────────────────────────────────────────
+  // Team performance
+  // ─────────────────────────────────────────────
+
+  @Get('team')
+  @ApiOperation({ summary: 'Per-agent productivity metrics' })
+  @ApiResponse({ status: 200, description: 'Staff metrics' })
+  async getTeam(
+    @TenantId() tenantId: string,
+    @Query() query: AnalyticsRangeQueryDto,
+  ): Promise<StaffMetricsDto[]> {
+    return this.analyticsService.getStaffMetrics(tenantId, query);
+  }
+
+  // ─────────────────────────────────────────────
+  // Bookings
+  // ─────────────────────────────────────────────
+
+  @Get('bookings')
+  @ApiOperation({ summary: 'Booking volume, completion and cancellation rates' })
+  @ApiResponse({ status: 200, description: 'Booking metrics' })
+  async getBookings(
+    @TenantId() tenantId: string,
+    @Query() query: AnalyticsRangeQueryDto,
+  ): Promise<BookingMetricsDto> {
+    return this.analyticsService.getBookingMetrics(tenantId, query);
+  }
+}
