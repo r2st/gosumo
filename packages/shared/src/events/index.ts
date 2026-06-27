@@ -399,6 +399,55 @@ export interface BookingCancelledEvent extends BaseEvent {
   reason?: string;
 }
 
+/** Emitted when a booking transitions PENDING → CONFIRMED. */
+export interface BookingConfirmedEvent extends BaseEvent {
+  readonly type: 'booking.confirmed';
+  bookingId: string;
+  clientId: string;
+  catalogItemId?: string;
+  staffMemberId?: string;
+  startAt: string;
+  endAt: string;
+}
+
+/** Emitted when a booking's time is changed. */
+export interface BookingRescheduledEvent extends BaseEvent {
+  readonly type: 'booking.rescheduled';
+  bookingId: string;
+  clientId: string;
+  staffMemberId?: string;
+  oldStartAt: string;
+  oldEndAt: string;
+  newStartAt: string;
+  newEndAt: string;
+  /** "CLIENT" | "BUSINESS" | "SYSTEM" */
+  rescheduledBy: string;
+}
+
+/** Emitted when a booking is marked COMPLETED. */
+export interface BookingCompletedEvent extends BaseEvent {
+  readonly type: 'booking.completed';
+  bookingId: string;
+  clientId: string;
+  catalogItemId?: string;
+  staffMemberId?: string;
+}
+
+/**
+ * Emitted ahead of an appointment so the notification module can deliver a
+ * reminder to the customer. `minutesBefore` distinguishes the 24h vs 1h reminder.
+ */
+export interface BookingReminderEvent extends BaseEvent {
+  readonly type: 'booking.reminder';
+  bookingId: string;
+  clientId: string;
+  catalogItemId?: string;
+  staffMemberId?: string;
+  startAt: string;
+  /** Lead time of this reminder, e.g. 1440 (24h) or 60 (1h). */
+  minutesBefore: number;
+}
+
 // ─────────────────────────────────────────────
 // CLIENT PROFILE EVENTS
 // ─────────────────────────────────────────────
@@ -481,6 +530,10 @@ export type DomainEvent =
   | InvoicePaidEvent
   | BookingCreatedEvent
   | BookingCancelledEvent
+  | BookingConfirmedEvent
+  | BookingRescheduledEvent
+  | BookingCompletedEvent
+  | BookingReminderEvent
   | ClientProfileUpdatedEvent
   | CatalogItemCreatedEvent
   | CatalogItemUpdatedEvent

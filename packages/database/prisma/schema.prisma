@@ -1589,6 +1589,9 @@ model bookings {
 
   staff_id String? @db.Uuid
 
+  /// Links this occurrence to a recurring series (booking_recurrences.id). Null = one-off.
+  recurrence_id String? @db.Uuid
+
   /// "IN_PERSON" | "ONLINE" | "HOME_VISIT"
   location_type    String? @db.VarChar(20)
   location_address String? @db.Text
@@ -1622,8 +1625,133 @@ model bookings {
   @@index([business_id, status, start_at])
   @@index([business_id, client_id])
   @@index([business_id, staff_id, start_at])
+  @@index([business_id, recurrence_id])
   @@index([gcal_event_id])
   @@map("bookings")
+}
+
+/// Weekly availability template for a business (or a specific staff member).
+/// Slots are computed dynamically from this template minus blocks and existing
+/// bookings — there are no pre-generated slot rows.
+model booking_availability {
+  id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String  @db.Uuid
+  /// Null = business-wide default schedule; set = per-staff override.
+  staff_id    String? @db.Uuid
+
+  /// IANA timezone the weekly_hours are expressed in.
+  timezone String @default("Asia/Kolkata") @db.VarChar(50)
+
+  /// Recurring weekly windows: [{ dayOfWeek: 0-6 (0=Sun), startMinute, endMinute }]
+  /// startMinute/endMinute are minutes from local midnight.
+  weekly_hours Json @default("[]") @db.JsonB
+
+  /// Granularity at which candidate slot start times are generated.
+  slot_interval_minutes Int @default(30)
+  /// Gap enforced after each booking before the next can start.
+  buffer_minutes        Int @default(0)
+  /// Minimum lead time before a slot can be booked.
+  min_notice_minutes    Int @default(120)
+  /// How far ahead bookings are allowed.
+  max_advance_days      Int @default(60)
+  /// Concurrent bookings allowed per slot (e.g. number of chairs/rooms).
+  capacity_per_slot     Int @default(1)
+
+  is_active  Boolean   @default(true)
+  metadata   Json      @default("{}") @db.JsonB
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  @@unique([business_id, staff_id])
+  @@index([business_id, is_active])
+  @@map("booking_availability")
+}
+
+/// One-off blocked time ranges (holidays, breaks, leave) that remove slots from
+/// availability. Scoped to a business and optionally a single staff member.
+model booking_blocked_slots {
+  id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String  @db.Uuid
+  /// Null = applies to the whole business; set = only that staff member.
+  staff_id    String? @db.Uuid
+
+  start_at DateTime @db.Timestamptz
+  end_at   DateTime @db.Timestamptz
+  reason   String?  @db.Text
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  @@index([business_id, start_at, end_at])
+  @@index([business_id, staff_id, start_at])
+  @@map("booking_blocked_slots")
+}
+
+/// OAuth connection + token store for syncing bookings to an external calendar
+/// (Google Calendar). One per business (optionally per staff) per provider.
+model booking_calendar_connections {
+  id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String  @db.Uuid
+  staff_id    String? @db.Uuid
+
+  provider           String  @default("google") @db.VarChar(20)
+  google_calendar_id String? @db.VarChar(255)
+  google_account_email String? @db.VarChar(320)
+
+  /// Encrypted at rest in production. Refreshed silently when expired.
+  access_token  String? @db.Text
+  refresh_token String? @db.Text
+  token_expires_at DateTime? @db.Timestamptz
+  scope         String? @db.Text
+
+  sync_enabled   Boolean   @default(true)
+  last_synced_at DateTime? @db.Timestamptz
+  last_sync_error String?  @db.Text
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  @@unique([business_id, staff_id, provider])
+  @@index([business_id, sync_enabled])
+  @@map("booking_calendar_connections")
+}
+
+/// Definition of a recurring appointment series. Individual occurrences are
+/// materialised as `bookings` rows whose `recurrence_id` points here.
+model booking_recurrences {
+  id              String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id     String  @db.Uuid
+  client_id       String  @db.Uuid
+  catalog_item_id String? @db.Uuid
+  staff_id        String? @db.Uuid
+
+  /// { frequency: 'DAILY'|'WEEKLY'|'MONTHLY', interval, count?, until?, byWeekday?: number[] }
+  rule Json @db.JsonB
+
+  /// Anchor of the first occurrence (UTC instant).
+  start_at         DateTime @db.Timestamptz
+  duration_minutes Int
+  timezone         String   @default("Asia/Kolkata") @db.VarChar(50)
+
+  /// "IN_PERSON" | "ONLINE" | "HOME_VISIT"
+  location_type    String? @db.VarChar(20)
+  location_address String? @db.Text
+  meeting_url      String? @db.Text
+  price            Decimal? @db.Decimal(12, 2)
+  notes            String?  @db.Text
+
+  is_active  Boolean   @default(true)
+  metadata   Json      @default("{}") @db.JsonB
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  @@index([business_id, is_active])
+  @@index([business_id, client_id])
+  @@map("booking_recurrences")
 }
 
 // ─────────────────────────────────────────────
