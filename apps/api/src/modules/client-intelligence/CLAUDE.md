@@ -20,9 +20,19 @@ recordSentiment(businessId, clientId, messageId, score): Promise<void>
 getClientSentimentTrend(businessId, clientId, days): Promise<SentimentTrendDto>
 getChurnScore(businessId, clientId): Promise<ChurnScoreDto>
 getLTVEstimate(businessId, clientId): Promise<LTVEstimateDto>
+getClientSegment(businessId, clientId): Promise<ClientSegmentDto>
+getClientTimeline(businessId, clientId, limit?): Promise<ClientTimelineDto>
 refreshIntelligenceScores(businessId, clientId): Promise<void>
 getClientSummaryForAI(businessId, clientId): Promise<ClientAISummaryDto>
 ```
+
+## Segmentation
+
+`getClientSegment()` classifies a client into one behavioural segment derived from RFM + churn. Precedence (highest first): **LOST** (>180d inactive) → **VIP** (≥10 orders or ≥₹50k spent, active ≤60d) → **AT_RISK** (≥1 order + HIGH/CRITICAL churn) → **DORMANT** (60–180d inactive) → **NEW** (tenure ≤30d, ≤1 order) → **ACTIVE** (default).
+
+## Timeline
+
+`getClientTimeline()` merges conversations, orders, bookings, and payments into one newest-first chronological stream (`TimelineEventDto[]`), each capped at `limit` per source then re-sorted and sliced. Monetary fields are returned in paise. `payments` has no `deleted_at` column — do not filter it by soft-delete.
 
 ## Events
 
