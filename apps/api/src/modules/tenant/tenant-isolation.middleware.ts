@@ -31,6 +31,11 @@ const EXEMPT_PREFIXES: readonly string[] = [
   'v1/docs',
   'queues',
   'v1/queues',
+  'webchat',
+  'v1/webchat',
+  'socket.io',
+  'channel-adapter',
+  'v1/channel-adapter',
 ];
 
 /**
