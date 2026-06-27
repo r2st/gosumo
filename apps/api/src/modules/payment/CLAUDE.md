@@ -1,47 +1,56 @@
 # Module: payment
 
-Handles all money movement: creates Razorpay payment links sent to customers via messaging, receives and verifies payment webhooks, records transactions, processes refunds, and handles cash-on-delivery (COD) confirmation. The only module that communicates directly with Razorpay.
+Handles all money movement: creates payment links (Razorpay for India, Stripe for international) sent to customers via messaging, receives and verifies gateway webhooks, records transactions, processes refunds, generates invoices, reconciles payment status against the gateway, and handles cash-on-delivery (COD) confirmation. The only module that communicates directly with Razorpay and Stripe.
 
 ## Purpose
 
-Create payment links that the AI sends to customers, receive Razorpay webhooks to confirm payments, emit `payment.success` so orders get confirmed, and enforce refund policy limits read from tenant settings.
+Create payment links that the AI sends to customers, receive gateway webhooks to confirm payments, emit `payment.success` so orders get confirmed, generate and track invoices, reconcile drifted payment status, and enforce refund policy limits read from tenant settings.
 
-## Public API (IPaymentService)
+## Gateway selection
+
+`createPaymentLink` picks a gateway by currency unless `dto.gateway` overrides it: **INR → Razorpay**, any other currency → **Stripe**. Razorpay uses the Payment Links API; Stripe uses Checkout Sessions (the hosted `url` is the shareable link). `payment_link_id` stores the Razorpay plink id or the Stripe Checkout Session id; webhooks/reconciliation look payments up by it.
+
+## Public API
 
 ```typescript
+// PaymentService
 createPaymentLink(businessId, dto: CreatePaymentLinkDto): Promise<PaymentLinkDto>
 getPaymentLink / cancelPaymentLink / listPaymentLinks
-getTransaction / listTransactions
-initiateRefund(businessId, dto: InitiateRefundDto): Promise<RefundDto>
-getRefund(businessId, refundId): Promise<RefundDto>
-confirmCODPayment(businessId, orderId, dto): Promise<TransactionDto>
-handleRazorpayWebhook(payload: Buffer, signature: string): Promise<void>
+initiateRefund(businessId, dto) / getRefund / listRefunds
+confirmCODPayment(businessId, dto: ConfirmCODDto): Promise<TransactionDto>
+handleRazorpayWebhook(payload, signature) / handleStripeWebhook(payload, signatureHeader)
+reconcilePayment(businessId, paymentId) / reconcilePendingPayments(businessId)
 getPaymentSummaryForOrder(businessId, orderId): Promise<PaymentSummaryDto>
+
+// InvoiceService
+createInvoice(businessId, dto) / getInvoice / listInvoices
+issueInvoice(businessId, id) / markInvoicePaid(businessId, id, paymentId?)
+renderInvoiceText(businessId, id): Promise<string>   // plain-text for WhatsApp/SMS
 ```
 
 ## Events
 
 **Emits:**
-- `payment.created` — `{ businessId, paymentLinkId, orderId?, amountPaise }`
-- `payment.success` — `{ businessId, transactionId, paymentLinkId, orderId?, amountPaise, method }`
-- `payment.failed` — `{ businessId, paymentLinkId, orderId?, reason }`
-- `payment.refund.initiated` — `{ businessId, refundId, transactionId, amountPaise }`
-- `payment.refund.completed` — `{ businessId, refundId, transactionId, amountPaise }`
+- `payment.created` / `payment.success` / `payment.failed`
+- `payment.refund.initiated` / `payment.refund.completed`
+- `invoice.created` / `invoice.issued` / `invoice.paid`
 
 **Listens to:**
-- `order.created` — auto-create payment link if payment method is ONLINE
+- `order.created` — auto-create payment link for the order
+- `payment.success` — `InvoiceService` marks the linked invoice PAID
 
 ## Tables Owned
 
 - `payments` — payment records with gateway IDs, status, payment link details
 - `refunds` — refund records with approval tracking
+- `invoices` — invoices with line items, totals, and lifecycle (DRAFT → ISSUED → PAID)
 
 ## Dependencies
 
-- `@gosumo/shared` — `PaymentStatus`, `PaymentMethod`, currency utils
+- `@gosumo/shared` — `PaymentStatus`, `PaymentMethod`, `PaymentGateway`, `InvoiceStatus`, currency utils, payment/invoice events
 - `@gosumo/tenant` — `getPolicies()` for `refundWindowDays` and max refund amount
 - `@gosumo/order` — validates `orderId`, triggers order payment status update
-- Razorpay Node.js SDK
+- Razorpay + Stripe REST APIs (called via `fetch`; no SDK dependency)
 
 ## Test Command
 
@@ -59,3 +68,7 @@ pnpm --filter @gosumo/api test --testPathPattern=modules/payment
 - **Payment link default expiry:** 1440 minutes (24h); configurable per business via `PAYMENT_LINK_EXPIRY_MINUTES` constant
 - **All monetary amounts** in the `payments` and `refunds` tables are stored as `Decimal(14,2)` (rupees). Convert to paise only for business logic comparisons using `rupeesToPaise()` from `@gosumo/shared`
 - Razorpay credentials (`key_id`, `key_secret`, `webhook_secret`) must come from `ConfigService`, never hardcoded
+- **Stripe webhook signature** uses the `Stripe-Signature: t=…,v1=…` scheme: the signed payload is `${timestamp}.${rawBody}`, HMAC-SHA256 keyed by `STRIPE_WEBHOOK_SECRET`. Timestamps outside a 5-minute window are rejected (replay protection). Verify before processing — `stripe.service.ts` owns this
+- **Both webhook endpoints need the raw body** — they are `@Public()` and use `req.rawBody`; never verify the signature against the parsed/re-serialized body
+- **Reconciliation** (`reconcilePayment` / `reconcilePendingPayments`) is the safety net for missed webhooks: it polls the gateway for PENDING/INITIATED payments and updates status + emits the same domain events the webhook would have
+- **Invoice numbers** are per-business, per-year sequential (`INV-YYYY-NNNNNN`) with a unique constraint on `(business_id, invoice_number)`; amounts in the `invoices` table are stored in the currency major unit as `Decimal(14,2)`
