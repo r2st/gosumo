@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { JwtAuthGuard } from '../../common/guards/auth.guard';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -34,6 +36,10 @@ import { PrismaService } from '../../common/services/prisma.service';
     JwtStrategy,
     GoogleStrategy,
     RolesGuard,
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
     redisProvider,
     PrismaService,
   ],

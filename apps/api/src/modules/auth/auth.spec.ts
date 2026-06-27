@@ -455,3 +455,158 @@ describe('JwtStrategy', () => {
     ).rejects.toThrow(UnauthorizedException);
   });
 });
+describe('AuthService — Google OAuth', () => {
+  let service: AuthService;
+  let jwtSignCalls: Array<Record<string, unknown>>;
+
+  beforeEach(async () => {
+    jwtSignCalls = [];
+    const capturingJwtService = {
+      ...mockJwtService,
+      signAsync: jest.fn().mockImplementation((payload: Record<string, unknown>) => {
+        jwtSignCalls.push(payload);
+        return Promise.resolve('mock-jwt-token');
+      }),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        AuthService,
+        { provide: AuthRepository, useValue: mockAuthRepository },
+        { provide: JwtService, useValue: capturingJwtService },
+        { provide: ConfigService, useValue: mockConfigService },
+        { provide: SessionService, useValue: mockSessionService },
+        { provide: REDIS_CLIENT, useValue: mockRedis },
+      ],
+    }).compile();
+
+    service = module.get<AuthService>(AuthService);
+
+    jest.clearAllMocks();
+    jwtSignCalls = [];
+    mockRedis.get.mockReset();
+  });
+
+  const googleProfile = {
+    googleId: 'google-123',
+    email: 'google@example.com',
+    name: 'Google User',
+    avatarUrl: 'https://example.com/avatar.jpg',
+  };
+
+  const googleTeamMember: TeamMemberWithBusiness = {
+    ...mockTeamMember,
+    id: '770e8400-e29b-41d4-a716-446655440000',
+    email: 'google@example.com',
+    name: 'Google User',
+    auth_provider: 'GOOGLE' as const,
+    google_id: 'google-123',
+    avatar_url: 'https://example.com/avatar.jpg',
+  };
+
+  it('should return tokens for existing Google-linked user', async () => {
+    mockAuthRepository.findTeamMemberByGoogleId.mockResolvedValue(googleTeamMember);
+
+    const result = await service.handleGoogleLogin(googleProfile);
+
+    expect(result).toHaveProperty('accessToken');
+    expect(result).toHaveProperty('refreshToken');
+    expect(mockSessionService.createSession).toHaveBeenCalled();
+  });
+
+  it('should link Google account to existing email user', async () => {
+    mockAuthRepository.findTeamMemberByGoogleId.mockResolvedValue(null);
+    mockAuthRepository.findTeamMemberByEmail.mockResolvedValue(mockTeamMember);
+    mockAuthRepository.linkGoogleAccount.mockResolvedValue(googleTeamMember);
+
+    const result = await service.handleGoogleLogin(googleProfile);
+
+    expect(result).toHaveProperty('accessToken');
+    expect(mockAuthRepository.linkGoogleAccount).toHaveBeenCalledWith(
+      mockTeamMember.id,
+      'google-123',
+      'https://example.com/avatar.jpg',
+    );
+  });
+
+  it('should create new user for brand-new Google sign-up', async () => {
+    mockAuthRepository.findTeamMemberByGoogleId.mockResolvedValue(null);
+    mockAuthRepository.findTeamMemberByEmail.mockResolvedValue(null);
+    mockAuthRepository.createOAuthTeamMemberWithBusiness.mockResolvedValue(googleTeamMember);
+
+    const result = await service.handleGoogleLogin(googleProfile);
+
+    expect(result).toHaveProperty('accessToken');
+    expect(mockAuthRepository.createOAuthTeamMemberWithBusiness).toHaveBeenCalled();
+  });
+
+  it('should throw UnauthorizedException for suspended Google user', async () => {
+    const suspendedGoogle = { ...googleTeamMember, status: 'SUSPENDED' as const };
+    mockAuthRepository.findTeamMemberByGoogleId.mockResolvedValue(suspendedGoogle);
+
+    await expect(service.handleGoogleLogin(googleProfile)).rejects.toThrow(
+      UnauthorizedException,
+    );
+  });
+
+  it('should generate JWT with same payload structure as normal login', async () => {
+    // Google OAuth login
+    mockAuthRepository.findTeamMemberByGoogleId.mockResolvedValue(googleTeamMember);
+    await service.handleGoogleLogin(googleProfile);
+
+    const googlePayload = jwtSignCalls[0];
+
+    // Verify the JWT payload has all required fields for JwtAuthGuard
+    expect(googlePayload).toHaveProperty('sub', googleTeamMember.id);
+    expect(googlePayload).toHaveProperty('businessId', googleTeamMember.business_id);
+    expect(googlePayload).toHaveProperty('email', googleTeamMember.email);
+    expect(googlePayload).toHaveProperty('role', googleTeamMember.role);
+    expect(googlePayload).toHaveProperty('sessionId');
+    expect(typeof googlePayload!['sessionId']).toBe('string');
+    expect((googlePayload!['sessionId'] as string).length).toBeGreaterThan(0);
+  });
+
+  it('should call signAsync with identical keys for Google and local login', async () => {
+    // Google OAuth login
+    mockAuthRepository.findTeamMemberByGoogleId.mockResolvedValue(googleTeamMember);
+    await service.handleGoogleLogin(googleProfile);
+    const googleKeys = Object.keys(jwtSignCalls[0]!).sort();
+
+    jwtSignCalls = [];
+
+    // Local login
+    mockRedis.get.mockResolvedValue(null);
+    mockAuthRepository.findTeamMemberByEmail.mockResolvedValue(mockTeamMember);
+    await service.login({ email: 'test@example.com', password: 'Test1234!' });
+    const localKeys = Object.keys(jwtSignCalls[0]!).sort();
+
+    expect(googleKeys).toEqual(localKeys);
+  });
+});
+
+describe('JwtAuthGuard — global registration', () => {
+  it('should be registered as APP_GUARD in AuthModule', async () => {
+    // Import the module metadata to verify APP_GUARD is registered
+    const { AuthModule } = await import('./auth.module');
+    const moduleMetadata = Reflect.getMetadata('providers', AuthModule) as Array<
+      { provide: unknown; useClass: unknown } | Function
+    >;
+
+    const appGuardProvider = moduleMetadata?.find(
+      (p) => typeof p === 'object' && p !== null && 'provide' in p
+        && (p as { provide: unknown }).provide?.toString?.().includes('APP_GUARD'),
+    );
+
+    // APP_GUARD is a Symbol/InjectionToken — check that a guard provider exists
+    // with useClass pointing to JwtAuthGuard
+    const guardProviders = moduleMetadata?.filter(
+      (p) => typeof p === 'object' && p !== null && 'useClass' in p,
+    ) as Array<{ provide: unknown; useClass: Function }>;
+
+    const hasJwtAuthGuard = guardProviders?.some(
+      (p) => p.useClass?.name === 'JwtAuthGuard',
+    );
+
+    expect(hasJwtAuthGuard).toBe(true);
+  });
+});

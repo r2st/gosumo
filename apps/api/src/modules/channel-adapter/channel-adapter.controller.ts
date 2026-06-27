@@ -40,7 +40,10 @@ import { WhatsAppVerifyQueryDto } from './dto/webhook.dto';
  *   POST /webhooks/whatsapp          — WhatsApp inbound message webhook
  *   POST /webhooks/:channel          — Generic webhook for other channels
  */
+import { Public } from '../../common/decorators/public.decorator';
+
 @ApiTags('webhooks')
+@Public()
 @Controller('webhooks')
 export class ChannelAdapterController {
   private readonly logger = new Logger(ChannelAdapterController.name);

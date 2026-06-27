@@ -33,4 +33,10 @@ export class RegisterDto {
   @IsString()
   @MaxLength(255)
   name?: string;
+
+  @ApiProperty({ example: '+91 98765 43210', required: false })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  phone?: string;
 }
