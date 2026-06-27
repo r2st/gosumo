@@ -70,12 +70,26 @@ export class BusinessController {
   @ApiResponse({ status: 200 })
   async getSubscription(@TenantId() businessId: string) {
     try {
-      return await this.subscriptionService.getSubscription(businessId);
-    } catch {
+      const sub = await this.subscriptionService.getSubscription(businessId);
+      // Transform to shape the frontend billing page expects
       return {
-        plan: 'STARTER', status: 'ACTIVE',
+        plan: sub.plan,
+        status: sub.isActive ? 'ACTIVE' : 'INACTIVE',
+        priceMonthlyPaise: sub.pricePaise ?? 0,
         currentPeriodStart: new Date().toISOString(),
         currentPeriodEnd: new Date(Date.now() + 30 * 86400000).toISOString(),
+        trialEndsAt: null,
+        usage: [],
+      };
+    } catch {
+      return {
+        plan: 'STARTER',
+        status: 'ACTIVE',
+        priceMonthlyPaise: 0,
+        currentPeriodStart: new Date().toISOString(),
+        currentPeriodEnd: new Date(Date.now() + 30 * 86400000).toISOString(),
+        trialEndsAt: null,
+        usage: [],
       };
     }
   }

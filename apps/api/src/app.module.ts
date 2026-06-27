@@ -23,6 +23,7 @@ import { NotificationModule } from './modules/notification/notification.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { ChannelsModule } from './modules/channels/channels.module';
+import { IntegrationsModule } from './modules/integrations/integrations.module';
 
 @Module({
   imports: [
@@ -82,6 +83,7 @@ import { ChannelsModule } from './modules/channels/channels.module';
     AnalyticsModule,
     AdminModule,
     ChannelsModule,
+    IntegrationsModule,
   ],
 })
 export class AppModule {}
