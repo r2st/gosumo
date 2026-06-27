@@ -1,0 +1,358 @@
+import { ChannelType, ConversationStatus, IntentType, MessageStatus, OrderStatus, PaymentStatus, BookingStatus, ShipmentStatus } from '../enums';
+import { ConfidenceScore, SuggestedAction } from '../interfaces';
+
+// ─────────────────────────────────────────────
+// BASE EVENT
+// ─────────────────────────────────────────────
+
+/**
+ * All domain events extend BaseEvent.
+ * The event bus and BullMQ processors use these fields for
+ * routing, deduplication, and distributed tracing.
+ */
+export interface BaseEvent {
+  /** Unique event ID (UUID v4) — used for idempotency */
+  id: string;
+  /** ISO-8601 timestamp of when the event was emitted */
+  timestamp: string;
+  /** Tenant scope — every event carries businessId for multi-tenant safety */
+  businessId: string;
+  /** Distributed trace ID shared across all events in one request chain */
+  correlationId: string;
+}
+
+// ─────────────────────────────────────────────
+// MESSAGING EVENTS
+// ─────────────────────────────────────────────
+
+/** Emitted by the channel adapter after normalizing an inbound message */
+export interface MessageReceivedEvent extends BaseEvent {
+  readonly type: 'message.received';
+  messageId: string;
+  conversationId: string;
+  channelAccountId: string;
+  channel: ChannelType;
+  senderExternalId: string;
+  clientId: string;
+}
+
+/** Emitted after a message is successfully sent to the channel */
+export interface MessageSentEvent extends BaseEvent {
+  readonly type: 'message.sent';
+  messageId: string;
+  conversationId: string;
+  channelAccountId: string;
+  channel: ChannelType;
+  externalMessageId: string;
+  recipientExternalId: string;
+  /** Wall-clock time from emit to channel acknowledgement (ms) */
+  latencyMs: number;
+}
+
+/** Emitted when an outbound message delivery fails permanently */
+export interface MessageFailedEvent extends BaseEvent {
+  readonly type: 'message.failed';
+  messageId: string;
+  conversationId: string;
+  channelAccountId: string;
+  channel: ChannelType;
+  recipientExternalId: string;
+  reason: string;
+  attempts: number;
+}
+
+// ─────────────────────────────────────────────
+// CONVERSATION EVENTS
+// ─────────────────────────────────────────────
+
+export interface ConversationCreatedEvent extends BaseEvent {
+  readonly type: 'conversation.created';
+  conversationId: string;
+  clientId: string;
+  channelAccountId: string;
+  channel: ChannelType;
+}
+
+export interface ConversationResolvedEvent extends BaseEvent {
+  readonly type: 'conversation.resolved';
+  conversationId: string;
+  clientId: string;
+  /** "AI" | "HUMAN" | "SYSTEM" */
+  resolvedBy: string;
+  resolvedByActorId?: string;
+  /** Duration from first message to resolution (seconds) */
+  resolutionDurationSeconds: number;
+  csatScore?: number;
+}
+
+export interface ConversationEscalatedEvent extends BaseEvent {
+  readonly type: 'conversation.escalated';
+  conversationId: string;
+  clientId: string;
+  taskId: string;
+  /** The team member the conversation was assigned to */
+  assignedToMemberId?: string;
+  reason: string;
+}
+
+export interface ConversationStatusChangedEvent extends BaseEvent {
+  readonly type: 'conversation.status.changed';
+  conversationId: string;
+  clientId: string;
+  previousStatus: ConversationStatus;
+  newStatus: ConversationStatus;
+  /** ID of the actor who triggered the status change (team_member or system) */
+  actorId?: string;
+}
+
+export interface ConversationAssignedEvent extends BaseEvent {
+  readonly type: 'conversation.assigned';
+  conversationId: string;
+  clientId: string;
+  assigneeId: string;
+  /** Previous assignee, if any */
+  previousAssigneeId?: string;
+}
+
+// ─────────────────────────────────────────────
+// MESSAGE STORAGE EVENTS
+// ─────────────────────────────────────────────
+
+/** Emitted after an inbound or outbound message is persisted to the database */
+export interface MessageStoredEvent extends BaseEvent {
+  readonly type: 'message.stored';
+  messageId: string;
+  conversationId: string;
+  channelAccountId: string;
+  channel: ChannelType;
+  direction: string;
+  senderType: string;
+}
+
+// ─────────────────────────────────────────────
+// AI ENGINE EVENTS
+// ─────────────────────────────────────────────
+
+export interface AIIntentClassifiedEvent extends BaseEvent {
+  readonly type: 'ai.intent.classified';
+  conversationId: string;
+  messageId: string;
+  intent: IntentType;
+  confidence: number;
+  alternativeIntents: Array<{ intent: IntentType; confidence: number }>;
+}
+
+export interface AIResponseGeneratedEvent extends BaseEvent {
+  readonly type: 'ai.response.generated';
+  conversationId: string;
+  messageId: string;
+  aiDecisionId: string;
+  intent: IntentType;
+  confidenceScore: ConfidenceScore;
+  suggestedActions: SuggestedAction[];
+  modelId: string;
+  latencyMs: number;
+}
+
+export interface AIResponseApprovedEvent extends BaseEvent {
+  readonly type: 'ai.response.approved';
+  conversationId: string;
+  aiDecisionId: string;
+  taskId: string;
+  approvedByMemberId: string;
+  /** Whether the human edited the AI draft before approving */
+  wasEdited: boolean;
+}
+
+export interface AIResponseRejectedEvent extends BaseEvent {
+  readonly type: 'ai.response.rejected';
+  conversationId: string;
+  aiDecisionId: string;
+  taskId: string;
+  rejectedByMemberId: string;
+  rejectionReason?: string;
+}
+
+// ─────────────────────────────────────────────
+// TASK (HITL) EVENTS
+// ─────────────────────────────────────────────
+
+export interface TaskCreatedEvent extends BaseEvent {
+  readonly type: 'task.created';
+  taskId: string;
+  conversationId: string;
+  aiDecisionId?: string;
+  taskType: string;
+  priority: string;
+  assignedToMemberId?: string;
+  dueAt?: string;
+}
+
+export interface TaskAssignedEvent extends BaseEvent {
+  readonly type: 'task.assigned';
+  taskId: string;
+  conversationId: string;
+  assignedToMemberId: string;
+}
+
+export interface TaskResolvedEvent extends BaseEvent {
+  readonly type: 'task.resolved';
+  taskId: string;
+  conversationId: string;
+  resolvedByMemberId: string;
+  resolutionNote?: string;
+  /** Wall-clock time from task creation to resolution (seconds) */
+  resolutionDurationSeconds: number;
+  slaBreach: boolean;
+}
+
+// ─────────────────────────────────────────────
+// ORDER EVENTS
+// ─────────────────────────────────────────────
+
+export interface OrderCreatedEvent extends BaseEvent {
+  readonly type: 'order.created';
+  orderId: string;
+  orderNumber: string;
+  clientId: string;
+  conversationId?: string;
+  /** Total in paise */
+  totalPaise: number;
+  currency: string;
+  lineItemCount: number;
+}
+
+export interface OrderPaidEvent extends BaseEvent {
+  readonly type: 'order.paid';
+  orderId: string;
+  orderNumber: string;
+  clientId: string;
+  paymentId: string;
+  /** Amount paid in paise */
+  amountPaise: number;
+  currency: string;
+  status: OrderStatus;
+}
+
+export interface OrderShippedEvent extends BaseEvent {
+  readonly type: 'order.shipped';
+  orderId: string;
+  orderNumber: string;
+  clientId: string;
+  shipmentId: string;
+  trackingNumber?: string;
+  trackingUrl?: string;
+  carrier?: string;
+  estimatedDeliveryAt?: string;
+}
+
+// ─────────────────────────────────────────────
+// PAYMENT EVENTS
+// ─────────────────────────────────────────────
+
+export interface PaymentCreatedEvent extends BaseEvent {
+  readonly type: 'payment.created';
+  paymentId: string;
+  orderId?: string;
+  clientId: string;
+  /** Amount in paise */
+  amountPaise: number;
+  currency: string;
+  paymentLinkUrl?: string;
+}
+
+export interface PaymentSuccessEvent extends BaseEvent {
+  readonly type: 'payment.success';
+  paymentId: string;
+  orderId?: string;
+  clientId: string;
+  /** Amount captured in paise */
+  amountPaise: number;
+  currency: string;
+  status: PaymentStatus;
+  gatewayPaymentId: string;
+}
+
+export interface PaymentRefundEvent extends BaseEvent {
+  readonly type: 'payment.refund.initiated' | 'payment.refund.completed';
+  refundId: string;
+  paymentId: string;
+  orderId?: string;
+  clientId: string;
+  /** Refund amount in paise */
+  amountPaise: number;
+  currency: string;
+  reason?: string;
+}
+
+// ─────────────────────────────────────────────
+// BOOKING EVENTS
+// ─────────────────────────────────────────────
+
+export interface BookingCreatedEvent extends BaseEvent {
+  readonly type: 'booking.created';
+  bookingId: string;
+  clientId: string;
+  catalogItemId?: string;
+  staffMemberId?: string;
+  startAt: string;
+  endAt: string;
+  status: BookingStatus;
+}
+
+export interface BookingCancelledEvent extends BaseEvent {
+  readonly type: 'booking.cancelled';
+  bookingId: string;
+  clientId: string;
+  /** "CLIENT" | "BUSINESS" | "SYSTEM" */
+  cancelledBy: string;
+  cancelledByActorId?: string;
+  reason?: string;
+}
+
+// ─────────────────────────────────────────────
+// CLIENT PROFILE EVENTS
+// ─────────────────────────────────────────────
+
+export interface ClientProfileUpdatedEvent extends BaseEvent {
+  readonly type: 'client.profile.updated';
+  clientId: string;
+  /** Only the fields that changed */
+  changedFields: string[];
+  updatedBy: 'AI' | 'HUMAN' | 'SYSTEM';
+  updatedByActorId?: string;
+}
+
+// ─────────────────────────────────────────────
+// UNION TYPE (for typed event bus subscriptions)
+// ─────────────────────────────────────────────
+
+export type DomainEvent =
+  | MessageReceivedEvent
+  | MessageSentEvent
+  | MessageFailedEvent
+  | MessageStoredEvent
+  | ConversationCreatedEvent
+  | ConversationResolvedEvent
+  | ConversationEscalatedEvent
+  | ConversationStatusChangedEvent
+  | ConversationAssignedEvent
+  | AIIntentClassifiedEvent
+  | AIResponseGeneratedEvent
+  | AIResponseApprovedEvent
+  | AIResponseRejectedEvent
+  | TaskCreatedEvent
+  | TaskAssignedEvent
+  | TaskResolvedEvent
+  | OrderCreatedEvent
+  | OrderPaidEvent
+  | OrderShippedEvent
+  | PaymentCreatedEvent
+  | PaymentSuccessEvent
+  | PaymentRefundEvent
+  | BookingCreatedEvent
+  | BookingCancelledEvent
+  | ClientProfileUpdatedEvent;
+
+/** Infer the event type from the `type` discriminant */
+export type EventType = DomainEvent['type'];

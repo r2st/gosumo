@@ -1,0 +1,1575 @@
+// ─────────────────────────────────────────────
+// GoSumo — Prisma Schema
+// Single source of truth for the PostgreSQL database.
+// Run `pnpm --filter @gosumo/database generate` after any change.
+// ─────────────────────────────────────────────
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [uuidOssp(map: "uuid-ossp"), pgcrypto]
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum ChannelType {
+  WHATSAPP
+  INSTAGRAM
+  SMS
+  WEB_CHAT
+  EMAIL
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  VIDEO
+  AUDIO
+  DOCUMENT
+  LOCATION
+  STICKER
+  INTERACTIVE
+  TEMPLATE
+  PAYMENT_LINK
+  REACTION
+  SYSTEM
+}
+
+enum MessageStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum ConversationStatus {
+  OPEN
+  PENDING_HUMAN
+  ESCALATED
+  RESOLVED
+  SNOOZED
+}
+
+enum TeamMemberRole {
+  OWNER
+  MANAGER
+  STAFF
+  VIEWER
+}
+
+enum TeamMemberStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  RESOLVED
+  ESCALATED
+  EXPIRED
+}
+
+enum TaskType {
+  REVIEW_RESPONSE
+  APPROVE_REFUND
+  APPROVE_DISCOUNT
+  HANDLE_COMPLAINT
+  CLARIFY_INTENT
+  FOLLOW_UP
+  APPROVE_ORDER
+  CUSTOM
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum AiDecisionOutcome {
+  AUTO_EXECUTED
+  SENT_FOR_REVIEW
+  ESCALATED
+  OVERRIDDEN_BY_HUMAN
+  EXPIRED
+}
+
+enum AiDecisionType {
+  SEND_MESSAGE
+  CREATE_ORDER
+  PROCESS_REFUND
+  APPLY_DISCOUNT
+  CREATE_BOOKING
+  CANCEL_BOOKING
+  SHARE_CATALOG
+  COLLECT_PAYMENT
+  ESCALATE
+  RESOLVE_CONVERSATION
+  CUSTOM_ACTION
+}
+
+enum RuleType {
+  PRICE
+  REFUND
+  DISCOUNT
+  ESCALATION
+  WORKING_HOURS
+  AUTO_REPLY
+  CATALOG_RESTRICTION
+  CUSTOM
+}
+
+enum RuleTrigger {
+  ALWAYS
+  INTENT_MATCH
+  KEYWORD_MATCH
+  TIME_WINDOW
+  CLIENT_SEGMENT
+  PRODUCT_CATEGORY
+  ORDER_VALUE
+}
+
+enum OrderStatus {
+  DRAFT
+  CONFIRMED
+  PROCESSING
+  PACKED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  INITIATED
+  SUCCESS
+  FAILED
+  EXPIRED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum PaymentMethod {
+  UPI
+  CARD
+  NET_BANKING
+  WALLET
+  COD
+  EMI
+  BNPL
+}
+
+enum PaymentGateway {
+  RAZORPAY
+  PAYTM
+  PHONEPE
+  STRIPE
+  MANUAL
+}
+
+enum RefundStatus {
+  INITIATED
+  PROCESSING
+  COMPLETED
+  FAILED
+  REJECTED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  RESCHEDULED
+  CANCELLED
+  NO_SHOW
+  COMPLETED
+}
+
+enum ShipmentStatus {
+  PENDING
+  PICKUP_SCHEDULED
+  PICKED_UP
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED_DELIVERY
+  RETURNED
+  CANCELLED
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  RUNNING
+  PAUSED
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum CampaignType {
+  BROADCAST
+  DRIP
+  TRIGGER_BASED
+  RE_ENGAGEMENT
+  PROMOTIONAL
+  TRANSACTIONAL
+}
+
+enum CatalogItemType {
+  PRODUCT
+  SERVICE
+  DIGITAL
+  SUBSCRIPTION
+}
+
+enum EmbeddingEntityType {
+  CLIENT_PROFILE
+  CATALOG_ITEM
+  CATALOG_CATEGORY
+  BUSINESS_RULE
+  CONVERSATION_SUMMARY
+  FAQ
+  DOCUMENT
+}
+
+enum NotificationTemplateChannel {
+  WHATSAPP
+  SMS
+  EMAIL
+  PUSH
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  APPROVE
+  REJECT
+  ESCALATE
+  RESOLVE
+  EXPORT
+  IMPORT
+}
+
+enum FileUploadType {
+  IMAGE
+  VIDEO
+  AUDIO
+  DOCUMENT
+  CSV
+  OTHER
+}
+
+enum AnalyticsEventCategory {
+  MESSAGE
+  CONVERSATION
+  AI
+  ORDER
+  PAYMENT
+  BOOKING
+  CAMPAIGN
+  CHANNEL
+  TEAM
+  CLIENT
+}
+
+// ─────────────────────────────────────────────
+// PLATFORM LAYER
+// ─────────────────────────────────────────────
+
+/// A GoSumo tenant — a small business using the platform.
+model businesses {
+  id          String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name        String    @db.VarChar(255)
+  /// URL-safe identifier, immutable after creation
+  slug        String    @unique @db.VarChar(100)
+  email       String    @unique @db.VarChar(320)
+  phone       String?   @db.VarChar(20)
+  /// ISO 3166-1 alpha-2
+  country     String    @default("IN") @db.Char(2)
+  timezone    String    @default("Asia/Kolkata") @db.VarChar(50)
+  /// ISO 4217
+  currency    String    @default("INR") @db.Char(3)
+  logo_url    String?   @db.Text
+  website_url String?   @db.Text
+
+  plan        String    @default("starter") @db.VarChar(50)
+  /// {maxTeamMembers, maxConversations, maxCampaigns, ...}
+  plan_limits Json      @default("{}") @db.JsonB
+
+  /// AI autonomy thresholds and personality settings
+  ai_settings Json      @default("{}") @db.JsonB
+  /// Business profile text used as AI context
+  profile     Json      @default("{}") @db.JsonB
+
+  is_active   Boolean   @default(true)
+  created_at  DateTime  @default(now()) @db.Timestamptz
+  updated_at  DateTime  @updatedAt @db.Timestamptz
+  deleted_at  DateTime? @db.Timestamptz
+
+  // Relations
+  team_members               team_members[]
+  clients                    clients[]
+  channel_accounts           channel_accounts[]
+  channel_contacts           channel_contacts[]
+  conversations              conversations[]
+  messages                   messages[]
+  business_rules             business_rules[]
+  catalog_categories         catalog_categories[]
+  catalog_items              catalog_items[]
+  catalog_variants           catalog_variants[]
+  catalog_packages           catalog_packages[]
+  orders                     orders[]
+  payments                   payments[]
+  bookings                   bookings[]
+  shipments                  shipments[]
+  campaigns                  campaigns[]
+  notification_templates     notification_templates[]
+  tasks                      tasks[]
+  ai_decisions               ai_decisions[]
+  ai_precedents              ai_precedents[]
+  analytics_events           analytics_events[]
+  vector_embeddings_metadata vector_embeddings_metadata[]
+  file_uploads               file_uploads[]
+  audit_logs                 audit_logs[]
+  webhook_events             webhook_events[]
+  shipping_addresses         shipping_addresses[]
+  shipping_options           shipping_options[]
+  refunds                    refunds[]
+
+  @@index([slug])
+  @@index([email])
+  @@index([is_active, created_at])
+  @@index([deleted_at])
+  @@map("businesses")
+}
+
+/// A human operator who belongs to a business.
+model team_members {
+  id            String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id   String           @db.Uuid
+  email         String           @db.VarChar(320)
+  name          String           @db.VarChar(255)
+  avatar_url    String?          @db.Text
+  role          TeamMemberRole   @default(STAFF)
+  status        TeamMemberStatus @default(INVITED)
+  phone         String?          @db.VarChar(20)
+
+  /// Hashed password — never stored raw
+  password_hash String?          @db.Text
+  /// AES-256 encrypted TOTP secret
+  totp_secret   String?          @db.Text
+  last_login_at DateTime?        @db.Timestamptz
+  login_count   Int              @default(0)
+
+  /// {email, whatsapp, sound, taskAlerts}
+  notification_prefs Json        @default("{}") @db.JsonB
+
+  invite_token  String?          @unique @db.VarChar(64)
+  /// FK to team_members (self-referential)
+  invited_by    String?          @db.Uuid
+  invited_at    DateTime?        @db.Timestamptz
+
+  created_at    DateTime         @default(now()) @db.Timestamptz
+  updated_at    DateTime         @updatedAt @db.Timestamptz
+  deleted_at    DateTime?        @db.Timestamptz
+
+  business      businesses       @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  inviter       team_members?    @relation("InvitedBy", fields: [invited_by], references: [id])
+  invitees      team_members[]   @relation("InvitedBy")
+  assigned_tasks tasks[]         @relation("AssignedTo")
+  resolved_tasks tasks[]         @relation("ResolvedBy")
+  audit_logs    audit_logs[]
+
+  @@unique([business_id, email])
+  @@index([business_id, status])
+  @@index([business_id, role])
+  @@index([invite_token])
+  @@map("team_members")
+}
+
+/// A client/customer that contacts a business.
+model clients {
+  id               String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id      String    @db.Uuid
+  name             String?   @db.VarChar(255)
+  email            String?   @db.VarChar(320)
+  /// E.164 format
+  phone            String?   @db.VarChar(20)
+  avatar_url       String?   @db.Text
+  consumer_user_id String?   @db.Uuid
+
+  /// AI-built enrichment profile
+  profile          Json      @default("{}") @db.JsonB
+  /// Opt-out status per channel: { "WHATSAPP": true }
+  opt_outs         Json      @default("{}") @db.JsonB
+
+  ltv_score        Decimal?  @db.Decimal(12, 2)
+  /// 0.0000–1.0000
+  churn_risk       Decimal?  @db.Decimal(5, 4)
+  engagement_score Decimal?  @db.Decimal(5, 4)
+  scores_updated_at DateTime? @db.Timestamptz
+
+  total_orders       Int     @default(0)
+  total_spent        Decimal @default(0) @db.Decimal(14, 2)
+  last_interaction_at DateTime? @db.Timestamptz
+
+  first_seen_at DateTime  @default(now()) @db.Timestamptz
+  created_at    DateTime  @default(now()) @db.Timestamptz
+  updated_at    DateTime  @updatedAt @db.Timestamptz
+  deleted_at    DateTime? @db.Timestamptz
+
+  business          businesses         @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  consumer_user     consumer_users?    @relation(fields: [consumer_user_id], references: [id])
+  channel_contacts  channel_contacts[]
+  conversations     conversations[]
+  orders            orders[]
+  bookings          bookings[]
+  payments          payments[]
+  shipping_addresses shipping_addresses[]
+  analytics_events  analytics_events[]
+
+  @@unique([business_id, phone], map: "uq_clients_business_phone")
+  @@unique([business_id, email], map: "uq_clients_business_email")
+  @@index([business_id, churn_risk])
+  @@index([business_id, ltv_score])
+  @@index([business_id, last_interaction_at])
+  @@index([consumer_user_id])
+  @@map("clients")
+}
+
+/// Cross-merchant consumer profile (future: one person across multiple businesses).
+model consumer_users {
+  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  phone      String?   @unique @db.VarChar(20)
+  email      String?   @unique @db.VarChar(320)
+  name       String?   @db.VarChar(255)
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  clients    clients[]
+
+  @@map("consumer_users")
+}
+
+// ─────────────────────────────────────────────
+// CHANNEL & MESSAGING LAYER
+// ─────────────────────────────────────────────
+
+/// A business's account on a specific messaging channel (e.g. their WhatsApp number).
+model channel_accounts {
+  id          String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String      @db.Uuid
+  channel     ChannelType
+  /// Human label, e.g. "Main WhatsApp"
+  name        String      @db.VarChar(255)
+  is_primary  Boolean     @default(false)
+
+  /// Phone number ID, IG account ID, etc.
+  external_id      String  @db.VarChar(255)
+  /// WABA ID, page ID, etc.
+  external_account String? @db.VarChar(255)
+
+  /// Encrypted credentials — actual secrets in KMS/Vault
+  credentials      Json    @default("{}") @db.JsonB
+  webhook_url      String? @db.Text
+  /// HMAC secret for signature verification
+  webhook_secret   String? @db.Text
+
+  is_active    Boolean @default(true)
+  is_verified  Boolean @default(false)
+  /// {supportsTemplates, supportsInteractive, supportsMedia, supportsVoice}
+  capabilities Json    @default("{}") @db.JsonB
+
+  message_limit_per_day Int?
+  messages_sent_today   Int     @default(0)
+  limit_reset_at        DateTime? @db.Timestamptz
+
+  metadata    Json      @default("{}") @db.JsonB
+
+  created_at  DateTime  @default(now()) @db.Timestamptz
+  updated_at  DateTime  @updatedAt @db.Timestamptz
+  deleted_at  DateTime? @db.Timestamptz
+
+  business               businesses              @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  channel_contacts       channel_contacts[]
+  conversations          conversations[]
+  messages               messages[]
+  notification_templates notification_templates[]
+
+  @@unique([business_id, channel, external_id])
+  @@index([business_id, channel, is_active])
+  @@map("channel_accounts")
+}
+
+/// Maps a channel-specific external ID to an internal client.
+model channel_contacts {
+  id                 String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id        String      @db.Uuid
+  client_id          String      @db.Uuid
+  channel_account_id String      @db.Uuid
+  channel            ChannelType
+
+  /// Phone, IG user ID, email, etc.
+  external_id     String  @db.VarChar(255)
+  display_name    String? @db.VarChar(255)
+  profile_pic_url String? @db.Text
+  is_opted_in     Boolean @default(true)
+
+  channel_metadata Json      @default("{}") @db.JsonB
+
+  first_seen_at DateTime  @default(now()) @db.Timestamptz
+  last_seen_at  DateTime  @default(now()) @db.Timestamptz
+  created_at    DateTime  @default(now()) @db.Timestamptz
+  updated_at    DateTime  @updatedAt @db.Timestamptz
+
+  business        businesses       @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  client          clients          @relation(fields: [client_id], references: [id], onDelete: Cascade)
+  channel_account channel_accounts @relation(fields: [channel_account_id], references: [id])
+
+  @@unique([channel_account_id, external_id])
+  @@index([business_id, channel, external_id])
+  @@index([client_id])
+  @@map("channel_contacts")
+}
+
+/// A conversation thread between a client and a business.
+model conversations {
+  id                 String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id        String             @db.Uuid
+  client_id          String             @db.Uuid
+  channel_account_id String             @db.Uuid
+  channel            ChannelType
+
+  status             ConversationStatus @default(OPEN)
+
+  current_intent    String?  @db.VarChar(100)
+  intent_confidence Decimal? @db.Decimal(5, 4)
+  current_topic     String?  @db.VarChar(100)
+
+  /// FK to team_members
+  assigned_to String? @db.Uuid
+
+  /// Email subject / conversation title
+  subject            String? @db.VarChar(500)
+  /// Channel's thread ID
+  external_thread_id String? @db.VarChar(255)
+
+  first_message_at DateTime? @db.Timestamptz
+  last_message_at  DateTime? @db.Timestamptz
+  resolved_at      DateTime? @db.Timestamptz
+  snoozed_until    DateTime? @db.Timestamptz
+
+  message_count       Int @default(0)
+  unread_count        Int @default(0)
+  human_message_count Int @default(0)
+
+  /// 1–5 customer satisfaction score
+  csat_score        Int?      @db.Integer
+  csat_submitted_at DateTime? @db.Timestamptz
+
+  tags     String[] @default([])
+  metadata Json     @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business         businesses       @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  client           clients          @relation(fields: [client_id], references: [id])
+  channel_account  channel_accounts @relation(fields: [channel_account_id], references: [id])
+  messages         messages[]
+  tasks            tasks[]
+  ai_decisions     ai_decisions[]
+  analytics_events analytics_events[]
+
+  @@index([business_id, status, last_message_at(sort: Desc)])
+  @@index([business_id, client_id])
+  @@index([business_id, assigned_to, status])
+  @@index([business_id, channel, status])
+  @@index([client_id, status])
+  @@map("conversations")
+}
+
+/// An individual message within a conversation.
+/// High-volume table — partitioned by created_at month in production.
+model messages {
+  id                 String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id        String           @db.Uuid
+  conversation_id    String           @db.Uuid
+  channel_account_id String           @db.Uuid
+
+  direction   MessageDirection
+  type        MessageType      @default(TEXT)
+  status      MessageStatus    @default(PENDING)
+
+  /// "CLIENT" | "AI" | "HUMAN_AGENT" | "SYSTEM"
+  sender_type String  @db.VarChar(20)
+  /// client_id or team_member_id
+  sender_id   String? @db.Uuid
+
+  /// Polymorphic content payload (TEXT, IMAGE, DOCUMENT, etc.)
+  content Json @db.JsonB
+
+  /// Channel-assigned message ID
+  external_id     String?   @db.VarChar(255)
+  external_status String?   @db.VarChar(50)
+  delivered_at    DateTime? @db.Timestamptz
+  read_at         DateTime? @db.Timestamptz
+  failed_at       DateTime? @db.Timestamptz
+  failure_reason  String?   @db.Text
+
+  ai_decision_id   String?  @db.Uuid
+  is_ai_generated  Boolean  @default(false)
+  confidence_score Decimal? @db.Decimal(5, 4)
+
+  campaign_id String? @db.Uuid
+
+  /// [{emoji, senderId, at}]
+  reactions Json @default("[]") @db.JsonB
+
+  /// Extracted text for full-text search (denormalized)
+  text_content String? @db.Text
+
+  metadata Json @default("{}") @db.JsonB
+
+  sent_at    DateTime? @db.Timestamptz
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+
+  business        businesses       @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  conversation    conversations    @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+  channel_account channel_accounts @relation(fields: [channel_account_id], references: [id])
+  campaign        campaigns?       @relation(fields: [campaign_id], references: [id])
+  file_uploads    file_uploads[]
+
+  @@index([conversation_id, created_at(sort: Desc)])
+  @@index([business_id, created_at(sort: Desc)])
+  @@index([business_id, sender_type, created_at(sort: Desc)])
+  @@index([external_id])
+  @@index([campaign_id])
+  @@map("messages")
+}
+
+/// Uploaded media and document references (S3-backed).
+model file_uploads {
+  id          String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String         @db.Uuid
+  message_id  String?        @db.Uuid
+  type        FileUploadType
+  filename    String         @db.VarChar(500)
+  mime_type   String         @db.VarChar(100)
+  size_bytes  Int
+  /// S3 object key
+  storage_key String         @db.Text
+  /// Public CDN URL (after processing)
+  cdn_url     String?        @db.Text
+
+  width         Int?
+  height        Int?
+  thumbnail_key String?  @db.Text
+
+  is_processed Boolean  @default(false)
+  is_public    Boolean  @default(false)
+  pii_detected Boolean?
+
+  metadata   Json      @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses  @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  message  messages?   @relation(fields: [message_id], references: [id])
+
+  @@index([business_id, type])
+  @@index([message_id])
+  @@index([storage_key])
+  @@map("file_uploads")
+}
+
+/// Reusable message templates (WhatsApp approved, SMS, email).
+model notification_templates {
+  id                 String                      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id        String                      @db.Uuid
+  /// null = applies to all accounts of this channel
+  channel_account_id String?                     @db.Uuid
+  channel            NotificationTemplateChannel
+  name               String                      @db.VarChar(255)
+  /// WhatsApp approved template name
+  external_name      String?                     @db.VarChar(255)
+
+  /// Channel-specific structure
+  content   Json @db.JsonB
+  variables Json @default("[]") @db.JsonB
+
+  is_approved     Boolean   @default(false)
+  /// PENDING | APPROVED | REJECTED
+  approval_status String?   @db.VarChar(50)
+  approved_at     DateTime? @db.Timestamptz
+  rejection_reason String?  @db.Text
+
+  /// MARKETING | UTILITY | AUTHENTICATION
+  category String? @db.VarChar(50)
+  language String  @default("en") @db.VarChar(10)
+  is_active Boolean @default(true)
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business        businesses        @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  channel_account channel_accounts? @relation(fields: [channel_account_id], references: [id])
+
+  @@unique([business_id, channel, name])
+  @@index([business_id, channel, is_active])
+  @@map("notification_templates")
+}
+
+/// Idempotent log of all incoming webhooks from external systems.
+model webhook_events {
+  id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  /// null for platform-level webhooks
+  business_id String? @db.Uuid
+  /// "WHATSAPP" | "RAZORPAY" | "SHIPROCKET" | ...
+  source      String  @db.VarChar(50)
+  /// e.g. "messages" | "payment.captured"
+  event_type  String  @db.VarChar(100)
+  /// Channel-specific event ID for deduplication
+  external_id String  @db.VarChar(255)
+
+  payload Json @db.JsonB
+  headers Json @default("{}") @db.JsonB
+
+  processed    Boolean   @default(false)
+  processed_at DateTime? @db.Timestamptz
+  attempts     Int       @default(0)
+  error        String?   @db.Text
+
+  signature_valid Boolean @default(false)
+
+  received_at DateTime @default(now()) @db.Timestamptz
+
+  business businesses? @relation(fields: [business_id], references: [id])
+
+  @@unique([source, external_id])
+  @@index([source, processed, received_at])
+  @@index([business_id, received_at(sort: Desc)])
+  @@map("webhook_events")
+}
+
+// ─────────────────────────────────────────────
+// INTELLIGENCE LAYER
+// ─────────────────────────────────────────────
+
+/// Business rules that constrain AI behaviour (pricing, refunds, working hours, etc.).
+model business_rules {
+  id          String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String      @db.Uuid
+  type        RuleType
+  name        String      @db.VarChar(255)
+  description String?     @db.Text
+  trigger     RuleTrigger @default(ALWAYS)
+  /// Higher = checked first
+  priority    Int         @default(0)
+  is_active   Boolean     @default(true)
+
+  conditions Json @default("{}") @db.JsonB
+  actions    Json @default("{}") @db.JsonB
+
+  /// Denormalized text for RAG indexing in Qdrant
+  embedding_text String? @db.Text
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business         businesses                  @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  // Vector embedding looked up via vector_embeddings_metadata WHERE entity_type='BUSINESS_RULE' AND entity_id=id
+
+  @@index([business_id, type, is_active])
+  @@index([business_id, trigger, priority])
+  @@map("business_rules")
+}
+
+/// Every AI decision — immutable audit trail.
+model ai_decisions {
+  id              String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id     String            @db.Uuid
+  conversation_id String            @db.Uuid
+  /// The triggering inbound message
+  message_id      String?           @db.Uuid
+  /// The HITL task created for review (if any)
+  task_id         String?           @db.Uuid
+
+  type    AiDecisionType
+  outcome AiDecisionOutcome
+
+  /// {actionType, parameters, reasoning, alternativesConsidered}
+  proposed_action Json @db.JsonB
+
+  /// 0.0000–1.0000
+  confidence_score     Decimal @db.Decimal(5, 4)
+  confidence_breakdown Json    @default("{}") @db.JsonB
+
+  model_id          String? @db.VarChar(100)
+  prompt_tokens     Int?
+  completion_tokens Int?
+  latency_ms        Int?
+
+  was_overridden  Boolean @default(false)
+  override_by     String? @db.Uuid
+  override_reason String? @db.Text
+  override_action Json?   @db.JsonB
+
+  seeded_precedent_id String? @db.Uuid
+
+  decided_at  DateTime  @default(now()) @db.Timestamptz
+  executed_at DateTime? @db.Timestamptz
+
+  business     businesses    @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  conversation conversations @relation(fields: [conversation_id], references: [id])
+  task         tasks?        @relation(fields: [task_id], references: [id])
+  precedents   ai_precedents[]
+
+  @@index([business_id, outcome, decided_at(sort: Desc)])
+  @@index([conversation_id, decided_at(sort: Desc)])
+  @@index([business_id, type, decided_at(sort: Desc)])
+  @@index([was_overridden, decided_at(sort: Desc)])
+  @@map("ai_decisions")
+}
+
+/// Learned patterns from human corrections — fed back into the RAG pipeline.
+model ai_precedents {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+  /// The ai_decision that was overridden
+  decision_id String @db.Uuid
+
+  situation_summary String  @db.Text
+  intent            String? @db.VarChar(100)
+
+  ai_action       Json    @db.JsonB
+  human_action    Json    @db.JsonB
+  human_reasoning String? @db.Text
+
+  /// Negative means AI was overconfident
+  confidence_delta Decimal @db.Decimal(5, 4)
+
+  apply_count     Int       @default(0)
+  last_applied_at DateTime? @db.Timestamptz
+
+  is_active  Boolean   @default(true)
+  expires_at DateTime? @db.Timestamptz
+
+  /// Qdrant vector point ID for this precedent
+  qdrant_point_id String? @db.Uuid
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+
+  business businesses   @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  decision ai_decisions @relation(fields: [decision_id], references: [id])
+
+  @@index([business_id, intent, is_active])
+  @@index([business_id, last_applied_at(sort: Desc)])
+  @@map("ai_precedents")
+}
+
+/// Tracks documents embedded in Qdrant so the vector store can be managed.
+model vector_embeddings_metadata {
+  id          String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String              @db.Uuid
+  entity_type EmbeddingEntityType
+  /// FK to whichever table (polymorphic)
+  entity_id   String              @db.Uuid
+
+  /// e.g. "gosumo_business_<uuid>"
+  collection      String @db.VarChar(100)
+  qdrant_point_id String @db.Uuid
+
+  /// SHA-256 of embedded text — re-embed when this changes
+  content_hash String @db.Char(64)
+  /// Embedding model version
+  model_id     String @db.VarChar(100)
+
+  embedded_at   DateTime @db.Timestamptz
+  needs_reindex Boolean  @default(false)
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business     businesses      @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  // entity_id is a polymorphic FK resolved at application layer using entity_type.
+  // No Prisma relations here — queries use: WHERE entity_type = 'X' AND entity_id = uuid.
+
+  @@unique([entity_type, entity_id])
+  @@index([business_id, entity_type, needs_reindex])
+  @@index([qdrant_point_id])
+  @@map("vector_embeddings_metadata")
+}
+
+/// HITL task queue — created when AI confidence is below the auto-execute threshold.
+model tasks {
+  id              String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id     String       @db.Uuid
+  conversation_id String       @db.Uuid
+  ai_decision_id  String?      @db.Uuid
+
+  type     TaskType
+  status   TaskStatus   @default(PENDING)
+  priority TaskPriority @default(MEDIUM)
+  title    String       @db.VarChar(500)
+  description String?   @db.Text
+
+  assigned_to String?   @db.Uuid
+  assigned_at DateTime? @db.Timestamptz
+
+  /// {message, actions, confidence}
+  ai_draft Json? @db.JsonB
+
+  resolved_by     String?   @db.Uuid
+  resolved_at     DateTime? @db.Timestamptz
+  resolution_note String?   @db.Text
+  resolution      Json?     @db.JsonB
+
+  due_at          DateTime? @db.Timestamptz
+  sla_minutes     Int?
+  sla_breached    Boolean   @default(false)
+  sla_breached_at DateTime? @db.Timestamptz
+
+  /// FK to parent task (for escalation chains)
+  escalated_from   String? @db.Uuid
+  escalation_level Int     @default(0)
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business     businesses    @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  conversation conversations @relation(fields: [conversation_id], references: [id])
+  assignee     team_members? @relation("AssignedTo", fields: [assigned_to], references: [id])
+  resolver     team_members? @relation("ResolvedBy", fields: [resolved_by], references: [id])
+  parent_task  tasks?        @relation("EscalationChain", fields: [escalated_from], references: [id])
+  child_tasks  tasks[]       @relation("EscalationChain")
+  ai_decisions ai_decisions[]
+
+  @@index([business_id, status, priority, created_at(sort: Desc)])
+  @@index([business_id, assigned_to, status])
+  @@index([business_id, due_at, status])
+  @@index([conversation_id])
+  @@map("tasks")
+}
+
+// ─────────────────────────────────────────────
+// COMMERCE LAYER
+// ─────────────────────────────────────────────
+
+/// Product/service catalog categories (tree structure via parent_id).
+model catalog_categories {
+  id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String  @db.Uuid
+  /// null = root category
+  parent_id   String? @db.Uuid
+  name        String  @db.VarChar(255)
+  slug        String  @db.VarChar(100)
+  description String? @db.Text
+  image_url   String? @db.Text
+  sort_order  Int     @default(0)
+  is_active   Boolean @default(true)
+  metadata    Json    @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business  businesses           @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  parent    catalog_categories?  @relation("CategoryTree", fields: [parent_id], references: [id])
+  children  catalog_categories[] @relation("CategoryTree")
+  items     catalog_items[]
+
+  @@unique([business_id, slug])
+  @@index([business_id, parent_id, is_active])
+  @@map("catalog_categories")
+}
+
+/// A product, service, or digital item in the catalog.
+model catalog_items {
+  id                String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id       String          @db.Uuid
+  category_id       String?         @db.Uuid
+  type              CatalogItemType @default(PRODUCT)
+  name              String          @db.VarChar(500)
+  slug              String          @db.VarChar(200)
+  description       String?         @db.Text
+  short_description String?         @db.VarChar(500)
+
+  price         Decimal  @db.Decimal(12, 2)
+  compare_price Decimal? @db.Decimal(12, 2)
+  currency      String   @default("INR") @db.Char(3)
+  tax_rate      Decimal  @default(0) @db.Decimal(5, 4)
+  tax_inclusive Boolean  @default(true)
+
+  sku               String? @db.VarChar(100)
+  barcode           String? @db.VarChar(100)
+  stock_quantity    Int?
+  track_inventory   Boolean @default(false)
+  allow_backorder   Boolean @default(false)
+  low_stock_threshold Int?
+
+  weight_grams Int?
+  length_cm    Decimal? @db.Decimal(8, 2)
+  width_cm     Decimal? @db.Decimal(8, 2)
+  height_cm    Decimal? @db.Decimal(8, 2)
+
+  /// [{url, alt, isPrimary}]
+  images Json @default("[]") @db.JsonB
+
+  tags String[] @default([])
+
+  /// AI-friendly description for RAG
+  ai_description String? @db.Text
+
+  is_active  Boolean @default(true)
+  is_featured Boolean @default(false)
+  sort_order Int     @default(0)
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business         businesses           @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  category         catalog_categories?  @relation(fields: [category_id], references: [id])
+  variants         catalog_variants[]
+  // Note: vector embedding is looked up via entity_type='CATALOG_ITEM' + entity_id in vector_embeddings_metadata.
+  // No Prisma relation here because entity_id is a polymorphic FK shared across multiple entity types.
+
+  @@unique([business_id, slug])
+  @@index([business_id, category_id, is_active])
+  @@index([business_id, type, is_active])
+  @@index([business_id, is_featured, is_active])
+  @@map("catalog_items")
+}
+
+/// Product variants (size, colour, etc.).
+model catalog_variants {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+  item_id     String @db.Uuid
+
+  name    String  @db.VarChar(255)
+  sku     String? @db.VarChar(100)
+  barcode String? @db.VarChar(100)
+
+  /// null = inherit from parent item
+  price         Decimal? @db.Decimal(12, 2)
+  compare_price Decimal? @db.Decimal(12, 2)
+
+  /// {size: "XL", color: "red"}
+  attributes Json @default("{}") @db.JsonB
+
+  stock_quantity Int?
+  is_active      Boolean @default(true)
+  sort_order     Int     @default(0)
+  image_url      String? @db.Text
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses    @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  item     catalog_items @relation(fields: [item_id], references: [id], onDelete: Cascade)
+
+  @@unique([item_id, sku], map: "uq_variant_item_sku")
+  @@index([business_id, item_id, is_active])
+  @@map("catalog_variants")
+}
+
+/// Product bundles (multiple items sold together at a package price).
+model catalog_packages {
+  id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String  @db.Uuid
+  name        String  @db.VarChar(500)
+  description String? @db.Text
+  price       Decimal @db.Decimal(12, 2)
+  is_active   Boolean @default(true)
+
+  /// [{itemId, variantId?, quantity, label}]
+  items    Json @default("[]") @db.JsonB
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, is_active])
+  @@map("catalog_packages")
+}
+
+/// A customer order (can span multiple items and shipments).
+model orders {
+  id              String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id     String      @db.Uuid
+  client_id       String      @db.Uuid
+  conversation_id String?     @db.Uuid
+  /// Human-readable: "ORD-2024-00123"
+  order_number    String      @db.VarChar(50)
+  status          OrderStatus @default(CONFIRMED)
+
+  /// Line items snapshot — denormalized at order time
+  line_items Json @db.JsonB
+
+  subtotal         Decimal @db.Decimal(14, 2)
+  discount_amount  Decimal @default(0) @db.Decimal(14, 2)
+  tax_amount       Decimal @default(0) @db.Decimal(14, 2)
+  shipping_fee     Decimal @default(0) @db.Decimal(14, 2)
+  total            Decimal @db.Decimal(14, 2)
+  currency         String  @default("INR") @db.Char(3)
+
+  discount_code  String?  @db.VarChar(50)
+  /// PERCENT | FIXED
+  discount_type  String?  @db.VarChar(20)
+  discount_value Decimal? @db.Decimal(10, 2)
+
+  shipping_address_id String? @db.Uuid
+  shipping_option_id  String? @db.Uuid
+
+  customer_note String? @db.Text
+  internal_note String? @db.Text
+
+  placed_at           DateTime  @default(now()) @db.Timestamptz
+  confirmed_at        DateTime? @db.Timestamptz
+  cancelled_at        DateTime? @db.Timestamptz
+  cancellation_reason String?   @db.Text
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business         businesses          @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  client           clients             @relation(fields: [client_id], references: [id])
+  shipping_address shipping_addresses? @relation(fields: [shipping_address_id], references: [id])
+  shipping_option  shipping_options?   @relation(fields: [shipping_option_id], references: [id])
+  payments         payments[]
+  shipments        shipments[]
+  refunds          refunds[]
+
+  @@unique([business_id, order_number])
+  @@index([business_id, status, placed_at(sort: Desc)])
+  @@index([business_id, client_id, status])
+  @@index([client_id, placed_at(sort: Desc)])
+  @@map("orders")
+}
+
+/// A payment record (one order can have multiple payment attempts).
+model payments {
+  id          String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String         @db.Uuid
+  order_id    String?        @db.Uuid
+  client_id   String         @db.Uuid
+  status      PaymentStatus  @default(PENDING)
+  method      PaymentMethod?
+  gateway     PaymentGateway @default(RAZORPAY)
+
+  /// Amount in rupees (Decimal for precision)
+  amount   Decimal @db.Decimal(14, 2)
+  currency String  @default("INR") @db.Char(3)
+
+  gateway_order_id   String? @db.VarChar(255)
+  gateway_payment_id String? @db.VarChar(255)
+  gateway_signature  String? @db.VarChar(500)
+
+  payment_link_url        String?   @db.Text
+  payment_link_id         String?   @db.VarChar(255)
+  payment_link_expires_at DateTime? @db.Timestamptz
+
+  initiated_at   DateTime? @db.Timestamptz
+  captured_at    DateTime? @db.Timestamptz
+  failed_at      DateTime? @db.Timestamptz
+  failure_reason String?   @db.Text
+
+  gateway_response Json @default("{}") @db.JsonB
+  metadata         Json @default("{}") @db.JsonB
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  order    orders?    @relation(fields: [order_id], references: [id])
+  client   clients    @relation(fields: [client_id], references: [id])
+  refunds  refunds[]
+
+  @@index([business_id, status, created_at(sort: Desc)])
+  @@index([order_id])
+  @@index([client_id])
+  @@index([gateway_payment_id])
+  @@index([gateway_order_id])
+  @@map("payments")
+}
+
+/// A refund against a payment.
+model refunds {
+  id          String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String       @db.Uuid
+  payment_id  String       @db.Uuid
+  order_id    String?      @db.Uuid
+  status      RefundStatus @default(INITIATED)
+  amount      Decimal      @db.Decimal(14, 2)
+  currency    String       @default("INR") @db.Char(3)
+
+  reason String? @db.Text
+  notes  String? @db.Text
+
+  gateway_refund_id String? @db.VarChar(255)
+  gateway_response  Json    @default("{}") @db.JsonB
+
+  requires_approval Boolean   @default(false)
+  approved_by       String?   @db.Uuid
+  approved_at       DateTime? @db.Timestamptz
+  rejected_by       String?   @db.Uuid
+  rejected_at       DateTime? @db.Timestamptz
+  rejection_reason  String?   @db.Text
+
+  initiated_at DateTime  @default(now()) @db.Timestamptz
+  completed_at DateTime? @db.Timestamptz
+  failed_at    DateTime? @db.Timestamptz
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  payment  payments   @relation(fields: [payment_id], references: [id])
+  order    orders?    @relation(fields: [order_id], references: [id])
+
+  @@index([business_id, status, created_at(sort: Desc)])
+  @@index([payment_id])
+  @@index([order_id])
+  @@map("refunds")
+}
+
+/// A customer shipping address.
+model shipping_addresses {
+  id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String  @db.Uuid
+  client_id   String  @db.Uuid
+  /// "Home", "Work"
+  label       String? @db.VarChar(50)
+  is_default  Boolean @default(false)
+
+  recipient_name String  @db.VarChar(255)
+  line1          String  @db.VarChar(500)
+  line2          String? @db.VarChar(500)
+  city           String  @db.VarChar(100)
+  state          String  @db.VarChar(100)
+  pincode        String  @db.VarChar(20)
+  country        String  @default("IN") @db.Char(2)
+  phone          String? @db.VarChar(20)
+
+  latitude  Decimal? @db.Decimal(10, 7)
+  longitude Decimal? @db.Decimal(10, 7)
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business  businesses  @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  client    clients     @relation(fields: [client_id], references: [id], onDelete: Cascade)
+  orders    orders[]
+  shipments shipments[]
+
+  @@index([client_id, is_default])
+  @@index([business_id, client_id])
+  @@map("shipping_addresses")
+}
+
+/// Available shipping options configured by a business.
+model shipping_options {
+  id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String  @db.Uuid
+  name        String  @db.VarChar(255)
+  carrier     String? @db.VarChar(100)
+  is_active   Boolean @default(true)
+
+  base_fee                     Decimal  @db.Decimal(10, 2)
+  per_kg_fee                   Decimal  @default(0) @db.Decimal(10, 2)
+  min_order_value_for_free     Decimal? @db.Decimal(14, 2)
+
+  min_days Int?
+  max_days Int?
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business  businesses  @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  orders    orders[]
+  shipments shipments[]
+
+  @@index([business_id, is_active])
+  @@map("shipping_options")
+}
+
+/// A physical shipment for an order.
+model shipments {
+  id                  String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id         String         @db.Uuid
+  order_id            String         @db.Uuid
+  shipping_address_id String?        @db.Uuid
+  shipping_option_id  String?        @db.Uuid
+  status              ShipmentStatus @default(PENDING)
+  carrier             String?        @db.VarChar(100)
+  service_type        String?        @db.VarChar(100)
+
+  /// "SHIPROCKET" | "DELHIVERY" | "MANUAL"
+  provider             String? @db.VarChar(50)
+  provider_shipment_id String? @db.VarChar(255)
+  tracking_number      String? @db.VarChar(255)
+  tracking_url         String? @db.Text
+  /// Air Waybill for Shiprocket
+  awb_code             String? @db.VarChar(100)
+
+  weight_grams Int?
+  /// {length, width, height}
+  dimensions   Json? @db.JsonB
+
+  shipping_cost Decimal? @db.Decimal(10, 2)
+
+  estimated_delivery_at DateTime? @db.Timestamptz
+  shipped_at            DateTime? @db.Timestamptz
+  delivered_at          DateTime? @db.Timestamptz
+  returned_at           DateTime? @db.Timestamptz
+
+  /// [{status, location, description, timestamp}]
+  tracking_events Json @default("[]") @db.JsonB
+
+  notes    String? @db.Text
+  metadata Json    @default("{}") @db.JsonB
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business         businesses          @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  order            orders              @relation(fields: [order_id], references: [id])
+  shipping_address shipping_addresses? @relation(fields: [shipping_address_id], references: [id])
+  shipping_option  shipping_options?   @relation(fields: [shipping_option_id], references: [id])
+
+  @@index([business_id, status, created_at(sort: Desc)])
+  @@index([order_id])
+  @@index([tracking_number])
+  @@index([provider_shipment_id])
+  @@map("shipments")
+}
+
+/// A booking / appointment.
+model bookings {
+  id              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id     String        @db.Uuid
+  client_id       String        @db.Uuid
+  catalog_item_id String?       @db.Uuid
+  status          BookingStatus @default(PENDING)
+
+  start_at         DateTime @db.Timestamptz
+  end_at           DateTime @db.Timestamptz
+  timezone         String   @default("Asia/Kolkata") @db.VarChar(50)
+  duration_minutes Int
+
+  staff_id String? @db.Uuid
+
+  /// "IN_PERSON" | "ONLINE" | "HOME_VISIT"
+  location_type    String? @db.VarChar(20)
+  location_address String? @db.Text
+  meeting_url      String? @db.Text
+
+  gcal_event_id    String? @db.VarChar(255)
+  gcal_calendar_id String? @db.VarChar(255)
+
+  price          Decimal? @db.Decimal(12, 2)
+  deposit_amount Decimal? @db.Decimal(12, 2)
+  payment_id     String?  @db.Uuid
+
+  reminders_sent   Int       @default(0)
+  last_reminder_at DateTime? @db.Timestamptz
+
+  cancelled_at        DateTime? @db.Timestamptz
+  cancellation_reason String?   @db.Text
+  /// "CLIENT" | "BUSINESS" | "SYSTEM"
+  cancelled_by        String?   @db.VarChar(20)
+
+  notes    String? @db.Text
+  metadata Json    @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  client   clients    @relation(fields: [client_id], references: [id])
+
+  @@index([business_id, status, start_at])
+  @@index([business_id, client_id])
+  @@index([business_id, staff_id, start_at])
+  @@index([gcal_event_id])
+  @@map("bookings")
+}
+
+// ─────────────────────────────────────────────
+// ENGAGEMENT LAYER
+// ─────────────────────────────────────────────
+
+/// A marketing or lifecycle campaign (broadcast, drip, trigger-based).
+model campaigns {
+  id          String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String         @db.Uuid
+  name        String         @db.VarChar(255)
+  description String?        @db.Text
+  type        CampaignType
+  status      CampaignStatus @default(DRAFT)
+  channel     ChannelType
+
+  /// {segment, filters, estimatedCount}
+  audience Json @default("{}") @db.JsonB
+
+  template_id String? @db.Uuid
+  content     Json?   @db.JsonB
+
+  scheduled_at DateTime? @db.Timestamptz
+  started_at   DateTime? @db.Timestamptz
+  completed_at DateTime? @db.Timestamptz
+  paused_at    DateTime? @db.Timestamptz
+
+  /// [{stepNumber, delayHours, templateId, content}] for DRIP campaigns
+  drip_steps Json @default("[]") @db.JsonB
+
+  total_recipients Int @default(0)
+  sent_count       Int @default(0)
+  delivered_count  Int @default(0)
+  read_count       Int @default(0)
+  reply_count      Int @default(0)
+  conversion_count Int @default(0)
+  opt_out_count    Int @default(0)
+  error_count      Int @default(0)
+
+  /// BullMQ job reference
+  job_id     String? @db.VarChar(255)
+  created_by String? @db.Uuid
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business         businesses         @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  messages         messages[]
+  analytics_events analytics_events[]
+
+  @@index([business_id, status, scheduled_at])
+  @@index([business_id, type, status])
+  @@map("campaigns")
+}
+
+// ─────────────────────────────────────────────
+// OPERATIONS LAYER
+// ─────────────────────────────────────────────
+
+/// High-volume event stream for analytics and autonomy KPIs.
+/// Partitioned by created_at month in production.
+model analytics_events {
+  id          String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String                 @db.Uuid
+  category    AnalyticsEventCategory
+  /// e.g. "message.sent", "order.created"
+  event_name  String                 @db.VarChar(100)
+
+  conversation_id String? @db.Uuid
+  client_id       String? @db.Uuid
+  order_id        String? @db.Uuid
+  campaign_id     String? @db.Uuid
+  team_member_id  String? @db.Uuid
+
+  /// Flexible event payload
+  properties Json @default("{}") @db.JsonB
+
+  /// "AI" | "HUMAN" | "SYSTEM"
+  actor_type String? @db.VarChar(20)
+  actor_id   String? @db.Uuid
+
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  business     businesses     @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  client       clients?       @relation(fields: [client_id], references: [id])
+  campaign     campaigns?     @relation(fields: [campaign_id], references: [id])
+  conversation conversations? @relation(fields: [conversation_id], references: [id])
+
+  @@index([business_id, category, event_name, created_at(sort: Desc)])
+  @@index([business_id, client_id, created_at(sort: Desc)])
+  @@index([business_id, campaign_id, created_at(sort: Desc)])
+  @@index([business_id, created_at(sort: Desc)])
+  @@map("analytics_events")
+}
+
+/// Immutable audit log — append-only, no UPDATE or DELETE ever runs here.
+model audit_logs {
+  id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  /// null for platform-level events
+  business_id String? @db.Uuid
+
+  /// "TEAM_MEMBER" | "AI" | "SYSTEM" | "API"
+  actor_type  String  @db.VarChar(20)
+  actor_id    String? @db.Uuid
+  /// Snapshot of email at time of action
+  actor_email String? @db.VarChar(320)
+
+  action        AuditAction
+  resource_type String      @db.VarChar(100)
+  resource_id   String?     @db.Uuid
+  resource_before Json?     @db.JsonB
+  resource_after  Json?     @db.JsonB
+
+  ip_address  String? @db.VarChar(45)
+  user_agent  String? @db.Text
+  request_id  String? @db.VarChar(64)
+  description String? @db.Text
+
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  business    businesses?   @relation(fields: [business_id], references: [id])
+  team_member team_members? @relation(fields: [actor_id], references: [id])
+
+  @@index([business_id, action, created_at(sort: Desc)])
+  @@index([business_id, resource_type, resource_id, created_at(sort: Desc)])
+  @@index([actor_id, created_at(sort: Desc)])
+  @@index([created_at(sort: Desc)])
+  @@map("audit_logs")
+}

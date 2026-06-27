@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "paths": {
+      "@gosumo/shared": ["../../packages/shared/src"],
+      "@gosumo/database": ["../../packages/database/src"],
+      "@gosumo/config": ["../../packages/config/src"],
+      "@modules/*": ["./src/modules/*"],
+      "@common/*": ["./src/common/*"],
+      "@config/*": ["./src/config/*"]
+    }
+  },
+  "include": ["src/**/*", "test/**/*"]
+}

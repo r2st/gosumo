@@ -1,0 +1,86 @@
+version: '3.9'
+
+# ============================================================
+# GoSumo — Local Development Services
+# Usage: docker compose -f docker/docker-compose.yml up -d
+# ============================================================
+
+networks:
+  gosumo-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  qdrant-data:
+
+services:
+  # ----------------------------------------------------------
+  # PostgreSQL 16
+  # ----------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: gosumo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gosumo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gosumo}
+      POSTGRES_DB: ${POSTGRES_DB:-gosumo_db}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-gosumo} -d ${POSTGRES_DB:-gosumo_db}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - gosumo-net
+
+  # ----------------------------------------------------------
+  # Redis 7
+  # ----------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: gosumo-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - gosumo-net
+
+  # ----------------------------------------------------------
+  # Qdrant Vector Database
+  # ----------------------------------------------------------
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: gosumo-qdrant
+    restart: unless-stopped
+    ports:
+      - '${QDRANT_PORT:-6333}:6333'
+      - '${QDRANT_GRPC_PORT:-6334}:6334'
+    volumes:
+      - qdrant-data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__HTTP_PORT: 6333
+      QDRANT__SERVICE__GRPC_PORT: 6334
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -sf http://localhost:6333/healthz || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - gosumo-net

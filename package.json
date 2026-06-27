@@ -1,0 +1,27 @@
+{
+  "name": "gosumo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GoSumo - AI-powered client management platform",
+  "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "test": "turbo test",
+    "test:unit": "turbo test:unit",
+    "test:integration": "turbo test:integration",
+    "test:e2e": "turbo test:e2e",
+    "lint": "turbo lint",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "clean": "turbo clean",
+    "db:migrate": "pnpm --filter @gosumo/database migrate:dev",
+    "db:generate": "pnpm --filter @gosumo/database generate",
+    "db:seed": "pnpm --filter @gosumo/database seed",
+    "docker:up": "docker compose -f docker/docker-compose.yml up -d",
+    "docker:down": "docker compose -f docker/docker-compose.yml down"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}
