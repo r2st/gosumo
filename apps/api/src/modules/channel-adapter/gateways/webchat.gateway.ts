@@ -20,6 +20,13 @@ import { PrismaService } from "../../../common/services/prisma.service";
 import { ChannelAdapterService } from "../channel-adapter.service";
 import { webchatResponseMap } from "../adapters/webchat.adapter";
 
+interface SessionContext {
+  businessId: string;
+  channelAccountId: string;
+  clientId: string;
+  conversationId: string;
+}
+
 @WebSocketGateway({
   namespace: "/webchat",
   cors: { origin: "*", credentials: true },
@@ -35,6 +42,9 @@ export class WebChatGateway implements OnGatewayConnection, OnGatewayDisconnect 
 
   /** Map socket.id -> sessionId for cleanup on disconnect */
   private readonly socketToSession = new Map<string, string>();
+
+  /** Map sessionId -> business/client/conversation context */
+  private readonly sessionContext = new Map<string, SessionContext>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -52,6 +62,7 @@ export class WebChatGateway implements OnGatewayConnection, OnGatewayDisconnect 
     if (sessionId) {
       this.sessions.delete(sessionId);
       this.socketToSession.delete(client.id);
+      this.sessionContext.delete(sessionId);
       this.logger.log("WebChat session cleaned up: " + sessionId);
     }
     this.logger.log("WebChat client disconnected: " + client.id);
@@ -81,14 +92,42 @@ export class WebChatGateway implements OnGatewayConnection, OnGatewayDisconnect 
 
     const sessionId = data.sessionId || generateId();
 
+    // Find or create a client for this webchat visitor
+    const clientRecord = await this.findOrCreateWebChatClient(
+      channel.business_id,
+      sessionId,
+      widgetId,
+    );
+
+    // Find or create a conversation
+    const conversation = await this.findOrCreateConversation(
+      channel.business_id,
+      clientRecord.id,
+      widgetId,
+    );
+
+    // Store context for message handling
+    const ctx: SessionContext = {
+      businessId: channel.business_id,
+      channelAccountId: widgetId,
+      clientId: clientRecord.id,
+      conversationId: conversation.id,
+    };
+    this.sessionContext.set(sessionId, ctx);
+
     // Register session
     this.sessions.set(sessionId, client);
     this.socketToSession.set(client.id, sessionId);
 
     const meta = channel.metadata as Record<string, unknown>;
-    const greeting = (meta.greeting as string) || "Hello! How can we help you today?";
+    const greeting = (meta?.greeting as string) || "Hello! How can we help you today?";
 
-    this.logger.log("WebChat session initialized: " + sessionId + " for widget " + widgetId);
+    this.logger.log(
+      "WebChat session initialized: " + sessionId +
+      " for widget " + widgetId +
+      " client " + clientRecord.id +
+      " conversation " + conversation.id,
+    );
 
     return { sessionId, greeting };
   }
@@ -101,32 +140,175 @@ export class WebChatGateway implements OnGatewayConnection, OnGatewayDisconnect 
     const sessionId = data.sessionId;
     const text = data.text;
     const messageId = generateId();
+    const correlationId = generateCorrelationId();
 
-    // Build a NormalizedMessage-like event
-    const event = {
-      id: generateId(),
-      type: "message.received",
-      timestamp: new Date().toISOString(),
-      businessId: "",
-      correlationId: generateCorrelationId(),
-      messageId,
-      conversationId: "",
-      channelAccountId: "",
-      channel: ChannelType.WEB_CHAT,
-      senderExternalId: sessionId,
-      clientId: "",
-      content: {
-        type: MessageContentType.TEXT,
-        text,
-      },
-      metadata: { sessionId },
-    };
+    // Get session context
+    const ctx = this.sessionContext.get(sessionId);
+    if (!ctx) {
+      this.logger.warn("No session context for " + sessionId);
+      return { received: false, messageId };
+    }
 
-    this.eventEmitter.emit("message.received", event);
+    try {
+      // Store the message in the database
+      await this.prisma.messages.create({
+        data: {
+          id: messageId,
+          business_id: ctx.businessId,
+          conversation_id: ctx.conversationId,
+          channel_account_id: ctx.channelAccountId,
+          direction: MessageDirection.INBOUND,
+          type: "TEXT",
+          status: "PENDING",
+          sender_type: "CLIENT",
+          sender_id: ctx.clientId,
+          content: { type: MessageContentType.TEXT, text },
+          text_content: text,
+          external_id: "webchat_" + messageId,
+        },
+      });
 
-    this.logger.log("WebChat message received from session " + sessionId + ": " + text.substring(0, 50));
+      // Update conversation last_message_at
+      await this.prisma.conversations.update({
+        where: { id: ctx.conversationId },
+        data: { last_message_at: new Date(), updated_at: new Date() },
+      });
+
+      // Emit enriched message.received event with all IDs populated
+      const event = {
+        id: generateId(),
+        type: "message.received",
+        timestamp: new Date().toISOString(),
+        businessId: ctx.businessId,
+        correlationId,
+        messageId,
+        conversationId: ctx.conversationId,
+        channelAccountId: ctx.channelAccountId,
+        channel: ChannelType.WEB_CHAT,
+        senderExternalId: sessionId,
+        clientId: ctx.clientId,
+        content: { type: MessageContentType.TEXT, text },
+        metadata: { sessionId },
+      };
+
+      this.eventEmitter.emit("message.received", event);
+
+      this.logger.log(
+        "WebChat message stored and emitted: session=" + sessionId +
+        " conversation=" + ctx.conversationId +
+        " msg=" + text.substring(0, 50),
+      );
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error("Failed to process webchat message: " + msg);
+      return { received: false, messageId };
+    }
 
     return { received: true, messageId };
+  }
+
+  /**
+   * Find or create a client for a webchat visitor.
+   * Uses the sessionId as the external identifier.
+   */
+  private async findOrCreateWebChatClient(
+    businessId: string,
+    sessionId: string,
+    channelAccountId: string,
+  ) {
+    // Check if a client with this webchat session exists via channel_contacts
+    const existingContact = await this.prisma.channel_contacts.findFirst({
+      where: {
+        business_id: businessId,
+        channel: ChannelType.WEB_CHAT,
+        external_id: sessionId,
+      },
+      include: { client: true },
+    });
+
+    if (existingContact?.client) {
+      return existingContact.client;
+    }
+
+    // Create a new client and channel contact
+    const clientId = generateId();
+    const client = await this.prisma.clients.create({
+      data: {
+        id: clientId,
+        business_id: businessId,
+        name: "Web Visitor",
+      },
+    });
+
+    await this.prisma.channel_contacts.create({
+      data: {
+        id: generateId(),
+        business_id: businessId,
+        client_id: clientId,
+        channel: ChannelType.WEB_CHAT,
+        channel_account_id: channelAccountId,
+        external_id: sessionId,
+      },
+    });
+
+    this.logger.log("Created webchat client " + clientId + " for session " + sessionId);
+
+    return client;
+  }
+
+  /**
+   * Find or create a conversation for a webchat client.
+   */
+  private async findOrCreateConversation(
+    businessId: string,
+    clientId: string,
+    channelAccountId: string,
+  ) {
+    // Find an active (non-resolved) conversation for this client on this channel
+    const existing = await this.prisma.conversations.findFirst({
+      where: {
+        business_id: businessId,
+        client_id: clientId,
+        channel_account_id: channelAccountId,
+        status: { not: "RESOLVED" },
+      },
+      orderBy: { created_at: "desc" },
+    });
+
+    if (existing) {
+      return existing;
+    }
+
+    // Create a new conversation
+    const conversationId = generateId();
+    const conversation = await this.prisma.conversations.create({
+      data: {
+        id: conversationId,
+        business_id: businessId,
+        client_id: clientId,
+        channel_account_id: channelAccountId,
+        channel: ChannelType.WEB_CHAT,
+        status: "OPEN",
+        last_message_at: new Date(),
+      },
+    });
+
+    // Emit conversation.created event
+    this.eventEmitter.emit("conversation.created", {
+      type: "conversation.created",
+      id: generateId(),
+      timestamp: new Date().toISOString(),
+      businessId,
+      correlationId: generateCorrelationId(),
+      conversationId: conversation.id,
+      clientId,
+      channelAccountId,
+      channel: ChannelType.WEB_CHAT,
+    });
+
+    this.logger.log("Created webchat conversation " + conversationId + " for client " + clientId);
+
+    return conversation;
   }
 
   /**
