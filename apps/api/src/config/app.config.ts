@@ -5,6 +5,7 @@ export default registerAs('app', () => ({
   port: parseInt(process.env['PORT'] ?? '3000', 10),
   env: process.env['NODE_ENV'] ?? 'development',
   corsOrigin: process.env['CORS_ORIGIN'] ?? '*',
+  apiBaseUrl: process.env['API_URL'] ?? process.env['API_BASE_URL'] ?? 'http://localhost:3000',
 
   // Database
   databaseUrl: process.env['DATABASE_URL'],

@@ -96,7 +96,8 @@ const CHANNELS: ChannelDef[] = [
       { name: 'displayName', label: 'Display name', placeholder: 'SMS' },
       { name: 'provider', label: 'Provider', options: ['TWILIO', 'KALEYRA', 'MSG91'] },
       { name: 'phoneNumber', label: 'Sender number (E.164)', placeholder: '+91…' },
-      { name: 'apiKey', label: 'API key', type: 'password' },
+      { name: 'accountSid', label: 'Account SID' },
+      { name: 'authToken', label: 'Auth token', type: 'password' },
     ],
   },
   {
@@ -105,7 +106,7 @@ const CHANNELS: ChannelDef[] = [
     blurb: 'Embed a chat widget on your website.',
     icon: Globe,
     color: 'bg-violet-600',
-    connectPath: '/channels/web-chat/connect',
+    connectPath: '/channels/web_chat/connect',
     fields: [
       { name: 'displayName', label: 'Display name', placeholder: 'Website chat' },
       { name: 'title', label: 'Widget title', placeholder: 'Chat with us' },
@@ -123,6 +124,12 @@ const CHANNELS: ChannelDef[] = [
       { name: 'displayName', label: 'Display name', placeholder: 'Support inbox' },
       { name: 'fromEmail', label: 'From email', type: 'email', placeholder: 'support@business.in' },
       { name: 'fromName', label: 'From name', placeholder: 'Business Support' },
+      { name: 'smtpHost', label: 'SMTP host', placeholder: 'smtp.gmail.com' },
+      { name: 'smtpPort', label: 'SMTP port', placeholder: '587' },
+      { name: 'smtpUser', label: 'SMTP user', placeholder: 'support@business.in' },
+      { name: 'smtpPass', label: 'SMTP password', type: 'password' },
+      { name: 'imapHost', label: 'IMAP host', placeholder: 'imap.gmail.com' },
+      { name: 'imapPort', label: 'IMAP port', placeholder: '993' },
     ],
   },
 ];
@@ -528,14 +535,16 @@ function EmbedModal({
 function buildConnectBody(type: ChannelType, v: Record<string, string>): Record<string, unknown> {
   switch (type) {
     case 'SMS':
-      return { displayName: v.displayName, provider: v.provider, phoneNumber: v.phoneNumber, credentials: { apiKey: v.apiKey } };
+      return { displayName: v.displayName, provider: v.provider, phoneNumber: v.phoneNumber, accountSid: v.accountSid, authToken: v.authToken };
     case 'WEB_CHAT':
       return {
         displayName: v.displayName,
-        widgetConfig: { title: v.title, primaryColor: v.primaryColor || '#4f46e5', position: 'BOTTOM_RIGHT', allowedOrigins: [] },
+        title: v.title || 'Chat with us',
+        primaryColor: v.primaryColor || '#4f46e5',
+        widgetConfig: { title: v.title || 'Chat with us', primaryColor: v.primaryColor || '#4f46e5', position: 'BOTTOM_RIGHT', allowedOrigins: [] },
       };
     case 'EMAIL':
-      return { displayName: v.displayName, fromEmail: v.fromEmail, fromName: v.fromName, smtp: {} };
+      return { displayName: v.displayName, fromEmail: v.fromEmail, fromName: v.fromName, smtp: { host: v.smtpHost, port: Number(v.smtpPort) || 587, user: v.smtpUser, pass: v.smtpPass, imap: { host: v.imapHost, port: Number(v.imapPort) || 993 } } };
     default:
       return v;
   }

@@ -31,7 +31,7 @@ export class ChannelsController {
     @Param("channelType") channelTypeParam: string,
     @Body() body: ConnectChannelDto,
   ): Promise<any> {
-    const channelType = channelTypeParam.toUpperCase() as ChannelType;
+    const channelType = channelTypeParam.toUpperCase().replace(/-/g, "_") as ChannelType;
 
     if (!Object.values(ChannelType).includes(channelType)) {
       throw new BadRequestException(
