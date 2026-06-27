@@ -1,125 +1,185 @@
 'use client';
 
-import { Building2, CreditCard, Globe, Mail, Phone, Shield, User } from 'lucide-react';
-import { PageHeader } from '@/components/page-header';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Avatar } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { useAuth } from '@/providers/auth-provider';
-import { formatDateIST } from '@/lib/format';
+import { useEffect, useState, type ChangeEvent } from 'react';
+import { Building2 } from 'lucide-react';
+import {
+  useBusinessProfile,
+  useBusinessSettings,
+  useUpdateBusinessProfile,
+  useUpdateBusinessSettings,
+} from '@/hooks/use-settings';
+import { SettingsCard, SaveButton, FormRow } from '@/components/settings/settings-kit';
+import { BusinessHoursEditor } from '@/components/settings/business-hours-editor';
+import { Field } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import { LoadingState, ErrorState } from '@/components/ui/states';
+import type { OfficeHours } from '@/lib/feature-types';
+import type { BusinessProfile } from '@/lib/types';
 
-export default function SettingsPage() {
-  const { user, business, logout } = useAuth();
+const TIMEZONES = ['Asia/Kolkata', 'Asia/Dubai', 'Asia/Singapore', 'Asia/Kathmandu', 'Asia/Dhaka', 'Asia/Colombo', 'UTC'];
+const TZ_OPTIONS = TIMEZONES.map((tz) => ({ label: tz, value: tz }));
 
+export default function BusinessProfilePage() {
   return (
-    <div>
-      <PageHeader title="Settings" description="Manage your profile, business and workspace." />
-
-      <div className="grid grid-cols-1 gap-6 p-4 lg:grid-cols-2 lg:p-6">
-        {/* Profile */}
-        <Card>
-          <CardHeader className="flex-row items-center gap-2">
-            <User className="h-4 w-4 text-muted-foreground" />
-            <CardTitle>Your profile</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center gap-3">
-              <Avatar name={user?.name ?? 'User'} src={user?.avatarUrl} size="lg" />
-              <div>
-                <p className="font-semibold">{user?.name}</p>
-                <p className="text-sm text-muted-foreground">{user?.email}</p>
-                {user && <Badge tone="primary" className="mt-1">{user.role}</Badge>}
-              </div>
-            </div>
-            <Row icon={Shield} label="Two-factor auth">
-              <Badge tone={user?.twoFactorEnabled ? 'success' : 'warning'}>
-                {user?.twoFactorEnabled ? 'Enabled' : 'Not enabled'}
-              </Badge>
-            </Row>
-            <Row icon={Mail} label="Member since">
-              <span className="text-sm">{formatDateIST(user?.createdAt)}</span>
-            </Row>
-            <Button variant="outline" size="sm" onClick={() => void logout()}>
-              Sign out
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Business */}
-        <Card>
-          <CardHeader className="flex-row items-center gap-2">
-            <Building2 className="h-4 w-4 text-muted-foreground" />
-            <CardTitle>Business profile</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div>
-              <p className="text-lg font-semibold">{business?.name ?? '—'}</p>
-              <p className="text-sm text-muted-foreground">{business?.industry}</p>
-            </div>
-            {business?.phone && <Row icon={Phone} label="Phone"><span className="text-sm">{business.phone}</span></Row>}
-            {business?.email && <Row icon={Mail} label="Email"><span className="text-sm">{business.email}</span></Row>}
-            {business?.website && (
-              <Row icon={Globe} label="Website">
-                <a href={business.website} target="_blank" rel="noreferrer" className="text-sm text-primary hover:underline">
-                  {business.website}
-                </a>
-              </Row>
-            )}
-            <Row icon={CreditCard} label="Subscription">
-              <div className="flex items-center gap-1.5">
-                <Badge tone="primary">{business?.subscriptionPlan ?? 'FREE'}</Badge>
-                <Badge tone={business?.subscriptionStatus === 'ACTIVE' ? 'success' : 'warning'}>
-                  {business?.subscriptionStatus ?? '—'}
-                </Badge>
-              </div>
-            </Row>
-          </CardContent>
-        </Card>
-
-        {/* Other settings placeholders */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Workspace</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {[
-                { title: 'Channels', desc: 'Connect WhatsApp, Instagram, SMS, Web & Email' },
-                { title: 'Team members', desc: 'Invite and manage roles' },
-                { title: 'AI configuration', desc: 'Confidence thresholds & prompts' },
-              ].map((s) => (
-                <div key={s.title} className="rounded-lg border border-border p-4">
-                  <p className="text-sm font-semibold">{s.title}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{s.desc}</p>
-                  <Button variant="ghost" size="sm" className="mt-2 px-0 text-primary" disabled>
-                    Configure →
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+    <>
+      <ProfileForm />
+      <HoursForm />
+    </>
   );
 }
 
-function Row({
-  icon: Icon,
-  label,
-  children,
+function ProfileForm() {
+  const { data: business, isLoading, isError, refetch } = useBusinessProfile();
+  const update = useUpdateBusinessProfile();
+
+  if (isLoading) return <LoadingState />;
+  if (isError || !business) return <ErrorState onRetry={() => void refetch()} />;
+
+  return <ProfileFormInner key={business.updatedAt} business={business} update={update} />;
+}
+
+function ProfileFormInner({
+  business,
+  update,
 }: {
-  icon: typeof User;
-  label: string;
-  children: React.ReactNode;
+  business: BusinessProfile;
+  update: ReturnType<typeof useUpdateBusinessProfile>;
 }) {
+  const initial = {
+    name: business.name,
+    description: business.description ?? '',
+    logo: business.logo ?? '',
+    phone: business.phone ?? '',
+    email: business.email ?? '',
+    website: business.website ?? '',
+    timezone: business.timezone,
+  };
+  const [form, setForm] = useState(initial);
+  const set =
+    (k: keyof typeof form) => (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+      setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const dirty = JSON.stringify(form) !== JSON.stringify(initial);
+
   return (
-    <div className="flex items-center justify-between border-t border-border pt-3">
-      <span className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Icon className="h-4 w-4" /> {label}
-      </span>
-      {children}
-    </div>
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        update.mutate(form as Partial<BusinessProfile>);
+      }}
+    >
+      <SettingsCard
+        title="Business profile"
+        description="This information appears on customer-facing messages and invoices."
+        footer={<SaveButton isPending={update.isPending} isSuccess={update.isSuccess} isError={update.isError} dirty={dirty} />}
+      >
+        <div className="flex items-center gap-4">
+          <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl border border-border bg-muted">
+            {form.logo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={form.logo} alt="Logo" className="h-full w-full object-cover" />
+            ) : (
+              <Building2 className="h-6 w-6 text-muted-foreground" />
+            )}
+          </div>
+          <Field label="Logo URL" className="flex-1" hint="Paste a hosted image URL (square works best).">
+            <Input value={form.logo} onChange={set('logo')} placeholder="https://…/logo.png" />
+          </Field>
+        </div>
+
+        <FormRow>
+          <Field label="Business name">
+            <Input value={form.name} onChange={set('name')} required />
+          </Field>
+          <Field label="Industry">
+            <Input value={business.industry} disabled />
+          </Field>
+        </FormRow>
+
+        <Field label="Description">
+          <Textarea value={form.description} onChange={set('description')} rows={3} placeholder="What your business does…" />
+        </Field>
+
+        <FormRow>
+          <Field label="Contact phone">
+            <Input value={form.phone} onChange={set('phone')} placeholder="+91…" />
+          </Field>
+          <Field label="Contact email">
+            <Input type="email" value={form.email} onChange={set('email')} placeholder="hello@business.in" />
+          </Field>
+        </FormRow>
+
+        <FormRow>
+          <Field label="Website">
+            <Input value={form.website} onChange={set('website')} placeholder="https://…" />
+          </Field>
+          <Field label="Timezone">
+            <Select options={TZ_OPTIONS} value={form.timezone} onChange={set('timezone')} />
+          </Field>
+        </FormRow>
+      </SettingsCard>
+    </form>
+  );
+}
+
+function HoursForm() {
+  const { data: settings, isLoading, isError, refetch } = useBusinessSettings();
+  const update = useUpdateBusinessSettings();
+  const [hours, setHours] = useState<OfficeHours | null>(null);
+  const [enabled, setEnabled] = useState(false);
+  const [outsideMsg, setOutsideMsg] = useState('');
+
+  useEffect(() => {
+    if (settings) {
+      setHours(settings.officeHours ?? {});
+      setEnabled(settings.officeHoursEnabled);
+      setOutsideMsg(settings.outsideHoursMessage ?? '');
+    }
+  }, [settings]);
+
+  if (isLoading) return <LoadingState />;
+  if (isError || !settings || hours === null) return <ErrorState onRetry={() => void refetch()} />;
+
+  const dirty =
+    enabled !== settings.officeHoursEnabled ||
+    outsideMsg !== (settings.outsideHoursMessage ?? '') ||
+    JSON.stringify(hours) !== JSON.stringify(settings.officeHours ?? {});
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        update.mutate({ officeHoursEnabled: enabled, officeHours: hours, outsideHoursMessage: outsideMsg });
+      }}
+    >
+      <SettingsCard
+        title="Business hours"
+        description="When closed, the AI sends your away message instead of replying live."
+        footer={<SaveButton isPending={update.isPending} isSuccess={update.isSuccess} isError={update.isError} dirty={dirty} />}
+      >
+        <Switch
+          checked={enabled}
+          onChange={setEnabled}
+          label="Enforce business hours"
+          description="Outside these hours, customers receive your away message."
+        />
+        {enabled && (
+          <>
+            <BusinessHoursEditor value={hours} onChange={setHours} />
+            <Field label="Away message" hint="Sent automatically outside business hours.">
+              <Textarea
+                value={outsideMsg}
+                onChange={(e) => setOutsideMsg(e.target.value)}
+                rows={2}
+                placeholder="Thanks for reaching out! We’re currently closed and will reply when we reopen."
+              />
+            </Field>
+          </>
+        )}
+      </SettingsCard>
+    </form>
   );
 }

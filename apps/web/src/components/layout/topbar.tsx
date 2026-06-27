@@ -1,22 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { Bell, ChevronDown, LogOut, Menu, Settings, User } from 'lucide-react';
+import { ChevronDown, LogOut, Menu, Settings, User } from 'lucide-react';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { NotificationCenter } from '@/components/notifications/notification-center';
 import { useAuth } from '@/providers/auth-provider';
-import { useHitlTasks } from '@/hooks/use-queries';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 
 export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
   const { user, business, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [notifOpen, setNotifOpen] = useState(false);
-
-  // Pending HITL tasks drive the notification bell badge.
-  const { data: tasks } = useHitlTasks({ status: 'PENDING', limit: 5 });
-  const pendingCount = tasks?.pagination.total ?? 0;
 
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border bg-card/80 px-4 backdrop-blur lg:px-6">
@@ -34,56 +29,13 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
       </div>
 
       {/* Notifications */}
-      <div className="relative">
-        <button
-          onClick={() => {
-            setNotifOpen((v) => !v);
-            setMenuOpen(false);
-          }}
-          className="relative rounded-md p-2 hover:bg-muted"
-          aria-label="Notifications"
-        >
-          <Bell className="h-5 w-5" />
-          {pendingCount > 0 && (
-            <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-bold text-danger-foreground">
-              {pendingCount > 9 ? '9+' : pendingCount}
-            </span>
-          )}
-        </button>
-
-        {notifOpen && (
-          <DropdownPanel onClose={() => setNotifOpen(false)}>
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <p className="text-sm font-semibold">Notifications</p>
-              {pendingCount > 0 && <Badge tone="danger">{pendingCount} pending</Badge>}
-            </div>
-            <div className="max-h-80 overflow-y-auto scrollbar-thin">
-              {tasks && tasks.data.length > 0 ? (
-                tasks.data.map((task) => (
-                  <Link
-                    key={task.id}
-                    href={`/conversations?task=${task.id}`}
-                    onClick={() => setNotifOpen(false)}
-                    className="block border-b border-border px-4 py-3 last:border-0 hover:bg-muted"
-                  >
-                    <p className="text-sm font-medium">{task.title}</p>
-                    <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{task.description}</p>
-                  </Link>
-                ))
-              ) : (
-                <p className="px-4 py-8 text-center text-sm text-muted-foreground">You&apos;re all caught up 🎉</p>
-              )}
-            </div>
-          </DropdownPanel>
-        )}
-      </div>
+      <NotificationCenter />
 
       {/* User menu */}
       <div className="relative">
         <button
           onClick={() => {
             setMenuOpen((v) => !v);
-            setNotifOpen(false);
           }}
           className="flex items-center gap-2 rounded-md p-1 pr-2 hover:bg-muted"
         >
