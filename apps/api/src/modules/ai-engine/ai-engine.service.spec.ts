@@ -1,3 +1,4 @@
+import { PrismaService } from "../../common/services/prisma.service";
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ChannelType } from '@gosumo/shared';
@@ -140,7 +141,9 @@ function makeHarness(): Harness {
   const knowledgeIngestion = {} as unknown as KnowledgeIngestionService;
   const embeddings = {} as unknown as EmbeddingService;
 
+  const prisma = {} as unknown as PrismaService;
   const service = new AiEngineService(
+    prisma,
     contextLoader,
     intentClassifier,
     rag,

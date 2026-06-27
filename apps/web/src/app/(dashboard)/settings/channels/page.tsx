@@ -4,16 +4,24 @@ import { useEffect, useState, type FormEvent } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
+  ClipboardCopy,
+  Code2,
+  Copy,
   Globe,
   Instagram,
+  Loader2,
   Mail,
   MessageCircle,
   Phone,
   Plug,
+  ShieldCheck,
   Unplug,
+  Wifi,
+  XCircle,
   type LucideIcon,
 } from 'lucide-react';
 import { useChannels, useConnectChannel, useDisconnectChannel } from '@/hooks/use-settings';
+import { useTestChannel, useWebChatEmbed, useToggleChannel } from '@/hooks/use-channels';
 import { SettingsCard } from '@/components/settings/settings-kit';
 import { Button } from '@/components/ui/button';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
@@ -21,12 +29,15 @@ import { Modal } from '@/components/ui/modal';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { LoadingState, ErrorState } from '@/components/ui/states';
 import { ChannelIcon, channelLabel } from '@/components/channel-icon';
 import { cn } from '@/lib/utils';
 import { humanizeEnum, timeAgo } from '@/lib/format';
 import type { Channel, ChannelStatus } from '@/lib/feature-types';
 import type { ChannelType } from '@/lib/types';
+
+/* ─── Field / channel definitions ─────────────────────────────────────────── */
 
 interface FieldDef {
   name: string;
@@ -124,10 +135,87 @@ const STATUS: Record<ChannelStatus, { tone: BadgeTone; label: string }> = {
   RATE_LIMITED: { tone: 'warning', label: 'Rate limited' },
 };
 
+const WEBHOOK_CHANNELS: ChannelType[] = ['WHATSAPP', 'INSTAGRAM', 'SMS'];
+
+/** Mask a credential string, showing only the last 4 chars. */
+function maskCredential(value: string): string {
+  if (!value || value.length < 6) return '••••••••';
+  return '••••••••' + value.slice(-4);
+}
+
+/** Extract a display-worthy credential hint from channel metadata. */
+function getCredentialHint(channel: Channel): string | null {
+  const meta = channel.metadata;
+  if (!meta) return null;
+  const token =
+    (meta.accessTokenLast4 as string) ??
+    (meta.apiKeyLast4 as string) ??
+    (meta.credentialHint as string);
+  if (token) return `Access token: ${maskCredential(token)}`;
+  return null;
+}
+
+/* ─── Main page ───────────────────────────────────────────────────────────── */
+
 export default function ChannelsPage() {
   const { data, isLoading, isError, refetch } = useChannels();
   const disconnect = useDisconnectChannel();
+  const toggleChannel = useToggleChannel();
+  const testChannel = useTestChannel();
+  const embedMutation = useWebChatEmbed();
+
   const [connectDef, setConnectDef] = useState<ChannelDef | null>(null);
+  const [embedModalId, setEmbedModalId] = useState<string | null>(null);
+  const [embedSnippet, setEmbedSnippet] = useState<string | null>(null);
+
+  // Per-channel test results
+  const [testResults, setTestResults] = useState<
+    Record<string, { success: boolean; message: string; latencyMs: number } | null>
+  >({});
+  const [testingIds, setTestingIds] = useState<Set<string>>(new Set());
+
+  // Clipboard helpers — multiple independent copy states
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const copyToClipboard = (text: string, key: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 2000);
+    });
+  };
+
+  const handleTest = (channelId: string) => {
+    setTestingIds((prev) => new Set(prev).add(channelId));
+    setTestResults((prev) => ({ ...prev, [channelId]: null }));
+    testChannel.mutate(channelId, {
+      onSuccess: (result) => {
+        setTestResults((prev) => ({ ...prev, [channelId]: result }));
+        setTestingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(channelId);
+          return next;
+        });
+      },
+      onError: () => {
+        setTestResults((prev) => ({
+          ...prev,
+          [channelId]: { success: false, message: 'Test request failed', latencyMs: 0 },
+        }));
+        setTestingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(channelId);
+          return next;
+        });
+      },
+    });
+  };
+
+  const handleGetEmbed = (channelId: string) => {
+    setEmbedModalId(channelId);
+    setEmbedSnippet(null);
+    embedMutation.mutate(channelId, {
+      onSuccess: (result) => setEmbedSnippet(result.snippet),
+    });
+  };
 
   if (isLoading) return <LoadingState />;
   if (isError || !data) return <ErrorState onRetry={() => void refetch()} />;
@@ -137,36 +225,141 @@ export default function ChannelsPage() {
 
   return (
     <>
+      {/* ── Connected channels ──────────────────────────────────────────── */}
       {connected.length > 0 && (
         <SettingsCard title="Connected channels" description="Channels currently routing messages into GoSumo.">
-          <div className="space-y-2">
-            {connected.map((channel) => (
-              <div key={channel.id} className="flex items-center gap-3 rounded-lg border border-border p-3">
-                <ChannelIcon channel={channel.type} className="h-9 w-9" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate font-medium">{channel.displayName}</p>
-                    <Badge tone={STATUS[channel.status].tone}>{STATUS[channel.status].label}</Badge>
+          <div className="space-y-3">
+            {connected.map((channel) => {
+              const isTesting = testingIds.has(channel.id);
+              const testResult = testResults[channel.id] ?? null;
+              const showWebhook = WEBHOOK_CHANNELS.includes(channel.type) && channel.webhookUrl;
+              const credentialHint = getCredentialHint(channel);
+              const isEnabled = channel.status === 'CONNECTED';
+
+              return (
+                <div key={channel.id} className="rounded-lg border border-border p-3">
+                  {/* Row 1: icon + name + badge */}
+                  <div className="flex items-center gap-3">
+                    <ChannelIcon channel={channel.type} className="h-9 w-9" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate font-medium">{channel.displayName}</p>
+                        <Badge tone={STATUS[channel.status].tone}>{STATUS[channel.status].label}</Badge>
+                      </div>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {channelLabel(channel.type)} · {channel.accountId}
+                        {channel.lastMessageAt ? ` · last message ${timeAgo(channel.lastMessageAt)}` : ''}
+                      </p>
+                      {channel.status === 'ERROR' && channel.errorMessage && (
+                        <p className="mt-0.5 flex items-center gap-1 text-xs text-danger">
+                          <AlertTriangle className="h-3 w-3" /> {channel.errorMessage}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {channelLabel(channel.type)} · {channel.accountId}
-                    {channel.lastMessageAt ? ` · last message ${timeAgo(channel.lastMessageAt)}` : ''}
-                  </p>
-                  {channel.status === 'ERROR' && channel.errorMessage && (
-                    <p className="mt-0.5 flex items-center gap-1 text-xs text-danger">
-                      <AlertTriangle className="h-3 w-3" /> {channel.errorMessage}
-                    </p>
+
+                  {/* Webhook URL (WhatsApp, Instagram, SMS) */}
+                  {showWebhook && (
+                    <div className="mt-2.5 rounded-md border border-border bg-muted/40 px-3 py-2">
+                      <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                        Webhook URL
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <code className="min-w-0 flex-1 truncate text-xs text-foreground">
+                          {channel.webhookUrl}
+                        </code>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => copyToClipboard(channel.webhookUrl, `webhook-${channel.id}`)}
+                        >
+                          {copiedKey === `webhook-${channel.id}` ? (
+                            <><CheckCircle2 className="h-3.5 w-3.5 text-success" /> Copied</>
+                          ) : (
+                            <><Copy className="h-3.5 w-3.5" /> Copy URL</>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Credential hint */}
+                  {credentialHint && (
+                    <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <ShieldCheck className="h-3.5 w-3.5" />
+                      <span>{credentialHint} · stored securely</span>
+                    </div>
+                  )}
+
+                  {/* Action row: Test | Embed | Disconnect + Toggle */}
+                  <div className="mt-3 flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      loading={isTesting}
+                      onClick={() => handleTest(channel.id)}
+                    >
+                      <Wifi className="h-3.5 w-3.5" /> Test
+                    </Button>
+
+                    {channel.type === 'WEB_CHAT' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleGetEmbed(channel.id)}
+                      >
+                        <Code2 className="h-3.5 w-3.5" /> Get Embed Code
+                      </Button>
+                    )}
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      loading={disconnect.isPending}
+                      onClick={() => disconnect.mutate(channel.id)}
+                    >
+                      <Unplug className="h-3.5 w-3.5" /> Disconnect
+                    </Button>
+
+                    <div className="ml-auto">
+                      <Switch
+                        checked={isEnabled}
+                        onChange={(next) =>
+                          toggleChannel.mutate({ channelId: channel.id, enabled: next })
+                        }
+                        disabled={toggleChannel.isPending}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Test result inline feedback */}
+                  {testResult && (
+                    <div
+                      className={cn(
+                        'mt-2 flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium',
+                        testResult.success
+                          ? 'bg-success/10 text-success'
+                          : 'bg-danger/10 text-danger',
+                      )}
+                    >
+                      {testResult.success ? (
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      ) : (
+                        <XCircle className="h-3.5 w-3.5" />
+                      )}
+                      {testResult.success
+                        ? `Connection verified (${testResult.latencyMs}ms)`
+                        : testResult.message}
+                    </div>
                   )}
                 </div>
-                <Button size="sm" variant="outline" loading={disconnect.isPending} onClick={() => disconnect.mutate(channel.id)}>
-                  <Unplug className="h-3.5 w-3.5" /> Disconnect
-                </Button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </SettingsCard>
       )}
 
+      {/* ── Available channels ──────────────────────────────────────────── */}
       <SettingsCard title="Available channels" description="Connect a new channel to start receiving messages.">
         <div className="grid gap-3 sm:grid-cols-2">
           {CHANNELS.map((def) => {
@@ -197,10 +390,27 @@ export default function ChannelsPage() {
         </div>
       </SettingsCard>
 
+      {/* ── Connect modal ───────────────────────────────────────────────── */}
       <ConnectModal def={connectDef} onClose={() => setConnectDef(null)} />
+
+      {/* ── Embed code modal (WEB_CHAT) ─────────────────────────────────── */}
+      <EmbedModal
+        open={!!embedModalId}
+        snippet={embedSnippet}
+        loading={embedMutation.isPending}
+        error={embedMutation.isError}
+        onClose={() => {
+          setEmbedModalId(null);
+          setEmbedSnippet(null);
+        }}
+        onCopy={(text) => copyToClipboard(text, 'embed-snippet')}
+        copied={copiedKey === 'embed-snippet'}
+      />
     </>
   );
 }
+
+/* ─── Connect modal ───────────────────────────────────────────────────────── */
 
 function ConnectModal({ def, onClose }: { def: ChannelDef | null; onClose: () => void }) {
   const connect = useConnectChannel();
@@ -257,6 +467,63 @@ function ConnectModal({ def, onClose }: { def: ChannelDef | null; onClose: () =>
     </Modal>
   );
 }
+
+/* ─── Embed code modal ────────────────────────────────────────────────────── */
+
+function EmbedModal({
+  open,
+  snippet,
+  loading,
+  error,
+  onClose,
+  onCopy,
+  copied,
+}: {
+  open: boolean;
+  snippet: string | null;
+  loading: boolean;
+  error: boolean;
+  onClose: () => void;
+  onCopy: (text: string) => void;
+  copied: boolean;
+}) {
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Web Chat Embed Code"
+      description="Paste this snippet into your website's HTML, just before the closing </body> tag."
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>
+            Close
+          </Button>
+          {snippet && (
+            <Button variant="primary" onClick={() => onCopy(snippet)}>
+              <ClipboardCopy className="h-3.5 w-3.5" /> {copied ? 'Copied!' : 'Copy Snippet'}
+            </Button>
+          )}
+        </>
+      }
+    >
+      {loading && (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      )}
+      {error && (
+        <p className="text-sm text-danger">Failed to fetch embed snippet. Please try again.</p>
+      )}
+      {snippet && (
+        <pre className="max-h-60 overflow-auto rounded-md border border-border bg-muted/50 p-3 text-xs leading-relaxed">
+          <code>{snippet}</code>
+        </pre>
+      )}
+    </Modal>
+  );
+}
+
+/* ─── Helpers ─────────────────────────────────────────────────────────────── */
 
 function buildConnectBody(type: ChannelType, v: Record<string, string>): Record<string, unknown> {
   switch (type) {

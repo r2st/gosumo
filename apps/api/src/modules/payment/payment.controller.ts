@@ -73,6 +73,18 @@ export class PaymentController {
     return { data: data ?? [], pagination: { total: rest.total ?? 0, limit: rest.limit ?? 100, page: rest.page ?? 1, totalPages: rest.totalPages ?? 0 } };
   }
 
+
+  @Get('payments/stats')
+  @ApiOperation({ summary: 'Get payment statistics' })
+  @ApiResponse({ status: 200 })
+  async getPaymentStats(
+    @TenantId() tenantId: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.paymentService.getPaymentStats(tenantId, { from, to });
+  }
+
   @Post('payments/links')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create a payment link via Razorpay' })

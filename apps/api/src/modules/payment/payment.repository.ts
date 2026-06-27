@@ -752,4 +752,31 @@ export class PaymentRepository {
       },
     });
   }
+
+
+  async getPaymentStats(
+    businessId: string,
+    params: { from?: string; to?: string },
+  ) {
+    const where: any = { business_id: businessId };
+    if (params.from || params.to) {
+      where.created_at = {};
+      if (params.from) where.created_at.gte = new Date(params.from);
+      if (params.to) where.created_at.lte = new Date(params.to);
+    }
+    const payments = await this.prisma.payments.findMany({ where });
+    const captured = payments.filter((p: any) => p.status === 'CAPTURED' || p.status === 'SUCCESS');
+    const refunded = payments.filter((p: any) => p.status === 'REFUNDED' || p.status === 'PARTIALLY_REFUNDED');
+    const totalRevenue = captured.reduce((s: number, p: any) => s + (p.amount_paise ?? 0), 0);
+    const refundedAmt = refunded.reduce((s: number, p: any) => s + (p.refund_amount_paise ?? p.amount_paise ?? 0), 0);
+    return {
+      totalRevenue,
+      totalTransactions: payments.length,
+      successRate: payments.length > 0 ? Math.round((captured.length / payments.length) * 100) / 100 : 0,
+      avgTransactionValue: captured.length > 0 ? Math.round(totalRevenue / captured.length) : 0,
+      refundedAmount: refundedAmt,
+      refundCount: refunded.length,
+    };
+  }
+
 }

@@ -174,6 +174,44 @@ export class BookingController {
     return { data, pagination: { total: rest.total ?? 0, limit: rest.limit ?? 10, page: rest.page ?? 1, totalPages: rest.totalPages ?? 0 } };
   }
 
+
+  // ─── Calendar view & Staff list (must be before :id) ───
+
+  @Get('calendar')
+  @ApiOperation({ summary: 'Get bookings as calendar events' })
+  @ApiResponse({ status: 200 })
+  async getCalendar(
+    @TenantId() tenantId: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('staffMemberId') staffMemberId?: string,
+  ) {
+    const query: any = { page: 1, limit: 200 };
+    if (from) query.from = from;
+    if (to) query.to = to;
+    if (staffMemberId) query.staffId = staffMemberId;
+    const result = await this.bookingService.listBookings(tenantId, query);
+    const bookings = (result as any).data ?? [];
+    return {
+      events: bookings.map((b: any) => ({
+        id: b.id,
+        title: b.notes || 'Appointment',
+        start: b.startAt ?? b.start_at,
+        end: b.endAt ?? b.end_at,
+        status: b.status,
+        clientId: b.clientId ?? b.client_id,
+        staffId: b.staffId ?? b.staff_id,
+      })),
+    };
+  }
+
+  @Get('staff')
+  @ApiOperation({ summary: 'List staff for booking assignments' })
+  @ApiResponse({ status: 200 })
+  async getStaff(@TenantId() tenantId: string) {
+    return this.bookingService.getStaffMembers(tenantId);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get a single booking' })
   @ApiParam({ name: 'id', description: 'Booking UUID' })

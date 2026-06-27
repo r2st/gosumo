@@ -11,8 +11,9 @@ import {
   Max,
   MaxLength,
   ValidateNested,
+  IsBoolean,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ChannelType } from '@gosumo/shared';
 
@@ -183,6 +184,33 @@ export class ListClientsQueryDto {
   @Min(1)
   @Max(100)
   limit?: number = 20;
+
+  @ApiPropertyOptional({ description: 'Include related data' })
+  @IsOptional()
+  @IsString()
+  include?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by tags' })
+  @IsOptional()
+  @Transform(({ value }) => (Array.isArray(value) ? value : value ? [value] : undefined))
+  @IsString({ each: true })
+  tags?: string[];
+
+  @ApiPropertyOptional({ enum: ChurnRiskLevel })
+  @IsOptional()
+  @IsEnum(ChurnRiskLevel)
+  churnRiskLevel?: ChurnRiskLevel;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  hasOrders?: boolean;
+
+  @ApiPropertyOptional({ description: 'Search query' })
+  @IsOptional()
+  @IsString()
+  q?: string;
 }
 
 /**

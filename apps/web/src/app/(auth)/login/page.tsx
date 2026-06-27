@@ -25,7 +25,7 @@ function LoginForm() {
     try {
       const ok = await login(email, password);
       if (ok) {
-        router.replace(params.get('next') ?? '/dashboard');
+        router.replace(params?.get('next') ?? '/dashboard');
       } else {
         // 2FA required — the verify screen is out of scope for this build.
         setError('Two-factor authentication is required for this account.');

@@ -847,6 +847,12 @@ export class PaymentService {
    * If the order's metadata indicates paymentMethod is ONLINE,
    * auto-create a payment link.
    */
+
+  async getPaymentStats(businessId: string, params: { from?: string; to?: string }) {
+    return this.repository.getPaymentStats(businessId, params);
+  }
+
+
   @OnEvent('order.created')
   async handleOrderCreated(event: OrderCreatedEvent): Promise<void> {
     // Check if order metadata specifies online payment

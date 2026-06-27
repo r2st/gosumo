@@ -22,6 +22,7 @@ import { HitlModule } from './modules/hitl/hitl.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { ChannelsModule } from './modules/channels/channels.module';
 
 @Module({
   imports: [
@@ -80,6 +81,7 @@ import { AdminModule } from './modules/admin/admin.module';
     NotificationModule,
     AnalyticsModule,
     AdminModule,
+    ChannelsModule,
   ],
 })
 export class AppModule {}

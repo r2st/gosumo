@@ -1253,6 +1253,17 @@ export class BookingService {
    * Auto-confirm a booking when its associated payment succeeds.
    * The payment event carries a `bookingId` (set when the link was created).
    */
+
+  async getStaffMembers(businessId: string): Promise<{ staff: any[] }> {
+    try {
+      const members = await this.prisma.team_members.findMany({ where: { business_id: businessId } });
+      return { staff: (members ?? []).map((m: any) => ({
+        id: m.id, name: m.name ?? m.email?.split('@')[0] ?? 'Staff',
+        email: m.email, role: m.role, avatarUrl: m.avatar_url ?? null,
+      })) };
+    } catch { return { staff: [] }; }
+  }
+
   @OnEvent('payment.success')
   async handlePaymentSuccess(event: PaymentSuccessEvent): Promise<void> {
     const bookingId = (event as PaymentSuccessEvent & { bookingId?: string }).bookingId;

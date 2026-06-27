@@ -390,6 +390,11 @@ export class ListBookingsQueryDto {
   @Min(1)
   @Max(100)
   limit?: number = 20;
+
+  @ApiPropertyOptional({ description: 'Include related data' })
+  @IsOptional()
+  @IsString()
+  include?: string;
 }
 
 // ─────────────────────────────────────────────

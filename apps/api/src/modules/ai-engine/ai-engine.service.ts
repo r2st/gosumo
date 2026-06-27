@@ -1,3 +1,4 @@
+import { PrismaService } from '../../common/services/prisma.service';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
@@ -76,6 +77,7 @@ export class AiEngineService {
   private readonly logger = new Logger(AiEngineService.name);
 
   constructor(
+    private readonly prisma: PrismaService,
     private readonly contextLoader: ContextLoaderService,
     private readonly intentClassifier: IntentClassifierService,
     private readonly rag: RagRetrieverService,
@@ -548,6 +550,27 @@ export class AiEngineService {
    * conversation module enriches and re-emits). Processing is best-effort and
    * never throws back into the event bus.
    */
+
+  // ─── Confidence thresholds ───
+
+  async getConfidenceThresholds(businessId: string) {
+    try {
+      const biz = await this.prisma.businesses.findUniqueOrThrow({ where: { id: businessId } });
+      const s = (biz.ai_settings ?? {}) as Record<string, any>;
+      return { autoExecute: s.autoExecuteThreshold ?? 90, draftReview: s.reviewThreshold ?? 70 };
+    } catch { return { autoExecute: 90, draftReview: 70 }; }
+  }
+
+  async updateConfidenceThresholds(businessId: string, body: { autoExecute?: number; draftReview?: number }) {
+    const biz = await this.prisma.businesses.findUniqueOrThrow({ where: { id: businessId } });
+    const s = { ...((biz.ai_settings ?? {}) as Record<string, any>) };
+    if (body.autoExecute !== undefined) s.autoExecuteThreshold = body.autoExecute;
+    if (body.draftReview !== undefined) s.reviewThreshold = body.draftReview;
+    await this.prisma.businesses.update({ where: { id: businessId }, data: { ai_settings: s as any } });
+    return { autoExecute: s.autoExecuteThreshold ?? 90, draftReview: s.reviewThreshold ?? 70 };
+  }
+
+
   @OnEvent('message.received')
   async handleMessageReceived(event: MessageReceivedEvent): Promise<void> {
     if (!event.conversationId || !event.messageId) {

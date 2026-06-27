@@ -10,6 +10,7 @@ import {
   HttpStatus,
   Logger,
   ParseUUIDPipe,
+  Patch,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { AiEngineService } from './ai-engine.service';
@@ -117,6 +118,26 @@ export class AiEngineController {
     @Body() dto: ClassifyIntentDto,
   ): Promise<IntentClassificationDto> {
     return this.aiEngine.classifyIntent(tenantId, dto.text);
+  }
+
+
+  // ─── Confidence thresholds (settings page) ───
+
+  @Get('confidence/thresholds')
+  @ApiOperation({ summary: 'Get AI confidence thresholds' })
+  @ApiResponse({ status: 200 })
+  async getThresholds(@TenantId() tenantId: string) {
+    return this.aiEngine.getConfidenceThresholds(tenantId);
+  }
+
+  @Patch('confidence/thresholds')
+  @ApiOperation({ summary: 'Update AI confidence thresholds' })
+  @ApiResponse({ status: 200 })
+  async updateThresholds(
+    @TenantId() tenantId: string,
+    @Body() body: { autoExecute?: number; draftReview?: number },
+  ) {
+    return this.aiEngine.updateConfidenceThresholds(tenantId, body);
   }
 
   // ───────────────────────────────────────────────────────────────────
