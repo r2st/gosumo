@@ -260,7 +260,7 @@ export class ChannelsService {
       widgetId: record.id,
       businessId: record.business_id,
       config: meta.widgetConfig || {},
-      embedScript: `<script src="${apiBase}/v1/webchat/widget.js" data-widget-id="${record.id}" data-business-id="${record.business_id}" async></script>`,
+      snippet: `<script src="${apiBase}/v1/webchat/widget.js" data-widget-id="${record.id}" data-business-id="${record.business_id}" async></script>`,
     };
   }
 
