@@ -19,6 +19,7 @@ import { OrderModule } from './modules/order/order.module';
 import { ShippingModule } from './modules/shipping/shipping.module';
 import { CampaignModule } from './modules/campaign/campaign.module';
 import { HitlModule } from './modules/hitl/hitl.module';
+import { NotificationModule } from './modules/notification/notification.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AdminModule } from './modules/admin/admin.module';
 
@@ -76,6 +77,7 @@ import { AdminModule } from './modules/admin/admin.module';
     ShippingModule,
     CampaignModule,
     HitlModule,
+    NotificationModule,
     AnalyticsModule,
     AdminModule,
   ],

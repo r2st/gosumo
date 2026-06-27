@@ -64,4 +64,25 @@ export default registerAs('app', () => ({
     accessKeyId: process.env['AWS_ACCESS_KEY_ID'],
     secretAccessKey: process.env['AWS_SECRET_ACCESS_KEY'],
   },
+
+  // Notification channel providers. When a provider's credentials are absent
+  // the dispatcher runs in "simulation" mode (logs + synthetic message id) so
+  // the rest of the pipeline still works in dev/test.
+  notification: {
+    email: {
+      apiUrl: process.env['EMAIL_API_URL'], // e.g. https://api.resend.com/emails
+      apiKey: process.env['EMAIL_API_KEY'],
+      from: process.env['EMAIL_FROM'] ?? 'no-reply@gosumo.app',
+    },
+    sms: {
+      apiUrl: process.env['SMS_API_URL'], // e.g. MSG91 / Twilio endpoint
+      apiKey: process.env['SMS_API_KEY'],
+      senderId: process.env['SMS_SENDER_ID'] ?? 'GOSUMO',
+    },
+    push: {
+      fcmUrl:
+        process.env['FCM_API_URL'] ?? 'https://fcm.googleapis.com/fcm/send',
+      serverKey: process.env['FCM_SERVER_KEY'],
+    },
+  },
 }));

@@ -493,6 +493,68 @@ export interface CatalogStockOutEvent extends BaseEvent {
 }
 
 // ─────────────────────────────────────────────
+// NOTIFICATION EVENTS
+// ─────────────────────────────────────────────
+
+/** Emitted when a notification has been created and accepted into the queue. */
+export interface NotificationQueuedEvent extends BaseEvent {
+  readonly type: 'notification.queued';
+  notificationId: string;
+  clientId?: string;
+  /** WHATSAPP | SMS | EMAIL | PUSH */
+  channel: string;
+  /** TRANSACTIONAL | MARKETING | REMINDER | SYSTEM */
+  category: string;
+  /** The domain event that triggered it, if any */
+  triggerEvent?: string;
+  scheduledAt?: string;
+}
+
+/** Emitted when a notification was handed to the channel provider. */
+export interface NotificationSentEvent extends BaseEvent {
+  readonly type: 'notification.sent';
+  notificationId: string;
+  clientId?: string;
+  channel: string;
+  category: string;
+  recipient: string;
+  providerMessageId?: string;
+  /** Wall-clock time from dispatch start to provider acknowledgement (ms) */
+  latencyMs: number;
+}
+
+/** Emitted when the provider confirms delivery to the recipient's device. */
+export interface NotificationDeliveredEvent extends BaseEvent {
+  readonly type: 'notification.delivered';
+  notificationId: string;
+  clientId?: string;
+  channel: string;
+  providerMessageId?: string;
+}
+
+/** Emitted when a notification permanently fails after exhausting retries. */
+export interface NotificationFailedEvent extends BaseEvent {
+  readonly type: 'notification.failed';
+  notificationId: string;
+  clientId?: string;
+  channel: string;
+  category: string;
+  recipient: string;
+  reason: string;
+  attempts: number;
+}
+
+/** Emitted when a notification is skipped because of an opt-out/preference. */
+export interface NotificationSkippedEvent extends BaseEvent {
+  readonly type: 'notification.skipped';
+  notificationId: string;
+  clientId?: string;
+  channel: string;
+  category: string;
+  reason: string;
+}
+
+// ─────────────────────────────────────────────
 // UNION TYPE (for typed event bus subscriptions)
 // ─────────────────────────────────────────────
 
@@ -538,7 +600,12 @@ export type DomainEvent =
   | CatalogItemCreatedEvent
   | CatalogItemUpdatedEvent
   | CatalogStockLowEvent
-  | CatalogStockOutEvent;
+  | CatalogStockOutEvent
+  | NotificationQueuedEvent
+  | NotificationSentEvent
+  | NotificationDeliveredEvent
+  | NotificationFailedEvent
+  | NotificationSkippedEvent;
 
 /** Infer the event type from the `type` discriminant */
 export type EventType = DomainEvent['type'];

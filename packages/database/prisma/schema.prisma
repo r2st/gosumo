@@ -285,6 +285,36 @@ enum NotificationTemplateChannel {
   PUSH
 }
 
+/// Lifecycle of a single outbound notification dispatch.
+enum NotificationStatus {
+  /// Created, not yet handed to the queue.
+  PENDING
+  /// Enqueued for delivery (optionally with a delay).
+  QUEUED
+  /// Handed to the channel provider successfully.
+  SENT
+  /// Provider confirmed delivery to the device.
+  DELIVERED
+  /// Recipient opened/read the notification.
+  READ
+  /// Delivery failed after exhausting retries.
+  FAILED
+  /// Cancelled before it could be sent.
+  CANCELLED
+  /// Not sent because the recipient opted out / preference disabled.
+  SKIPPED
+}
+
+/// Categorisation used for preference checks and opt-out rules.
+/// TRANSACTIONAL notifications ignore marketing opt-outs (order/payment receipts);
+/// MARKETING notifications honour every opt-out.
+enum NotificationCategory {
+  TRANSACTIONAL
+  MARKETING
+  REMINDER
+  SYSTEM
+}
+
 enum AuditAction {
   CREATE
   UPDATE
@@ -327,33 +357,33 @@ enum AnalyticsEventCategory {
 
 /// A GoSumo tenant — a small business using the platform.
 model businesses {
-  id          String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  name        String    @db.VarChar(255)
+  id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name        String  @db.VarChar(255)
   /// URL-safe identifier, immutable after creation
-  slug        String    @unique @db.VarChar(100)
-  email       String    @unique @db.VarChar(320)
-  phone       String?   @db.VarChar(20)
+  slug        String  @unique @db.VarChar(100)
+  email       String  @unique @db.VarChar(320)
+  phone       String? @db.VarChar(20)
   /// ISO 3166-1 alpha-2
-  country     String    @default("IN") @db.Char(2)
-  timezone    String    @default("Asia/Kolkata") @db.VarChar(50)
+  country     String  @default("IN") @db.Char(2)
+  timezone    String  @default("Asia/Kolkata") @db.VarChar(50)
   /// ISO 4217
-  currency    String    @default("INR") @db.Char(3)
-  logo_url    String?   @db.Text
-  website_url String?   @db.Text
+  currency    String  @default("INR") @db.Char(3)
+  logo_url    String? @db.Text
+  website_url String? @db.Text
 
-  plan        String    @default("starter") @db.VarChar(50)
+  plan        String @default("starter") @db.VarChar(50)
   /// {maxTeamMembers, maxConversations, maxCampaigns, ...}
-  plan_limits Json      @default("{}") @db.JsonB
+  plan_limits Json   @default("{}") @db.JsonB
 
   /// AI autonomy thresholds and personality settings
-  ai_settings Json      @default("{}") @db.JsonB
+  ai_settings Json @default("{}") @db.JsonB
   /// Business profile text used as AI context
-  profile     Json      @default("{}") @db.JsonB
+  profile     Json @default("{}") @db.JsonB
 
-  is_active   Boolean   @default(true)
-  created_at  DateTime  @default(now()) @db.Timestamptz
-  updated_at  DateTime  @updatedAt @db.Timestamptz
-  deleted_at  DateTime? @db.Timestamptz
+  is_active  Boolean   @default(true)
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
 
   // Relations
   team_members               team_members[]
@@ -373,6 +403,9 @@ model businesses {
   shipments                  shipments[]
   campaigns                  campaigns[]
   notification_templates     notification_templates[]
+  notifications              notifications[]
+  notification_preferences   notification_preferences[]
+  notification_triggers      notification_triggers[]
   tasks                      tasks[]
   ai_decisions               ai_decisions[]
   ai_precedents              ai_precedents[]
@@ -397,45 +430,45 @@ model businesses {
 
 /// A human operator who belongs to a business.
 model team_members {
-  id            String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  business_id   String           @db.Uuid
-  email         String           @db.VarChar(320)
-  name          String           @db.VarChar(255)
-  avatar_url    String?          @db.Text
-  role          TeamMemberRole   @default(STAFF)
-  status        TeamMemberStatus @default(INVITED)
-  phone         String?          @db.VarChar(20)
+  id          String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String           @db.Uuid
+  email       String           @db.VarChar(320)
+  name        String           @db.VarChar(255)
+  avatar_url  String?          @db.Text
+  role        TeamMemberRole   @default(STAFF)
+  status      TeamMemberStatus @default(INVITED)
+  phone       String?          @db.VarChar(20)
 
   /// Hashed password — never stored raw. Null for OAuth-only accounts.
-  password_hash String?          @db.Text
+  password_hash String? @db.Text
   /// AES-256 encrypted TOTP secret
-  totp_secret   String?          @db.Text
+  totp_secret   String? @db.Text
 
   /// Identity provider used to sign in
-  auth_provider AuthProvider     @default(LOCAL)
+  auth_provider AuthProvider @default(LOCAL)
   /// Google account subject id (`sub` claim) — set for GOOGLE accounts
-  google_id     String?          @unique @db.VarChar(255)
-  last_login_at DateTime?        @db.Timestamptz
-  login_count   Int              @default(0)
+  google_id     String?      @unique @db.VarChar(255)
+  last_login_at DateTime?    @db.Timestamptz
+  login_count   Int          @default(0)
 
   /// {email, whatsapp, sound, taskAlerts}
-  notification_prefs Json        @default("{}") @db.JsonB
+  notification_prefs Json @default("{}") @db.JsonB
 
-  invite_token  String?          @unique @db.VarChar(64)
+  invite_token String?   @unique @db.VarChar(64)
   /// FK to team_members (self-referential)
-  invited_by    String?          @db.Uuid
-  invited_at    DateTime?        @db.Timestamptz
+  invited_by   String?   @db.Uuid
+  invited_at   DateTime? @db.Timestamptz
 
-  created_at    DateTime         @default(now()) @db.Timestamptz
-  updated_at    DateTime         @updatedAt @db.Timestamptz
-  deleted_at    DateTime?        @db.Timestamptz
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
 
-  business      businesses       @relation(fields: [business_id], references: [id], onDelete: Cascade)
-  inviter       team_members?    @relation("InvitedBy", fields: [invited_by], references: [id])
-  invitees      team_members[]   @relation("InvitedBy")
-  assigned_tasks tasks[]         @relation("AssignedTo")
-  resolved_tasks tasks[]         @relation("ResolvedBy")
-  audit_logs    audit_logs[]
+  business       businesses     @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  inviter        team_members?  @relation("InvitedBy", fields: [invited_by], references: [id])
+  invitees       team_members[] @relation("InvitedBy")
+  assigned_tasks tasks[]        @relation("AssignedTo")
+  resolved_tasks tasks[]        @relation("ResolvedBy")
+  audit_logs     audit_logs[]
 
   @@unique([business_id, email])
   @@index([business_id, status])
@@ -446,28 +479,28 @@ model team_members {
 
 /// A client/customer that contacts a business.
 model clients {
-  id               String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  business_id      String    @db.Uuid
-  name             String?   @db.VarChar(255)
-  email            String?   @db.VarChar(320)
+  id               String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id      String  @db.Uuid
+  name             String? @db.VarChar(255)
+  email            String? @db.VarChar(320)
   /// E.164 format
-  phone            String?   @db.VarChar(20)
-  avatar_url       String?   @db.Text
-  consumer_user_id String?   @db.Uuid
+  phone            String? @db.VarChar(20)
+  avatar_url       String? @db.Text
+  consumer_user_id String? @db.Uuid
 
   /// AI-built enrichment profile
-  profile          Json      @default("{}") @db.JsonB
+  profile  Json @default("{}") @db.JsonB
   /// Opt-out status per channel: { "WHATSAPP": true }
-  opt_outs         Json      @default("{}") @db.JsonB
+  opt_outs Json @default("{}") @db.JsonB
 
-  ltv_score        Decimal?  @db.Decimal(12, 2)
+  ltv_score         Decimal?  @db.Decimal(12, 2)
   /// 0.0000–1.0000
-  churn_risk       Decimal?  @db.Decimal(5, 4)
-  engagement_score Decimal?  @db.Decimal(5, 4)
+  churn_risk        Decimal?  @db.Decimal(5, 4)
+  engagement_score  Decimal?  @db.Decimal(5, 4)
   scores_updated_at DateTime? @db.Timestamptz
 
-  total_orders       Int     @default(0)
-  total_spent        Decimal @default(0) @db.Decimal(14, 2)
+  total_orders        Int       @default(0)
+  total_spent         Decimal   @default(0) @db.Decimal(14, 2)
   last_interaction_at DateTime? @db.Timestamptz
 
   first_seen_at DateTime  @default(now()) @db.Timestamptz
@@ -475,16 +508,18 @@ model clients {
   updated_at    DateTime  @updatedAt @db.Timestamptz
   deleted_at    DateTime? @db.Timestamptz
 
-  business          businesses         @relation(fields: [business_id], references: [id], onDelete: Cascade)
-  consumer_user     consumer_users?    @relation(fields: [consumer_user_id], references: [id])
-  channel_contacts  channel_contacts[]
-  conversations     conversations[]
-  orders            orders[]
-  bookings          bookings[]
-  payments          payments[]
-  shipping_addresses shipping_addresses[]
-  carts             carts[]
-  analytics_events  analytics_events[]
+  business                 businesses                 @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  consumer_user            consumer_users?            @relation(fields: [consumer_user_id], references: [id])
+  channel_contacts         channel_contacts[]
+  conversations            conversations[]
+  orders                   orders[]
+  bookings                 bookings[]
+  payments                 payments[]
+  shipping_addresses       shipping_addresses[]
+  carts                    carts[]
+  analytics_events         analytics_events[]
+  notifications            notifications[]
+  notification_preferences notification_preferences[]
 
   @@unique([business_id, phone], map: "uq_clients_business_phone")
   @@unique([business_id, email], map: "uq_clients_business_email")
@@ -497,16 +532,16 @@ model clients {
 
 /// Cross-merchant consumer profile (future: one person across multiple businesses).
 model consumer_users {
-  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  phone      String?   @unique @db.VarChar(20)
-  email      String?   @unique @db.VarChar(320)
-  name       String?   @db.VarChar(255)
+  id    String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  phone String? @unique @db.VarChar(20)
+  email String? @unique @db.VarChar(320)
+  name  String? @db.VarChar(255)
 
   created_at DateTime  @default(now()) @db.Timestamptz
   updated_at DateTime  @updatedAt @db.Timestamptz
   deleted_at DateTime? @db.Timestamptz
 
-  clients    clients[]
+  clients clients[]
 
   @@map("consumer_users")
 }
@@ -530,10 +565,10 @@ model channel_accounts {
   external_account String? @db.VarChar(255)
 
   /// Encrypted credentials — actual secrets in KMS/Vault
-  credentials      Json    @default("{}") @db.JsonB
-  webhook_url      String? @db.Text
+  credentials    Json    @default("{}") @db.JsonB
+  webhook_url    String? @db.Text
   /// HMAC secret for signature verification
-  webhook_secret   String? @db.Text
+  webhook_secret String? @db.Text
 
   is_active    Boolean @default(true)
   is_verified  Boolean @default(false)
@@ -541,16 +576,16 @@ model channel_accounts {
   capabilities Json    @default("{}") @db.JsonB
 
   message_limit_per_day Int?
-  messages_sent_today   Int     @default(0)
+  messages_sent_today   Int       @default(0)
   limit_reset_at        DateTime? @db.Timestamptz
 
-  metadata    Json      @default("{}") @db.JsonB
+  metadata Json @default("{}") @db.JsonB
 
-  created_at  DateTime  @default(now()) @db.Timestamptz
-  updated_at  DateTime  @updatedAt @db.Timestamptz
-  deleted_at  DateTime? @db.Timestamptz
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
 
-  business               businesses              @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  business               businesses               @relation(fields: [business_id], references: [id], onDelete: Cascade)
   channel_contacts       channel_contacts[]
   conversations          conversations[]
   messages               messages[]
@@ -575,12 +610,12 @@ model channel_contacts {
   profile_pic_url String? @db.Text
   is_opted_in     Boolean @default(true)
 
-  channel_metadata Json      @default("{}") @db.JsonB
+  channel_metadata Json @default("{}") @db.JsonB
 
-  first_seen_at DateTime  @default(now()) @db.Timestamptz
-  last_seen_at  DateTime  @default(now()) @db.Timestamptz
-  created_at    DateTime  @default(now()) @db.Timestamptz
-  updated_at    DateTime  @updatedAt @db.Timestamptz
+  first_seen_at DateTime @default(now()) @db.Timestamptz
+  last_seen_at  DateTime @default(now()) @db.Timestamptz
+  created_at    DateTime @default(now()) @db.Timestamptz
+  updated_at    DateTime @updatedAt @db.Timestamptz
 
   business        businesses       @relation(fields: [business_id], references: [id], onDelete: Cascade)
   client          clients          @relation(fields: [client_id], references: [id], onDelete: Cascade)
@@ -594,13 +629,13 @@ model channel_contacts {
 
 /// A conversation thread between a client and a business.
 model conversations {
-  id                 String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  business_id        String             @db.Uuid
-  client_id          String             @db.Uuid
-  channel_account_id String             @db.Uuid
+  id                 String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id        String      @db.Uuid
+  client_id          String      @db.Uuid
+  channel_account_id String      @db.Uuid
   channel            ChannelType
 
-  status             ConversationStatus @default(OPEN)
+  status ConversationStatus @default(OPEN)
 
   current_intent    String?  @db.VarChar(100)
   intent_confidence Decimal? @db.Decimal(5, 4)
@@ -634,9 +669,9 @@ model conversations {
   updated_at DateTime  @updatedAt @db.Timestamptz
   deleted_at DateTime? @db.Timestamptz
 
-  business         businesses       @relation(fields: [business_id], references: [id], onDelete: Cascade)
-  client           clients          @relation(fields: [client_id], references: [id])
-  channel_account  channel_accounts @relation(fields: [channel_account_id], references: [id])
+  business         businesses         @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  client           clients            @relation(fields: [client_id], references: [id])
+  channel_account  channel_accounts   @relation(fields: [channel_account_id], references: [id])
   messages         messages[]
   tasks            tasks[]
   ai_decisions     ai_decisions[]
@@ -653,14 +688,14 @@ model conversations {
 /// An individual message within a conversation.
 /// High-volume table — partitioned by created_at month in production.
 model messages {
-  id                 String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  business_id        String           @db.Uuid
-  conversation_id    String           @db.Uuid
-  channel_account_id String           @db.Uuid
+  id                 String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id        String @db.Uuid
+  conversation_id    String @db.Uuid
+  channel_account_id String @db.Uuid
 
-  direction   MessageDirection
-  type        MessageType      @default(TEXT)
-  status      MessageStatus    @default(PENDING)
+  direction MessageDirection
+  type      MessageType      @default(TEXT)
+  status    MessageStatus    @default(PENDING)
 
   /// "CLIENT" | "AI" | "HUMAN_AGENT" | "SYSTEM"
   sender_type String  @db.VarChar(20)
@@ -726,20 +761,20 @@ model file_uploads {
 
   width         Int?
   height        Int?
-  thumbnail_key String?  @db.Text
+  thumbnail_key String? @db.Text
 
   is_processed Boolean  @default(false)
   is_public    Boolean  @default(false)
   pii_detected Boolean?
 
-  metadata   Json      @default("{}") @db.JsonB
+  metadata Json @default("{}") @db.JsonB
 
   created_at DateTime  @default(now()) @db.Timestamptz
   updated_at DateTime  @updatedAt @db.Timestamptz
   deleted_at DateTime? @db.Timestamptz
 
-  business businesses  @relation(fields: [business_id], references: [id], onDelete: Cascade)
-  message  messages?   @relation(fields: [message_id], references: [id])
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  message  messages?  @relation(fields: [message_id], references: [id])
 
   @@index([business_id, type])
   @@index([message_id])
@@ -762,15 +797,15 @@ model notification_templates {
   content   Json @db.JsonB
   variables Json @default("[]") @db.JsonB
 
-  is_approved     Boolean   @default(false)
+  is_approved      Boolean   @default(false)
   /// PENDING | APPROVED | REJECTED
-  approval_status String?   @db.VarChar(50)
-  approved_at     DateTime? @db.Timestamptz
-  rejection_reason String?  @db.Text
+  approval_status  String?   @db.VarChar(50)
+  approved_at      DateTime? @db.Timestamptz
+  rejection_reason String?   @db.Text
 
   /// MARKETING | UTILITY | AUTHENTICATION
-  category String? @db.VarChar(50)
-  language String  @default("en") @db.VarChar(10)
+  category  String? @db.VarChar(50)
+  language  String  @default("en") @db.VarChar(10)
   is_active Boolean @default(true)
 
   created_at DateTime  @default(now()) @db.Timestamptz
@@ -780,9 +815,128 @@ model notification_templates {
   business        businesses        @relation(fields: [business_id], references: [id], onDelete: Cascade)
   channel_account channel_accounts? @relation(fields: [channel_account_id], references: [id])
 
+  notifications notifications[]
+
   @@unique([business_id, channel, name])
   @@index([business_id, channel, is_active])
   @@map("notification_templates")
+}
+
+/// A single outbound notification dispatch across any channel (email, SMS,
+/// WhatsApp, push). Owns delivery tracking, retry bookkeeping, and history.
+model notifications {
+  id          String                      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String                      @db.Uuid
+  /// The end-client recipient (null for staff/system notifications).
+  client_id   String?                     @db.Uuid
+  channel     NotificationTemplateChannel
+  category    NotificationCategory        @default(TRANSACTIONAL)
+  status      NotificationStatus          @default(PENDING)
+
+  /// Template used to render the body (null for ad-hoc/raw notifications).
+  template_id String? @db.Uuid
+  /// Domain event that triggered this notification, e.g. "booking.reminder".
+  event_type  String? @db.VarChar(100)
+
+  /// Resolved destination address: phone (E.164), email, or device token.
+  recipient String  @db.VarChar(320)
+  /// Email subject / push title — channel dependent, may be null.
+  subject   String? @db.VarChar(500)
+  /// Rendered, channel-specific payload that was (or will be) sent.
+  content   Json    @db.JsonB
+  /// Variables supplied to the template at render time.
+  data      Json    @default("{}") @db.JsonB
+
+  /// Idempotency key — a unique (business, dedupe_key) prevents double sends.
+  dedupe_key  String? @db.VarChar(255)
+  /// Groups a bulk/campaign batch together for stats.
+  batch_id    String? @db.Uuid
+  campaign_id String? @db.Uuid
+
+  attempts     Int @default(0)
+  max_attempts Int @default(3)
+
+  /// Provider-assigned message ID (Meta wamid, SMS gateway id, FCM id, etc.).
+  provider_message_id String? @db.VarChar(255)
+  failure_reason      String? @db.Text
+
+  scheduled_at DateTime? @db.Timestamptz
+  queued_at    DateTime? @db.Timestamptz
+  sent_at      DateTime? @db.Timestamptz
+  delivered_at DateTime? @db.Timestamptz
+  read_at      DateTime? @db.Timestamptz
+  failed_at    DateTime? @db.Timestamptz
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses              @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  client   clients?                @relation(fields: [client_id], references: [id])
+  template notification_templates? @relation(fields: [template_id], references: [id])
+
+  @@unique([business_id, dedupe_key], map: "uq_notifications_business_dedupe")
+  @@index([business_id, status, created_at(sort: Desc)])
+  @@index([business_id, client_id, created_at(sort: Desc)])
+  @@index([business_id, channel, status])
+  @@index([batch_id])
+  @@index([provider_message_id])
+  @@map("notifications")
+}
+
+/// Per-client opt-in/opt-out preference for a channel (optionally a category).
+/// A row with category=null is the channel-wide default for that client.
+model notification_preferences {
+  id          String                      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String                      @db.Uuid
+  client_id   String                      @db.Uuid
+  channel     NotificationTemplateChannel
+  /// null = applies to all categories on this channel.
+  category    NotificationCategory?
+  is_enabled  Boolean                     @default(true)
+
+  /// Optional do-not-disturb window (minutes from local midnight, IST).
+  quiet_hours_start Int? @db.SmallInt
+  quiet_hours_end   Int? @db.SmallInt
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  client   clients    @relation(fields: [client_id], references: [id], onDelete: Cascade)
+
+  @@unique([client_id, channel, category], map: "uq_notif_pref_client_channel_category")
+  @@index([business_id, client_id])
+  @@map("notification_preferences")
+}
+
+/// Event-driven trigger: when `event_type` fires, send `template` on `channel`.
+model notification_triggers {
+  id          String                      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String                      @db.Uuid
+  /// Domain event name, e.g. "order.confirmed", "booking.reminder".
+  event_type  String                      @db.VarChar(100)
+  channel     NotificationTemplateChannel
+  category    NotificationCategory        @default(TRANSACTIONAL)
+  template_id String?                     @db.Uuid
+
+  is_active     Boolean @default(true)
+  /// Delay before sending after the event fires, in minutes (0 = immediate).
+  delay_minutes Int     @default(0)
+  /// Optional JSON-path conditions evaluated against the event payload.
+  conditions    Json    @default("[]") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@unique([business_id, event_type, channel], map: "uq_notif_trigger_business_event_channel")
+  @@index([business_id, event_type, is_active])
+  @@map("notification_triggers")
 }
 
 /// Idempotent log of all incoming webhooks from external systems.
@@ -843,7 +997,7 @@ model business_rules {
   updated_at DateTime  @updatedAt @db.Timestamptz
   deleted_at DateTime? @db.Timestamptz
 
-  business         businesses                  @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
   // Vector embedding looked up via vector_embeddings_metadata WHERE entity_type='BUSINESS_RULE' AND entity_id=id
 
   @@index([business_id, type, is_active])
@@ -853,13 +1007,13 @@ model business_rules {
 
 /// Every AI decision — immutable audit trail.
 model ai_decisions {
-  id              String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  business_id     String            @db.Uuid
-  conversation_id String            @db.Uuid
+  id              String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id     String  @db.Uuid
+  conversation_id String  @db.Uuid
   /// The triggering inbound message
-  message_id      String?           @db.Uuid
+  message_id      String? @db.Uuid
   /// The HITL task created for review (if any)
-  task_id         String?           @db.Uuid
+  task_id         String? @db.Uuid
 
   type    AiDecisionType
   outcome AiDecisionOutcome
@@ -886,9 +1040,9 @@ model ai_decisions {
   decided_at  DateTime  @default(now()) @db.Timestamptz
   executed_at DateTime? @db.Timestamptz
 
-  business     businesses    @relation(fields: [business_id], references: [id], onDelete: Cascade)
-  conversation conversations @relation(fields: [conversation_id], references: [id])
-  task         tasks?        @relation(fields: [task_id], references: [id])
+  business     businesses      @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  conversation conversations   @relation(fields: [conversation_id], references: [id])
+  task         tasks?          @relation(fields: [task_id], references: [id])
   precedents   ai_precedents[]
 
   @@index([business_id, outcome, decided_at(sort: Desc)])
@@ -924,8 +1078,8 @@ model ai_precedents {
   /// Qdrant vector point ID for this precedent
   qdrant_point_id String? @db.Uuid
 
-  created_at DateTime  @default(now()) @db.Timestamptz
-  updated_at DateTime  @updatedAt @db.Timestamptz
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
 
   business businesses   @relation(fields: [business_id], references: [id], onDelete: Cascade)
   decision ai_decisions @relation(fields: [decision_id], references: [id])
@@ -958,7 +1112,7 @@ model vector_embeddings_metadata {
   created_at DateTime @default(now()) @db.Timestamptz
   updated_at DateTime @updatedAt @db.Timestamptz
 
-  business     businesses      @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
   // entity_id is a polymorphic FK resolved at application layer using entity_type.
   // No Prisma relations here — queries use: WHERE entity_type = 'X' AND entity_id = uuid.
 
@@ -970,16 +1124,16 @@ model vector_embeddings_metadata {
 
 /// HITL task queue — created when AI confidence is below the auto-execute threshold.
 model tasks {
-  id              String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  business_id     String       @db.Uuid
-  conversation_id String       @db.Uuid
-  ai_decision_id  String?      @db.Uuid
+  id              String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id     String  @db.Uuid
+  conversation_id String  @db.Uuid
+  ai_decision_id  String? @db.Uuid
 
-  type     TaskType
-  status   TaskStatus   @default(PENDING)
-  priority TaskPriority @default(MEDIUM)
-  title    String       @db.VarChar(500)
-  description String?   @db.Text
+  type        TaskType
+  status      TaskStatus   @default(PENDING)
+  priority    TaskPriority @default(MEDIUM)
+  title       String       @db.VarChar(500)
+  description String?      @db.Text
 
   assigned_to String?   @db.Uuid
   assigned_at DateTime? @db.Timestamptz
@@ -1006,12 +1160,12 @@ model tasks {
   created_at DateTime @default(now()) @db.Timestamptz
   updated_at DateTime @updatedAt @db.Timestamptz
 
-  business     businesses    @relation(fields: [business_id], references: [id], onDelete: Cascade)
-  conversation conversations @relation(fields: [conversation_id], references: [id])
-  assignee     team_members? @relation("AssignedTo", fields: [assigned_to], references: [id])
-  resolver     team_members? @relation("ResolvedBy", fields: [resolved_by], references: [id])
-  parent_task  tasks?        @relation("EscalationChain", fields: [escalated_from], references: [id])
-  child_tasks  tasks[]       @relation("EscalationChain")
+  business     businesses     @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  conversation conversations  @relation(fields: [conversation_id], references: [id])
+  assignee     team_members?  @relation("AssignedTo", fields: [assigned_to], references: [id])
+  resolver     team_members?  @relation("ResolvedBy", fields: [resolved_by], references: [id])
+  parent_task  tasks?         @relation("EscalationChain", fields: [escalated_from], references: [id])
+  child_tasks  tasks[]        @relation("EscalationChain")
   ai_decisions ai_decisions[]
 
   @@index([business_id, status, priority, created_at(sort: Desc)])
@@ -1043,10 +1197,10 @@ model catalog_categories {
   updated_at DateTime  @updatedAt @db.Timestamptz
   deleted_at DateTime? @db.Timestamptz
 
-  business  businesses           @relation(fields: [business_id], references: [id], onDelete: Cascade)
-  parent    catalog_categories?  @relation("CategoryTree", fields: [parent_id], references: [id])
-  children  catalog_categories[] @relation("CategoryTree")
-  items     catalog_items[]
+  business businesses           @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  parent   catalog_categories?  @relation("CategoryTree", fields: [parent_id], references: [id])
+  children catalog_categories[] @relation("CategoryTree")
+  items    catalog_items[]
 
   @@unique([business_id, slug])
   @@index([business_id, parent_id, is_active])
@@ -1070,11 +1224,11 @@ model catalog_items {
   tax_rate      Decimal  @default(0) @db.Decimal(5, 4)
   tax_inclusive Boolean  @default(true)
 
-  sku               String? @db.VarChar(100)
-  barcode           String? @db.VarChar(100)
-  stock_quantity    Int?
-  track_inventory   Boolean @default(false)
-  allow_backorder   Boolean @default(false)
+  sku                 String? @db.VarChar(100)
+  barcode             String? @db.VarChar(100)
+  stock_quantity      Int?
+  track_inventory     Boolean @default(false)
+  allow_backorder     Boolean @default(false)
   low_stock_threshold Int?
 
   weight_grams Int?
@@ -1090,9 +1244,9 @@ model catalog_items {
   /// AI-friendly description for RAG
   ai_description String? @db.Text
 
-  is_active  Boolean @default(true)
+  is_active   Boolean @default(true)
   is_featured Boolean @default(false)
-  sort_order Int     @default(0)
+  sort_order  Int     @default(0)
 
   metadata Json @default("{}") @db.JsonB
 
@@ -1100,9 +1254,9 @@ model catalog_items {
   updated_at DateTime  @updatedAt @db.Timestamptz
   deleted_at DateTime? @db.Timestamptz
 
-  business         businesses           @relation(fields: [business_id], references: [id], onDelete: Cascade)
-  category         catalog_categories?  @relation(fields: [category_id], references: [id])
-  variants         catalog_variants[]
+  business businesses          @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  category catalog_categories? @relation(fields: [category_id], references: [id])
+  variants catalog_variants[]
   // Note: vector embedding is looked up via entity_type='CATALOG_ITEM' + entity_id in vector_embeddings_metadata.
   // No Prisma relation here because entity_id is a polymorphic FK shared across multiple entity types.
 
@@ -1183,12 +1337,12 @@ model orders {
   /// Line items snapshot — denormalized at order time
   line_items Json @db.JsonB
 
-  subtotal         Decimal @db.Decimal(14, 2)
-  discount_amount  Decimal @default(0) @db.Decimal(14, 2)
-  tax_amount       Decimal @default(0) @db.Decimal(14, 2)
-  shipping_fee     Decimal @default(0) @db.Decimal(14, 2)
-  total            Decimal @db.Decimal(14, 2)
-  currency         String  @default("INR") @db.Char(3)
+  subtotal        Decimal @db.Decimal(14, 2)
+  discount_amount Decimal @default(0) @db.Decimal(14, 2)
+  tax_amount      Decimal @default(0) @db.Decimal(14, 2)
+  shipping_fee    Decimal @default(0) @db.Decimal(14, 2)
+  total           Decimal @db.Decimal(14, 2)
+  currency        String  @default("INR") @db.Char(3)
 
   discount_code  String?  @db.VarChar(50)
   /// PERCENT | FIXED
@@ -1321,10 +1475,10 @@ model refunds {
 /// All monetary fields are stored in the currency's major unit (e.g. rupees)
 /// as Decimal(14,2); convert to minor units (paise) only for business logic.
 model invoices {
-  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  business_id String @db.Uuid
+  id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String  @db.Uuid
   order_id    String? @db.Uuid
-  client_id   String @db.Uuid
+  client_id   String  @db.Uuid
   payment_id  String? @db.Uuid
 
   /// Human-readable, per-business unique invoice number e.g. INV-2026-000123
@@ -1400,9 +1554,9 @@ model shipping_options {
   carrier     String? @db.VarChar(100)
   is_active   Boolean @default(true)
 
-  base_fee                     Decimal  @db.Decimal(10, 2)
-  per_kg_fee                   Decimal  @default(0) @db.Decimal(10, 2)
-  min_order_value_for_free     Decimal? @db.Decimal(14, 2)
+  base_fee                 Decimal  @db.Decimal(10, 2)
+  per_kg_fee               Decimal  @default(0) @db.Decimal(10, 2)
+  min_order_value_for_free Decimal? @db.Decimal(14, 2)
 
   min_days Int?
   max_days Int?
@@ -1550,10 +1704,10 @@ model coupons {
   max_discount    Decimal? @db.Decimal(14, 2)
 
   /// Total times this coupon may be redeemed across all customers (null = unlimited)
-  usage_limit       Int?
+  usage_limit      Int?
   /// Times this coupon may be redeemed by a single client (null = unlimited)
-  per_client_limit  Int?
-  usage_count       Int  @default(0)
+  per_client_limit Int?
+  usage_count      Int  @default(0)
 
   valid_from  DateTime? @db.Timestamptz
   valid_until DateTime? @db.Timestamptz
@@ -1696,19 +1850,19 @@ model booking_calendar_connections {
   business_id String  @db.Uuid
   staff_id    String? @db.Uuid
 
-  provider           String  @default("google") @db.VarChar(20)
-  google_calendar_id String? @db.VarChar(255)
+  provider             String  @default("google") @db.VarChar(20)
+  google_calendar_id   String? @db.VarChar(255)
   google_account_email String? @db.VarChar(320)
 
   /// Encrypted at rest in production. Refreshed silently when expired.
-  access_token  String? @db.Text
-  refresh_token String? @db.Text
+  access_token     String?   @db.Text
+  refresh_token    String?   @db.Text
   token_expires_at DateTime? @db.Timestamptz
-  scope         String? @db.Text
+  scope            String?   @db.Text
 
-  sync_enabled   Boolean   @default(true)
-  last_synced_at DateTime? @db.Timestamptz
-  last_sync_error String?  @db.Text
+  sync_enabled    Boolean   @default(true)
+  last_synced_at  DateTime? @db.Timestamptz
+  last_sync_error String?   @db.Text
 
   created_at DateTime  @default(now()) @db.Timestamptz
   updated_at DateTime  @updatedAt @db.Timestamptz
@@ -1737,9 +1891,9 @@ model booking_recurrences {
   timezone         String   @default("Asia/Kolkata") @db.VarChar(50)
 
   /// "IN_PERSON" | "ONLINE" | "HOME_VISIT"
-  location_type    String? @db.VarChar(20)
-  location_address String? @db.Text
-  meeting_url      String? @db.Text
+  location_type    String?  @db.VarChar(20)
+  location_address String?  @db.Text
+  meeting_url      String?  @db.Text
   price            Decimal? @db.Decimal(12, 2)
   notes            String?  @db.Text
 
@@ -1862,11 +2016,11 @@ model audit_logs {
   /// Snapshot of email at time of action
   actor_email String? @db.VarChar(320)
 
-  action        AuditAction
-  resource_type String      @db.VarChar(100)
-  resource_id   String?     @db.Uuid
-  resource_before Json?     @db.JsonB
-  resource_after  Json?     @db.JsonB
+  action          AuditAction
+  resource_type   String      @db.VarChar(100)
+  resource_id     String?     @db.Uuid
+  resource_before Json?       @db.JsonB
+  resource_after  Json?       @db.JsonB
 
   ip_address  String? @db.VarChar(45)
   user_agent  String? @db.Text
