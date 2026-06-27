@@ -41,12 +41,8 @@ export class ActionRouterService {
   route(scored: ScoredConfidence, intent: IntentType): RoutingDecision {
     const urgency = this.deriveUrgency(scored);
 
-    // A hard override that demands escalation overrides the numeric band.
-    if (scored.requiresEscalation && scored.mode !== ConfidenceMode.AUTO_PILOT) {
-      // Fall through to the band logic, but escalation-forcing overrides
-      // always land in the ESCALATION path even if the score is in GUIDED/DRAFT.
-    }
-
+    // Note: escalation-forcing overrides are handled per-band below — they
+    // always divert DRAFT/GUIDED into the ESCALATION path.
     switch (scored.mode) {
       case ConfidenceMode.AUTO_PILOT:
         return {

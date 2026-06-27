@@ -3,7 +3,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import { tasks, TaskType, TaskPriority, TaskStatus } from '@gosumo/database';
 import { IntentType, SuggestedAction, TaskCreatedEvent, generateId, generateCorrelationId } from '@gosumo/shared';
-import { PrismaService } from '../../common/services/prisma.service';
+import { PrismaService } from '../../../common/services/prisma.service';
 import { RouteAction } from '../pipeline/action-router.service';
 import { Urgency } from '../pipeline/response-parser.service';
 

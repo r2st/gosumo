@@ -48,7 +48,7 @@ import {
   IngestResultDto,
   KnowledgeEntryDto,
   AIDecisionDto,
-  RegenerateDraftDto,
+  ListDecisionsQueryDto,
 } from './dto';
 import {
   INTENT_MODEL_ROUTING,
@@ -56,6 +56,7 @@ import {
   DEFAULT_TEMPERATURE,
   LLM_MAX_TOKENS,
   LOOP_DETECTION_THRESHOLD,
+  ESCALATION_HOLDING_MESSAGE,
 } from './ai-engine.constants';
 
 /**
@@ -225,9 +226,9 @@ export class AiEngineService {
     startMs: number,
     traceId: string,
   ): Promise<AIDecisionDto> {
-    // The model can self-escalate even from a high band (e.g. it spotted a
-    // legal threat the rules missed). Honor that.
-    if (parsed?.requiresEscalation && route.action !== 'AUTO_EXECUTE') {
+    // The model can self-escalate even from the AUTO_PILOT band (e.g. it spotted
+    // a legal threat the rules missed). Honor that over the numeric route.
+    if (parsed?.requiresEscalation) {
       return this.finalizeEscalation(businessId, dto, context, classification, scored, route, startMs, traceId, false, parsed);
     }
 
@@ -379,7 +380,8 @@ export class AiEngineService {
       latency_ms: Date.now() - startMs,
     });
 
-    await this.deliver(context, businessId, route.holdingMessage, traceId);
+    const holding = parsed?.holdingMessage ?? route.holdingMessage ?? ESCALATION_HOLDING_MESSAGE;
+    await this.deliver(context, businessId, holding, traceId);
 
     this.eventEmitter.emit('ai.escalated', {
       type: 'ai.escalated',
@@ -494,17 +496,40 @@ export class AiEngineService {
   }
 
   /**
+   * Paginated list of decisions for a conversation, newest first.
+   */
+  async listDecisions(
+    businessId: string,
+    query: ListDecisionsQueryDto,
+  ): Promise<{ data: AIDecisionDto[]; total: number; page: number; limit: number }> {
+    const result = await this.repository.findDecisionsByConversation(businessId, query.conversationId, {
+      page: query.page,
+      limit: query.limit,
+    });
+    return {
+      data: result.data.map((d) => this.decisionRowToDto(d)),
+      total: result.total,
+      page: result.page,
+      limit: result.limit,
+    };
+  }
+
+  /**
    * Regenerate a draft for a decision. Because `ai_decisions` is immutable,
-   * this re-runs the pipeline and produces a NEW decision record.
+   * this re-runs the pipeline and produces a NEW decision record. The optional
+   * `feedback` is reserved for steering regeneration (logged for now).
    */
   async regenerateDraft(
     businessId: string,
     decisionId: string,
-    _dto: RegenerateDraftDto,
+    feedback?: string,
   ): Promise<AIDecisionDto> {
     const decision = await this.repository.findDecisionById(businessId, decisionId);
     if (!decision) {
       throw new NotFoundException(`AI decision ${decisionId} not found`);
+    }
+    if (feedback) {
+      this.logger.log(`Regenerating decision ${decisionId} with reviewer feedback`);
     }
     return this.processMessage(businessId, {
       conversationId: decision.conversation_id,

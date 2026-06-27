@@ -7,7 +7,7 @@ import {
   business_rules,
 } from '@gosumo/database';
 import { ChannelType, MessageContentType } from '@gosumo/shared';
-import { PrismaService } from '../../common/services/prisma.service';
+import { PrismaService } from '../../../common/services/prisma.service';
 import { CONTEXT_MESSAGE_WINDOW } from '../ai-engine.constants';
 
 /**

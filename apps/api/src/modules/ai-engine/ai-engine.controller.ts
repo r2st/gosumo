@@ -9,77 +9,137 @@ import {
   HttpCode,
   HttpStatus,
   Logger,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { AiEngineService } from './ai-engine.service';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
-import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
 import {
   ProcessMessageDto,
   ClassifyIntentDto,
-  ConfidenceScoringInputDto,
-  IngestKnowledgeDto,
-  SearchKnowledgeQueryDto,
+  ListDecisionsQueryDto,
+  AIDecisionDto,
+  IntentClassificationDto,
   RegenerateDraftDto,
+  IngestKnowledgeDto,
+  IngestResultDto,
+  SearchKnowledgeQueryDto,
+  KnowledgeEntryDto,
 } from './dto';
 
 /**
- * AiEngineController — REST surface for the AI engine.
+ * AiEngineController -- REST surface for the AI engine.
  *
  * Routes:
- *   POST   /ai/process                       — run the full pipeline on a message
- *   POST   /ai/intent                        — standalone intent classification
- *   POST   /ai/confidence                    — standalone confidence scoring
- *   POST   /ai/knowledge                     — ingest a document into the KB
- *   GET    /ai/knowledge/search              — semantic search over the KB
- *   DELETE /ai/knowledge/:entryId            — delete a KB entry
- *   GET    /ai/decisions/:decisionId         — fetch a decision
- *   POST   /ai/decisions/:decisionId/regenerate — regenerate a draft
+ *   POST  /ai/process                  -- manually trigger message processing
+ *   GET   /ai/decisions/:id            -- get a single AI decision
+ *   GET   /ai/decisions                -- list decisions for a conversation
+ *   POST  /ai/classify                 -- standalone intent classification
+ *   POST  /ai/decisions/:id/regenerate -- re-run LLM with feedback
  *
  * Every route is tenant-scoped via @TenantId().
  */
-@ApiTags('ai-engine')
+@ApiTags('AI Engine')
 @Controller('ai')
 export class AiEngineController {
   private readonly logger = new Logger(AiEngineController.name);
 
   constructor(private readonly aiEngine: AiEngineService) {}
 
+  // ───────────────────────────────────────────────────────────────────
+  // Message processing
+  // ───────────────────────────────────────────────────────────────────
+
   @Post('process')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Run the AI pipeline on an inbound message' })
-  @ApiResponse({ status: 200, description: 'AI decision produced' })
-  async process(@TenantId() tenantId: string, @Body() dto: ProcessMessageDto) {
+  @ApiOperation({ summary: 'Manually trigger AI message processing (admin/testing)' })
+  @ApiResponse({ status: 200, description: 'AI decision produced', type: AIDecisionDto })
+  async process(
+    @TenantId() tenantId: string,
+    @Body() dto: ProcessMessageDto,
+  ): Promise<AIDecisionDto> {
     return this.aiEngine.processMessage(tenantId, dto);
   }
 
-  @Post('intent')
+  // ───────────────────────────────────────────────────────────────────
+  // Decisions
+  // ───────────────────────────────────────────────────────────────────
+
+  @Get('decisions')
+  @ApiOperation({ summary: 'List AI decisions for a conversation' })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated list of AI decisions',
+  })
+  async listDecisions(
+    @TenantId() tenantId: string,
+    @Query() query: ListDecisionsQueryDto,
+  ): Promise<{ data: AIDecisionDto[]; total: number; page: number; limit: number }> {
+    return this.aiEngine.listDecisions(tenantId, query);
+  }
+
+  @Get('decisions/:id')
+  @ApiOperation({ summary: 'Get a single AI decision by ID' })
+  @ApiParam({ name: 'id', description: 'AI decision UUID' })
+  @ApiResponse({ status: 200, description: 'AI decision', type: AIDecisionDto })
+  @ApiResponse({ status: 404, description: 'Decision not found' })
+  async getDecision(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<AIDecisionDto> {
+    return this.aiEngine.getDraftDecision(tenantId, id);
+  }
+
+  @Post('decisions/:id/regenerate')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Classify the intent of a message' })
-  @ApiResponse({ status: 200, description: 'Intent classification result' })
-  async classifyIntent(@TenantId() tenantId: string, @Body() dto: ClassifyIntentDto) {
+  @ApiOperation({ summary: 'Re-run LLM with optional reviewer feedback' })
+  @ApiParam({ name: 'id', description: 'AI decision UUID' })
+  @ApiResponse({ status: 200, description: 'Regenerated AI decision', type: AIDecisionDto })
+  @ApiResponse({ status: 404, description: 'Decision not found' })
+  async regenerate(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RegenerateDraftDto,
+  ): Promise<AIDecisionDto> {
+    return this.aiEngine.regenerateDraft(tenantId, id, dto.feedback);
+  }
+
+  // ───────────────────────────────────────────────────────────────────
+  // Intent classification
+  // ───────────────────────────────────────────────────────────────────
+
+  @Post('classify')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Standalone intent classification' })
+  @ApiResponse({ status: 200, description: 'Intent classification result', type: IntentClassificationDto })
+  async classifyIntent(
+    @TenantId() tenantId: string,
+    @Body() dto: ClassifyIntentDto,
+  ): Promise<IntentClassificationDto> {
     return this.aiEngine.classifyIntent(tenantId, dto.text);
   }
 
-  @Post('confidence')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Score confidence from explicit factors' })
-  @ApiResponse({ status: 200, description: 'Confidence score breakdown' })
-  scoreConfidence(@TenantId() tenantId: string, @Body() dto: ConfidenceScoringInputDto) {
-    return this.aiEngine.scoreConfidence(tenantId, dto);
-  }
+  // ───────────────────────────────────────────────────────────────────
+  // Knowledge base
+  // ───────────────────────────────────────────────────────────────────
 
   @Post('knowledge')
   @ApiOperation({ summary: 'Ingest a document into the knowledge base' })
-  @ApiResponse({ status: 201, description: 'Document indexed' })
-  async ingestKnowledge(@TenantId() tenantId: string, @Body() dto: IngestKnowledgeDto) {
+  @ApiResponse({ status: 201, description: 'Document indexed', type: IngestResultDto })
+  async ingestKnowledge(
+    @TenantId() tenantId: string,
+    @Body() dto: IngestKnowledgeDto,
+  ): Promise<IngestResultDto> {
     return this.aiEngine.ingestKnowledgeBase(tenantId, dto);
   }
 
   @Get('knowledge/search')
   @ApiOperation({ summary: 'Semantic search over the knowledge base' })
-  @ApiResponse({ status: 200, description: 'Matching knowledge entries' })
-  async searchKnowledge(@TenantId() tenantId: string, @Query() query: SearchKnowledgeQueryDto) {
+  @ApiResponse({ status: 200, description: 'Matching knowledge entries', type: [KnowledgeEntryDto] })
+  async searchKnowledge(
+    @TenantId() tenantId: string,
+    @Query() query: SearchKnowledgeQueryDto,
+  ): Promise<KnowledgeEntryDto[]> {
     return this.aiEngine.searchKnowledgeBase(tenantId, query.q, query.limit);
   }
 
@@ -91,34 +151,8 @@ export class AiEngineController {
   @ApiResponse({ status: 404, description: 'Entry not found' })
   async deleteKnowledge(
     @TenantId() tenantId: string,
-    @Param('entryId', UuidValidationPipe) entryId: string,
-  ) {
+    @Param('entryId', ParseUUIDPipe) entryId: string,
+  ): Promise<void> {
     await this.aiEngine.deleteKnowledgeEntry(tenantId, entryId);
-  }
-
-  @Get('decisions/:decisionId')
-  @ApiOperation({ summary: 'Get an AI decision by ID' })
-  @ApiParam({ name: 'decisionId', description: 'AI decision UUID' })
-  @ApiResponse({ status: 200, description: 'AI decision' })
-  @ApiResponse({ status: 404, description: 'Decision not found' })
-  async getDecision(
-    @TenantId() tenantId: string,
-    @Param('decisionId', UuidValidationPipe) decisionId: string,
-  ) {
-    return this.aiEngine.getDraftDecision(tenantId, decisionId);
-  }
-
-  @Post('decisions/:decisionId/regenerate')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Regenerate a draft (creates a new decision)' })
-  @ApiParam({ name: 'decisionId', description: 'AI decision UUID' })
-  @ApiResponse({ status: 200, description: 'New AI decision' })
-  @ApiResponse({ status: 404, description: 'Decision not found' })
-  async regenerate(
-    @TenantId() tenantId: string,
-    @Param('decisionId', UuidValidationPipe) decisionId: string,
-    @Body() dto: RegenerateDraftDto,
-  ) {
-    return this.aiEngine.regenerateDraft(tenantId, decisionId, dto);
   }
 }
