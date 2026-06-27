@@ -19,8 +19,10 @@ import {
   MessageReceivedEvent,
   MessageSentEvent,
   MessageFailedEvent,
+  MessageDirection,
 } from '@gosumo/shared';
 import { generateId, generateCorrelationId } from '@gosumo/shared';
+import { PrismaService } from '../../common/services/prisma.service';
 
 /**
  * Core service for the Channel Adapter module.
@@ -60,7 +62,10 @@ export class ChannelAdapterService {
    */
   private readonly registry = new Map<ChannelType, ChannelAdapter>();
 
-  constructor(private readonly eventEmitter: EventEmitter2) {}
+  constructor(
+    private readonly eventEmitter: EventEmitter2,
+    private readonly prisma: PrismaService,
+  ) {}
 
   // ─────────────────────────────────────────────
   // Registry management
@@ -149,24 +154,162 @@ export class ChannelAdapterService {
         `from ${normalized.sender.externalId} (type: ${normalized.content.type})`,
     );
 
-    // Step 3: Emit domain event
-    // NOTE: The conversation module listens to `message.received` and is
-    // responsible for creating/updating conversation records and assigning
-    // the GoSumo messageId to a conversation.
-    // Here we emit a partial event; the conversation module will enrich it.
+    // Step 3: Resolve channel_account, client, conversation, and store message
+    let resolvedBusinessId = businessId;
+    let resolvedClientId = '';
+    let resolvedConversationId = '';
+    let resolvedChannelAccountId = normalized.channelAccountId;
+
+    try {
+      // Look up the channel_account by channel type and external_id
+      const channelAccount = await this.prisma.channel_accounts.findFirst({
+        where: {
+          channel: channelType,
+          external_id: normalized.channelAccountId,
+          is_active: true,
+        },
+      });
+
+      if (channelAccount) {
+        resolvedBusinessId = channelAccount.business_id;
+        resolvedChannelAccountId = channelAccount.id;
+
+        this.logger.log(
+          `[${traceId}] Resolved channel_account ${channelAccount.id} ` +
+            `(business: ${channelAccount.business_id})`,
+        );
+
+        // Find or create client via channel_contacts
+        const senderExternalId = normalized.sender.externalId;
+        let channelContact = await this.prisma.channel_contacts.findUnique({
+          where: {
+            channel_account_id_external_id: {
+              channel_account_id: channelAccount.id,
+              external_id: senderExternalId,
+            },
+          },
+          include: { client: true },
+        });
+
+        if (!channelContact) {
+          // Create client first, then channel_contact
+          const client = await this.prisma.clients.create({
+            data: {
+              business_id: channelAccount.business_id,
+              name: normalized.sender.displayName || senderExternalId,
+              phone: channelType === ChannelType.SMS ? senderExternalId : undefined,
+              email: channelType === ChannelType.EMAIL ? senderExternalId : undefined,
+            },
+          });
+
+          channelContact = await this.prisma.channel_contacts.create({
+            data: {
+              business_id: channelAccount.business_id,
+              client_id: client.id,
+              channel_account_id: channelAccount.id,
+              channel: channelType,
+              external_id: senderExternalId,
+              display_name: normalized.sender.displayName || senderExternalId,
+            },
+            include: { client: true },
+          });
+
+          this.logger.log(
+            `[${traceId}] Created new client ${client.id} and contact ${channelContact.id} ` +
+              `for sender ${senderExternalId}`,
+          );
+        } else {
+          // Update last_seen_at
+          await this.prisma.channel_contacts.update({
+            where: { id: channelContact.id },
+            data: { last_seen_at: new Date() },
+          });
+        }
+
+        resolvedClientId = channelContact.client_id;
+
+        // Find or create conversation
+        let conversation = await this.prisma.conversations.findFirst({
+          where: {
+            business_id: channelAccount.business_id,
+            client_id: channelContact.client_id,
+            channel_account_id: channelAccount.id,
+            status: { notIn: ['RESOLVED'] },
+          },
+          orderBy: { updated_at: 'desc' },
+        });
+
+        if (!conversation) {
+          conversation = await this.prisma.conversations.create({
+            data: {
+              business_id: channelAccount.business_id,
+              client_id: channelContact.client_id,
+              channel_account_id: channelAccount.id,
+              channel: channelType,
+              status: 'OPEN',
+              subject: channelType + ' conversation',
+              last_message_at: new Date(),
+            },
+          });
+
+          this.logger.log(
+            `[${traceId}] Created new conversation ${conversation.id}`,
+          );
+        } else {
+          await this.prisma.conversations.update({
+            where: { id: conversation.id },
+            data: { last_message_at: new Date() },
+          });
+        }
+
+        resolvedConversationId = conversation.id;
+
+        // Store message in DB
+        const contentType = normalized.content.type || 'TEXT';
+        await this.prisma.messages.create({
+          data: {
+            business_id: channelAccount.business_id,
+            conversation_id: conversation.id,
+            channel_account_id: channelAccount.id,
+            direction: MessageDirection.INBOUND,
+            type: contentType,
+            status: 'DELIVERED',
+            sender_type: 'CLIENT',
+            sender_id: channelContact.client_id,
+            content: normalized.content as object,
+            external_id: normalized.externalId,
+          },
+        });
+
+        this.logger.log(
+          `[${traceId}] Stored inbound message for conversation ${conversation.id}`,
+        );
+      } else {
+        this.logger.warn(
+          `[${traceId}] No channel_account found for ${channelType} ` +
+            `external_id=${normalized.channelAccountId} — emitting partial event`,
+        );
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `[${traceId}] Failed to resolve context for inbound webhook: ${message}`,
+      );
+    }
+
+    // Step 4: Emit enriched domain event
     const event: MessageReceivedEvent = {
       id: generateId(),
       type: 'message.received',
       timestamp: new Date().toISOString(),
-      businessId,
+      businessId: resolvedBusinessId,
       correlationId: traceId,
-      // These fields will be populated by the conversation module handler
       messageId: normalized.id,
-      conversationId: '', // resolved by conversation module
-      channelAccountId: normalized.channelAccountId,
+      conversationId: resolvedConversationId,
+      channelAccountId: resolvedChannelAccountId,
       channel: normalized.channel,
       senderExternalId: normalized.sender.externalId,
-      clientId: '', // resolved by client-intelligence module
+      clientId: resolvedClientId,
     };
 
     this.eventEmitter.emit('message.received', event);
