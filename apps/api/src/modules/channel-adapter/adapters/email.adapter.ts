@@ -19,8 +19,15 @@ import { BaseChannelAdapter } from "./base.adapter";
 export class EmailAdapter extends BaseChannelAdapter {
   readonly channelType = ChannelType.EMAIL;
 
+  private readonly apiKey: string;
+  private readonly fromEmail: string;
+  private readonly fromName: string;
+
   constructor(private readonly configService: ConfigService) {
     super("EmailAdapter");
+    this.apiKey = this.configService.get<string>("sendgrid.apiKey", "");
+    this.fromEmail = this.configService.get<string>("sendgrid.fromEmail", "");
+    this.fromName = this.configService.get<string>("sendgrid.fromName", "GoSumo");
   }
 
   /** Email comes via polling/push, not external webhook — always valid. */
@@ -78,35 +85,94 @@ export class EmailAdapter extends BaseChannelAdapter {
   }
 
   /**
-   * Send an email. Placeholder implementation — logs the intent.
-   * Actual SMTP/Gmail integration requires additional setup.
+   * Send an email via SendGrid API v3.
    */
   async sendMessage(message: OutboundMessage): Promise<SendResult> {
-    const fromEmail = this.configService.get<string>("email.fromEmail", "");
+    return this.sendWithRetry(async () => {
+      let textContent: string;
+      if (message.content.type === MessageContentType.TEXT) {
+        textContent = message.content.text;
+      } else {
+        textContent = "[Content type " + message.content.type + " — see attachment]";
+      }
 
-    let text: string;
-    if (message.content.type === MessageContentType.TEXT) {
-      text = message.content.text;
-    } else {
-      text = "[Content type " + message.content.type + " — see attachment]";
-    }
+      // Build plain text and simple HTML version
+      const htmlContent = textContent.replace(/\n/g, "<br>");
 
-    this.logger.log(
-      "Email send requested: from=" + fromEmail +
-      " to=" + message.recipientExternalId +
-      " body length=" + text.length,
-    );
+      const payload = {
+        personalizations: [
+          {
+            to: [{ email: message.recipientExternalId }],
+          },
+        ],
+        from: {
+          email: this.fromEmail,
+          name: this.fromName,
+        },
+        subject: (message as any).subject || "Message from GoSumo",
+        content: [
+          { type: "text/plain", value: textContent },
+          { type: "text/html", value: htmlContent },
+        ],
+      };
 
-    // TODO: Implement actual SMTP sending via nodemailer
-    // const smtpConfig = this.configService.get('email.smtp');
-    // if (smtpConfig) { ... send via nodemailer ... }
+      this.logger.log(
+        "Sending email via SendGrid: to=" + message.recipientExternalId +
+        " from=" + this.fromEmail +
+        " body length=" + textContent.length,
+      );
 
-    const messageId = generateId();
-    return {
-      success: true,
-      externalMessageId: messageId,
-      sentAt: new Date(),
-    };
+      const response = await fetch("https://api.sendgrid.com/v3/mail/send", {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + this.apiKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      // 4xx = non-retryable business error
+      if (response.status >= 400 && response.status < 500) {
+        let errorBody: string;
+        try {
+          errorBody = await response.text();
+        } catch {
+          errorBody = "Unknown client error";
+        }
+        this.logger.warn(
+          "SendGrid returned " + response.status + ": " + errorBody,
+        );
+        return {
+          success: false,
+          error: "SendGrid " + response.status + ": " + errorBody,
+        };
+      }
+
+      // 5xx = transient, throw so sendWithRetry retries
+      if (response.status >= 500) {
+        let errorBody: string;
+        try {
+          errorBody = await response.text();
+        } catch {
+          errorBody = "Server error";
+        }
+        throw new Error("SendGrid " + response.status + ": " + errorBody);
+      }
+
+      // Success (202 Accepted is the normal success code for SendGrid)
+      const externalMessageId =
+        response.headers.get("x-message-id") || generateId();
+
+      this.logger.log(
+        "Email sent successfully via SendGrid, x-message-id=" + externalMessageId,
+      );
+
+      return {
+        success: true,
+        externalMessageId,
+        sentAt: new Date(),
+      };
+    }, "sendMessage");
   }
 
   /** Convert template to email body and send. */
