@@ -2,6 +2,7 @@ import {
   IsOptional,
   IsEnum,
   IsISO8601,
+  IsString,
   IsInt,
   Min,
   Max,
@@ -73,6 +74,16 @@ export class AnalyticsRangeQueryDto {
   @IsOptional()
   @IsEnum(Granularity)
   granularity?: Granularity;
+
+  @ApiPropertyOptional({ description: "UI preset label (ignored by server)." })
+  @IsOptional()
+  @IsString()
+  preset?: string;
+
+  @ApiPropertyOptional({ description: "Filter by channel." })
+  @IsOptional()
+  @IsString()
+  channelId?: string;
 }
 
 /**

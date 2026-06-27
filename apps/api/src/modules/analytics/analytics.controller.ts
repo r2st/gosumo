@@ -267,4 +267,83 @@ export class AnalyticsController {
   ): Promise<BookingMetricsDto> {
     return this.analyticsService.getBookingMetrics(tenantId, query);
   }
+
+  // ─────────────────────────────────────────────
+  // Aggregated endpoints (frontend convenience)
+  // ─────────────────────────────────────────────
+
+  @Get("clients")
+  @ApiOperation({ summary: "Aggregated client analytics for the Clients tab" })
+  @ApiResponse({ status: 200, description: "Client report" })
+  async getClients(
+    @TenantId() tenantId: string,
+    @Query() query: AnalyticsRangeQueryDto,
+  ): Promise<any> {
+    const [acq, ret] = await Promise.all([
+      this.analyticsService.getClientAcquisitionMetrics(tenantId, query),
+      this.analyticsService.getClientRetentionMetrics(tenantId, query),
+    ]);
+    return {
+      summary: {
+        total: acq.newClients + acq.returningClients,
+        newClients: acq.newClients,
+        returning: acq.returningClients,
+        avgLtv: 0,
+        churnRiskHigh: ret.atRiskClients,
+      },
+      acquisitionTimeSeries: (acq.acquisitionSeries || []).map((p: any) => ({
+        date: p.date,
+        newClients: p.value,
+      })),
+      churnRiskBreakdown: {
+        low: Math.max(0, (acq.newClients + acq.returningClients) - ret.churnedClients - ret.atRiskClients),
+        medium: ret.churnedClients,
+        high: ret.atRiskClients,
+      },
+      sentimentDistribution: {},
+      topTags: [],
+      channelPreferences: (acq.byChannel || []).reduce((acc: any, c: any) => {
+        acc[c.channel] = c.count;
+        return acc;
+      }, {}),
+    };
+  }
+
+  @Get("autonomy")
+  @ApiOperation({ summary: "Aggregated AI autonomy report for the AI Performance tab" })
+  @ApiResponse({ status: 200, description: "Autonomy report" })
+  async getAutonomyAggregated(
+    @TenantId() tenantId: string,
+    @Query() query: AnalyticsRangeQueryDto,
+  ): Promise<any> {
+    const [autonomy, confidence, escalations] = await Promise.all([
+      this.analyticsService.getAutonomyMetrics(tenantId, query),
+      this.analyticsService.getConfidenceDistribution(tenantId, query),
+      this.analyticsService.getEscalationReasons(tenantId, query),
+    ]);
+    return {
+      summary: {
+        autonomyRate: autonomy.autonomyRate,
+        trend: 0,
+        totalDecisions: autonomy.totalDecisions,
+      },
+      timeSeries: (autonomy.autonomySeries || []).map((p: any) => ({
+        date: p.date,
+        autonomyRate: p.value,
+        autoExecuted: 0,
+        reviewed: 0,
+        escalated: 0,
+      })),
+      intentBreakdown: [],
+      confidenceDistribution: (confidence.histogram || []).map((b: any) => ({
+        bucket: b.lower + "-" + b.upper,
+        count: b.count,
+      })),
+      topEscalationReasons: (escalations || []).map((e: any) => ({
+        reason: e.reason,
+        count: e.count,
+      })),
+    };
+  }
+
 }

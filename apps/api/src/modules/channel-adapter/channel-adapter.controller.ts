@@ -12,6 +12,7 @@ import {
   HttpStatus,
   Logger,
   BadRequestException,
+  UsePipes,
 } from "@nestjs/common";
 import {
   ApiTags,
@@ -56,13 +57,17 @@ export class ChannelAdapterController {
   @ApiQuery({ name: "hub.verify_token", required: false })
   @ApiResponse({ status: 200, description: "Challenge accepted" })
   @ApiResponse({ status: 403, description: "Verify token mismatch" })
+  @UsePipes()
   handleWhatsAppVerification(
-    @Query() query: WhatsAppVerifyQueryDto,
+    @Req() req: Request,
     @Res() res: Response,
   ): void {
-    const mode = query["hub.mode"];
-    const challenge = query["hub.challenge"];
-    const verifyToken = query["hub.verify_token"];
+    // Meta sends both dot-notation (hub.mode) and underscore (hub_mode) params.
+    // We bypass DTO validation because forbidNonWhitelisted rejects the extras.
+    const q = req.query as Record<string, string>;
+    const mode = q["hub.mode"] || q["hub_mode"];
+    const challenge = q["hub.challenge"] || q["hub_challenge"];
+    const verifyToken = q["hub.verify_token"] || q["hub_verify_token"];
 
     const expectedToken = this.configService.get<string>("whatsapp.verifyToken", "");
 
@@ -94,13 +99,16 @@ export class ChannelAdapterController {
   @ApiQuery({ name: "hub.verify_token", required: false })
   @ApiResponse({ status: 200, description: "Challenge accepted" })
   @ApiResponse({ status: 403, description: "Verify token mismatch" })
+  @UsePipes()
   handleInstagramVerification(
-    @Query() query: WhatsAppVerifyQueryDto,
+    @Req() req: Request,
     @Res() res: Response,
   ): void {
-    const mode = query["hub.mode"];
-    const challenge = query["hub.challenge"];
-    const verifyToken = query["hub.verify_token"];
+    // Meta sends both dot-notation (hub.mode) and underscore (hub_mode) params.
+    const q = req.query as Record<string, string>;
+    const mode = q["hub.mode"] || q["hub_mode"];
+    const challenge = q["hub.challenge"] || q["hub_challenge"];
+    const verifyToken = q["hub.verify_token"] || q["hub_verify_token"];
 
     // Instagram uses the same or separate verify token
     const expectedToken =
