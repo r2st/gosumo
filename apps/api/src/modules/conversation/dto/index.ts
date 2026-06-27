@@ -34,7 +34,7 @@ export class ListConversationsQueryDto {
   @ApiPropertyOptional({ enum: ChannelType, description: 'Filter by channel type' })
   @IsOptional()
   @IsEnum(ChannelType)
-  channel?: ChannelType;
+  channelType?: ChannelType;
 
   @ApiPropertyOptional({ description: 'Filter by assigned team member UUID' })
   @IsOptional()

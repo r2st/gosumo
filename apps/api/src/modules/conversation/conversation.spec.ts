@@ -401,7 +401,7 @@ describe('ConversationService', () => {
       repository.list.mockResolvedValue(paginatedResult);
 
       const result = await service.listConversations(BUSINESS_ID, {
-        channel: ChannelType.WHATSAPP,
+        channelType: ChannelType.WHATSAPP,
         page: 1,
         limit: 20,
       });

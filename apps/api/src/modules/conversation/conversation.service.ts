@@ -219,7 +219,7 @@ export class ConversationService {
   ): Promise<PaginatedConversations> {
     return this.repository.list(businessId, {
       status: query.status,
-      channel: query.channel,
+      channel: query.channelType,
       assigneeId: query.assigneeId,
       unassigned: query.unassigned,
       clientId: query.clientId,
