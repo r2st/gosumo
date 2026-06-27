@@ -6,9 +6,7 @@ import {
   ArrowLeft,
   CalendarClock,
   CreditCard,
-  Heart,
   Mail,
-  MapPin,
   MessageSquare,
   Phone,
   ShoppingCart,
@@ -17,42 +15,29 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/status-badge';
-import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { LoadingState, ErrorState, EmptyState } from '@/components/ui/states';
 import { useClient, useClientTimeline } from '@/hooks/use-queries';
 import { formatDateIST, formatDateTimeIST, paiseToRupees } from '@/lib/format';
-import type { ClientTimelineItem } from '@/lib/types';
+import type { TimelineEvent } from '@/lib/types';
 
-const TIMELINE_ICON = {
-  MESSAGE: MessageSquare,
+const TIMELINE_ICON: Record<string, typeof MessageSquare> = {
+  CONVERSATION: MessageSquare,
   ORDER: ShoppingCart,
   BOOKING: CalendarClock,
   PAYMENT: CreditCard,
-  CAMPAIGN: Mail,
-} as const;
+};
 
-function timelineSummary(item: ClientTimelineItem): string {
-  switch (item.type) {
-    case 'MESSAGE':
-      return `${item.data.direction === 'INBOUND' ? 'Received' : 'Sent'}: ${item.data.preview}`;
-    case 'ORDER':
-      return `Order ${item.data.status} · ${paiseToRupees(item.data.amount)}`;
-    case 'BOOKING':
-      return `Booking ${item.data.status} · ${item.data.serviceName}`;
-    case 'PAYMENT':
-      return `Payment ${item.data.status} · ${paiseToRupees(item.data.amount)}`;
-    case 'CAMPAIGN':
-      return `Campaign "${item.data.campaignName}" ${item.data.event}`;
-    default:
-      return '';
-  }
+function timelineSummary(event: TimelineEvent): string {
+  const parts = [event.title];
+  if (event.status) parts.push(event.status.toLowerCase());
+  if (event.amountPaise) parts.push(paiseToRupees(event.amountPaise));
+  return parts.join(' · ');
 }
 
 export default function ClientDetailPage() {
   const { clientId } = useParams<{ clientId: string }>();
-  const clientQ = useClient(clientId, ['intelligence', 'orders', 'conversations']);
+  const clientQ = useClient(clientId);
   const timelineQ = useClientTimeline(clientId);
 
   if (clientQ.isLoading) return <LoadingState label="Loading client…" className="min-h-[60vh]" />;
@@ -60,8 +45,6 @@ export default function ClientDetailPage() {
     return <ErrorState message={(clientQ.error as Error)?.message} onRetry={() => clientQ.refetch()} className="min-h-[60vh]" />;
 
   const client = clientQ.data;
-  const intel = client.intelligence;
-  const orders = client.orders ?? [];
 
   return (
     <div>
@@ -72,21 +55,13 @@ export default function ClientDetailPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 p-4 lg:grid-cols-3 lg:p-6">
-        {/* Left: profile + intelligence */}
+        {/* Left: profile + metrics */}
         <div className="space-y-6">
           <Card>
             <CardContent className="pt-6">
               <div className="flex flex-col items-center text-center">
-                <Avatar name={client.name} src={client.avatarUrl} size="lg" className="h-16 w-16 text-lg" />
-                <h2 className="mt-3 text-lg font-bold">{client.name}</h2>
-                <Badge tone="neutral" className="mt-1">{client.source}</Badge>
-                {client.tags.length > 0 && (
-                  <div className="mt-3 flex flex-wrap justify-center gap-1.5">
-                    {client.tags.map((t) => (
-                      <Badge key={t} tone="primary">{t}</Badge>
-                    ))}
-                  </div>
-                )}
+                <Avatar name={client.name ?? 'Unknown'} src={client.avatarUrl ?? undefined} size="lg" className="h-16 w-16 text-lg" />
+                <h2 className="mt-3 text-lg font-bold">{client.name ?? 'Unknown'}</h2>
               </div>
               <dl className="mt-5 space-y-2.5 text-sm">
                 {client.phone && (
@@ -99,103 +74,42 @@ export default function ClientDetailPage() {
                     <Mail className="h-4 w-4" /> <span className="text-foreground">{client.email}</span>
                   </div>
                 )}
-                {client.address?.city && (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <MapPin className="h-4 w-4" />{' '}
-                    <span className="text-foreground">
-                      {[client.address.city, client.address.state].filter(Boolean).join(', ')}
-                    </span>
-                  </div>
-                )}
               </dl>
-              {client.notes && (
-                <p className="mt-4 rounded-md bg-muted p-3 text-sm text-muted-foreground">{client.notes}</p>
-              )}
             </CardContent>
           </Card>
 
-          {/* Intelligence metrics */}
+          {/* Metrics */}
           <div className="grid grid-cols-2 gap-3">
             <MetricTile
               icon={Wallet}
               label="Lifetime value"
-              value={intel ? paiseToRupees(intel.ltv) : '—'}
+              value={client.ltvScore != null ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(client.ltvScore) : '—'}
               tone="text-emerald-600 bg-emerald-50"
             />
             <MetricTile
               icon={ShoppingCart}
               label="Total orders"
-              value={String(intel?.totalOrders ?? 0)}
+              value={String(client.totalOrders ?? 0)}
               tone="text-sky-600 bg-sky-50"
             />
             <MetricTile
-              icon={Heart}
-              label="Sentiment"
-              value={intel ? intel.sentimentLabel.replace('_', ' ').toLowerCase() : '—'}
-              tone="text-rose-600 bg-rose-50"
-              capitalize
+              icon={Wallet}
+              label="Total spent"
+              value={new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(client.totalSpent ?? 0)}
+              tone="text-violet-600 bg-violet-50"
             />
             <MetricTile
               icon={TrendingDown}
               label="Churn risk"
-              value={intel ? `${intel.churnRiskScore}%` : '—'}
+              value={client.churnRisk != null ? `${(client.churnRisk * 100).toFixed(0)}%` : '—'}
               tone="text-amber-600 bg-amber-50"
-              badge={intel?.churnRiskLevel}
+              badge={client.churnRisk != null ? (client.churnRisk > 0.6 ? 'HIGH' : client.churnRisk > 0.3 ? 'MEDIUM' : 'LOW') : undefined}
             />
           </div>
-
-          {intel?.interests && intel.interests.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Interests</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-1.5">
-                  {intel.interests.map((i) => (
-                    <Badge key={i} tone="info">{i}</Badge>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
         </div>
 
-        {/* Right: order history + timeline */}
+        {/* Right: timeline */}
         <div className="space-y-6 lg:col-span-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Order history</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              {orders.length === 0 ? (
-                <EmptyState icon={ShoppingCart} title="No orders yet" className="py-10" />
-              ) : (
-                <Table>
-                  <THead>
-                    <TR className="hover:bg-transparent">
-                      <TH>Order</TH>
-                      <TH>Status</TH>
-                      <TH>Total</TH>
-                      <TH>Date</TH>
-                    </TR>
-                  </THead>
-                  <TBody>
-                    {orders.map((o) => (
-                      <TR key={o.id}>
-                        <TD className="font-medium">{o.orderNumber}</TD>
-                        <TD>
-                          <StatusBadge value={o.status} />
-                        </TD>
-                        <TD className="font-medium">{paiseToRupees(o.total)}</TD>
-                        <TD className="text-muted-foreground">{formatDateIST(o.createdAt)}</TD>
-                      </TR>
-                    ))}
-                  </TBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-
           <Card>
             <CardHeader>
               <CardTitle>Activity timeline</CardTitle>
@@ -203,19 +117,19 @@ export default function ClientDetailPage() {
             <CardContent>
               {timelineQ.isLoading ? (
                 <LoadingState className="py-8" />
-              ) : !timelineQ.data || timelineQ.data.items.length === 0 ? (
+              ) : !timelineQ.data || (timelineQ.data.events ?? []).length === 0 ? (
                 <EmptyState icon={MessageSquare} title="No activity yet" className="py-10" />
               ) : (
                 <ol className="relative space-y-5 border-l border-border pl-6">
-                  {timelineQ.data.items.map((item, idx) => {
-                    const Icon = TIMELINE_ICON[item.type] ?? MessageSquare;
+                  {(timelineQ.data.events ?? []).map((event, idx) => {
+                    const Icon = TIMELINE_ICON[event.type] ?? MessageSquare;
                     return (
                       <li key={idx} className="relative">
                         <span className="absolute -left-[31px] flex h-6 w-6 items-center justify-center rounded-full border border-border bg-card">
                           <Icon className="h-3 w-3 text-muted-foreground" />
                         </span>
-                        <p className="text-sm">{timelineSummary(item)}</p>
-                        <p className="text-xs text-muted-foreground">{formatDateTimeIST(item.timestamp)}</p>
+                        <p className="text-sm">{timelineSummary(event)}</p>
+                        <p className="text-xs text-muted-foreground">{formatDateTimeIST(event.timestamp)}</p>
                       </li>
                     );
                   })}

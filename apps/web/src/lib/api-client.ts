@@ -158,6 +158,26 @@ function safeJson(text: string): unknown {
   }
 }
 
+/**
+ * Normalize a paginated API response. The backend returns flat pagination
+ * fields ({ data, total, page, limit, totalPages }) but the frontend types
+ * expect a nested { data, pagination } envelope. This function bridges the gap.
+ */
+function normalizePaginated<T>(raw: unknown): PaginatedResponse<T> {
+  const obj = raw as Record<string, unknown>;
+  if (obj.pagination) return obj as PaginatedResponse<T>;
+  return {
+    data: (obj.data ?? []) as T[],
+    pagination: {
+      total: (obj.total as number) ?? 0,
+      limit: (obj.limit as number) ?? 20,
+      page: (obj.page as number) ?? 1,
+      totalPages: (obj.totalPages as number) ?? 1,
+      hasMore: ((obj.page as number) ?? 1) < ((obj.totalPages as number) ?? 1),
+    },
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Typed endpoint surface, grouped by resource.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -273,8 +293,8 @@ export const api = {
 
   // ── Clients ─────────────────────────────────────────────────────────────────
   clients: {
-    list: (filters: ClientFilters = {}, signal?: AbortSignal) =>
-      request<PaginatedResponse<Client>>(`/clients${toQuery({ ...filters })}`, { signal }),
+    list: async (filters: ClientFilters = {}, signal?: AbortSignal) =>
+      normalizePaginated<Client>(await request<unknown>(`/clients${toQuery({ ...filters })}`, { signal })),
     get: (id: string, include?: string[]) =>
       request<Client>(`/clients/${id}${toQuery({ include })}`),
     timeline: (id: string, limit = 30) =>

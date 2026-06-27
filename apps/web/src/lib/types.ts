@@ -291,25 +291,41 @@ export interface ClientAddress {
   country?: string;
 }
 
+export interface ChannelContact {
+  id: UUID;
+  channel: ChannelType;
+  externalId: string;
+  displayName?: string | null;
+  profilePicUrl?: string | null;
+  isOptedIn: boolean;
+  firstSeenAt: ISODate;
+  lastSeenAt: ISODate;
+}
+
 export interface Client {
   id: UUID;
   businessId: UUID;
-  name: string;
-  phone?: string;
-  email?: string;
-  externalIds: Record<string, string>;
-  avatarUrl?: string;
-  tags: string[];
-  source: string;
-  language?: string;
-  timezone?: string;
-  address?: ClientAddress;
-  notes?: string;
-  isBlocked: boolean;
-  optedOutOfMarketing: boolean;
+  name?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  avatarUrl?: string | null;
+  profile: Record<string, unknown>;
+  optOuts: Record<string, unknown>;
+  ltvScore?: number | null;
+  churnRisk?: number | null;
+  engagementScore?: number | null;
+  totalOrders: number;
+  totalSpent: number;
+  lastInteractionAt?: ISODate | null;
+  firstSeenAt: ISODate;
   createdAt: ISODate;
   updatedAt: ISODate;
-  lastContactedAt?: ISODate;
+  channelContacts?: ChannelContact[];
+  // Optional fields that the frontend may reference but are not in the API yet
+  tags?: string[];
+  source?: string;
+  notes?: string;
+  address?: ClientAddress;
   intelligence?: ClientIntelligence;
   conversations?: Conversation[];
   orders?: Order[];
@@ -323,9 +339,21 @@ export type ClientTimelineItem =
   | { type: 'PAYMENT'; timestamp: ISODate; data: { paymentId: UUID; status: string; amount: number } }
   | { type: 'CAMPAIGN'; timestamp: ISODate; data: { campaignId: UUID; campaignName: string; event: string } };
 
+/** Timeline event as returned by the API (different shape from ClientTimelineItem). */
+export interface TimelineEvent {
+  type: 'CONVERSATION' | 'ORDER' | 'BOOKING' | 'PAYMENT';
+  id: UUID;
+  timestamp: ISODate;
+  title: string;
+  status: string;
+  amountPaise?: number;
+  channel?: ChannelType;
+}
+
 export interface ClientTimeline {
-  items: ClientTimelineItem[];
-  pagination: Pagination;
+  clientId: UUID;
+  events: TimelineEvent[];
+  total: number;
 }
 
 export interface ClientSegment {

@@ -7,12 +7,10 @@ import { PageHeader } from '@/components/page-header';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Avatar } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
-import { StatusBadge } from '@/components/status-badge';
 import { LoadingState, EmptyState, ErrorState } from '@/components/ui/states';
 import { useClients } from '@/hooks/use-queries';
-import { paiseToRupees, formatDateIST } from '@/lib/format';
+import { formatDateIST } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { ClientFilters } from '@/lib/api-client';
 
@@ -24,7 +22,6 @@ interface Segment {
 
 const SEGMENTS: Segment[] = [
   { key: 'all', label: 'All clients', filters: {} },
-  { key: 'vip', label: 'VIP', filters: { tags: ['VIP'] } },
   { key: 'at-risk', label: 'At-risk', filters: { churnRiskLevel: 'HIGH' } },
   { key: 'new', label: 'New', filters: { hasOrders: false } },
   { key: 'returning', label: 'Returning', filters: { hasOrders: true } },
@@ -38,7 +35,6 @@ export default function ClientsPage() {
   const { data, isLoading, isError, error, refetch } = useClients({
     ...active.filters,
     q: q || undefined,
-    include: 'intelligence',
     limit: 50,
   });
 
@@ -83,11 +79,9 @@ export default function ClientsPage() {
               <THead>
                 <TR className="hover:bg-transparent">
                   <TH>Client</TH>
-                  <TH>Sentiment</TH>
-                  <TH>Churn risk</TH>
-                  <TH>LTV</TH>
                   <TH>Orders</TH>
-                  <TH>Last contact</TH>
+                  <TH>Total spent</TH>
+                  <TH>Last active</TH>
                 </TR>
               </THead>
               <TBody>
@@ -95,26 +89,16 @@ export default function ClientsPage() {
                   <TR key={c.id} className="cursor-pointer">
                     <TD>
                       <Link href={`/clients/${c.id}`} className="flex items-center gap-3">
-                        <Avatar name={c.name} src={c.avatarUrl} size="md" />
+                        <Avatar name={c.name ?? 'Unknown'} src={c.avatarUrl ?? undefined} size="md" />
                         <div className="min-w-0">
-                          <p className="truncate font-medium">{c.name}</p>
+                          <p className="truncate font-medium">{c.name ?? 'Unknown'}</p>
                           <p className="truncate text-xs text-muted-foreground">{c.phone ?? c.email ?? '—'}</p>
                         </div>
                       </Link>
                     </TD>
-                    <TD>
-                      {c.intelligence ? <StatusBadge value={c.intelligence.sentimentLabel} /> : <span className="text-muted-foreground">—</span>}
-                    </TD>
-                    <TD>
-                      {c.intelligence ? (
-                        <StatusBadge value={c.intelligence.churnRiskLevel} />
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </TD>
-                    <TD className="font-medium">{c.intelligence ? paiseToRupees(c.intelligence.ltv) : '—'}</TD>
-                    <TD>{c.intelligence?.totalOrders ?? 0}</TD>
-                    <TD className="text-muted-foreground">{formatDateIST(c.lastContactedAt)}</TD>
+                    <TD>{c.totalOrders ?? 0}</TD>
+                    <TD className="font-medium">{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(c.totalSpent ?? 0)}</TD>
+                    <TD className="text-muted-foreground">{formatDateIST(c.lastInteractionAt)}</TD>
                   </TR>
                 ))}
               </TBody>
@@ -125,9 +109,7 @@ export default function ClientsPage() {
           <p className="text-xs text-muted-foreground">
             Showing {data.data.length} of {data.pagination.total} clients
             {active.key !== 'all' && (
-              <>
-                {' '}in <Badge tone="primary">{active.label}</Badge>
-              </>
+              <> in <span className="font-medium">{active.label}</span></>
             )}
           </p>
         )}

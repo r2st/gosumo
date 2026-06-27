@@ -204,7 +204,7 @@ export class ClientIntelligenceService {
     query: ListClientsQueryDto,
   ): Promise<PaginatedClients> {
     const result = await this.repository.listClients(businessId, {
-      search: query.search,
+      search: query.search || query.q,
       channelType: query.channelType,
       churnRisk: query.churnRisk,
       page: query.page,
