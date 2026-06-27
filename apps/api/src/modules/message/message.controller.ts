@@ -1,29 +1,40 @@
 import {
   Controller,
   Get,
+  Post,
+  Patch,
+  Delete,
   Param,
   Query,
+  Body,
+  HttpCode,
   Logger,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiParam,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { MessageService } from './message.service';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
-import { MessagePaginationQueryDto, MessageSearchQueryDto } from './dto';
+import {
+  MessagePaginationQueryDto,
+  MessageSearchQueryDto,
+  UpdateDeliveryStatusDto,
+  AttachMediaDto,
+  AttachAIMetadataDto,
+  ReactionDto,
+} from './dto';
 
 /**
- * MessageController — REST endpoints for message retrieval and search.
+ * MessageController — REST endpoints for message retrieval, search, media,
+ * reactions, threading, and delivery status.
  *
- * All routes are protected (no @Public decorator). The @TenantId() decorator
- * extracts the businessId from the JWT-populated request context.
- *
- * Message creation is handled internally via MessageService (called by
- * other modules, not via REST). These endpoints are read-only.
- *
- * Routes:
- *   GET /conversations/:conversationId/messages — paginated messages for a conversation
- *   GET /messages/search                        — search messages by text content
- *   GET /messages/:id                           — get a single message by ID
+ * Message creation (store inbound/outbound) is internal — invoked by other
+ * modules via MessageService, not over REST.
  */
 @ApiTags('messages')
 @Controller()
@@ -32,9 +43,7 @@ export class MessageController {
 
   constructor(private readonly messageService: MessageService) {}
 
-  // ─────────────────────────────────────────────
-  // Conversation Messages (paginated)
-  // ─────────────────────────────────────────────
+  // ─── Conversation message listing & stats ────
 
   @Get('conversations/:conversationId/messages')
   @ApiOperation({ summary: 'Get paginated messages for a conversation' })
@@ -42,7 +51,6 @@ export class MessageController {
   @ApiQuery({ name: 'limit', required: false, description: 'Page size (1-100, default 20)' })
   @ApiQuery({ name: 'cursor', required: false, description: 'Base64 pagination cursor' })
   @ApiResponse({ status: 200, description: 'Paginated list of messages' })
-  @ApiResponse({ status: 400, description: 'Invalid cursor or pagination parameters' })
   async getConversationMessages(
     @TenantId() businessId: string,
     @Param('conversationId', UuidValidationPipe) conversationId: string,
@@ -55,18 +63,23 @@ export class MessageController {
     );
   }
 
-  // ─────────────────────────────────────────────
-  // Search Messages
-  // ─────────────────────────────────────────────
+  @Get('conversations/:conversationId/messages/stats')
+  @ApiOperation({ summary: 'Aggregate message counts for a conversation' })
+  @ApiParam({ name: 'conversationId', description: 'Conversation UUID' })
+  @ApiResponse({ status: 200, description: 'Message statistics' })
+  async getStats(
+    @TenantId() businessId: string,
+    @Param('conversationId', UuidValidationPipe) conversationId: string,
+  ) {
+    return this.messageService.getMessageStats(businessId, conversationId);
+  }
+
+  // ─── Search ──────────────────────────────────
 
   @Get('messages/search')
   @ApiOperation({ summary: 'Search messages by text content' })
   @ApiQuery({ name: 'q', required: true, description: 'Search query' })
-  @ApiQuery({ name: 'conversationId', required: false, description: 'Filter by conversation UUID' })
-  @ApiQuery({ name: 'dateFrom', required: false, description: 'Filter by start date (ISO-8601)' })
-  @ApiQuery({ name: 'dateTo', required: false, description: 'Filter by end date (ISO-8601)' })
   @ApiResponse({ status: 200, description: 'Search results' })
-  @ApiResponse({ status: 400, description: 'Missing or invalid search query' })
   async searchMessages(
     @TenantId() businessId: string,
     @Query() query: MessageSearchQueryDto,
@@ -78,9 +91,7 @@ export class MessageController {
     });
   }
 
-  // ─────────────────────────────────────────────
-  // Single Message
-  // ─────────────────────────────────────────────
+  // ─── Single message ──────────────────────────
 
   @Get('messages/:id')
   @ApiOperation({ summary: 'Get a single message by ID' })
@@ -92,5 +103,96 @@ export class MessageController {
     @Param('id', UuidValidationPipe) id: string,
   ) {
     return this.messageService.getMessageById(businessId, id);
+  }
+
+  @Get('messages/:id/thread')
+  @ApiOperation({ summary: 'Get a message with its direct replies' })
+  @ApiParam({ name: 'id', description: 'Message UUID' })
+  @ApiResponse({ status: 200, description: 'Message thread' })
+  async getThread(
+    @TenantId() businessId: string,
+    @Param('id', UuidValidationPipe) id: string,
+  ) {
+    return this.messageService.getMessageThread(businessId, id);
+  }
+
+  @Patch('messages/:id/status')
+  @ApiOperation({ summary: 'Update message delivery status' })
+  @ApiParam({ name: 'id', description: 'Message UUID' })
+  @ApiResponse({ status: 200, description: 'Status updated' })
+  @ApiResponse({ status: 404, description: 'Message not found' })
+  async updateStatus(
+    @TenantId() businessId: string,
+    @Param('id', UuidValidationPipe) id: string,
+    @Body() dto: UpdateDeliveryStatusDto,
+  ) {
+    return this.messageService.updateDeliveryStatus(businessId, id, dto);
+  }
+
+  @Post('messages/:id/ai-metadata')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Attach AI metadata to a message' })
+  @ApiParam({ name: 'id', description: 'Message UUID' })
+  @ApiResponse({ status: 200, description: 'Metadata attached' })
+  async attachAIMetadata(
+    @TenantId() businessId: string,
+    @Param('id', UuidValidationPipe) id: string,
+    @Body() dto: AttachAIMetadataDto,
+  ) {
+    return this.messageService.attachAIMetadata(businessId, id, dto);
+  }
+
+  // ─── Media ───────────────────────────────────
+
+  @Post('messages/:id/media')
+  @HttpCode(201)
+  @ApiOperation({ summary: 'Attach an S3-backed media file to a message' })
+  @ApiParam({ name: 'id', description: 'Message UUID' })
+  @ApiResponse({ status: 201, description: 'Media attached' })
+  async attachMedia(
+    @TenantId() businessId: string,
+    @Param('id', UuidValidationPipe) id: string,
+    @Body() dto: AttachMediaDto,
+  ) {
+    return this.messageService.attachMedia(businessId, id, dto);
+  }
+
+  @Get('messages/:id/media')
+  @ApiOperation({ summary: 'List media attached to a message' })
+  @ApiParam({ name: 'id', description: 'Message UUID' })
+  @ApiResponse({ status: 200, description: 'Media files' })
+  async getMedia(
+    @TenantId() businessId: string,
+    @Param('id', UuidValidationPipe) id: string,
+  ) {
+    return this.messageService.getMessageMedia(businessId, id);
+  }
+
+  // ─── Reactions ───────────────────────────────
+
+  @Post('messages/:id/reactions')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Add a reaction to a message' })
+  @ApiParam({ name: 'id', description: 'Message UUID' })
+  @ApiResponse({ status: 200, description: 'Reaction added' })
+  async addReaction(
+    @TenantId() businessId: string,
+    @Param('id', UuidValidationPipe) id: string,
+    @Body() dto: ReactionDto,
+  ) {
+    return this.messageService.addReaction(businessId, id, dto);
+  }
+
+  @Delete('messages/:id/reactions/:senderId')
+  @ApiOperation({ summary: 'Remove a sender reaction from a message' })
+  @ApiParam({ name: 'id', description: 'Message UUID' })
+  @ApiParam({ name: 'senderId', description: 'Reacting sender UUID' })
+  @ApiResponse({ status: 200, description: 'Reaction removed' })
+  async removeReaction(
+    @TenantId() businessId: string,
+    @Param('id', UuidValidationPipe) id: string,
+    @Param('senderId', UuidValidationPipe) senderId: string,
+  ) {
+    return this.messageService.removeReaction(businessId, id, senderId);
   }
 }

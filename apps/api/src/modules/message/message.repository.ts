@@ -1,8 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
 import { MessageDirection, MessageStatus } from '@gosumo/shared';
-import type { messages } from '@prisma/client';
-import { Prisma, MessageType } from '@prisma/client';
+import type { messages, file_uploads } from '@prisma/client';
+import { Prisma, MessageType, FileUploadType } from '@prisma/client';
+import { SEARCHABLE_MESSAGE_TYPES } from './message.constants';
 
 // ─────────────────────────────────────────────
 // Types
@@ -47,6 +48,34 @@ export interface UpdateStatusTimestamps {
   readAt?: string;
   failedAt?: string;
   failureReason?: string;
+}
+
+export interface CreateFileUploadData {
+  business_id: string;
+  message_id: string;
+  type: FileUploadType;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  storage_key: string;
+  cdn_url?: string;
+  width?: number;
+  height?: number;
+  is_public?: boolean;
+}
+
+export interface MessageStats {
+  total: number;
+  inbound: number;
+  outbound: number;
+  aiGenerated: number;
+  byStatus: Record<string, number>;
+}
+
+export interface MessageReaction {
+  emoji: string;
+  senderId: string;
+  at: string;
 }
 
 /**
@@ -202,6 +231,9 @@ export class MessageRepository {
   ): Promise<messages[]> {
     const where: Prisma.messagesWhereInput = {
       business_id: businessId,
+      // Full-text search is restricted to text-bearing messages; media and
+      // structured payloads have no denormalized text_content to match.
+      type: { in: SEARCHABLE_MESSAGE_TYPES },
       text_content: {
         contains: query,
         mode: 'insensitive',
@@ -250,5 +282,126 @@ export class MessageRepository {
         ai_decision_id: metadata.ai_decision_id ?? undefined,
       },
     });
+  }
+
+  // ─────────────────────────────────────────────
+  // Media attachments (file_uploads)
+  // ─────────────────────────────────────────────
+
+  /**
+   * Create a file_uploads row linked to a message. Media URLs must already be
+   * GoSumo S3-backed (channel-adapter re-uploads channel CDN media first).
+   */
+  async createFileUpload(data: CreateFileUploadData): Promise<file_uploads> {
+    return this.prisma.file_uploads.create({
+      data: {
+        business_id: data.business_id,
+        message_id: data.message_id,
+        type: data.type,
+        filename: data.filename,
+        mime_type: data.mime_type,
+        size_bytes: data.size_bytes,
+        storage_key: data.storage_key,
+        cdn_url: data.cdn_url ?? null,
+        width: data.width ?? null,
+        height: data.height ?? null,
+        is_public: data.is_public ?? false,
+      },
+    });
+  }
+
+  /** List non-deleted file uploads attached to a message. */
+  async findFileUploadsByMessage(
+    businessId: string,
+    messageId: string,
+  ): Promise<file_uploads[]> {
+    return this.prisma.file_uploads.findMany({
+      where: {
+        business_id: businessId,
+        message_id: messageId,
+        deleted_at: null,
+      },
+      orderBy: { created_at: 'asc' },
+    });
+  }
+
+  // ─────────────────────────────────────────────
+  // Reactions
+  // ─────────────────────────────────────────────
+
+  /** Overwrite the reactions array on a message. */
+  async setReactions(
+    messageId: string,
+    reactions: MessageReaction[],
+  ): Promise<messages> {
+    return this.prisma.messages.update({
+      where: { id: messageId },
+      data: { reactions: reactions as unknown as Prisma.InputJsonValue },
+    });
+  }
+
+  // ─────────────────────────────────────────────
+  // Threading
+  // ─────────────────────────────────────────────
+
+  /**
+   * Find direct replies to a message — rows whose metadata carries
+   * `reply_to_message_id` equal to the given id.
+   */
+  async findReplies(
+    businessId: string,
+    messageId: string,
+  ): Promise<messages[]> {
+    return this.prisma.messages.findMany({
+      where: {
+        business_id: businessId,
+        metadata: {
+          path: ['reply_to_message_id'],
+          equals: messageId,
+        },
+      },
+      orderBy: { created_at: 'asc' },
+    });
+  }
+
+  // ─────────────────────────────────────────────
+  // Stats
+  // ─────────────────────────────────────────────
+
+  /** Aggregate message counts for a conversation. */
+  async getStats(
+    businessId: string,
+    conversationId: string,
+  ): Promise<MessageStats> {
+    const where: Prisma.messagesWhereInput = {
+      business_id: businessId,
+      conversation_id: conversationId,
+    };
+
+    const [total, inbound, aiGenerated, statusGroups] = await Promise.all([
+      this.prisma.messages.count({ where }),
+      this.prisma.messages.count({
+        where: { ...where, direction: MessageDirection.INBOUND },
+      }),
+      this.prisma.messages.count({ where: { ...where, is_ai_generated: true } }),
+      this.prisma.messages.groupBy({
+        by: ['status'],
+        where,
+        _count: { status: true },
+      }),
+    ]);
+
+    const byStatus: Record<string, number> = {};
+    for (const group of statusGroups) {
+      byStatus[group.status] = group._count.status;
+    }
+
+    return {
+      total,
+      inbound,
+      outbound: total - inbound,
+      aiGenerated,
+      byStatus,
+    };
   }
 }

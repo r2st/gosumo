@@ -9,12 +9,15 @@ import {
   IsInt,
   IsNotEmpty,
   IsDateString,
+  IsArray,
+  MaxLength,
   Min,
   Max,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { ChannelType, MessageStatus, MessageDirection } from '@gosumo/shared';
+import { NotificationTemplateChannel } from '@prisma/client';
 
 // ─────────────────────────────────────────────
 // StoreInboundMessageDto
@@ -54,6 +57,11 @@ export class StoreInboundMessageDto {
   @IsOptional()
   @IsString()
   textContent?: string;
+
+  @ApiPropertyOptional({ description: 'Message this one replies to (threading)' })
+  @IsOptional()
+  @IsUUID()
+  replyToMessageId?: string;
 
   @ApiPropertyOptional({ description: 'Additional metadata' })
   @IsOptional()
@@ -115,6 +123,11 @@ export class StoreOutboundMessageDto {
   @IsOptional()
   @IsUUID()
   aiDecisionId?: string;
+
+  @ApiPropertyOptional({ description: 'Message this one replies to (threading)' })
+  @IsOptional()
+  @IsUUID()
+  replyToMessageId?: string;
 
   @ApiPropertyOptional({ description: 'Additional metadata' })
   @IsOptional()
@@ -253,4 +266,149 @@ export class MessageResponseDto {
   @ApiPropertyOptional() sentAt?: string | null;
   @ApiProperty() createdAt!: string;
   @ApiProperty() updatedAt!: string;
+}
+
+// ─────────────────────────────────────────────
+// AttachMediaDto
+// ─────────────────────────────────────────────
+
+export class AttachMediaDto {
+  @ApiProperty({ description: 'Content type: IMAGE | VIDEO | AUDIO | DOCUMENT' })
+  @IsString()
+  type!: string;
+
+  @ApiProperty({ description: 'Original filename' })
+  @IsString()
+  @MaxLength(500)
+  filename!: string;
+
+  @ApiProperty({ description: 'MIME type' })
+  @IsString()
+  mimeType!: string;
+
+  @ApiProperty({ description: 'File size in bytes' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  sizeBytes!: number;
+
+  @ApiProperty({ description: 'GoSumo S3 object key (never a channel CDN URL)' })
+  @IsString()
+  storageKey!: string;
+
+  @ApiPropertyOptional({ description: 'Public CDN URL after processing' })
+  @IsOptional()
+  @IsString()
+  cdnUrl?: string;
+
+  @ApiPropertyOptional({ description: 'Image/video width in px' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  width?: number;
+
+  @ApiPropertyOptional({ description: 'Image/video height in px' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  height?: number;
+
+  @ApiPropertyOptional({ description: 'Whether the file is publicly accessible' })
+  @IsOptional()
+  @IsBoolean()
+  isPublic?: boolean;
+}
+
+// ─────────────────────────────────────────────
+// ReactionDto
+// ─────────────────────────────────────────────
+
+export class ReactionDto {
+  @ApiProperty({ description: 'Reaction emoji' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(16)
+  emoji!: string;
+
+  @ApiProperty({ description: 'UUID of the reacting sender (client or member)' })
+  @IsUUID()
+  senderId!: string;
+}
+
+// ─────────────────────────────────────────────
+// Template / quick-reply DTOs
+// ─────────────────────────────────────────────
+
+export class CreateTemplateDto {
+  @ApiProperty({ enum: NotificationTemplateChannel, description: 'Template channel' })
+  @IsEnum(NotificationTemplateChannel)
+  channel!: NotificationTemplateChannel;
+
+  @ApiProperty({ description: 'Template name (unique per business + channel)' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  name!: string;
+
+  @ApiProperty({ description: 'Channel structure; must include a `body` string' })
+  @IsObject()
+  content!: Record<string, unknown>;
+
+  @ApiPropertyOptional({ description: 'Declared variable names', type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  variables?: string[];
+
+  @ApiPropertyOptional({ description: 'Category, e.g. MARKETING | UTILITY | QUICK_REPLY' })
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @ApiPropertyOptional({ description: 'Language code', default: 'en' })
+  @IsOptional()
+  @IsString()
+  language?: string;
+
+  @ApiPropertyOptional({ description: 'Channel-approved external template name' })
+  @IsOptional()
+  @IsString()
+  externalName?: string;
+}
+
+export class CreateQuickReplyDto {
+  @ApiProperty({ description: 'Quick-reply name' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  name!: string;
+
+  @ApiProperty({ description: 'Body text (supports {{placeholders}})' })
+  @IsString()
+  @IsNotEmpty()
+  body!: string;
+
+  @ApiPropertyOptional({ enum: NotificationTemplateChannel, description: 'Channel' })
+  @IsOptional()
+  @IsEnum(NotificationTemplateChannel)
+  channel?: NotificationTemplateChannel;
+}
+
+export class RenderTemplateDto {
+  @ApiPropertyOptional({ description: 'Variable values to substitute' })
+  @IsOptional()
+  @IsObject()
+  variables?: Record<string, string>;
+}
+
+export class ListTemplatesQueryDto {
+  @ApiPropertyOptional({ enum: NotificationTemplateChannel, description: 'Filter by channel' })
+  @IsOptional()
+  @IsEnum(NotificationTemplateChannel)
+  channel?: NotificationTemplateChannel;
+
+  @ApiPropertyOptional({ description: 'Filter by category' })
+  @IsOptional()
+  @IsString()
+  category?: string;
 }

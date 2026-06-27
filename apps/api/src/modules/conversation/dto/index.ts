@@ -3,13 +3,20 @@ import {
   IsUUID,
   IsOptional,
   IsInt,
+  IsBoolean,
+  IsString,
+  IsArray,
+  IsDateString,
   Min,
   Max,
   IsNotEmpty,
+  MaxLength,
+  ArrayMaxSize,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ChannelType, ConversationStatus } from '@gosumo/shared';
+import { AutoAssignStrategy } from '../conversation.constants';
 
 // ─────────────────────────────────────────────
 // Query / Command DTOs
@@ -33,6 +40,49 @@ export class ListConversationsQueryDto {
   @IsOptional()
   @IsUUID()
   assigneeId?: string;
+
+  @ApiPropertyOptional({ description: 'Only conversations with no assignee' })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  unassigned?: boolean;
+
+  @ApiPropertyOptional({ description: 'Filter by client UUID' })
+  @IsOptional()
+  @IsUUID()
+  clientId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Match any of these tags (comma-separated or repeated)',
+    type: [String],
+  })
+  @IsOptional()
+  @Transform(({ value }) =>
+    Array.isArray(value)
+      ? value
+      : typeof value === 'string'
+        ? value.split(',').map((v) => v.trim()).filter(Boolean)
+        : value,
+  )
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
+
+  @ApiPropertyOptional({ description: 'Free-text search across subject and topic' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  search?: string;
+
+  @ApiPropertyOptional({ description: 'Created-at lower bound (ISO-8601)' })
+  @IsOptional()
+  @IsDateString()
+  dateFrom?: string;
+
+  @ApiPropertyOptional({ description: 'Created-at upper bound (ISO-8601)' })
+  @IsOptional()
+  @IsDateString()
+  dateTo?: string;
 
   @ApiPropertyOptional({ description: 'Page number (1-based)', default: 1 })
   @IsOptional()
@@ -73,6 +123,105 @@ export class AssignConversationDto {
   @IsUUID()
   @IsNotEmpty()
   assigneeId!: string;
+}
+
+/** Resolve / close a conversation. */
+export class ResolveConversationDto {
+  @ApiPropertyOptional({ description: 'Who resolved it: AI | HUMAN | SYSTEM' })
+  @IsOptional()
+  @IsString()
+  resolvedBy?: string;
+
+  @ApiPropertyOptional({ description: 'Acting team member UUID' })
+  @IsOptional()
+  @IsUUID()
+  actorId?: string;
+
+  @ApiPropertyOptional({ description: 'CSAT score (1–5) captured at resolution' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  csatScore?: number;
+}
+
+/** Snooze a conversation until a future time (max 7 days out). */
+export class SnoozeConversationDto {
+  @ApiProperty({ description: 'ISO-8601 time to wake the conversation' })
+  @IsDateString()
+  snoozeUntil!: string;
+
+  @ApiPropertyOptional({ description: 'Acting team member UUID' })
+  @IsOptional()
+  @IsUUID()
+  actorId?: string;
+}
+
+/** Escalate a conversation to a human (AI→human handoff). */
+export class EscalateConversationDto {
+  @ApiPropertyOptional({ description: 'Escalation reason' })
+  @IsOptional()
+  @IsString()
+  reason?: string;
+
+  @ApiPropertyOptional({ description: 'Originating HITL task UUID' })
+  @IsOptional()
+  @IsUUID()
+  taskId?: string;
+
+  @ApiPropertyOptional({ description: 'Team member to route the escalation to' })
+  @IsOptional()
+  @IsUUID()
+  assignedToMemberId?: string;
+
+  @ApiPropertyOptional({ description: 'Acting team member UUID' })
+  @IsOptional()
+  @IsUUID()
+  actorId?: string;
+}
+
+/** Auto-assign a conversation using a strategy. */
+export class AutoAssignDto {
+  @ApiProperty({ enum: AutoAssignStrategy, description: 'Assignment strategy' })
+  @IsEnum(AutoAssignStrategy)
+  strategy!: AutoAssignStrategy;
+
+  @ApiPropertyOptional({
+    description: 'Candidate team-member UUIDs (required for ROUND_ROBIN/LEAST_BUSY)',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsUUID('4', { each: true })
+  candidateAgentIds?: string[];
+}
+
+/** Add a single tag. */
+export class AddTagDto {
+  @ApiProperty({ description: 'Tag to add' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(50)
+  tag!: string;
+}
+
+/** Replace the full tag set. */
+export class SetTagsDto {
+  @ApiProperty({ description: 'Full replacement tag set', type: [String] })
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  tags!: string[];
+}
+
+/** Update the internal note. */
+export class UpdateNoteDto {
+  @ApiProperty({ description: 'Internal note (visible to agents only)' })
+  @IsString()
+  @MaxLength(5000)
+  note!: string;
 }
 
 // ─────────────────────────────────────────────
