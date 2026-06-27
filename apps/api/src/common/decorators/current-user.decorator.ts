@@ -6,6 +6,7 @@ export interface AuthenticatedUser {
   businessId: string;   // tenant UUID
   email?: string;
   role: string;
+  sessionId?: string;   // active session id (present for dashboard JWTs)
   iat?: number;
   exp?: number;
 }

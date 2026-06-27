@@ -76,6 +76,12 @@ enum TeamMemberStatus {
   SUSPENDED
 }
 
+/// How a team member authenticates into the dashboard.
+enum AuthProvider {
+  LOCAL
+  GOOGLE
+}
+
 enum TaskStatus {
   PENDING
   IN_PROGRESS
@@ -375,10 +381,15 @@ model team_members {
   status        TeamMemberStatus @default(INVITED)
   phone         String?          @db.VarChar(20)
 
-  /// Hashed password — never stored raw
+  /// Hashed password — never stored raw. Null for OAuth-only accounts.
   password_hash String?          @db.Text
   /// AES-256 encrypted TOTP secret
   totp_secret   String?          @db.Text
+
+  /// Identity provider used to sign in
+  auth_provider AuthProvider     @default(LOCAL)
+  /// Google account subject id (`sub` claim) — set for GOOGLE accounts
+  google_id     String?          @unique @db.VarChar(255)
   last_login_at DateTime?        @db.Timestamptz
   login_count   Int              @default(0)
 

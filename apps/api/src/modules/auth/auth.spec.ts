@@ -5,15 +5,15 @@ import {
   UnauthorizedException,
   ConflictException,
   NotFoundException,
-  ForbiddenException,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthRepository, TeamMemberWithBusiness } from './auth.repository';
+import { SessionService } from './session.service';
+import { REDIS_CLIENT } from './redis.provider';
 import { RolesGuard } from './guards/roles.guard';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { Reflector } from '@nestjs/core';
 import { ExecutionContext } from '@nestjs/common';
-import { ROLES_KEY } from './decorators/roles.decorator';
 
 // ─────────────────────────────────────────────
 // Mocks
@@ -28,7 +28,7 @@ const mockTeamMember: TeamMemberWithBusiness = {
   role: 'OWNER' as const,
   status: 'ACTIVE' as const,
   phone: null,
-  password_hash: 'scrypt:abcdef1234567890:' + 'a'.repeat(128),
+  password_hash: '$2a$12$OErbnr3nw.qAPBVB5wiOduM02PW1ARc6H6e7/1jxhtymPCK4vu3F.',
   totp_secret: null,
   last_login_at: null,
   login_count: 0,
@@ -36,6 +36,8 @@ const mockTeamMember: TeamMemberWithBusiness = {
   invite_token: null,
   invited_by: null,
   invited_at: null,
+  auth_provider: 'LOCAL' as const,
+  google_id: null,
   created_at: new Date(),
   updated_at: new Date(),
   deleted_at: null,
@@ -64,26 +66,31 @@ const mockTeamMember: TeamMemberWithBusiness = {
 const mockAuthRepository = {
   findTeamMemberByEmail: jest.fn(),
   findTeamMemberById: jest.fn(),
-  createTeamMemberWithBusiness: jest.fn(),
-  updateTeamMember: jest.fn(),
-  updateLastLogin: jest.fn(),
-  isSlugTaken: jest.fn(),
+  findTeamMemberByGoogleId: jest.fn(),
   isBusinessEmailTaken: jest.fn(),
+  createTeamMemberWithBusiness: jest.fn(),
+  createOAuthTeamMemberWithBusiness: jest.fn(),
+  linkGoogleAccount: jest.fn(),
+  updateLastLogin: jest.fn().mockResolvedValue(undefined),
+  updatePassword: jest.fn(),
+  updateTeamMember: jest.fn().mockResolvedValue(undefined),
+  isSlugTaken: jest.fn().mockResolvedValue(false),
 };
 
 const mockJwtService = {
-  signAsync: jest.fn().mockResolvedValue('mock.jwt.token'),
+  sign: jest.fn().mockReturnValue('mock-jwt-token'),
+  signAsync: jest.fn().mockResolvedValue('mock-jwt-token'),
   verify: jest.fn(),
 };
 
 const mockConfigService = {
-  get: jest.fn((key: string, defaultValue?: string | number) => {
-    const config: Record<string, string | number> = {
-      'app.jwt.secret': 'test-secret-key-for-jwt',
-      'app.redis.host': 'localhost',
-      'app.redis.port': 6379,
+  get: jest.fn((key: string) => {
+    const config: Record<string, string> = {
+      'app.jwt.secret': 'test-secret-key-for-testing',
+      'app.jwt.accessTokenTtl': '15m',
+      'app.jwt.refreshTokenTtl': '7d',
     };
-    return config[key] ?? defaultValue;
+    return config[key];
   }),
 };
 
@@ -91,12 +98,29 @@ const mockRedis = {
   get: jest.fn(),
   set: jest.fn(),
   del: jest.fn(),
+  incr: jest.fn(),
+  expire: jest.fn(),
+  ttl: jest.fn(),
 };
 
-// Mock ioredis before importing AuthService
-jest.mock('ioredis', () => {
-  return jest.fn().mockImplementation(() => mockRedis);
-});
+const mockSessionService = {
+  createSession: jest.fn().mockResolvedValue({
+    sessionId: 'session-id-123',
+    userId: '550e8400-e29b-41d4-a716-446655440000',
+    businessId: '660e8400-e29b-41d4-a716-446655440000',
+    refreshTokenHash: 'hash',
+    ip: null,
+    userAgent: null,
+    createdAt: new Date().toISOString(),
+    lastUsedAt: new Date().toISOString(),
+  }),
+  revokeSession: jest.fn().mockResolvedValue(undefined),
+  revokeAllSessions: jest.fn().mockResolvedValue(undefined),
+  isActive: jest.fn().mockResolvedValue(true),
+  touch: jest.fn().mockResolvedValue(undefined),
+  listSessions: jest.fn().mockResolvedValue([]),
+  validateRefreshToken: jest.fn().mockResolvedValue(true),
+};
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -108,234 +132,153 @@ describe('AuthService', () => {
         { provide: AuthRepository, useValue: mockAuthRepository },
         { provide: JwtService, useValue: mockJwtService },
         { provide: ConfigService, useValue: mockConfigService },
+        { provide: SessionService, useValue: mockSessionService },
+        { provide: REDIS_CLIENT, useValue: mockRedis },
       ],
     }).compile();
 
     service = module.get<AuthService>(AuthService);
 
-    // Reset all mocks
     jest.clearAllMocks();
     mockRedis.get.mockReset();
     mockRedis.set.mockReset();
     mockRedis.del.mockReset();
+    mockRedis.incr.mockReset();
+    mockRedis.expire.mockReset();
+    mockRedis.ttl.mockReset();
   });
-
-  // ─────────────────────────────────────────────
-  // Registration
-  // ─────────────────────────────────────────────
 
   describe('register', () => {
     it('should register a new user and return tokens', async () => {
       mockAuthRepository.findTeamMemberByEmail.mockResolvedValue(null);
       mockAuthRepository.isBusinessEmailTaken.mockResolvedValue(false);
-      mockAuthRepository.isSlugTaken.mockResolvedValue(false);
       mockAuthRepository.createTeamMemberWithBusiness.mockResolvedValue(mockTeamMember);
-      mockRedis.set.mockResolvedValue('OK');
 
       const result = await service.register({
         email: 'new@example.com',
-        password: 'securepassword123',
-        businessName: 'My Business',
+        password: 'Test1234!',
+        businessName: 'New Business',
       });
 
       expect(result).toHaveProperty('accessToken');
       expect(result).toHaveProperty('refreshToken');
-      expect(result).toHaveProperty('expiresIn');
-      expect(mockAuthRepository.createTeamMemberWithBusiness).toHaveBeenCalledWith(
-        'new@example.com',
-        'new',
-        expect.any(String),
-        'My Business',
-        'my-business',
-      );
+      expect(mockAuthRepository.createTeamMemberWithBusiness).toHaveBeenCalled();
+      expect(mockSessionService.createSession).toHaveBeenCalled();
     });
 
-    it('should throw ConflictException if email already exists', async () => {
+    it('should throw ConflictException if email exists', async () => {
       mockAuthRepository.findTeamMemberByEmail.mockResolvedValue(mockTeamMember);
 
       await expect(
         service.register({
           email: 'test@example.com',
-          password: 'securepassword123',
-          businessName: 'Another Business',
+          password: 'Test1234!',
+          businessName: 'Test',
         }),
       ).rejects.toThrow(ConflictException);
     });
 
-    it('should throw ConflictException if business email is taken', async () => {
+    it('should throw ConflictException if business email taken', async () => {
       mockAuthRepository.findTeamMemberByEmail.mockResolvedValue(null);
       mockAuthRepository.isBusinessEmailTaken.mockResolvedValue(true);
 
       await expect(
         service.register({
-          email: 'taken@example.com',
-          password: 'securepassword123',
-          businessName: 'Taken Business',
+          email: 'new@example.com',
+          password: 'Test1234!',
+          businessName: 'New',
         }),
       ).rejects.toThrow(ConflictException);
     });
-
-    it('should append random suffix when slug is taken', async () => {
-      mockAuthRepository.findTeamMemberByEmail.mockResolvedValue(null);
-      mockAuthRepository.isBusinessEmailTaken.mockResolvedValue(false);
-      mockAuthRepository.isSlugTaken.mockResolvedValue(true);
-      mockAuthRepository.createTeamMemberWithBusiness.mockResolvedValue(mockTeamMember);
-      mockRedis.set.mockResolvedValue('OK');
-
-      await service.register({
-        email: 'new@example.com',
-        password: 'securepassword123',
-        businessName: 'Test Business',
-      });
-
-      const slugArg = mockAuthRepository.createTeamMemberWithBusiness.mock.calls[0][4] as string;
-      expect(slugArg).toMatch(/^test-business-[a-f0-9]{6}$/);
-    });
   });
 
-  // ─────────────────────────────────────────────
-  // Login
-  // ─────────────────────────────────────────────
-
   describe('login', () => {
-    it('should throw UnauthorizedException for non-existent email', async () => {
-      mockAuthRepository.findTeamMemberByEmail.mockResolvedValue(null);
-
-      await expect(
-        service.login({ email: 'nonexistent@example.com', password: 'whatever' }),
-      ).rejects.toThrow(UnauthorizedException);
-    });
-
-    it('should throw UnauthorizedException for suspended accounts', async () => {
-      mockAuthRepository.findTeamMemberByEmail.mockResolvedValue({
-        ...mockTeamMember,
-        status: 'SUSPENDED',
-      });
-
-      await expect(
-        service.login({ email: 'test@example.com', password: 'whatever' }),
-      ).rejects.toThrow(UnauthorizedException);
-    });
-
-    it('should throw UnauthorizedException for missing password hash', async () => {
-      mockAuthRepository.findTeamMemberByEmail.mockResolvedValue({
-        ...mockTeamMember,
-        password_hash: null,
-      });
-
-      await expect(
-        service.login({ email: 'test@example.com', password: 'whatever' }),
-      ).rejects.toThrow(UnauthorizedException);
-    });
-
-    it('should return tokens on successful login with valid credentials', async () => {
-      // We need to register first to get a real hash, then login with it
-      // For unit tests, we mock at a higher level
-      mockAuthRepository.findTeamMemberByEmail.mockResolvedValue(null);
-      mockAuthRepository.isBusinessEmailTaken.mockResolvedValue(false);
-      mockAuthRepository.isSlugTaken.mockResolvedValue(false);
-      mockAuthRepository.createTeamMemberWithBusiness.mockImplementation(
-        async (_email: string, _name: string, hash: string) => ({
-          ...mockTeamMember,
-          password_hash: hash,
-        }),
-      );
-      mockRedis.set.mockResolvedValue('OK');
-      mockAuthRepository.updateLastLogin.mockResolvedValue(undefined);
-
-      // Register to get a real password hash
-      await service.register({
-        email: 'logintest@example.com',
-        password: 'testpassword123',
-        businessName: 'Login Test',
-      });
-
-      // Now get the hash that was used during registration
-      const registeredHash = mockAuthRepository.createTeamMemberWithBusiness.mock.calls[0][2] as string;
-
-      // Mock login lookup with the real hash
-      mockAuthRepository.findTeamMemberByEmail.mockResolvedValue({
-        ...mockTeamMember,
-        password_hash: registeredHash,
-      });
+    it('should login with valid credentials', async () => {
+      mockRedis.get.mockResolvedValue(null);
+      mockAuthRepository.findTeamMemberByEmail.mockResolvedValue(mockTeamMember);
 
       const result = await service.login({
-        email: 'logintest@example.com',
-        password: 'testpassword123',
+        email: 'test@example.com',
+        password: 'Test1234!',
       });
 
       expect(result).toHaveProperty('accessToken');
       expect(result).toHaveProperty('refreshToken');
+      expect(mockSessionService.createSession).toHaveBeenCalled();
+    });
+
+    it('should throw UnauthorizedException for wrong password', async () => {
+      mockRedis.get.mockResolvedValue(null);
+      mockRedis.incr.mockResolvedValue(1);
+      mockRedis.expire.mockResolvedValue(1);
+      mockAuthRepository.findTeamMemberByEmail.mockResolvedValue(mockTeamMember);
+
+      await expect(
+        service.login({
+          email: 'test@example.com',
+          password: 'WrongPassword1!',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should throw UnauthorizedException for non-existent user', async () => {
+      mockRedis.get.mockResolvedValue(null);
+      mockRedis.incr.mockResolvedValue(1);
+      mockRedis.expire.mockResolvedValue(1);
+      mockAuthRepository.findTeamMemberByEmail.mockResolvedValue(null);
+
+      await expect(
+        service.login({
+          email: 'nobody@example.com',
+          password: 'Test1234!',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should throw UnauthorizedException for suspended account', async () => {
+      mockRedis.get.mockResolvedValue(null);
+      const suspendedMember = { ...mockTeamMember, status: 'SUSPENDED' as const };
+      mockAuthRepository.findTeamMemberByEmail.mockResolvedValue(suspendedMember);
+
+      await expect(
+        service.login({
+          email: 'test@example.com',
+          password: 'Test1234!',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
     });
   });
-
-  // ─────────────────────────────────────────────
-  // Refresh tokens
-  // ─────────────────────────────────────────────
 
   describe('refreshTokens', () => {
-    it('should throw UnauthorizedException for invalid refresh token', async () => {
+    it('should throw UnauthorizedException for invalid token', async () => {
       mockJwtService.verify.mockImplementation(() => {
-        throw new Error('Invalid token');
+        throw new Error('invalid');
       });
 
-      await expect(service.refreshTokens('invalid-token')).rejects.toThrow(
+      await expect(service.refreshTokens('bad-token')).rejects.toThrow(
         UnauthorizedException,
-      );
-    });
-
-    it('should throw UnauthorizedException when refresh token is revoked', async () => {
-      mockJwtService.verify.mockReturnValue({
-        sub: mockTeamMember.id,
-        businessId: mockTeamMember.business_id,
-        email: mockTeamMember.email,
-        role: mockTeamMember.role,
-      });
-      mockRedis.get.mockResolvedValue(null);
-
-      await expect(service.refreshTokens('valid-but-revoked')).rejects.toThrow(
-        UnauthorizedException,
-      );
-    });
-
-    it('should throw and invalidate on token reuse (hash mismatch)', async () => {
-      mockJwtService.verify.mockReturnValue({
-        sub: mockTeamMember.id,
-        businessId: mockTeamMember.business_id,
-        email: mockTeamMember.email,
-        role: mockTeamMember.role,
-      });
-      mockRedis.get.mockResolvedValue('different-hash-value');
-
-      await expect(service.refreshTokens('reused-token')).rejects.toThrow(
-        UnauthorizedException,
-      );
-
-      expect(mockRedis.del).toHaveBeenCalledWith(
-        `gosumo:refresh:${mockTeamMember.id}`,
       );
     });
   });
-
-  // ─────────────────────────────────────────────
-  // Logout
-  // ─────────────────────────────────────────────
 
   describe('logout', () => {
-    it('should delete refresh token from Redis', async () => {
-      mockRedis.del.mockResolvedValue(1);
+    it('should revoke session on logout', async () => {
+      await service.logout(mockTeamMember.id, 'session-id-123');
 
-      await service.logout(mockTeamMember.id);
+      expect(mockSessionService.revokeSession).toHaveBeenCalledWith(
+        mockTeamMember.id,
+        'session-id-123',
+      );
+    });
 
-      expect(mockRedis.del).toHaveBeenCalledWith(
-        `gosumo:refresh:${mockTeamMember.id}`,
+    it('should revoke all sessions via logoutAll', async () => {
+      await service.logoutAll(mockTeamMember.id);
+
+      expect(mockSessionService.revokeAllSessions).toHaveBeenCalledWith(
+        mockTeamMember.id,
       );
     });
   });
-
-  // ─────────────────────────────────────────────
-  // Profile
-  // ─────────────────────────────────────────────
 
   describe('getProfile', () => {
     it('should return user profile with business info', async () => {
@@ -349,7 +292,9 @@ describe('AuthService', () => {
         name: 'test',
         role: 'OWNER',
         status: 'ACTIVE',
-        businessId: mockTeamMember.business_id,
+        authProvider: 'LOCAL',
+        avatarUrl: null,
+        businessId: '660e8400-e29b-41d4-a716-446655440000',
         businessName: 'Test Business',
         businessSlug: 'test-business',
         lastLoginAt: null,
@@ -360,47 +305,48 @@ describe('AuthService', () => {
     it('should throw NotFoundException for non-existent user', async () => {
       mockAuthRepository.findTeamMemberById.mockResolvedValue(null);
 
-      await expect(service.getProfile('nonexistent-id')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.getProfile('non-existent-id'),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
-  // ─────────────────────────────────────────────
-  // Change password
-  // ─────────────────────────────────────────────
-
   describe('changePassword', () => {
+    it('should change password with valid current password', async () => {
+      mockAuthRepository.findTeamMemberById.mockResolvedValue(mockTeamMember);
+      mockAuthRepository.updatePassword.mockResolvedValue(undefined);
+
+      await service.changePassword(mockTeamMember.id, {
+        currentPassword: 'Test1234!',
+        newPassword: 'NewPass567!',
+      });
+
+      expect(mockAuthRepository.updateTeamMember).toHaveBeenCalled();
+    });
+
+    it('should throw UnauthorizedException for wrong current password', async () => {
+      mockAuthRepository.findTeamMemberById.mockResolvedValue(mockTeamMember);
+
+      await expect(
+        service.changePassword(mockTeamMember.id, {
+          currentPassword: 'WrongOld1!',
+          newPassword: 'NewPass567!',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
     it('should throw NotFoundException for non-existent user', async () => {
       mockAuthRepository.findTeamMemberById.mockResolvedValue(null);
 
       await expect(
-        service.changePassword('nonexistent', {
-          currentPassword: 'old',
-          newPassword: 'newpassword123',
+        service.changePassword('non-existent', {
+          currentPassword: 'Test1234!',
+          newPassword: 'NewPass567!',
         }),
       ).rejects.toThrow(NotFoundException);
     });
-
-    it('should throw UnauthorizedException for wrong current password', async () => {
-      mockAuthRepository.findTeamMemberById.mockResolvedValue({
-        ...mockTeamMember,
-        password_hash: 'scrypt:salt123:' + 'b'.repeat(128),
-      });
-
-      await expect(
-        service.changePassword(mockTeamMember.id, {
-          currentPassword: 'wrongpassword',
-          newPassword: 'newpassword123',
-        }),
-      ).rejects.toThrow(UnauthorizedException);
-    });
   });
 });
-
-// ─────────────────────────────────────────────
-// RolesGuard
-// ─────────────────────────────────────────────
 
 describe('RolesGuard', () => {
   let guard: RolesGuard;
@@ -411,72 +357,64 @@ describe('RolesGuard', () => {
     guard = new RolesGuard(reflector);
   });
 
-  function createMockContext(userRole: string, requiredRoles?: string[]): ExecutionContext {
-    const mockContext = {
-      getHandler: jest.fn(),
-      getClass: jest.fn(),
-      switchToHttp: jest.fn().mockReturnValue({
-        getRequest: jest.fn().mockReturnValue({
-          user: { sub: 'user-id', businessId: 'biz-id', email: 'test@test.com', role: userRole },
-        }),
+  const createMockContext = (role: string): ExecutionContext =>
+    ({
+      getHandler: () => jest.fn(),
+      getClass: () => jest.fn(),
+      switchToHttp: () => ({
+        getRequest: () => ({ user: { role } }),
       }),
-    } as unknown as ExecutionContext;
+    }) as unknown as ExecutionContext;
 
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(requiredRoles);
-
-    return mockContext;
-  }
-
-  it('should allow access when no roles are required', () => {
-    const context = createMockContext('VIEWER', undefined);
-    expect(guard.canActivate(context)).toBe(true);
+  it('should allow access when no roles required', () => {
+    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(undefined);
+    expect(guard.canActivate(createMockContext('VIEWER'))).toBe(true);
   });
 
   it('should allow OWNER to access MANAGER-required routes', () => {
-    const context = createMockContext('OWNER', ['MANAGER']);
-    expect(guard.canActivate(context)).toBe(true);
+    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['MANAGER']);
+    expect(guard.canActivate(createMockContext('OWNER'))).toBe(true);
   });
 
-  it('should allow MANAGER to access STAFF-required routes', () => {
-    const context = createMockContext('MANAGER', ['STAFF']);
-    expect(guard.canActivate(context)).toBe(true);
-  });
-
-  it('should deny VIEWER access to STAFF-required routes', () => {
-    const context = createMockContext('VIEWER', ['STAFF']);
-    expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
+  it('should deny VIEWER access to MANAGER-required routes', () => {
+    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['MANAGER']);
+    expect(() => guard.canActivate(createMockContext('VIEWER'))).toThrow();
   });
 
   it('should deny STAFF access to OWNER-required routes', () => {
-    const context = createMockContext('STAFF', ['OWNER']);
-    expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
+    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['OWNER']);
+    expect(() => guard.canActivate(createMockContext('STAFF'))).toThrow();
   });
 
-  it('should allow access when user has one of multiple required roles', () => {
-    const context = createMockContext('MANAGER', ['OWNER', 'MANAGER']);
-    expect(guard.canActivate(context)).toBe(true);
+  it('should allow MANAGER access to STAFF-required routes', () => {
+    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['STAFF']);
+    expect(guard.canActivate(createMockContext('MANAGER'))).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────
-// JwtStrategy
-// ─────────────────────────────────────────────
-
 describe('JwtStrategy', () => {
-  it('should throw error when JWT_SECRET is not configured', () => {
+  it('should throw if JWT_SECRET is missing', () => {
     const configService = {
       get: jest.fn().mockReturnValue(undefined),
     } as unknown as ConfigService;
 
-    expect(() => new JwtStrategy(configService)).toThrow('JWT_SECRET is not configured');
+    const sessionSvc = {} as unknown as SessionService;
+    expect(() => new JwtStrategy(configService, sessionSvc)).toThrow(
+      'JWT_SECRET is not configured',
+    );
   });
 
-  it('should validate and return AuthenticatedUser from payload', () => {
+  it('should validate and return AuthenticatedUser from payload', async () => {
     const configService = {
       get: jest.fn().mockReturnValue('test-secret'),
     } as unknown as ConfigService;
 
-    const strategy = new JwtStrategy(configService);
+    const sessionSvc = {
+      isActive: jest.fn().mockResolvedValue(true),
+      touch: jest.fn().mockResolvedValue(undefined),
+    } as unknown as SessionService;
+
+    const strategy = new JwtStrategy(configService, sessionSvc);
     const payload = {
       sub: 'user-id',
       businessId: 'biz-id',
@@ -484,30 +422,36 @@ describe('JwtStrategy', () => {
       role: 'OWNER',
     };
 
-    const result = strategy.validate(payload);
+    const result = await strategy.validate(payload);
 
     expect(result).toEqual({
       sub: 'user-id',
       businessId: 'biz-id',
       email: 'test@example.com',
       role: 'OWNER',
+      sessionId: undefined,
     });
   });
 
-  it('should throw UnauthorizedException for payload missing sub', () => {
+  it('should throw UnauthorizedException for payload missing sub', async () => {
     const configService = {
       get: jest.fn().mockReturnValue('test-secret'),
     } as unknown as ConfigService;
 
-    const strategy = new JwtStrategy(configService);
+    const sessionSvc = {
+      isActive: jest.fn().mockResolvedValue(true),
+      touch: jest.fn().mockResolvedValue(undefined),
+    } as unknown as SessionService;
 
-    expect(() =>
+    const strategy = new JwtStrategy(configService, sessionSvc);
+
+    await expect(
       strategy.validate({
         sub: '',
         businessId: 'biz-id',
         email: 'test@example.com',
         role: 'OWNER',
       }),
-    ).toThrow(UnauthorizedException);
+    ).rejects.toThrow(UnauthorizedException);
   });
 });

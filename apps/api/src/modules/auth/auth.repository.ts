@@ -1,6 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
-import { Prisma, team_members, businesses, TeamMemberRole, TeamMemberStatus } from '@prisma/client';
+import {
+  Prisma,
+  team_members,
+  businesses,
+  TeamMemberRole,
+  TeamMemberStatus,
+  AuthProvider,
+} from '@prisma/client';
 
 export type TeamMemberWithBusiness = team_members & {
   business: businesses;
@@ -81,6 +88,89 @@ export class AuthRepository {
 
       this.logger.log(
         `Created business '${businessName}' (${business.id}) with owner ${email}`,
+      );
+
+      return teamMember;
+    });
+  }
+
+  /**
+   * Find a team member by their Google account id. Used for OAuth login.
+   */
+  async findTeamMemberByGoogleId(googleId: string): Promise<TeamMemberWithBusiness | null> {
+    return this.prisma.team_members.findFirst({
+      where: {
+        google_id: googleId,
+        deleted_at: null,
+      },
+      include: {
+        business: true,
+      },
+    });
+  }
+
+  /**
+   * Link a Google account to an existing (local) team member, returning the
+   * refreshed record with its business. Used when a user who registered with a
+   * password later signs in with Google using the same email.
+   */
+  async linkGoogleAccount(
+    id: string,
+    googleId: string,
+    avatarUrl: string | null,
+  ): Promise<TeamMemberWithBusiness> {
+    return this.prisma.team_members.update({
+      where: { id },
+      data: {
+        google_id: googleId,
+        auth_provider: AuthProvider.GOOGLE,
+        ...(avatarUrl ? { avatar_url: avatarUrl } : {}),
+      },
+      include: {
+        business: true,
+      },
+    });
+  }
+
+  /**
+   * Create a new business and its first team member (OWNER) from a Google
+   * profile — no password is stored. Used for first-time OAuth sign-ups.
+   */
+  async createOAuthTeamMemberWithBusiness(
+    email: string,
+    name: string,
+    businessName: string,
+    slug: string,
+    googleId: string,
+    avatarUrl: string | null,
+  ): Promise<TeamMemberWithBusiness> {
+    return this.prisma.$transaction(async (tx) => {
+      const business = await tx.businesses.create({
+        data: {
+          name: businessName,
+          slug,
+          email: email.toLowerCase(),
+        },
+      });
+
+      const teamMember = await tx.team_members.create({
+        data: {
+          business_id: business.id,
+          email: email.toLowerCase(),
+          name,
+          avatar_url: avatarUrl,
+          role: TeamMemberRole.OWNER,
+          status: TeamMemberStatus.ACTIVE,
+          auth_provider: AuthProvider.GOOGLE,
+          google_id: googleId,
+        },
+        include: {
+          business: true,
+        },
+      });
+
+      this.logger.log(
+        `Created business '${businessName}' (${business.id}) via Google for ${email}`,
       );
 
       return teamMember;

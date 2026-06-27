@@ -21,6 +21,17 @@ export default registerAs('app', () => ({
     expiration: process.env['JWT_EXPIRATION'] ?? '7d',
   },
 
+  // Google OAuth
+  google: {
+    clientId: process.env['GOOGLE_CLIENT_ID'],
+    clientSecret: process.env['GOOGLE_CLIENT_SECRET'],
+    callbackUrl:
+      process.env['GOOGLE_CALLBACK_URL'] ?? 'http://localhost:3000/auth/google/callback',
+  },
+
+  // Dashboard frontend — OAuth redirects and password-reset links point here
+  frontendUrl: process.env['FRONTEND_URL'] ?? 'http://localhost:3001',
+
   // Anthropic
   anthropic: {
     apiKey: process.env['ANTHROPIC_API_KEY'],

@@ -5,90 +5,73 @@ import {
   ConflictException,
   NotFoundException,
   BadRequestException,
+  Inject,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
+import { randomUUID } from 'crypto';
+import * as bcrypt from 'bcryptjs';
 import { AuthRepository, TeamMemberWithBusiness } from './auth.repository';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { AuthTokensDto } from './dto/auth-tokens.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { SessionDto } from './dto/session.dto';
+import { SessionService, SessionMeta } from './session.service';
+import { REDIS_CLIENT, RedisClient } from './redis.provider';
+import { JwtPayload } from './strategies/jwt.strategy';
+import { GoogleProfile } from './strategies/google.strategy';
 
-/** Refresh token Redis key prefix — TTL 7 days */
-const REFRESH_TOKEN_PREFIX = 'gosumo:refresh:';
-const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days
 const ACCESS_TOKEN_TTL = '15m';
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
+const REFRESH_TOKEN_TTL = '7d';
 const BCRYPT_COST = 12;
 
-interface JwtPayload {
-  sub: string;
-  businessId: string;
-  email: string;
-  role: string;
-}
+/** Login throttling — 5 failed attempts within the window triggers a lockout. */
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOGIN_LOCKOUT_SECONDS = 15 * 60;
 
-interface RedisLike {
-  get(key: string): Promise<string | null>;
-  set(key: string, value: string, secondsToken: string, seconds: number): Promise<string | null>;
-  del(key: string): Promise<number>;
-}
+/** Password-reset tokens live for one hour. */
+const PASSWORD_RESET_TTL_SECONDS = 60 * 60;
+
+const loginAttemptsKey = (email: string): string => `gosumo:${email}:login_attempts`;
+const passwordResetKey = (tokenHash: string): string => `gosumo:pwreset:${tokenHash}`;
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
-  private readonly redis: RedisLike;
 
   constructor(
     private readonly authRepository: AuthRepository,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
-  ) {
-    // Dynamic import of ioredis — injecting via constructor to avoid module-level dependency issues
-    // In a production setup you'd use a dedicated Redis module, but for now we create an instance
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const Redis = require('ioredis');
-    const redisHost = this.configService.get<string>('app.redis.host', 'localhost');
-    const redisPort = this.configService.get<number>('app.redis.port', 6379);
-    this.redis = new Redis({ host: redisHost, port: redisPort }) as RedisLike;
-  }
+    private readonly sessionService: SessionService,
+    @Inject(REDIS_CLIENT) private readonly redis: RedisClient,
+  ) {}
 
   // ─────────────────────────────────────────────
   // Registration
   // ─────────────────────────────────────────────
 
-  async register(dto: RegisterDto): Promise<AuthTokensDto> {
+  async register(dto: RegisterDto, meta: SessionMeta = {}): Promise<AuthTokensDto> {
     const { email, password, businessName } = dto;
 
-    // Check if email already used
     const existing = await this.authRepository.findTeamMemberByEmail(email);
     if (existing) {
       throw new ConflictException('An account with this email already exists');
     }
 
-    // Check if business email is taken (businesses table has unique email)
     const emailTaken = await this.authRepository.isBusinessEmailTaken(email);
     if (emailTaken) {
       throw new ConflictException('A business with this email already exists');
     }
 
-    // Generate slug from business name
-    let slug = this.slugify(businessName);
-
-    // Ensure slug uniqueness by appending random suffix if needed
-    const slugTaken = await this.authRepository.isSlugTaken(slug);
-    if (slugTaken) {
-      slug = `${slug}-${crypto.randomBytes(3).toString('hex')}`;
-    }
-
-    // Hash password with bcrypt cost 12
+    const slug = await this.buildUniqueSlug(businessName);
     const passwordHash = await this.hashPassword(password);
+    const name = dto.name?.trim() || email.split('@')[0] || 'User';
 
-    // Extract a display name from the email (before @)
-    const name = email.split('@')[0] ?? 'User';
-
-    // Create business + team member in transaction
     const teamMember = await this.authRepository.createTeamMemberWithBusiness(
       email,
       name,
@@ -99,24 +82,24 @@ export class AuthService {
 
     this.logger.log(`New registration: ${email} for business '${businessName}'`);
 
-    // Generate tokens
-    return this.generateTokens(teamMember);
+    return this.issueTokensForNewSession(teamMember, meta);
   }
 
   // ─────────────────────────────────────────────
-  // Login
+  // Login (local)
   // ─────────────────────────────────────────────
 
-  async login(dto: LoginDto): Promise<AuthTokensDto> {
+  async login(dto: LoginDto, meta: SessionMeta = {}): Promise<AuthTokensDto> {
     const { email, password } = dto;
 
-    const teamMember = await this.authRepository.findTeamMemberByEmail(email);
-    if (!teamMember) {
-      throw new UnauthorizedException('Invalid email or password');
-    }
+    await this.assertNotLockedOut(email);
 
-    if (!teamMember.password_hash) {
-      throw new UnauthorizedException('Account not set up for password login');
+    const teamMember = await this.authRepository.findTeamMemberByEmail(email);
+    if (!teamMember || !teamMember.password_hash) {
+      // Same response whether the account is missing or password-less (OAuth-only),
+      // to avoid leaking which emails exist.
+      await this.recordFailedAttempt(email);
+      throw new UnauthorizedException('Invalid email or password');
     }
 
     if (teamMember.status === 'SUSPENDED') {
@@ -125,17 +108,66 @@ export class AuthService {
 
     const isPasswordValid = await this.verifyPassword(password, teamMember.password_hash);
     if (!isPasswordValid) {
+      await this.recordFailedAttempt(email);
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    // Update login stats (fire-and-forget, don't block login)
+    await this.clearFailedAttempts(email);
+
     this.authRepository.updateLastLogin(teamMember.id).catch((err: Error) => {
       this.logger.warn(`Failed to update last login for ${teamMember.id}: ${err.message}`);
     });
 
     this.logger.log(`Login: ${email}`);
 
-    return this.generateTokens(teamMember);
+    return this.issueTokensForNewSession(teamMember, meta);
+  }
+
+  // ─────────────────────────────────────────────
+  // Login / sign-up via Google OAuth
+  // ─────────────────────────────────────────────
+
+  async handleGoogleLogin(profile: GoogleProfile, meta: SessionMeta = {}): Promise<AuthTokensDto> {
+    // 1) Already linked to this Google account → straight login.
+    let teamMember = await this.authRepository.findTeamMemberByGoogleId(profile.googleId);
+
+    if (!teamMember) {
+      // 2) Existing local account with the same email → link Google to it.
+      const byEmail = await this.authRepository.findTeamMemberByEmail(profile.email);
+      if (byEmail) {
+        teamMember = await this.authRepository.linkGoogleAccount(
+          byEmail.id,
+          profile.googleId,
+          profile.avatarUrl,
+        );
+        this.logger.log(`Linked Google account to existing user ${profile.email}`);
+      }
+    }
+
+    if (!teamMember) {
+      // 3) Brand-new user → provision a business + owner from the Google profile.
+      const businessName = profile.name || profile.email.split('@')[0] || 'My Business';
+      const slug = await this.buildUniqueSlug(businessName);
+      teamMember = await this.authRepository.createOAuthTeamMemberWithBusiness(
+        profile.email,
+        profile.name,
+        businessName,
+        slug,
+        profile.googleId,
+        profile.avatarUrl,
+      );
+      this.logger.log(`New Google registration: ${profile.email}`);
+    }
+
+    if (teamMember.status === 'SUSPENDED') {
+      throw new UnauthorizedException('Account has been suspended');
+    }
+
+    this.authRepository.updateLastLogin(teamMember.id).catch((err: Error) => {
+      this.logger.warn(`Failed to update last login for ${teamMember.id}: ${err.message}`);
+    });
+
+    return this.issueTokensForNewSession(teamMember, meta);
   }
 
   // ─────────────────────────────────────────────
@@ -143,7 +175,6 @@ export class AuthService {
   // ─────────────────────────────────────────────
 
   async refreshTokens(refreshToken: string): Promise<AuthTokensDto> {
-    // Verify the refresh token JWT
     let payload: JwtPayload;
     try {
       payload = this.jwtService.verify<JwtPayload>(refreshToken);
@@ -151,40 +182,59 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    // Check that the refresh token hash matches what's stored in Redis
-    const storedHash = await this.redis.get(`${REFRESH_TOKEN_PREFIX}${payload.sub}`);
-    if (!storedHash) {
+    if (!payload.sessionId) {
+      throw new UnauthorizedException('Refresh token is not bound to a session');
+    }
+
+    const matches = await this.sessionService.verifyRefreshToken(
+      payload.sub,
+      payload.sessionId,
+      refreshToken,
+    );
+    if (!matches) {
+      // Either the session is gone (revoked/expired) or the token was rotated —
+      // treat as a potential reuse and revoke the session defensively.
+      await this.sessionService.revokeSession(payload.sub, payload.sessionId);
+      this.logger.warn(`Refresh rejected for user ${payload.sub} (session ${payload.sessionId})`);
       throw new UnauthorizedException('Refresh token has been revoked');
     }
 
-    const tokenHash = this.hashToken(refreshToken);
-    if (storedHash !== tokenHash) {
-      // Possible token reuse attack — invalidate all tokens
-      await this.redis.del(`${REFRESH_TOKEN_PREFIX}${payload.sub}`);
-      this.logger.warn(`Refresh token reuse detected for user ${payload.sub}`);
-      throw new UnauthorizedException('Refresh token has been revoked');
-    }
-
-    // Fetch fresh user data
     const teamMember = await this.authRepository.findTeamMemberById(payload.sub);
     if (!teamMember) {
       throw new UnauthorizedException('User account not found');
     }
-
     if (teamMember.status === 'SUSPENDED') {
       throw new UnauthorizedException('Account has been suspended');
     }
 
-    return this.generateTokens(teamMember);
+    return this.rotateTokensForSession(teamMember, payload.sessionId);
   }
 
   // ─────────────────────────────────────────────
-  // Logout
+  // Logout / session management
   // ─────────────────────────────────────────────
 
-  async logout(userId: string): Promise<void> {
-    await this.redis.del(`${REFRESH_TOKEN_PREFIX}${userId}`);
-    this.logger.log(`Logout: user ${userId}`);
+  async logout(userId: string, sessionId?: string): Promise<void> {
+    if (sessionId) {
+      await this.sessionService.revokeSession(userId, sessionId);
+    } else {
+      await this.sessionService.revokeAllSessions(userId);
+    }
+    this.logger.log(`Logout: user ${userId}${sessionId ? ` (session ${sessionId})` : ' (all)'}`);
+  }
+
+  async logoutAll(userId: string): Promise<void> {
+    await this.sessionService.revokeAllSessions(userId);
+    this.logger.log(`Logout all sessions: user ${userId}`);
+  }
+
+  async getActiveSessions(userId: string, currentSessionId?: string): Promise<SessionDto[]> {
+    return this.sessionService.listSessions(userId, currentSessionId);
+  }
+
+  async revokeSession(userId: string, sessionId: string): Promise<void> {
+    await this.sessionService.revokeSession(userId, sessionId);
+    this.logger.log(`Revoked session ${sessionId} for user ${userId}`);
   }
 
   // ─────────────────────────────────────────────
@@ -197,6 +247,8 @@ export class AuthService {
     name: string;
     role: string;
     status: string;
+    authProvider: string;
+    avatarUrl: string | null;
     businessId: string;
     businessName: string;
     businessSlug: string;
@@ -214,6 +266,8 @@ export class AuthService {
       name: teamMember.name,
       role: teamMember.role,
       status: teamMember.status,
+      authProvider: teamMember.auth_provider,
+      avatarUrl: teamMember.avatar_url,
       businessId: teamMember.business_id,
       businessName: teamMember.business.name,
       businessSlug: teamMember.business.slug,
@@ -231,9 +285,8 @@ export class AuthService {
     if (!teamMember) {
       throw new NotFoundException('User not found');
     }
-
     if (!teamMember.password_hash) {
-      throw new BadRequestException('Account not set up for password login');
+      throw new BadRequestException('Account is not set up for password login');
     }
 
     const isValid = await this.verifyPassword(dto.currentPassword, teamMember.password_hash);
@@ -242,41 +295,115 @@ export class AuthService {
     }
 
     const newHash = await this.hashPassword(dto.newPassword);
-    await this.authRepository.updateTeamMember(userId, {
-      password_hash: newHash,
-    });
+    await this.authRepository.updateTeamMember(userId, { password_hash: newHash });
 
-    // Invalidate refresh token to force re-login on other devices
-    await this.redis.del(`${REFRESH_TOKEN_PREFIX}${userId}`);
+    // Force re-login everywhere after a password change.
+    await this.sessionService.revokeAllSessions(userId);
 
     this.logger.log(`Password changed for user ${userId}`);
   }
 
   // ─────────────────────────────────────────────
-  // Internal helpers
+  // Password reset flow
   // ─────────────────────────────────────────────
 
-  private async generateTokens(teamMember: TeamMemberWithBusiness): Promise<AuthTokensDto> {
+  /**
+   * Begin a password reset. Always resolves the same way regardless of whether
+   * the email exists, so the endpoint cannot be used to enumerate accounts.
+   * In production the token is emailed; here it is stored (hashed) in Redis.
+   */
+  async requestPasswordReset(email: string): Promise<void> {
+    const teamMember = await this.authRepository.findTeamMemberByEmail(email);
+    if (!teamMember || !teamMember.password_hash) {
+      this.logger.debug(`Password reset requested for unknown/OAuth email ${email} — no-op`);
+      return;
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const tokenHash = this.hashToken(token);
+    await this.redis.set(
+      passwordResetKey(tokenHash),
+      teamMember.id,
+      'EX',
+      PASSWORD_RESET_TTL_SECONDS,
+    );
+
+    const frontendUrl = this.configService.get<string>('app.frontendUrl', 'http://localhost:3001');
+    const resetUrl = `${frontendUrl}/reset-password?token=${token}`;
+    // TODO: dispatch via the notification/email service once available.
+    this.logger.log(`Password reset link generated for ${email}: ${resetUrl}`);
+  }
+
+  async resetPassword(dto: ResetPasswordDto): Promise<void> {
+    const tokenHash = this.hashToken(dto.token);
+    const key = passwordResetKey(tokenHash);
+
+    const userId = await this.redis.get(key);
+    if (!userId) {
+      throw new BadRequestException('Invalid or expired reset token');
+    }
+
+    const teamMember = await this.authRepository.findTeamMemberById(userId);
+    if (!teamMember) {
+      await this.redis.del(key);
+      throw new BadRequestException('Invalid or expired reset token');
+    }
+
+    const newHash = await this.hashPassword(dto.newPassword);
+    await this.authRepository.updateTeamMember(userId, { password_hash: newHash });
+
+    // Single-use token + revoke every session so old credentials are dead.
+    await this.redis.del(key);
+    await this.sessionService.revokeAllSessions(userId);
+
+    this.logger.log(`Password reset completed for user ${userId}`);
+  }
+
+  // ─────────────────────────────────────────────
+  // Token / session helpers
+  // ─────────────────────────────────────────────
+
+  private async issueTokensForNewSession(
+    teamMember: TeamMemberWithBusiness,
+    meta: SessionMeta,
+  ): Promise<AuthTokensDto> {
+    const sessionId = randomUUID();
+    const tokens = await this.signTokens(teamMember, sessionId);
+    await this.sessionService.createSession(
+      teamMember.id,
+      teamMember.business_id,
+      sessionId,
+      tokens.refreshToken,
+      meta,
+    );
+    return tokens;
+  }
+
+  private async rotateTokensForSession(
+    teamMember: TeamMemberWithBusiness,
+    sessionId: string,
+  ): Promise<AuthTokensDto> {
+    const tokens = await this.signTokens(teamMember, sessionId);
+    await this.sessionService.rotateRefreshToken(teamMember.id, sessionId, tokens.refreshToken);
+    return tokens;
+  }
+
+  private async signTokens(
+    teamMember: TeamMemberWithBusiness,
+    sessionId: string,
+  ): Promise<AuthTokensDto> {
     const payload: JwtPayload = {
       sub: teamMember.id,
       businessId: teamMember.business_id,
       email: teamMember.email,
       role: teamMember.role,
+      sessionId,
     };
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, { expiresIn: ACCESS_TOKEN_TTL }),
-      this.jwtService.signAsync(payload, { expiresIn: '7d' }),
+      this.jwtService.signAsync(payload, { expiresIn: REFRESH_TOKEN_TTL }),
     ]);
-
-    // Store refresh token hash in Redis
-    const tokenHash = this.hashToken(refreshToken);
-    await this.redis.set(
-      `${REFRESH_TOKEN_PREFIX}${teamMember.id}`,
-      tokenHash,
-      'EX',
-      REFRESH_TOKEN_TTL_SECONDS,
-    );
 
     const tokens = new AuthTokensDto();
     tokens.accessToken = accessToken;
@@ -285,58 +412,51 @@ export class AuthService {
     return tokens;
   }
 
-  private async hashPassword(password: string): Promise<string> {
-    // Use Node.js crypto scrypt as a fallback since bcrypt is not in package.json
-    // We implement bcrypt-compatible hashing via the crypto module
-    // Actually, let's use a dynamic require for bcrypt if available, else use scrypt
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const bcrypt = require('bcrypt');
-      return bcrypt.hash(password, BCRYPT_COST) as Promise<string>;
-    } catch {
-      // bcrypt not installed — use scrypt
-      return new Promise<string>((resolve, reject) => {
-        const salt = crypto.randomBytes(16).toString('hex');
-        crypto.scrypt(password, salt, 64, (err, derivedKey) => {
-          if (err) reject(err);
-          else resolve(`scrypt:${salt}:${derivedKey.toString('hex')}`);
-        });
-      });
+  // ─────────────────────────────────────────────
+  // Login throttling
+  // ─────────────────────────────────────────────
+
+  private async assertNotLockedOut(email: string): Promise<void> {
+    const attempts = await this.redis.get(loginAttemptsKey(email));
+    if (attempts && parseInt(attempts, 10) >= MAX_LOGIN_ATTEMPTS) {
+      const ttl = await this.redis.ttl(loginAttemptsKey(email));
+      const minutes = Math.max(1, Math.ceil(ttl / 60));
+      throw new UnauthorizedException(
+        `Too many failed login attempts. Try again in ${minutes} minute(s).`,
+      );
     }
+  }
+
+  private async recordFailedAttempt(email: string): Promise<void> {
+    const key = loginAttemptsKey(email);
+    const count = await this.redis.incr(key);
+    if (count === 1) {
+      await this.redis.expire(key, LOGIN_LOCKOUT_SECONDS);
+    }
+  }
+
+  private async clearFailedAttempts(email: string): Promise<void> {
+    await this.redis.del(loginAttemptsKey(email));
+  }
+
+  // ─────────────────────────────────────────────
+  // Crypto / slug helpers
+  // ─────────────────────────────────────────────
+
+  private async hashPassword(password: string): Promise<string> {
+    return bcrypt.hash(password, BCRYPT_COST);
   }
 
   private async verifyPassword(password: string, hash: string): Promise<boolean> {
-    if (hash.startsWith('scrypt:')) {
-      // scrypt format: scrypt:<salt>:<hash>
-      const parts = hash.split(':');
-      if (parts.length !== 3) return false;
-      const salt = parts[1]!;
-      const storedHash = parts[2]!;
-      return new Promise<boolean>((resolve, reject) => {
-        crypto.scrypt(password, salt, 64, (err, derivedKey) => {
-          if (err) reject(err);
-          else resolve(crypto.timingSafeEqual(
-            Buffer.from(storedHash, 'hex'),
-            derivedKey,
-          ));
-        });
-      });
-    }
-
-    // bcrypt hash
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const bcrypt = require('bcrypt');
-      return bcrypt.compare(password, hash) as Promise<boolean>;
-    } catch {
-      return false;
-    }
+    return bcrypt.compare(password, hash);
   }
 
-  /**
-   * Slugify a business name: lowercase, replace non-alphanumeric with hyphens,
-   * collapse multiple hyphens, trim leading/trailing hyphens.
-   */
+  private async buildUniqueSlug(businessName: string): Promise<string> {
+    const base = this.slugify(businessName) || 'business';
+    const taken = await this.authRepository.isSlugTaken(base);
+    return taken ? `${base}-${crypto.randomBytes(3).toString('hex')}` : base;
+  }
+
   private slugify(text: string): string {
     return text
       .toLowerCase()
@@ -345,9 +465,6 @@ export class AuthService {
       .replace(/^-|-$/g, '');
   }
 
-  /**
-   * SHA-256 hash of a token for safe storage.
-   */
   private hashToken(token: string): string {
     return crypto.createHash('sha256').update(token).digest('hex');
   }
