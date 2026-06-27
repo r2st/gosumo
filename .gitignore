@@ -12,6 +12,7 @@ dist/
 .env.*.local
 
 # Secrets — never commit keys, tokens, or credentials
+keys
 keys/
 *.pem
 *.key
@@ -19,6 +20,12 @@ id_rsa
 id_ed25519
 *_ed25519
 *.p12
+*token*.txt
+*secret*
+*.tfvars
+
+# Scratch / temp junk
+_tmp_*
 
 # IDE
 .vscode/
