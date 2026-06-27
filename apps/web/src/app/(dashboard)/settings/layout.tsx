@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { Bot, Building2, CalendarClock, CreditCard, Bell, Radio, Users } from 'lucide-react';
+import { Bot, Building2, CalendarClock, CreditCard, Bell, KeyRound, Radio, Users } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
 import { LinkTabs, type TabItem } from '@/components/ui/tabs';
 
@@ -12,6 +12,7 @@ const TABS: (TabItem & { match: string })[] = [
   { key: 'ai', label: 'AI', href: '/settings/ai', match: '/settings/ai', icon: Bot },
   { key: 'notifications', label: 'Notifications', href: '/settings/notifications', match: '/settings/notifications', icon: Bell },
   { key: 'billing', label: 'Billing', href: '/settings/billing', match: '/settings/billing', icon: CreditCard },
+  { key: 'api-keys', label: 'API Keys', href: '/settings/api-keys', match: '/settings/api-keys', icon: KeyRound },
   { key: 'integrations', label: 'Integrations', href: '/settings/integrations', match: '/settings/integrations', icon: CalendarClock },
 ];
 
