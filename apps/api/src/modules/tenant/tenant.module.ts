@@ -1,6 +1,7 @@
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
 import { TenantController } from './tenant.controller';
+import { BusinessController } from './business.controller';
 import { TenantService } from './tenant.service';
 import { TenantRepository } from './tenant.repository';
 import { SubscriptionService } from './services/subscription.service';
@@ -19,7 +20,7 @@ import { TenantIsolationMiddleware } from './tenant-isolation.middleware';
  * edge layer of GoSumo's multi-tenant isolation (above PostgreSQL RLS).
  */
 @Module({
-  controllers: [TenantController],
+  controllers: [TenantController, BusinessController],
   providers: [
     TenantService,
     TenantRepository,

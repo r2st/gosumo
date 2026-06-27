@@ -1,27 +1,12 @@
-# ============================================================
-# GoSumo API — Production Dockerfile (NestJS / pnpm monorepo)
-# Multi-stage build: deps -> build -> runtime
-# Build context = repo root:
-#   docker build -f docker/Dockerfile.api -t gosumo-api .
-# ============================================================
-
-# ------------------------------------------------------------
-# Stage 0: base — pnpm on Node 20 Alpine
-# ------------------------------------------------------------
-FROM node:20-alpine AS base
+FROM node:22-alpine AS base
 ENV PNPM_HOME=/pnpm
 ENV PATH="$PNPM_HOME:$PATH"
-# Prisma needs OpenSSL; tini for clean PID 1 signal handling
-RUN apk add --no-cache libc6-compat openssl tini
+RUN apk add --no-cache libc6-compat openssl tini python3 make g++
 RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
 WORKDIR /app
 
-# ------------------------------------------------------------
-# Stage 1: deps — install full monorepo deps (cached on lockfile)
-# ------------------------------------------------------------
 FROM base AS deps
-# Copy only manifests first so this layer caches until deps change
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY .npmrc pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/api/package.json                 apps/api/
 COPY packages/shared/package.json          packages/shared/
 COPY packages/database/package.json        packages/database/
@@ -29,44 +14,25 @@ COPY packages/config/package.json          packages/config/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
 
-# ------------------------------------------------------------
-# Stage 2: build — compile all workspace packages + the API
-# ------------------------------------------------------------
 FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
 COPY . .
-# Generate the Prisma client into the database package
 RUN pnpm --filter @gosumo/database generate
-# Turbo builds shared -> config -> database -> api in dependency order
 RUN pnpm build
-# Produce a self-contained, production-only bundle for the API.
-# `pnpm deploy` resolves workspace:* deps into a single node_modules tree.
 RUN pnpm --filter @gosumo/api deploy --prod --legacy /app/deploy
 
-# ------------------------------------------------------------
-# Stage 3: runtime — minimal image, non-root
-# ------------------------------------------------------------
-FROM base AS runtime
-ENV NODE_ENV=production
-ENV PORT=3000
-
-# Drop privileges
+FROM node:22-alpine AS runtime
+RUN apk add --no-cache libc6-compat openssl tini
+ENV NODE_ENV=production PORT=3000
 RUN addgroup -g 1001 nodejs && adduser -u 1001 -G nodejs -S nestjs
-
-# App bundle (already pruned to production deps) and compiled output
+WORKDIR /app
 COPY --from=build --chown=nestjs:nodejs /app/deploy/node_modules ./node_modules
 COPY --from=build --chown=nestjs:nodejs /app/apps/api/dist       ./dist
-# Prisma schema + generated client (needed for `migrate deploy` at boot)
 COPY --from=build --chown=nestjs:nodejs /app/packages/database/prisma ./prisma
-
 USER nestjs
 EXPOSE 3000
-
-# Container-level liveness probe (Compose/K8s can override)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
   CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1
-
-# tini reaps zombies and forwards SIGTERM for graceful Nest shutdown
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["node", "dist/main.js"]

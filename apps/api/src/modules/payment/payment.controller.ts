@@ -61,6 +61,18 @@ export class PaymentController {
   // Payment Links
   // ─────────────────────────────────────────────
 
+  @Get('payments')
+  @ApiOperation({ summary: 'List all payments' })
+  @ApiResponse({ status: 200, description: 'Paginated list of payments' })
+  async listPayments(
+    @TenantId() tenantId: string,
+    @Query() query: ListPaymentsQueryDto,
+  ) {
+    const result = await this.paymentService.listPaymentLinks(tenantId, query);
+    const { data, ...rest } = result as any;
+    return { data: data ?? [], pagination: { total: rest.total ?? 0, limit: rest.limit ?? 100, page: rest.page ?? 1, totalPages: rest.totalPages ?? 0 } };
+  }
+
   @Post('payments/links')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create a payment link via Razorpay' })

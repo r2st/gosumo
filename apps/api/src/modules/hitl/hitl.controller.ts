@@ -224,7 +224,7 @@ export class HitlController {
     @Param('conversationId', UuidValidationPipe) conversationId: string,
     @Body() dto: PostInternalNoteDto,
     @CurrentUser() user: AuthenticatedUser,
-  ) {
+  ): Promise<any> {
     return this.hitlService.postInternalNote(
       tenantId,
       conversationId,
@@ -241,7 +241,7 @@ export class HitlController {
   async getInternalNotes(
     @TenantId() tenantId: string,
     @Param('conversationId', UuidValidationPipe) conversationId: string,
-  ) {
+  ): Promise<any> {
     return this.hitlService.getInternalNotes(tenantId, conversationId);
   }
 }

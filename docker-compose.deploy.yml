@@ -1,0 +1,101 @@
+# GoSumo — VPS deploy (coexists with knol/authmatic)
+name: gosumo
+
+networks:
+  gosumo-net:
+    driver: bridge
+
+volumes:
+  pg-data:
+  redis-data:
+  qdrant-data:
+
+x-logging: &log
+  driver: json-file
+  options:
+    max-size: "5m"
+    max-file: "2"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    container_name: gosumo-api
+    restart: always
+    env_file: [.env.prod]
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+    command: sh -c "node node_modules/prisma/build/index.js migrate deploy --schema=prisma/schema.prisma && node dist/main.js"
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+    logging: *log
+    networks: [gosumo-net]
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: gosumo-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: gosumo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: gosumo_db
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gosumo -d gosumo_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+    command: >
+      postgres
+        -c shared_buffers=128MB
+        -c effective_cache_size=256MB
+        -c work_mem=4MB
+        -c max_connections=50
+    logging: *log
+    networks: [gosumo-net]
+
+  redis:
+    image: redis:7-alpine
+    container_name: gosumo-redis
+    restart: always
+    command: >
+      redis-server --appendonly yes
+      --requirepass ${REDIS_PASSWORD}
+      --maxmemory 128mb --maxmemory-policy noeviction
+    ports:
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 192M }
+    logging: *log
+    networks: [gosumo-net]

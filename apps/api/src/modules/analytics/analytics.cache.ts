@@ -38,9 +38,11 @@ export const analyticsCacheProvider: Provider = {
   useFactory: (configService: ConfigService): AnalyticsCache => {
     const logger = new Logger('AnalyticsCache');
     const host = configService.get<string>('app.redis.host', 'localhost');
+    const password = configService.get<string>('app.redis.password');
     const port = configService.get<number>('app.redis.port', 6379);
 
     const client = new Redis({
+      ...(password && { password }),
       host,
       port,
       maxRetriesPerRequest: null,

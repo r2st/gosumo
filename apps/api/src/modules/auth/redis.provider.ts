@@ -34,9 +34,11 @@ export const redisProvider: Provider = {
   useFactory: (configService: ConfigService): RedisClient => {
     const logger = new Logger('RedisClient');
     const host = configService.get<string>('app.redis.host', 'localhost');
+    const password = configService.get<string>('app.redis.password');
     const port = configService.get<number>('app.redis.port', 6379);
 
     const client = new Redis({
+      ...(password && { password }),
       host,
       port,
       // Required by ioredis when used with BullMQ-style blocking commands;

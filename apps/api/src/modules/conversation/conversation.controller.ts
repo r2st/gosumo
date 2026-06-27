@@ -48,7 +48,9 @@ export class ConversationController {
     @TenantId() tenantId: string,
     @Query() query: ListConversationsQueryDto,
   ) {
-    return this.conversationService.listConversations(tenantId, query);
+    const result = await this.conversationService.listConversations(tenantId, query);
+    const { data, ...rest } = result as any;
+    return { data, pagination: { total: rest.total ?? 0, limit: rest.limit ?? 20, page: rest.page ?? 1, totalPages: rest.totalPages ?? 0 } };
   }
 
   @Get('stats')

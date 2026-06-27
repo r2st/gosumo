@@ -13,11 +13,13 @@ async function bootstrap() {
   });
 
   // Global prefix
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix('v1');
 
   // CORS
   app.enableCors({
-    origin: process.env['CORS_ORIGIN'] ?? '*',
+    origin: (process.env['CORS_ORIGIN'] ?? '*').includes(',')
+      ? (process.env['CORS_ORIGIN'] ?? '*').split(',').map(s => s.trim())
+      : (process.env['CORS_ORIGIN'] ?? '*'),
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-id', 'x-correlation-id'],
     credentials: true,
@@ -64,7 +66,7 @@ async function bootstrap() {
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document, {
+  SwaggerModule.setup('v1/docs', app, document, {
     swaggerOptions: {
       persistAuthorization: true,
     },
@@ -74,7 +76,7 @@ async function bootstrap() {
   await app.listen(port);
 
   logger.log(`Application running on port ${port}`);
-  logger.log(`Swagger docs available at http://localhost:${port}/api/docs`);
+  logger.log(`Swagger docs available at http://localhost:${port}/v1/docs`);
   logger.log(`Environment: ${process.env['NODE_ENV'] ?? 'development'}`);
 }
 

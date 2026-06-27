@@ -48,8 +48,22 @@ export class AuthController {
   @ApiOperation({ summary: 'Register a new business and owner account' })
   @ApiResponse({ status: 201, description: 'Account created', type: AuthTokensDto })
   @ApiResponse({ status: 409, description: 'Email already in use' })
-  async register(@Body() dto: RegisterDto, @Req() req: Request): Promise<AuthTokensDto> {
-    return this.authService.register(dto, this.sessionMeta(req));
+  async register(@Body() dto: RegisterDto, @Req() req: Request): Promise<any> {
+    const tokens = await this.authService.register(dto, this.sessionMeta(req));
+    const payload = JSON.parse(Buffer.from(tokens.accessToken.split('.')[1]!.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
+    return {
+      user: {
+        id: payload.sub,
+        email: payload.email,
+        role: payload.role,
+        businessId: payload.businessId,
+        name: dto.name,
+        twoFactorEnabled: false,
+        createdAt: new Date().toISOString(),
+      },
+      tokens: { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken },
+      requiresTwoFactor: false,
+    };
   }
 
   @Public()
@@ -58,8 +72,23 @@ export class AuthController {
   @ApiOperation({ summary: 'Login with email and password' })
   @ApiResponse({ status: 200, description: 'Login successful', type: AuthTokensDto })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
-  async login(@Body() dto: LoginDto, @Req() req: Request): Promise<AuthTokensDto> {
-    return this.authService.login(dto, this.sessionMeta(req));
+  async login(@Body() dto: LoginDto, @Req() req: Request): Promise<any> {
+    const tokens = await this.authService.login(dto, this.sessionMeta(req));
+    // Decode user info from the access token to include in response
+    const payload = JSON.parse(Buffer.from(tokens.accessToken.split('.')[1]!.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
+    return {
+      user: {
+        id: payload.sub,
+        email: payload.email,
+        role: payload.role,
+        businessId: payload.businessId,
+        name: payload.email.split('@')[0],
+        twoFactorEnabled: false,
+        createdAt: new Date().toISOString(),
+      },
+      tokens: { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken },
+      requiresTwoFactor: false,
+    };
   }
 
   @Public()

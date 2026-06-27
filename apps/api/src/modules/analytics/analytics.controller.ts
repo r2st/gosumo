@@ -54,8 +54,48 @@ export class AnalyticsController {
   @Get('dashboard')
   @ApiOperation({ summary: 'Dashboard summary for today (cached 5 minutes)' })
   @ApiResponse({ status: 200, description: 'Dashboard summary metrics' })
-  async getDashboard(@TenantId() tenantId: string): Promise<DashboardSummaryDto> {
-    return this.analyticsService.getDashboardSummary(tenantId);
+  async getDashboard(@TenantId() tenantId: string): Promise<any> {
+    const s = await this.analyticsService.getDashboardSummary(tenantId);
+    const now = new Date();
+    const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    return {
+      period: { from: startOfDay.toISOString(), to: now.toISOString() },
+      conversations: {
+        total: s.conversationsToday,
+        open: s.openConversations,
+        resolved: s.conversationsToday > 0 ? Math.round(s.conversationsToday * s.resolutionRateToday / 100) : 0,
+        escalated: 0,
+        avgResolutionTimeMs: 0,
+        avgFirstResponseTimeMs: s.avgFirstResponseSecondsToday * 1000,
+      },
+      messages: {
+        inbound: 0,
+        outbound: 0,
+        aiSent: 0,
+        humanSent: 0,
+      },
+      ai: {
+        autonomyRate: s.autonomyRateToday,
+        avgConfidence: 0,
+        autoExecuted: 0,
+        reviewed: 0,
+        escalated: 0,
+        approvalRate: 0,
+      },
+      revenue: {
+        total: s.revenueTodayPaise,
+        orders: s.ordersToday,
+        payments: 0,
+        avgOrderValue: s.ordersToday > 0 ? Math.round(s.revenueTodayPaise / s.ordersToday) : 0,
+      },
+      clients: {
+        total: 0,
+        newThisPeriod: s.newClientsToday,
+        activeThisPeriod: 0,
+        churnRisk: 0,
+      },
+      channels: [],
+    };
   }
 
   // ─────────────────────────────────────────────
@@ -69,8 +109,28 @@ export class AnalyticsController {
   async getConversations(
     @TenantId() tenantId: string,
     @Query() query: AnalyticsRangeQueryDto,
-  ): Promise<ConversationMetricsDto> {
-    return this.analyticsService.getConversationMetrics(tenantId, query);
+  ): Promise<any> {
+    const m = await this.analyticsService.getConversationMetrics(tenantId, query);
+    return {
+      summary: {
+        total: m.total,
+        avgResolutionTimeMs: 0,
+        avgFirstResponseTimeMs: 0,
+      },
+      timeSeries: m.volumeSeries.map((p: any) => ({
+        date: p.date,
+        created: p.value,
+        resolved: 0,
+        escalated: 0,
+        avgResolutionTimeMs: 0,
+      })),
+      channelBreakdown: m.byChannel.map((c: any) => ({
+        channel: c.channel,
+        count: c.count,
+        avgResolutionTimeMs: 0,
+      })),
+      topIntents: [],
+    };
   }
 
   @Get('conversations/response-times')
@@ -93,8 +153,23 @@ export class AnalyticsController {
   async getRevenue(
     @TenantId() tenantId: string,
     @Query() query: AnalyticsRangeQueryDto,
-  ): Promise<RevenueMetricsDto> {
-    return this.analyticsService.getRevenueMetrics(tenantId, query);
+  ): Promise<any> {
+    const m = await this.analyticsService.getRevenueMetrics(tenantId, query);
+    return {
+      summary: {
+        totalRevenue: m.grossRevenuePaise,
+        totalOrders: m.orderCount,
+        avgOrderValue: m.averageOrderValuePaise,
+        totalRefunds: m.refundsPaise,
+        netRevenue: m.netRevenuePaise,
+      },
+      timeSeries: m.revenueSeries.map((p: any, i: number) => ({
+        date: p.date,
+        revenue: p.value,
+        orders: m.orderCountSeries?.[i]?.value ?? 0,
+        refunds: 0,
+      })),
+    };
   }
 
   @Get('revenue/top-products')

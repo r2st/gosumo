@@ -23,10 +23,14 @@ export interface TenantScopedRequest extends Request {
  */
 const EXEMPT_PREFIXES: readonly string[] = [
   'webhooks',
+  'v1/webhooks',
   'auth',
+  'v1/auth',
   'health',
-  'api/docs',
+  'v1/health',
+  'v1/docs',
   'queues',
+  'v1/queues',
 ];
 
 /**
@@ -49,7 +53,7 @@ export class TenantIsolationMiddleware implements NestMiddleware {
   private readonly logger = new Logger(TenantIsolationMiddleware.name);
 
   use(req: TenantScopedRequest, _res: Response, next: NextFunction): void {
-    if (this.isExempt(req.path)) {
+    if (this.isExempt(req.originalUrl)) {
       next();
       return;
     }

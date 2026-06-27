@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  output: "standalone",
   eslint: {
     // Lint is run separately in CI; do not fail production builds on lint.
     ignoreDuringBuilds: true,

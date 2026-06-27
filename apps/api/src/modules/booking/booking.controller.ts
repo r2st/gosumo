@@ -169,7 +169,9 @@ export class BookingController {
     @TenantId() tenantId: string,
     @Query() query: ListBookingsQueryDto,
   ) {
-    return this.bookingService.listBookings(tenantId, query);
+    const result = await this.bookingService.listBookings(tenantId, query);
+    const { data, ...rest } = result as any;
+    return { data, pagination: { total: rest.total ?? 0, limit: rest.limit ?? 10, page: rest.page ?? 1, totalPages: rest.totalPages ?? 0 } };
   }
 
   @Get(':id')

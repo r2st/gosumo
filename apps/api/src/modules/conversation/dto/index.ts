@@ -74,6 +74,11 @@ export class ListConversationsQueryDto {
   @MaxLength(200)
   search?: string;
 
+  @ApiPropertyOptional({ description: 'Include related entities (comma-separated)' })
+  @IsOptional()
+  @IsString()
+  include?: string;
+
   @ApiPropertyOptional({ description: 'Created-at lower bound (ISO-8601)' })
   @IsOptional()
   @IsDateString()
