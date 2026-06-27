@@ -196,6 +196,20 @@ export class TenantRepository {
     });
   }
 
+  /**
+   * Toggle a channel account's active flag without disconnecting it.
+   */
+  async setChannelAccountActive(
+    businessId: string,
+    channelAccountId: string,
+    isActive: boolean,
+  ): Promise<channel_accounts> {
+    return this.prisma.channel_accounts.update({
+      where: { id: channelAccountId },
+      data: { is_active: isActive },
+    });
+  }
+
   // ─────────────────────────────────────────────
   // Team Members
   // ─────────────────────────────────────────────

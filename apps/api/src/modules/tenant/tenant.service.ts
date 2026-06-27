@@ -449,6 +449,46 @@ export class TenantService {
     );
   }
 
+  /**
+   * Update a channel account's status (active/paused) without disconnecting it.
+   * Emits `business.settings.updated` so downstream caches can react.
+   */
+  async setChannelStatus(
+    businessId: string,
+    channelAccountId: string,
+    isActive: boolean,
+  ): Promise<channel_accounts> {
+    const channelAccount = await this.repository.findChannelAccountById(
+      businessId,
+      channelAccountId,
+    );
+
+    if (!channelAccount) {
+      throw new NotFoundException(
+        `Channel account not found: ${channelAccountId}`,
+      );
+    }
+
+    const updated = await this.repository.setChannelAccountActive(
+      businessId,
+      channelAccountId,
+      isActive,
+    );
+
+    this.eventEmitter.emit('business.settings.updated', {
+      businessId,
+      changedFields: ['channelStatus'],
+      timestamp: new Date().toISOString(),
+    });
+
+    this.logger.log(
+      `Channel ${channelAccount.channel} ${isActive ? 'activated' : 'paused'} ` +
+        `for business ${businessId}: ${channelAccountId}`,
+    );
+
+    return updated;
+  }
+
   // ─────────────────────────────────────────────
   // Team Members
   // ─────────────────────────────────────────────

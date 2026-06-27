@@ -52,6 +52,14 @@ export default registerAs('app', () => ({
     phoneNumberId: process.env['WHATSAPP_PHONE_NUMBER_ID'],
   },
 
+  // Instagram / Meta Messaging
+  instagram: {
+    verifyToken: process.env['INSTAGRAM_VERIFY_TOKEN'],
+    appSecret: process.env['INSTAGRAM_APP_SECRET'],
+    accessToken: process.env['INSTAGRAM_ACCESS_TOKEN'],
+    pageId: process.env['INSTAGRAM_PAGE_ID'],
+  },
+
   // Razorpay
   razorpay: {
     keyId: process.env['RAZORPAY_KEY_ID'],

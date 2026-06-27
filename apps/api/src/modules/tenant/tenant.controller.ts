@@ -21,6 +21,7 @@ import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
 import { UpdateBusinessDto } from './dto/update-business.dto';
 import { UpdateAIConfigDto } from './dto/ai-config.dto';
 import { ConnectChannelDto } from './dto/connect-channel.dto';
+import { UpdateChannelDto } from './dto/update-channel.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateBusinessPoliciesDto } from './dto/business-policies.dto';
 import { CreateBusinessDto } from './dto/create-business.dto';
@@ -42,6 +43,7 @@ import { OnboardingStep } from './tenant.constants';
  *   PATCH  /tenant/ai-config           — update AI configuration
  *   GET    /tenant/channels            — list connected channels
  *   POST   /tenant/channels            — connect a new channel
+ *   PATCH  /tenant/channels/:id        — update a channel status (activate/pause)
  *   DELETE /tenant/channels/:id        — disconnect a channel
  *   GET    /tenant/members             — list team members
  *   POST   /tenant/members/invite      — invite a new team member
@@ -162,6 +164,19 @@ export class TenantController {
     @Body() dto: ConnectChannelDto,
   ) {
     return this.tenantService.connectChannel(businessId, dto);
+  }
+
+  @Patch('channels/:id')
+  @ApiOperation({ summary: 'Update a channel status (activate/pause)' })
+  @ApiParam({ name: 'id', description: 'Channel account UUID' })
+  @ApiResponse({ status: 200, description: 'Channel status updated' })
+  @ApiResponse({ status: 404, description: 'Channel account not found' })
+  async updateChannel(
+    @TenantId() businessId: string,
+    @Param('id', UuidValidationPipe) channelAccountId: string,
+    @Body() dto: UpdateChannelDto,
+  ) {
+    return this.tenantService.setChannelStatus(businessId, channelAccountId, dto.isActive);
   }
 
   @Delete('channels/:id')
