@@ -16,7 +16,7 @@ function makeJwt(payload: Record<string, unknown>): string {
 
 function makeReq(overrides: Partial<TenantScopedRequest> = {}): TenantScopedRequest {
   return {
-    path: '/tenant/profile',
+    originalUrl: '/v1/tenant/profile',
     headers: {},
     body: {},
     query: {},
@@ -92,19 +92,19 @@ describe('TenantIsolationMiddleware', () => {
   });
 
   it.each([
-    '/webhooks/whatsapp',
-    '/auth/login',
-    '/health',
-    '/api/docs',
-  ])('skips enforcement for exempt path %s', (path) => {
-    const req = makeReq({ path });
+    '/v1/webhooks/whatsapp',
+    '/v1/auth/login',
+    '/v1/health',
+    '/v1/docs',
+  ])('skips enforcement for exempt path %s', (originalUrl) => {
+    const req = makeReq({ originalUrl });
     middleware.use(req, res, next);
     expect(next).toHaveBeenCalled();
     expect(req.tenantId).toBeUndefined();
   });
 
   it('does not treat a path that merely starts with an exempt word as exempt', () => {
-    const req = makeReq({ path: '/authorizations' });
+    const req = makeReq({ originalUrl: '/v1/authorizations' });
     expect(() => middleware.use(req, res, next)).toThrow(UnauthorizedException);
   });
 

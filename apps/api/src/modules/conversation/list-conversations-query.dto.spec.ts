@@ -76,4 +76,65 @@ describe('ListConversationsQueryDto validation', () => {
     expect(result).toBeInstanceOf(ListConversationsQueryDto);
     expect(result.channelType).toBeUndefined();
   });
+
+  // ── `q` free-text search (frontend sends `q`, not `search`) ──
+  describe('q (free-text search)', () => {
+    it('accepts the `q` param the dashboard sends', async () => {
+      const result = await pipe.transform({ q: 'refund request' }, metadata);
+
+      expect(result.q).toBe('refund request');
+    });
+
+    it('rejects the old `search` key (now a non-whitelisted property)', async () => {
+      await expect(
+        pipe.transform({ search: 'refund request' }, metadata),
+      ).rejects.toMatchObject({
+        response: {
+          message: expect.arrayContaining([
+            expect.stringContaining('property search should not exist'),
+          ]),
+        },
+      });
+    });
+  });
+
+  // ── `assignedTo` (frontend sends `assignedTo`, not `assigneeId`) ──
+  describe('assignedTo', () => {
+    it('accepts a team-member UUID', async () => {
+      const uuid = '550e8400-e29b-41d4-a716-446655440000';
+      const result = await pipe.transform({ assignedTo: uuid }, metadata);
+
+      expect(result.assignedTo).toBe(uuid);
+    });
+
+    it.each(['me', 'unassigned'])(
+      'accepts the magic value "%s"',
+      async (value) => {
+        const result = await pipe.transform({ assignedTo: value }, metadata);
+
+        expect(result.assignedTo).toBe(value);
+      },
+    );
+
+    it('rejects an arbitrary non-UUID, non-magic value', async () => {
+      await expect(
+        pipe.transform({ assignedTo: 'someone-else' }, metadata),
+      ).rejects.toMatchObject({ status: 400 });
+    });
+
+    it('rejects the old `assigneeId` key (now a non-whitelisted property)', async () => {
+      await expect(
+        pipe.transform(
+          { assigneeId: '550e8400-e29b-41d4-a716-446655440000' },
+          metadata,
+        ),
+      ).rejects.toMatchObject({
+        response: {
+          message: expect.arrayContaining([
+            expect.stringContaining('property assigneeId should not exist'),
+          ]),
+        },
+      });
+    });
+  });
 });

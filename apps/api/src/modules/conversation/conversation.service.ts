@@ -25,6 +25,7 @@ import {
 import { PrismaService } from '../../common/services/prisma.service';
 import {
   ConversationRepository,
+  ConversationListFilters,
   PaginatedConversations,
 } from './conversation.repository';
 import { ListConversationsQueryDto } from './dto';
@@ -216,20 +217,32 @@ export class ConversationService {
   async listConversations(
     businessId: string,
     query: ListConversationsQueryDto,
+    currentUserId?: string,
   ): Promise<PaginatedConversations> {
-    return this.repository.list(businessId, {
+    const filters: ConversationListFilters = {
       status: query.status,
       channel: query.channelType,
-      assigneeId: query.assigneeId,
       unassigned: query.unassigned,
       clientId: query.clientId,
       tags: query.tags,
-      search: query.search,
+      search: query.q,
       dateFrom: query.dateFrom,
       dateTo: query.dateTo,
       page: query.page,
       limit: query.limit,
-    });
+    };
+
+    // `assignedTo` accepts a team-member UUID plus the magic values
+    // "me" (the current user) and "unassigned".
+    if (query.assignedTo === 'unassigned') {
+      filters.unassigned = true;
+    } else if (query.assignedTo === 'me') {
+      filters.assigneeId = currentUserId;
+    } else if (query.assignedTo) {
+      filters.assigneeId = query.assignedTo;
+    }
+
+    return this.repository.list(businessId, filters);
   }
 
   // ─────────────────────────────────────────────

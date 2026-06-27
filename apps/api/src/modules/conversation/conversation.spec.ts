@@ -415,6 +415,57 @@ describe('ConversationService', () => {
         limit: 20,
       });
     });
+
+    it('should map the `q` query param to the repository `search` filter', async () => {
+      repository.list.mockResolvedValue(paginatedResult);
+
+      await service.listConversations(BUSINESS_ID, { q: 'refund' });
+
+      expect(repository.list).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        expect.objectContaining({ search: 'refund' }),
+      );
+    });
+
+    it('should translate assignedTo=<uuid> to the assigneeId filter', async () => {
+      repository.list.mockResolvedValue(paginatedResult);
+      const uuid = '550e8400-e29b-41d4-a716-446655440000';
+
+      await service.listConversations(BUSINESS_ID, { assignedTo: uuid });
+
+      expect(repository.list).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        expect.objectContaining({ assigneeId: uuid }),
+      );
+    });
+
+    it('should translate assignedTo="me" to the current user id', async () => {
+      repository.list.mockResolvedValue(paginatedResult);
+      const currentUserId = 'me-user-id';
+
+      await service.listConversations(
+        BUSINESS_ID,
+        { assignedTo: 'me' },
+        currentUserId,
+      );
+
+      expect(repository.list).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        expect.objectContaining({ assigneeId: currentUserId }),
+      );
+    });
+
+    it('should translate assignedTo="unassigned" to the unassigned filter', async () => {
+      repository.list.mockResolvedValue(paginatedResult);
+
+      await service.listConversations(BUSINESS_ID, { assignedTo: 'unassigned' });
+
+      const [, filters] = repository.list.mock.calls.at(-1)!;
+      expect(filters).toEqual(
+        expect.objectContaining({ unassigned: true }),
+      );
+      expect(filters.assigneeId).toBeUndefined();
+    });
   });
 
   // ─── assignConversation ──────────────────────

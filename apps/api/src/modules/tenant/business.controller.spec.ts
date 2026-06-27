@@ -92,11 +92,35 @@ describe('BusinessController', () => {
   });
 
   describe('getSubscription', () => {
-    it('should return subscription from service', async () => {
-      const sub = { plan: 'GROWTH', status: 'ACTIVE' };
+    it('should map the service subscription into the billing-page shape', async () => {
+      // SubscriptionService returns a SubscriptionResponse (plan, pricePaise,
+      // isActive, ...); the controller transforms it for the billing page.
+      const sub = {
+        plan: 'GROWTH',
+        name: 'Growth',
+        pricePaise: 299900,
+        limits: {},
+        features: [],
+        isActive: true,
+      };
       subscriptionService.getSubscription.mockResolvedValue(sub);
-      const result = await controller.getSubscription(BIZ_ID);
-      expect(result).toEqual(sub);
+      const result = (await controller.getSubscription(BIZ_ID)) as any;
+      expect(result.plan).toBe('GROWTH');
+      expect(result.status).toBe('ACTIVE');
+      expect(result.priceMonthlyPaise).toBe(299900);
+      expect(result.currentPeriodStart).toBeDefined();
+      expect(result.currentPeriodEnd).toBeDefined();
+      expect(result.usage).toEqual([]);
+    });
+
+    it('should report status INACTIVE when the subscription is not active', async () => {
+      subscriptionService.getSubscription.mockResolvedValue({
+        plan: 'GROWTH',
+        pricePaise: 299900,
+        isActive: false,
+      });
+      const result = (await controller.getSubscription(BIZ_ID)) as any;
+      expect(result.status).toBe('INACTIVE');
     });
 
     it('should return fallback defaults when service throws', async () => {

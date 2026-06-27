@@ -12,6 +12,7 @@ import {
   IsNotEmpty,
   MaxLength,
   ArrayMaxSize,
+  Matches,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -36,10 +37,17 @@ export class ListConversationsQueryDto {
   @IsEnum(ChannelType)
   channelType?: ChannelType;
 
-  @ApiPropertyOptional({ description: 'Filter by assigned team member UUID' })
+  @ApiPropertyOptional({
+    description:
+      'Filter by assignee: a team-member UUID, or the magic values "me" (current user) or "unassigned"',
+  })
   @IsOptional()
-  @IsUUID()
-  assigneeId?: string;
+  @IsString()
+  @Matches(
+    /^(me|unassigned|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i,
+    { message: 'assignedTo must be a UUID, "me", or "unassigned"' },
+  )
+  assignedTo?: string;
 
   @ApiPropertyOptional({ description: 'Only conversations with no assignee' })
   @IsOptional()
@@ -72,7 +80,7 @@ export class ListConversationsQueryDto {
   @IsOptional()
   @IsString()
   @MaxLength(200)
-  search?: string;
+  q?: string;
 
   @ApiPropertyOptional({ description: 'Include related entities (comma-separated)' })
   @IsOptional()

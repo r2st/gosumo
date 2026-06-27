@@ -14,6 +14,7 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { ConversationService } from './conversation.service';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
 import {
   ListConversationsQueryDto,
@@ -46,9 +47,10 @@ export class ConversationController {
   @ApiResponse({ status: 200, description: 'Paginated list of conversations' })
   async list(
     @TenantId() tenantId: string,
+    @CurrentUser('sub') userId: string,
     @Query() query: ListConversationsQueryDto,
   ) {
-    const result = await this.conversationService.listConversations(tenantId, query);
+    const result = await this.conversationService.listConversations(tenantId, query, userId);
     const { data, ...rest } = result as any;
     return { data, pagination: { total: rest.total ?? 0, limit: rest.limit ?? 20, page: rest.page ?? 1, totalPages: rest.totalPages ?? 0 } };
   }
