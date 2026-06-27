@@ -380,6 +380,11 @@ model businesses {
   /// Business profile text used as AI context
   profile     Json @default("{}") @db.JsonB
 
+  /// Guided onboarding wizard state — per-step status (pending/completed/skipped),
+  /// collected step data, current step, and completion timestamp. Owned by the
+  /// onboarding module (see apps/api/src/modules/onboarding).
+  onboarding_progress Json @default("{}") @db.JsonB
+
   is_active  Boolean   @default(true)
   created_at DateTime  @default(now()) @db.Timestamptz
   updated_at DateTime  @updatedAt @db.Timestamptz

@@ -24,6 +24,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { ChannelsModule } from './modules/channels/channels.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
+import { OnboardingModule } from './modules/onboarding/onboarding.module';
 
 @Module({
   imports: [
@@ -84,6 +85,7 @@ import { IntegrationsModule } from './modules/integrations/integrations.module';
     AdminModule,
     ChannelsModule,
     IntegrationsModule,
+    OnboardingModule,
   ],
 })
 export class AppModule {}
