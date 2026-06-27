@@ -29,7 +29,7 @@ complete(businessId)                     // requires all REQUIRED_STEPS done; sk
 chat(businessId, dto)                    // grounded Claude reply; static fallback if LLM down
 ```
 
-## Endpoints (controller path `v1/onboarding`)
+## Endpoints (controller path `onboarding`; `/v1` is the documented version prefix)
 
 - `GET  /v1/onboarding/progress`
 - `PUT  /v1/onboarding/progress`

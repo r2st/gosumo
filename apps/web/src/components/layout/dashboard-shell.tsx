@@ -6,6 +6,7 @@ import { Sidebar } from './sidebar';
 import { Topbar } from './topbar';
 import { useAuth } from '@/providers/auth-provider';
 import { LoadingState } from '@/components/ui/states';
+import { OnboardingGate } from '@/components/onboarding/onboarding-gate';
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -34,6 +35,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         <Topbar onMenuClick={() => setSidebarOpen(true)} />
         <main className="flex-1 overflow-x-hidden">{children}</main>
       </div>
+      <OnboardingGate />
     </div>
   );
 }

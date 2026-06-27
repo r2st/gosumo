@@ -23,8 +23,11 @@ import {
 /**
  * OnboardingController — REST surface for the guided onboarding wizard.
  *
- * Routes (tenant-scoped via @TenantId(); the version prefix is applied by the
- * API gateway/global config, matching the dashboard's `/v1` base):
+ * Controller path is the bare `onboarding` resource, matching sibling
+ * controllers (`tenant`, `ai`, …). The `/v1` version segment in API_DESIGN.md
+ * and the dashboard's API base is the documented version prefix layer; routes
+ * below are written with it for clarity. All routes are tenant-scoped via
+ * @TenantId().
  *   GET  /v1/onboarding/progress  — full wizard progress
  *   PUT  /v1/onboarding/progress  — update a step's status/data
  *   POST /v1/onboarding/complete  — mark onboarding done
@@ -32,7 +35,7 @@ import {
  *   POST /v1/onboarding/chat      — ask the AI onboarding assistant
  */
 @ApiTags('onboarding')
-@Controller('v1/onboarding')
+@Controller('onboarding')
 export class OnboardingController {
   private readonly logger = new Logger(OnboardingController.name);
 
