@@ -1,15 +1,22 @@
 'use client';
 
 import { useState } from 'react';
-import { Package, Search } from 'lucide-react';
+import { FolderTree, Package, Pencil, Plus, Search } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { LoadingState, EmptyState, ErrorState } from '@/components/ui/states';
-import { useCatalogItems } from '@/hooks/use-queries';
+import { StockBadge } from '@/components/catalog/stock-badge';
+import { ProductFormModal } from '@/components/catalog/product-form-modal';
+import { CategoryManager } from '@/components/catalog/category-manager';
+import { useCatalogItems, useCategories } from '@/hooks/use-catalog';
 import { paiseToRupees } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import type { CatalogItem, CatalogItemType } from '@/lib/types';
 
 const TYPES = [
   { label: 'All', value: '' },
@@ -22,15 +29,51 @@ const TYPES = [
 export default function CatalogPage() {
   const [q, setQ] = useState('');
   const [type, setType] = useState('');
-  const { data, isLoading, isError, error, refetch } = useCatalogItems({ q: q || undefined, type: type || undefined });
+  const [categoryId, setCategoryId] = useState('');
+  const [lowStock, setLowStock] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editItem, setEditItem] = useState<CatalogItem | null>(null);
+  const [categoryOpen, setCategoryOpen] = useState(false);
+
+  const categoriesQ = useCategories();
+  const categories = categoriesQ.data?.categories ?? [];
+
+  const { data, isLoading, isError, error, refetch } = useCatalogItems({
+    q: q || undefined,
+    type: (type || undefined) as CatalogItemType | undefined,
+    categoryId: categoryId || undefined,
+    lowStock: lowStock || undefined,
+  });
+
+  const openNew = () => {
+    setEditItem(null);
+    setFormOpen(true);
+  };
+  const openEdit = (item: CatalogItem) => {
+    setEditItem(item);
+    setFormOpen(true);
+  };
 
   return (
     <div>
-      <PageHeader title="Catalog" description="Your products, services and packages." />
+      <PageHeader
+        title="Catalog"
+        description="Your products, services and packages."
+        actions={
+          <>
+            <Button variant="outline" onClick={() => setCategoryOpen(true)}>
+              <FolderTree className="h-4 w-4" /> Categories
+            </Button>
+            <Button onClick={openNew}>
+              <Plus className="h-4 w-4" /> Add item
+            </Button>
+          </>
+        }
+      />
 
       <div className="space-y-4 p-4 lg:p-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-1.5">
             {TYPES.map((t) => (
               <button
                 key={t.value}
@@ -46,9 +89,21 @@ export default function CatalogPage() {
               </button>
             ))}
           </div>
-          <div className="relative w-full sm:w-64">
-            <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search catalog…" className="pl-8" />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="w-full sm:w-48">
+              <Select
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
+                options={[{ label: 'All categories', value: '' }, ...categories.map((c) => ({ label: c.name, value: c.id }))]}
+              />
+            </div>
+            <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+              <Switch checked={lowStock} onChange={setLowStock} /> Low stock only
+            </label>
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search catalog…" className="pl-8" />
+            </div>
           </div>
         </div>
 
@@ -57,12 +112,21 @@ export default function CatalogPage() {
         ) : isError ? (
           <ErrorState message={(error as Error)?.message} onRetry={() => refetch()} />
         ) : !data || data.data.length === 0 ? (
-          <EmptyState icon={Package} title="No catalog items" description="Items added in the catalog will appear here." />
+          <EmptyState
+            icon={Package}
+            title="No catalog items"
+            description="Add your first product or service to get started."
+            action={
+              <Button onClick={openNew}>
+                <Plus className="h-4 w-4" /> Add item
+              </Button>
+            }
+          />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {data.data.map((item) => (
-              <Card key={item.id} className="overflow-hidden">
-                <div className="aspect-video w-full bg-muted">
+              <Card key={item.id} className="group overflow-hidden">
+                <div className="relative aspect-video w-full bg-muted">
                   {item.imageUrls[0] ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={item.imageUrls[0]} alt={item.name} className="h-full w-full object-cover" />
@@ -71,13 +135,23 @@ export default function CatalogPage() {
                       <Package className="h-8 w-8" />
                     </div>
                   )}
+                  <button
+                    onClick={() => openEdit(item)}
+                    className="absolute right-2 top-2 rounded-md bg-card/90 p-1.5 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:text-foreground group-hover:opacity-100"
+                    aria-label={`Edit ${item.name}`}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                  {!item.isActive && (
+                    <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-xs font-medium text-white">
+                      Inactive
+                    </span>
+                  )}
                 </div>
                 <CardContent className="pt-4">
                   <div className="flex items-start justify-between gap-2">
                     <h3 className="truncate text-sm font-semibold">{item.name}</h3>
-                    <Badge tone={item.isAvailable ? 'success' : 'neutral'}>
-                      {item.isAvailable ? 'Available' : 'Unavailable'}
-                    </Badge>
+                    <StockBadge item={item} />
                   </div>
                   <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                     {item.shortDescription ?? item.description ?? '—'}
@@ -97,15 +171,26 @@ export default function CatalogPage() {
                     </span>
                     <Badge tone="info">{item.type}</Badge>
                   </div>
-                  {item.trackInventory && (
-                    <p className="mt-2 text-xs text-muted-foreground">Stock: {item.stockQuantity ?? 0}</p>
+                  {item.variants.length > 0 && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {item.variants.length} variant{item.variants.length === 1 ? '' : 's'}
+                    </p>
                   )}
                 </CardContent>
               </Card>
             ))}
           </div>
         )}
+
+        {data && data.data.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            Showing {data.data.length} of {data.pagination.total} items
+          </p>
+        )}
       </div>
+
+      <ProductFormModal open={formOpen} onClose={() => setFormOpen(false)} item={editItem} categories={categories} />
+      <CategoryManager open={categoryOpen} onClose={() => setCategoryOpen(false)} />
     </div>
   );
 }
