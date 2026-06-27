@@ -1,42 +1,48 @@
-import { Module, OnModuleInit } from '@nestjs/common';
+import { Module, OnModuleInit, forwardRef } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ChannelAdapterService } from './channel-adapter.service';
 import { ChannelAdapterController } from './channel-adapter.controller';
+import { WebChatWidgetController } from './webchat-widget';
 import { WhatsAppAdapter } from './adapters/whatsapp.adapter';
 import { InstagramAdapter } from './adapters/instagram.adapter';
+import { SmsAdapter } from './adapters/sms.adapter';
+import { WebChatAdapter } from './adapters/webchat.adapter';
+import { EmailAdapter } from './adapters/email.adapter';
+import { WebChatGateway } from './gateways/webchat.gateway';
+import { PrismaService } from '../../common/services/prisma.service';
+import { ChannelsModule } from '../channels/channels.module';
 
 /**
  * ChannelAdapterModule
  *
  * Wires together all channel adapters and exposes:
- *  - ChannelAdapterService  — the public API for other modules
- *  - Webhook controller     — /webhooks/* REST endpoints
+ *  - ChannelAdapterService    — the public API for other modules
+ *  - Webhook controller       — /webhooks/* REST endpoints
+ *  - WebChat widget + gateway — Socket.IO entry point for web chat
  *
  * ## Adding a new channel adapter
  *
  * 1. Create `adapters/<channel>.adapter.ts` extending BaseChannelAdapter
- * 2. Add it to the `providers` array below
- * 3. Inject it into ChannelAdapterModuleInit and call
- *    `this.channelAdapterService.registerAdapter(adapter)` in onModuleInit()
+ * 2. Add it to the `providers` array below and inject it into the constructor
+ * 3. Register it in `onModuleInit()` via `registerAdapter()`
  *
  * The controller's generic /:channel route picks it up automatically.
  */
 @Module({
   imports: [
-    // ConfigModule is global so we just list it here for documentation clarity
     ConfigModule,
-    // EventEmitterModule is global (registered in AppModule) — no forRoot needed
+    forwardRef(() => ChannelsModule),
   ],
-  controllers: [ChannelAdapterController],
+  controllers: [ChannelAdapterController, WebChatWidgetController],
   providers: [
     ChannelAdapterService,
     WhatsAppAdapter,
     InstagramAdapter,
-    // Add future adapters here:
-    // SmsAdapter,
-    // WebChatAdapter,
-    // EmailAdapter,
+    SmsAdapter,
+    WebChatAdapter,
+    EmailAdapter,
+    WebChatGateway,
+    PrismaService,
   ],
   exports: [ChannelAdapterService],
 })
@@ -45,6 +51,9 @@ export class ChannelAdapterModule implements OnModuleInit {
     private readonly channelAdapterService: ChannelAdapterService,
     private readonly whatsAppAdapter: WhatsAppAdapter,
     private readonly instagramAdapter: InstagramAdapter,
+    private readonly smsAdapter: SmsAdapter,
+    private readonly webChatAdapter: WebChatAdapter,
+    private readonly emailAdapter: EmailAdapter,
   ) {}
 
   /**
@@ -55,7 +64,8 @@ export class ChannelAdapterModule implements OnModuleInit {
   onModuleInit(): void {
     this.channelAdapterService.registerAdapter(this.whatsAppAdapter);
     this.channelAdapterService.registerAdapter(this.instagramAdapter);
-    // Register additional adapters as they are implemented:
-    // this.channelAdapterService.registerAdapter(this.smsAdapter);
+    this.channelAdapterService.registerAdapter(this.smsAdapter);
+    this.channelAdapterService.registerAdapter(this.webChatAdapter);
+    this.channelAdapterService.registerAdapter(this.emailAdapter);
   }
 }

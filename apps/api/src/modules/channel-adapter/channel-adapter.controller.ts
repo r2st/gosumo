@@ -27,6 +27,7 @@ import { ChannelAdapterService } from './channel-adapter.service';
 import { WhatsAppAdapter, isStatusUpdateOnly } from './adapters/whatsapp.adapter';
 import { InstagramAdapter, isNonMessageEventOnly } from './adapters/instagram.adapter';
 import { WhatsAppVerifyQueryDto } from './dto/webhook.dto';
+import { Public } from '../../common/decorators/public.decorator';
 
 /**
  * Webhook endpoints for all channel adapters.
@@ -42,6 +43,7 @@ import { WhatsAppVerifyQueryDto } from './dto/webhook.dto';
  *   POST /webhooks/:channel          — Generic webhook for other channels
  */
 @ApiTags('webhooks')
+@Public()
 @Controller('webhooks')
 export class ChannelAdapterController {
   private readonly logger = new Logger(ChannelAdapterController.name);

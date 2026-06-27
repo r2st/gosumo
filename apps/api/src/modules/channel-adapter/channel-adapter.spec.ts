@@ -23,6 +23,23 @@ import { ChannelType, MessageContentType, MessageDirection, RawRequest, Outbound
 
 import { WhatsAppAdapter, isStatusUpdateOnly } from './adapters/whatsapp.adapter';
 import { ChannelAdapterService } from './channel-adapter.service';
+import { PrismaService } from '../../common/services/prisma.service';
+
+/**
+ * Mock PrismaService for the service tests. `channel_accounts.findFirst`
+ * resolves to null so handleInboundWebhook takes the "no channel_account
+ * resolved" path and emits a partial event using the passed-in businessId /
+ * channelAccountId — which is exactly what these tests assert on.
+ */
+function makeMockPrisma(): PrismaService {
+  return {
+    channel_accounts: { findFirst: jest.fn().mockResolvedValue(null) },
+    channel_contacts: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
+    clients: { create: jest.fn() },
+    conversations: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
+    messages: { create: jest.fn() },
+  } as unknown as PrismaService;
+}
 
 // ─────────────────────────────────────────────
 // Test fixtures
@@ -634,6 +651,7 @@ describe('ChannelAdapterService — adapter registry', () => {
           provide: EventEmitter2,
           useValue: { emit: jest.fn() },
         },
+        { provide: PrismaService, useValue: makeMockPrisma() },
       ],
     }).compile();
 
@@ -696,6 +714,7 @@ describe('ChannelAdapterService — handleInboundWebhook', () => {
           provide: EventEmitter2,
           useValue: { emit: emitSpy },
         },
+        { provide: PrismaService, useValue: makeMockPrisma() },
       ],
     }).compile();
 
@@ -784,6 +803,7 @@ describe('ChannelAdapterService — sendMessage', () => {
       providers: [
         ChannelAdapterService,
         { provide: EventEmitter2, useValue: { emit: emitSpy } },
+        { provide: PrismaService, useValue: makeMockPrisma() },
       ],
     }).compile();
 

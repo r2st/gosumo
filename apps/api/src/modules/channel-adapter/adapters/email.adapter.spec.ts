@@ -55,7 +55,14 @@ describe("EmailAdapter", () => {
     }
   });
 
-  it("sendMessage returns success (placeholder)", async () => {
+  it("sendMessage returns success when SendGrid accepts the request", async () => {
+    // SendGrid returns 202 Accepted with the message id in the x-message-id header
+    const fetchSpy = jest.spyOn(global, "fetch").mockResolvedValueOnce({
+      status: 202,
+      headers: { get: (name: string) => (name === "x-message-id" ? "sg-message-id-123" : null) },
+      text: async () => "",
+    } as unknown as Response);
+
     const result = await adapter.sendMessage({
       channelAccountId: "support@business.com",
       recipientExternalId: "customer@example.com",
@@ -66,6 +73,31 @@ describe("EmailAdapter", () => {
     });
 
     expect(result.success).toBe(true);
-    expect(result.externalMessageId).toBeDefined();
+    expect(result.externalMessageId).toBe("sg-message-id-123");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://api.sendgrid.com/v3/mail/send",
+      expect.objectContaining({ method: "POST" }),
+    );
+
+    fetchSpy.mockRestore();
+  });
+
+  it("sendMessage returns a failure result on a 4xx from SendGrid", async () => {
+    const fetchSpy = jest.spyOn(global, "fetch").mockResolvedValueOnce({
+      status: 401,
+      headers: { get: () => null },
+      text: async () => "Unauthorized",
+    } as unknown as Response);
+
+    const result = await adapter.sendMessage({
+      channelAccountId: "support@business.com",
+      recipientExternalId: "customer@example.com",
+      content: { type: MessageContentType.TEXT, text: "Hello" },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("401");
+
+    fetchSpy.mockRestore();
   });
 });
