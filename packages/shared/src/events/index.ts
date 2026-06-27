@@ -234,6 +234,30 @@ export interface OrderPaidEvent extends BaseEvent {
   status: OrderStatus;
 }
 
+export interface OrderConfirmedEvent extends BaseEvent {
+  readonly type: 'order.confirmed';
+  orderId: string;
+  orderNumber: string;
+  clientId: string;
+  confirmedAt: string;
+}
+
+export interface OrderCancelledEvent extends BaseEvent {
+  readonly type: 'order.cancelled';
+  orderId: string;
+  orderNumber: string;
+  clientId: string;
+  reason?: string;
+  cancelledBy: string;
+}
+
+export interface OrderPackedEvent extends BaseEvent {
+  readonly type: 'order.packed';
+  orderId: string;
+  orderNumber: string;
+  clientId: string;
+}
+
 export interface OrderShippedEvent extends BaseEvent {
   readonly type: 'order.shipped';
   orderId: string;
@@ -244,6 +268,23 @@ export interface OrderShippedEvent extends BaseEvent {
   trackingUrl?: string;
   carrier?: string;
   estimatedDeliveryAt?: string;
+}
+
+export interface OrderDeliveredEvent extends BaseEvent {
+  readonly type: 'order.delivered';
+  orderId: string;
+  orderNumber: string;
+  clientId: string;
+  deliveredAt: string;
+}
+
+export interface OrderReturnedEvent extends BaseEvent {
+  readonly type: 'order.returned';
+  orderId: string;
+  orderNumber: string;
+  clientId: string;
+  reason?: string;
+  returnedAt: string;
 }
 
 // ─────────────────────────────────────────────
@@ -273,6 +314,17 @@ export interface PaymentSuccessEvent extends BaseEvent {
   gatewayPaymentId: string;
 }
 
+export interface PaymentFailedEvent extends BaseEvent {
+  readonly type: 'payment.failed';
+  paymentId: string;
+  orderId?: string;
+  clientId: string;
+  /** Amount in paise */
+  amountPaise: number;
+  currency: string;
+  reason: string;
+}
+
 export interface PaymentRefundEvent extends BaseEvent {
   readonly type: 'payment.refund.initiated' | 'payment.refund.completed';
   refundId: string;
@@ -283,6 +335,43 @@ export interface PaymentRefundEvent extends BaseEvent {
   amountPaise: number;
   currency: string;
   reason?: string;
+}
+
+// ─────────────────────────────────────────────
+// INVOICE EVENTS
+// ─────────────────────────────────────────────
+
+export interface InvoiceCreatedEvent extends BaseEvent {
+  readonly type: 'invoice.created';
+  invoiceId: string;
+  invoiceNumber: string;
+  orderId?: string;
+  clientId: string;
+  paymentId?: string;
+  /** Total amount in paise */
+  totalPaise: number;
+  currency: string;
+}
+
+export interface InvoiceIssuedEvent extends BaseEvent {
+  readonly type: 'invoice.issued';
+  invoiceId: string;
+  invoiceNumber: string;
+  clientId: string;
+  /** Total amount in paise */
+  totalPaise: number;
+  currency: string;
+}
+
+export interface InvoicePaidEvent extends BaseEvent {
+  readonly type: 'invoice.paid';
+  invoiceId: string;
+  invoiceNumber: string;
+  paymentId: string;
+  clientId: string;
+  /** Total amount in paise */
+  totalPaise: number;
+  currency: string;
 }
 
 // ─────────────────────────────────────────────
@@ -324,6 +413,37 @@ export interface ClientProfileUpdatedEvent extends BaseEvent {
 }
 
 // ─────────────────────────────────────────────
+// CATALOG EVENTS
+// ─────────────────────────────────────────────
+
+export interface CatalogItemCreatedEvent extends BaseEvent {
+  readonly type: 'catalog.item.created';
+  itemId: string;
+  sku: string;
+  categoryId?: string;
+}
+
+export interface CatalogItemUpdatedEvent extends BaseEvent {
+  readonly type: 'catalog.item.updated';
+  itemId: string;
+  changedFields: string[];
+}
+
+export interface CatalogStockLowEvent extends BaseEvent {
+  readonly type: 'catalog.stock.low';
+  itemId: string;
+  variantId?: string;
+  currentStock: number;
+  threshold: number;
+}
+
+export interface CatalogStockOutEvent extends BaseEvent {
+  readonly type: 'catalog.stock.out';
+  itemId: string;
+  variantId?: string;
+}
+
+// ─────────────────────────────────────────────
 // UNION TYPE (for typed event bus subscriptions)
 // ─────────────────────────────────────────────
 
@@ -345,14 +465,27 @@ export type DomainEvent =
   | TaskAssignedEvent
   | TaskResolvedEvent
   | OrderCreatedEvent
+  | OrderConfirmedEvent
+  | OrderCancelledEvent
+  | OrderPackedEvent
   | OrderPaidEvent
   | OrderShippedEvent
+  | OrderDeliveredEvent
+  | OrderReturnedEvent
   | PaymentCreatedEvent
   | PaymentSuccessEvent
+  | PaymentFailedEvent
   | PaymentRefundEvent
+  | InvoiceCreatedEvent
+  | InvoiceIssuedEvent
+  | InvoicePaidEvent
   | BookingCreatedEvent
   | BookingCancelledEvent
-  | ClientProfileUpdatedEvent;
+  | ClientProfileUpdatedEvent
+  | CatalogItemCreatedEvent
+  | CatalogItemUpdatedEvent
+  | CatalogStockLowEvent
+  | CatalogStockOutEvent;
 
 /** Infer the event type from the `type` discriminant */
 export type EventType = DomainEvent['type'];

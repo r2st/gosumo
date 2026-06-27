@@ -161,6 +161,20 @@ enum OrderStatus {
   CANCELLED
   REFUNDED
   PARTIALLY_REFUNDED
+  RETURNED
+}
+
+/// Lifecycle of a shopping cart before checkout.
+enum CartStatus {
+  ACTIVE
+  CONVERTED
+  ABANDONED
+}
+
+/// How a coupon discount is computed.
+enum DiscountType {
+  PERCENT
+  FIXED
 }
 
 enum PaymentStatus {
@@ -197,6 +211,14 @@ enum RefundStatus {
   COMPLETED
   FAILED
   REJECTED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  CANCELLED
+  VOID
 }
 
 enum BookingStatus {
@@ -362,6 +384,9 @@ model businesses {
   shipping_addresses         shipping_addresses[]
   shipping_options           shipping_options[]
   refunds                    refunds[]
+  carts                      carts[]
+  cart_items                 cart_items[]
+  coupons                    coupons[]
 
   @@index([slug])
   @@index([email])
@@ -458,6 +483,7 @@ model clients {
   bookings          bookings[]
   payments          payments[]
   shipping_addresses shipping_addresses[]
+  carts             carts[]
   analytics_events  analytics_events[]
 
   @@unique([business_id, phone], map: "uq_clients_business_phone")
@@ -1177,8 +1203,11 @@ model orders {
 
   placed_at           DateTime  @default(now()) @db.Timestamptz
   confirmed_at        DateTime? @db.Timestamptz
+  delivered_at        DateTime? @db.Timestamptz
   cancelled_at        DateTime? @db.Timestamptz
   cancellation_reason String?   @db.Text
+  returned_at         DateTime? @db.Timestamptz
+  return_reason       String?   @db.Text
 
   metadata Json @default("{}") @db.JsonB
 
@@ -1285,6 +1314,47 @@ model refunds {
   @@index([payment_id])
   @@index([order_id])
   @@map("refunds")
+}
+
+/// A customer invoice. Standalone table (no FK relations) so the payment
+/// module owns it without coupling to businesses/orders/clients models.
+/// All monetary fields are stored in the currency's major unit (e.g. rupees)
+/// as Decimal(14,2); convert to minor units (paise) only for business logic.
+model invoices {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+  order_id    String? @db.Uuid
+  client_id   String @db.Uuid
+  payment_id  String? @db.Uuid
+
+  /// Human-readable, per-business unique invoice number e.g. INV-2026-000123
+  invoice_number String        @db.VarChar(50)
+  status         InvoiceStatus @default(DRAFT)
+  currency       String        @default("INR") @db.Char(3)
+
+  subtotal        Decimal @db.Decimal(14, 2)
+  tax_amount      Decimal @default(0) @db.Decimal(14, 2)
+  discount_amount Decimal @default(0) @db.Decimal(14, 2)
+  total           Decimal @db.Decimal(14, 2)
+
+  /// Array of { description, quantity, unitAmountMinor, amountMinor }
+  line_items Json    @default("[]") @db.JsonB
+  notes      String? @db.Text
+
+  issued_at DateTime? @db.Timestamptz
+  due_at    DateTime? @db.Timestamptz
+  paid_at   DateTime? @db.Timestamptz
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  @@unique([business_id, invoice_number])
+  @@index([business_id, status, created_at(sort: Desc)])
+  @@index([order_id])
+  @@index([client_id])
+  @@index([payment_id])
+  @@map("invoices")
 }
 
 /// A customer shipping address.
@@ -1400,6 +1470,108 @@ model shipments {
   @@index([tracking_number])
   @@index([provider_shipment_id])
   @@map("shipments")
+}
+
+/// A shopping cart — the staging area for items before an order is placed.
+/// One ACTIVE cart per client at a time (enforced via a partial unique index in
+/// migrations; here we keep a regular index for lookups).
+model carts {
+  id          String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String     @db.Uuid
+  client_id   String     @db.Uuid
+  status      CartStatus @default(ACTIVE)
+
+  /// Applied coupon (validated at apply time, re-validated at checkout)
+  coupon_id      String?       @db.Uuid
+  discount_code  String?       @db.VarChar(50)
+  discount_type  DiscountType?
+  discount_value Decimal?      @db.Decimal(10, 2)
+
+  /// Set when the cart is converted into an order
+  converted_order_id String?   @db.Uuid
+  converted_at       DateTime? @db.Timestamptz
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses   @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  client   clients      @relation(fields: [client_id], references: [id], onDelete: Cascade)
+  coupon   coupons?     @relation(fields: [coupon_id], references: [id])
+  items    cart_items[]
+
+  @@index([business_id, client_id, status])
+  @@index([business_id, status])
+  @@map("carts")
+}
+
+/// A single line in a shopping cart. Unlike order line items (which are an
+/// immutable JSONB snapshot), cart items are live rows referencing the catalog.
+model cart_items {
+  id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String  @db.Uuid
+  cart_id     String  @db.Uuid
+  item_id     String  @db.Uuid
+  variant_id  String? @db.Uuid
+
+  quantity Int @default(1)
+
+  /// Price snapshot captured when the item was added (paise stored as rupees Decimal)
+  unit_price Decimal @db.Decimal(12, 2)
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  cart     carts      @relation(fields: [cart_id], references: [id], onDelete: Cascade)
+
+  @@unique([cart_id, item_id, variant_id], map: "uq_cart_item_variant")
+  @@index([business_id, cart_id])
+  @@map("cart_items")
+}
+
+/// A discount coupon configured by a business.
+model coupons {
+  id          String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String       @db.Uuid
+  code        String       @db.VarChar(50)
+  description String?      @db.VarChar(500)
+  type        DiscountType @default(PERCENT)
+  /// PERCENT: 0-100, FIXED: amount in rupees
+  value       Decimal      @db.Decimal(10, 2)
+
+  /// Minimum order subtotal (rupees) required to apply
+  min_order_value Decimal? @db.Decimal(14, 2)
+  /// Cap on the discount amount (rupees) for PERCENT coupons
+  max_discount    Decimal? @db.Decimal(14, 2)
+
+  /// Total times this coupon may be redeemed across all customers (null = unlimited)
+  usage_limit       Int?
+  /// Times this coupon may be redeemed by a single client (null = unlimited)
+  per_client_limit  Int?
+  usage_count       Int  @default(0)
+
+  valid_from  DateTime? @db.Timestamptz
+  valid_until DateTime? @db.Timestamptz
+
+  is_active Boolean @default(true)
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  carts    carts[]
+
+  @@unique([business_id, code])
+  @@index([business_id, is_active])
+  @@map("coupons")
 }
 
 /// A booking / appointment.

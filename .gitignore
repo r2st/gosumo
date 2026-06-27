@@ -48,3 +48,6 @@ Thumbs.db
 
 # Prisma
 packages/database/prisma/*.db
+
+# npm auth / local registry config — never commit
+.npmrc

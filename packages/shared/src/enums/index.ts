@@ -121,9 +121,12 @@ export enum OrderStatus {
   DRAFT = 'DRAFT',
   CONFIRMED = 'CONFIRMED',
   PROCESSING = 'PROCESSING',
+  PACKED = 'PACKED',
   SHIPPED = 'SHIPPED',
   DELIVERED = 'DELIVERED',
   CANCELLED = 'CANCELLED',
+  REFUNDED = 'REFUNDED',
+  PARTIALLY_REFUNDED = 'PARTIALLY_REFUNDED',
   RETURNED = 'RETURNED',
 }
 
@@ -133,8 +136,10 @@ export enum OrderStatus {
 
 export enum PaymentStatus {
   PENDING = 'PENDING',
-  COMPLETED = 'COMPLETED',
+  INITIATED = 'INITIATED',
+  SUCCESS = 'SUCCESS',
   FAILED = 'FAILED',
+  EXPIRED = 'EXPIRED',
   REFUNDED = 'REFUNDED',
   PARTIALLY_REFUNDED = 'PARTIALLY_REFUNDED',
 }
@@ -154,11 +159,36 @@ export enum PaymentMethod {
 // ─────────────────────────────────────────────
 
 export enum BookingStatus {
+  /** Awaiting confirmation (e.g. deposit/payment pending) */
+  PENDING = 'PENDING',
+  /** Confirmed and on the calendar */
   CONFIRMED = 'CONFIRMED',
-  MODIFIED = 'MODIFIED',
+  /** Time was changed after confirmation */
+  RESCHEDULED = 'RESCHEDULED',
   CANCELLED = 'CANCELLED',
   COMPLETED = 'COMPLETED',
   NO_SHOW = 'NO_SHOW',
+}
+
+/** Where a booking takes place. Stored as a string on the booking row. */
+export enum BookingLocationType {
+  IN_PERSON = 'IN_PERSON',
+  ONLINE = 'ONLINE',
+  HOME_VISIT = 'HOME_VISIT',
+}
+
+/** Who triggered a booking state change. */
+export enum BookingActor {
+  CLIENT = 'CLIENT',
+  BUSINESS = 'BUSINESS',
+  SYSTEM = 'SYSTEM',
+}
+
+/** Recurrence frequency for recurring appointment series. */
+export enum RecurrenceFrequency {
+  DAILY = 'DAILY',
+  WEEKLY = 'WEEKLY',
+  MONTHLY = 'MONTHLY',
 }
 
 // ─────────────────────────────────────────────
@@ -188,8 +218,28 @@ export enum TeamRole {
 }
 
 // ─────────────────────────────────────────────
+// COMMERCE — PAYMENT GATEWAYS
+// ─────────────────────────────────────────────
+
+export enum PaymentGateway {
+  RAZORPAY = 'RAZORPAY',
+  PAYTM = 'PAYTM',
+  PHONEPE = 'PHONEPE',
+  STRIPE = 'STRIPE',
+  MANUAL = 'MANUAL',
+}
+
+// ─────────────────────────────────────────────
 // REFUNDS
 // ─────────────────────────────────────────────
+
+export enum RefundStatus {
+  INITIATED = 'INITIATED',
+  PROCESSING = 'PROCESSING',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED',
+  REJECTED = 'REJECTED',
+}
 
 export enum RefundType {
   FULL = 'FULL',
@@ -204,6 +254,18 @@ export enum RefundMethod {
 }
 
 // ─────────────────────────────────────────────
+// INVOICES
+// ─────────────────────────────────────────────
+
+export enum InvoiceStatus {
+  DRAFT = 'DRAFT',
+  ISSUED = 'ISSUED',
+  PAID = 'PAID',
+  CANCELLED = 'CANCELLED',
+  VOID = 'VOID',
+}
+
+// ─────────────────────────────────────────────
 // CAMPAIGNS
 // ─────────────────────────────────────────────
 
@@ -214,4 +276,37 @@ export enum CampaignType {
   FEEDBACK = 'FEEDBACK',
   REMINDER = 'REMINDER',
   CUSTOM = 'CUSTOM',
+}
+
+// ─────────────────────────────────────────────
+// COMMERCE — CATALOG
+// ─────────────────────────────────────────────
+
+export enum CatalogItemType {
+  PRODUCT = 'PRODUCT',
+  SERVICE = 'SERVICE',
+  DIGITAL = 'DIGITAL',
+  SUBSCRIPTION = 'SUBSCRIPTION',
+}
+
+/**
+ * How a coupon/discount value is interpreted.
+ * PERCENT — value is a percentage (0–100) of the order subtotal.
+ * FIXED   — value is a flat amount in rupees subtracted from the subtotal.
+ */
+export enum DiscountType {
+  PERCENT = 'PERCENT',
+  FIXED = 'FIXED',
+}
+
+/**
+ * Lifecycle of a shopping cart.
+ * ACTIVE    — the customer is still adding/removing items.
+ * CONVERTED — the cart became an order at checkout.
+ * ABANDONED — the cart was explicitly abandoned or expired.
+ */
+export enum CartStatus {
+  ACTIVE = 'ACTIVE',
+  CONVERTED = 'CONVERTED',
+  ABANDONED = 'ABANDONED',
 }
