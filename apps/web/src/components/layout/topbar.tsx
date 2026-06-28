@@ -23,7 +23,12 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
         <p className="truncate text-sm font-semibold">{business?.name ?? 'GoSumo Workspace'}</p>
         {business && (
           <p className="truncate text-xs text-muted-foreground">
-            {business.subscriptionPlan} plan · {business.industry}
+            {[
+              business.subscriptionPlan ? `${business.subscriptionPlan} plan` : null,
+              business.industry || null,
+            ]
+              .filter(Boolean)
+              .join(' · ') || 'Free plan'}
           </p>
         )}
       </div>

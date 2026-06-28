@@ -13,6 +13,10 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { ConversationService } from './conversation.service';
+import {
+  serializeConversationListItem,
+  type ConversationListRow,
+} from './conversation.serializer';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
@@ -51,8 +55,20 @@ export class ConversationController {
     @Query() query: ListConversationsQueryDto,
   ) {
     const result = await this.conversationService.listConversations(tenantId, query, userId);
-    const { data, ...rest } = result as any;
-    return { data, pagination: { total: rest.total ?? 0, limit: rest.limit ?? 20, page: rest.page ?? 1, totalPages: rest.totalPages ?? 0 } };
+    const { data, total, limit, page, totalPages } = result;
+    return {
+      // Map each row to the dashboard REST contract so the inbox can render the
+      // client, channel, last-message preview, and unread count correctly.
+      data: data.map((row) =>
+        serializeConversationListItem(row as ConversationListRow),
+      ),
+      pagination: {
+        total: total ?? 0,
+        limit: limit ?? 20,
+        page: page ?? 1,
+        totalPages: totalPages ?? 0,
+      },
+    };
   }
 
   @Get('stats')

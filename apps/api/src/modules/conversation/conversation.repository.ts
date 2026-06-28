@@ -72,6 +72,19 @@ const CONVERSATION_INCLUDE = {
 } as const;
 
 /**
+ * List include: client + channel account plus the single most recent message,
+ * used to render the last-message preview in the dashboard inbox.
+ */
+const CONVERSATION_LIST_INCLUDE = {
+  client: true,
+  channel_account: true,
+  messages: {
+    orderBy: { created_at: 'desc' },
+    take: 1,
+  },
+} as const;
+
+/**
  * ConversationRepository — all Prisma queries for the Conversation module.
  *
  * Every query includes businessId scoping. Soft-deleted records
@@ -230,7 +243,7 @@ export class ConversationRepository {
     const [data, total] = await Promise.all([
       this.prisma.conversations.findMany({
         where,
-        include: CONVERSATION_INCLUDE,
+        include: CONVERSATION_LIST_INCLUDE,
         orderBy: { last_message_at: 'desc' },
         skip,
         take: limit,

@@ -127,7 +127,7 @@ export default function CatalogPage() {
             {data.data.map((item) => (
               <Card key={item.id} className="group overflow-hidden">
                 <div className="relative aspect-video w-full bg-muted">
-                  {item.imageUrls[0] ? (
+                  {item.imageUrls?.[0] ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={item.imageUrls[0]} alt={item.name} className="h-full w-full object-cover" />
                   ) : (
@@ -171,7 +171,7 @@ export default function CatalogPage() {
                     </span>
                     <Badge tone="info">{item.type}</Badge>
                   </div>
-                  {item.variants.length > 0 && (
+                  {(item.variants?.length ?? 0) > 0 && (
                     <p className="mt-2 text-xs text-muted-foreground">
                       {item.variants.length} variant{item.variants.length === 1 ? '' : 's'}
                     </p>
@@ -184,7 +184,7 @@ export default function CatalogPage() {
 
         {data && data.data.length > 0 && (
           <p className="text-xs text-muted-foreground">
-            Showing {data.data.length} of {data.pagination.total} items
+            Showing {data.data.length} of {data.pagination?.total ?? (data as any).total ?? '?'} items
           </p>
         )}
       </div>

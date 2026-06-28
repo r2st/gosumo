@@ -4,46 +4,88 @@ import { formatTimeIST } from '@/lib/format';
 import { paiseToRupees } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
-function MessageBody({ message }: { message: Message }) {
-  const c = message.content;
-  switch (c.type) {
-    case 'TEXT':
-      return <p className="whitespace-pre-wrap break-words">{c.text}</p>;
-    case 'IMAGE':
-      return (
-        <div className="space-y-1">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={c.url} alt={c.caption ?? 'image'} className="max-h-60 rounded-md object-cover" />
-          {c.caption && <p className="break-words">{c.caption}</p>}
-        </div>
-      );
-    case 'DOCUMENT':
-      return (
-        <a href={c.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 underline">
-          <FileText className="h-4 w-4" /> {c.filename}
-        </a>
-      );
-    case 'LOCATION':
+const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+const num = (v: unknown): number | undefined => (typeof v === 'number' ? v : undefined);
+
+export function MessageBody({ message }: { message: Message }) {
+  // The stored `content` payload is polymorphic JSONB and isn't always the
+  // discriminated union the type claims: text messages may arrive as a plain
+  // `{ "text": "..." }` with no `type`, or with a lower-cased type. Read it
+  // defensively and fall back to the denormalized `text_content` column so a
+  // text message never renders as a broken media placeholder.
+  const content = (message.content ?? {}) as Record<string, unknown>;
+  const textContent = (message as Message & { text_content?: string }).text_content;
+  const type = (str(content.type) ?? '').toUpperCase();
+  const text = str(content.text) ?? textContent;
+
+  switch (type) {
+    case 'IMAGE': {
+      const url = str(content.url);
+      const caption = str(content.caption);
+      if (url) {
+        return (
+          <div className="space-y-1">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={url} alt={caption ?? 'image'} className="max-h-60 rounded-md object-cover" />
+            {caption && <p className="break-words">{caption}</p>}
+          </div>
+        );
+      }
+      break;
+    }
+    case 'DOCUMENT': {
+      const url = str(content.url);
+      if (url) {
+        return (
+          <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-2 underline">
+            <FileText className="h-4 w-4" /> {str(content.filename) ?? 'Document'}
+          </a>
+        );
+      }
+      break;
+    }
+    case 'LOCATION': {
+      const name = str(content.name);
+      const lat = num(content.latitude);
+      const lng = num(content.longitude);
       return (
         <span className="flex items-center gap-1">
-          <MapPin className="h-4 w-4" /> {c.name ?? `${c.latitude}, ${c.longitude}`}
+          <MapPin className="h-4 w-4" /> {name ?? `${lat ?? '?'}, ${lng ?? '?'}`}
         </span>
       );
-    case 'PAYMENT_LINK':
+    }
+    case 'PAYMENT_LINK': {
+      const url = str(content.url);
       return (
-        <a href={c.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 underline">
-          💳 Payment link · {paiseToRupees(c.amount)}
+        <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-2 underline">
+          💳 Payment link · {paiseToRupees(num(content.amount) ?? 0)}
         </a>
       );
+    }
     case 'TEMPLATE':
-      return <p className="italic opacity-90">Template: {c.templateName}</p>;
-    case 'VOICE':
-      return <audio controls src={c.url} className="max-w-full" />;
-    case 'VIDEO':
-      return <video controls src={c.url} className="max-h-60 rounded-md" />;
+      return <p className="italic opacity-90">Template: {str(content.templateName) ?? ''}</p>;
+    case 'VOICE': {
+      const url = str(content.url);
+      if (url) return <audio controls src={url} className="max-w-full" />;
+      break;
+    }
+    case 'VIDEO': {
+      const url = str(content.url);
+      if (url) return <video controls src={url} className="max-h-60 rounded-md" />;
+      break;
+    }
     default:
-      return <p className="italic opacity-80 flex items-center gap-1"><ImageIcon className="h-3.5 w-3.5" /> {c.type}</p>;
+      break;
   }
+
+  // TEXT, an unknown type that still carries text, or media missing its URL:
+  // show the text if we have any, otherwise a minimal placeholder.
+  if (text) return <p className="whitespace-pre-wrap break-words">{text}</p>;
+  return (
+    <p className="italic opacity-80 flex items-center gap-1">
+      <ImageIcon className="h-3.5 w-3.5" /> {type || 'Unsupported message'}
+    </p>
+  );
 }
 
 function StatusTick({ message }: { message: Message }) {

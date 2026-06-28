@@ -266,6 +266,11 @@ export class ChannelAdapterService {
 
         // Store message in DB
         const contentType = normalized.content.type || 'TEXT';
+        // Extract text for denormalized text_content column used by previews
+        const textContent =
+          'text' in normalized.content && typeof normalized.content.text === 'string'
+            ? normalized.content.text
+            : undefined;
         await this.prisma.messages.create({
           data: {
             business_id: channelAccount.business_id,
@@ -277,6 +282,7 @@ export class ChannelAdapterService {
             sender_type: 'CLIENT',
             sender_id: channelContact.client_id,
             content: normalized.content as object,
+            text_content: textContent,
             external_id: normalized.externalId,
           },
         });
