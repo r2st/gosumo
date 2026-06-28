@@ -46,17 +46,17 @@ export function Drawer({
           className,
         )}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-border p-5">
+        <div className="flex items-start justify-between gap-4 border-b border-border p-4 sm:p-5">
           <div className="flex min-w-0 flex-col gap-1">
             <h2 className="truncate text-base font-semibold tracking-tight">{title}</h2>
             {description && <p className="truncate text-sm text-muted-foreground">{description}</p>}
           </div>
-          <button onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:bg-muted" aria-label="Close">
+          <button onClick={onClose} className="-mr-1 rounded-md p-1.5 text-muted-foreground hover:bg-muted" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto scrollbar-thin p-5">{children}</div>
-        {footer && <div className="flex flex-wrap justify-end gap-2 border-t border-border p-5 pt-4">{footer}</div>}
+        <div className="flex-1 overflow-y-auto scrollbar-thin p-4 sm:p-5">{children}</div>
+        {footer && <div className="flex flex-wrap justify-end gap-2 border-t border-border p-4 pt-3 sm:p-5 sm:pt-4">{footer}</div>}
       </div>
     </div>
   );

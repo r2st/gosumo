@@ -79,7 +79,7 @@ export function NotificationCenter() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-20 mt-2 w-80 animate-fade-in overflow-hidden rounded-lg border border-border bg-card shadow-lg sm:w-96">
+        <div className="fixed inset-x-2 top-16 z-30 animate-fade-in overflow-hidden rounded-lg border border-border bg-card shadow-lg sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div className="flex items-center gap-2">
               <p className="text-sm font-semibold">Notifications</p>

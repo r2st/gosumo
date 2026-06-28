@@ -61,6 +61,21 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: 'cv11', 'ss01';
+    /* Never allow a stray wide element to create a horizontal scrollbar on mobile. */
+    overflow-x: hidden;
+  }
+
+  /*
+   * On iOS Safari any focused form control whose font-size is < 16px triggers an
+   * automatic zoom. Our design uses 14px (text-sm) controls, so bump them to 16px
+   * on small screens only — desktop keeps the tighter type scale.
+   */
+  @media (max-width: 639px) {
+    input:not([type='checkbox']):not([type='radio']),
+    textarea,
+    select {
+      font-size: 16px;
+    }
   }
 
   /* Tighter, more confident headings */
