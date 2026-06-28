@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 212 48" role="img" aria-label="GoSumo">
+  <defs>
+    <linearGradient id="gs-logo-grad" x1="0" y1="0" x2="44" y2="44" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6366F1"/>
+      <stop offset="0.55" stop-color="#4F46E5"/>
+      <stop offset="1" stop-color="#7C3AED"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(0 2)">
+    <rect width="44" height="44" rx="11" ry="11" fill="url(#gs-logo-grad)"/>
+    <g transform="translate(22 22) scale(0.066) translate(-256 -256)" fill="none" stroke="#FFFFFF" stroke-width="56" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M347.93 333.13 A120 120 0 1 1 347.93 178.87"/>
+      <path d="M256 256 L347.93 256 L347.93 333.13"/>
+    </g>
+  </g>
+  <text x="56" y="33" font-family="'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="29" font-weight="800" letter-spacing="-1" fill="#1E1B4B">GoSumo</text>
+</svg>

@@ -4,20 +4,23 @@
 
 @layer base {
   :root {
-    --background: 210 40% 98%;
+    /* Clean white canvas */
+    --background: 0 0% 100%;
     --foreground: 222 47% 11%;
 
     --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
 
-    --muted: 210 40% 96%;
+    /* Subtle neutral surfaces for hover / secondary backgrounds */
+    --muted: 220 20% 97%;
     --muted-foreground: 215 16% 47%;
 
+    /* Brand: indigo → violet */
     --primary: 243 75% 59%;
     --primary-foreground: 0 0% 100%;
 
     --accent: 243 75% 96%;
-    --accent-foreground: 243 75% 40%;
+    --accent-foreground: 243 70% 45%;
 
     --success: 142 71% 45%;
     --success-foreground: 0 0% 100%;
@@ -28,25 +31,41 @@
     --danger: 0 72% 51%;
     --danger-foreground: 0 0% 100%;
 
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
+    --border: 220 18% 92%;
+    --input: 220 18% 90%;
     --ring: 243 75% 59%;
 
-    --sidebar: 222 47% 11%;
-    --sidebar-foreground: 210 40% 96%;
-    --sidebar-muted: 217 19% 60%;
+    /* Light sidebar to match the white SaaS theme */
+    --sidebar: 0 0% 100%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-muted: 215 16% 47%;
     --sidebar-active: 243 75% 59%;
+    --sidebar-border: 220 18% 92%;
 
     --radius: 0.625rem;
+
+    /* Layered, soft shadows for a premium feel */
+    --shadow-sm: 0 1px 2px 0 rgb(16 24 40 / 0.04), 0 1px 3px 0 rgb(16 24 40 / 0.06);
+    --shadow-md: 0 2px 4px -2px rgb(16 24 40 / 0.06), 0 4px 12px -2px rgb(16 24 40 / 0.08);
+    --shadow-lg: 0 4px 6px -2px rgb(16 24 40 / 0.05), 0 12px 28px -4px rgb(16 24 40 / 0.12);
   }
 
   * {
     @apply border-border;
   }
 
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: 'cv11', 'ss01';
+  }
+
+  /* Tighter, more confident headings */
+  h1, h2, h3, h4 {
+    @apply tracking-tight;
   }
 
   /* Thin, unobtrusive scrollbars for panels */
@@ -56,6 +75,9 @@
   }
   .scrollbar-thin::-webkit-scrollbar-thumb {
     @apply rounded-full bg-border;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.4);
   }
   .scrollbar-thin::-webkit-scrollbar-track {
     background: transparent;
