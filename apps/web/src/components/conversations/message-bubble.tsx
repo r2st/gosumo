@@ -1,4 +1,4 @@
-import { Bot, Check, CheckCheck, Clock, FileText, ImageIcon, MapPin, AlertCircle } from 'lucide-react';
+import { Bot, Check, CheckCheck, Clock, FileText, ImageIcon, MapPin, AlertCircle, Mic } from 'lucide-react';
 import type { Message } from '@/lib/types';
 import { formatTimeIST } from '@/lib/format';
 import { paiseToRupees } from '@/lib/format';
@@ -47,6 +47,29 @@ function AiConfidenceBadge({ message }: { message: Message }) {
   );
 }
 
+/**
+ * A voice/audio note: an inline player plus, when we have it, the AI
+ * transcription beneath it. The transcript is enriched onto `metadata` by the
+ * voice pipeline (the append-only message content is never mutated).
+ */
+function VoiceNote({ url, transcription }: { url?: string; transcription?: string }) {
+  return (
+    <div className="space-y-1.5">
+      <span className="flex items-center gap-1.5 text-xs font-medium opacity-80">
+        <Mic className="h-3.5 w-3.5" /> Voice note
+      </span>
+      {url && <audio controls src={url} className="max-w-full" />}
+      {transcription ? (
+        <p className="whitespace-pre-wrap break-words border-l-2 border-current/20 pl-2 text-[13px] italic opacity-90">
+          “{transcription}”
+        </p>
+      ) : (
+        <p className="text-[11px] italic opacity-60">Transcribing…</p>
+      )}
+    </div>
+  );
+}
+
 export function MessageBody({ message }: { message: Message }) {
   // The stored `content` payload is polymorphic JSONB and isn't always the
   // discriminated union the type claims: text messages may arrive as a plain
@@ -57,6 +80,14 @@ export function MessageBody({ message }: { message: Message }) {
   const textContent = (message as Message & { text_content?: string }).text_content;
   const type = (str(content.type) ?? '').toUpperCase();
   const text = str(content.text) ?? textContent;
+  const mimeType = str(content.mimeType) ?? '';
+  // Voice notes arrive as VOICE/AUDIO, or (with the current WhatsApp adapter
+  // mapping) as another type carrying an `audio/*` mime — treat all as voice.
+  const transcription =
+    str(content.transcription) ?? str((message.metadata ?? {}).transcription);
+  if (type === 'VOICE' || type === 'AUDIO' || mimeType.startsWith('audio/')) {
+    return <VoiceNote url={str(content.url)} transcription={transcription} />;
+  }
 
   switch (type) {
     case 'IMAGE': {
@@ -104,11 +135,6 @@ export function MessageBody({ message }: { message: Message }) {
     }
     case 'TEMPLATE':
       return <p className="italic opacity-90">Template: {str(content.templateName) ?? ''}</p>;
-    case 'VOICE': {
-      const url = str(content.url);
-      if (url) return <audio controls src={url} className="max-w-full" />;
-      break;
-    }
     case 'VIDEO': {
       const url = str(content.url);
       if (url) return <video controls src={url} className="max-h-60 rounded-md" />;
@@ -128,13 +154,34 @@ export function MessageBody({ message }: { message: Message }) {
   );
 }
 
+/**
+ * WhatsApp-style delivery ticks for outbound messages: one grey check on send,
+ * two grey checks on delivery, two blue checks on read, an alert on failure.
+ */
 function StatusTick({ message }: { message: Message }) {
   if (message.direction !== 'OUTBOUND') return null;
-  if (message.status === 'FAILED') return <AlertCircle className="h-3.5 w-3.5 text-rose-300" />;
-  if (message.status === 'READ') return <CheckCheck className="h-3.5 w-3.5 text-sky-200" />;
-  if (message.status === 'DELIVERED') return <CheckCheck className="h-3.5 w-3.5 opacity-70" />;
-  if (message.status === 'SENT') return <Check className="h-3.5 w-3.5 opacity-70" />;
-  return <Clock className="h-3 w-3 opacity-70" />;
+  if (message.status === 'FAILED') return <AlertCircle className="h-3.5 w-3.5 text-rose-500" />;
+  if (message.status === 'READ') return <CheckCheck className="h-3.5 w-3.5 text-sky-500" />;
+  if (message.status === 'DELIVERED')
+    return <CheckCheck className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />;
+  if (message.status === 'SENT')
+    return <Check className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />;
+  return <Clock className="h-3 w-3 text-slate-400" />;
+}
+
+/**
+ * Centered date pill separating messages by day in the thread ("Today",
+ * "Yesterday", "3 Jul 2026"). The thread computes the grouping; this just renders.
+ */
+export function DayDivider({ label }: { label: string }) {
+  if (!label) return null;
+  return (
+    <div className="flex justify-center py-1.5">
+      <span className="rounded-full bg-muted px-3 py-1 text-[11px] font-medium text-muted-foreground shadow-sm">
+        {label}
+      </span>
+    </div>
+  );
 }
 
 export function MessageBubble({ message }: { message: Message }) {
@@ -156,12 +203,24 @@ export function MessageBubble({ message }: { message: Message }) {
     <div className={cn('flex', outbound ? 'justify-end' : 'justify-start')}>
       <div
         className={cn(
-          'max-w-[75%] rounded-2xl px-3.5 py-2 text-sm shadow-sm',
+          'relative max-w-[75%] px-3 py-1.5 text-sm shadow-sm',
+          // WhatsApp bubbles: outbound light-green, inbound white/card. The
+          // squared top corner on the tail side seats the little tail triangle.
           outbound
-            ? 'rounded-br-sm bg-primary text-primary-foreground'
-            : 'rounded-bl-sm border border-border bg-card text-card-foreground',
+            ? 'rounded-2xl rounded-tr-md bg-[#DCF8C6] text-slate-900 dark:bg-[#005C4B] dark:text-slate-50'
+            : 'rounded-2xl rounded-tl-md border border-border bg-card text-card-foreground',
         )}
       >
+        {/* Tail: a small rotated square peeking out of the top corner. */}
+        <span
+          aria-hidden
+          className={cn(
+            'absolute top-0 h-3 w-3 rotate-45',
+            outbound
+              ? '-right-1 bg-[#DCF8C6] dark:bg-[#005C4B]'
+              : '-left-1 border-l border-t border-border bg-card',
+          )}
+        />
         {message.sentByAi && (
           <div className="flex">
             <AiConfidenceBadge message={message} />
@@ -170,8 +229,8 @@ export function MessageBubble({ message }: { message: Message }) {
         <MessageBody message={message} />
         <div
           className={cn(
-            'mt-1 flex items-center justify-end gap-1 text-[10px]',
-            outbound ? 'text-primary-foreground/70' : 'text-muted-foreground',
+            'mt-0.5 flex items-center justify-end gap-1 text-[10px]',
+            outbound ? 'text-emerald-900/60 dark:text-slate-200/70' : 'text-muted-foreground',
           )}
         >
           {message.sentByAi && (
