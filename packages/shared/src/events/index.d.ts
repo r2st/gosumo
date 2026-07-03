@@ -705,7 +705,104 @@ export interface RealtyLaunchGateEvaluatedEvent extends BaseEvent {
     failed: number;
     insufficient: number;
 }
-export type DomainEvent = MessageReceivedEvent | MessageSentEvent | MessageFailedEvent | MessageStoredEvent | ConversationCreatedEvent | ConversationResolvedEvent | ConversationEscalatedEvent | ConversationStatusChangedEvent | ConversationAssignedEvent | AIIntentClassifiedEvent | AIResponseGeneratedEvent | AIResponseApprovedEvent | AIResponseRejectedEvent | TaskCreatedEvent | TaskAssignedEvent | TaskResolvedEvent | OrderCreatedEvent | OrderConfirmedEvent | OrderCancelledEvent | OrderPackedEvent | OrderPaidEvent | OrderShippedEvent | OrderDeliveredEvent | OrderReturnedEvent | PaymentCreatedEvent | PaymentSuccessEvent | PaymentFailedEvent | PaymentRefundEvent | InvoiceCreatedEvent | InvoiceIssuedEvent | InvoicePaidEvent | BookingCreatedEvent | BookingCancelledEvent | BookingConfirmedEvent | BookingRescheduledEvent | BookingCompletedEvent | BookingReminderEvent | ClientProfileUpdatedEvent | CatalogItemCreatedEvent | CatalogItemUpdatedEvent | CatalogStockLowEvent | CatalogStockOutEvent | NotificationQueuedEvent | NotificationSentEvent | NotificationDeliveredEvent | NotificationFailedEvent | NotificationSkippedEvent | RealtyLeadCreatedEvent | RealtyLeadQualifiedEvent | RealtyLeadStageChangedEvent | RealtyLeadHotEvent | RealtyLeadOptedOutEvent | RealtyProjectCreatedEvent | RealtyUnitAvailabilityChangedEvent | RealtyAssetPublishedEvent | RealtyVisitBookedEvent | RealtyVisitConfirmedEvent | RealtyVisitRescheduledEvent | RealtyVisitCancelledEvent | RealtyVisitCompletedEvent | RealtyVisitNoShowEvent | RealtyVisitReminderEvent | RealtyLeadIngestedEvent | RealtyCadenceStartedEvent | RealtyCadenceStepSentEvent | RealtyCadenceCompletedEvent | RealtyBrokerAlertEvent | RealtyApprovalCreatedEvent | RealtyApprovalResolvedEvent | RealtyConversationTakenOverEvent | RealtyAiTurnCompletedEvent | RealtyMigrationCompletedEvent | RealtyAutonomyChangedEvent | RealtyNoShipIncidentEvent | RealtyLaunchGateEvaluatedEvent;
+/** Emitted after a nightly aggregation run persists corridor patterns. */
+export interface RealtyIntelligenceAggregatesGeneratedEvent extends BaseEvent {
+    readonly type: 'realty.intelligence.aggregates_generated';
+    /** How many opted-in businesses were included in the run. */
+    businessCount: number;
+    /** How many aggregate rows were written across all corridors/metrics. */
+    aggregateCount: number;
+    /** Distinct corridors covered this run. */
+    corridorCount: number;
+    periodStart: string;
+    periodEnd: string;
+}
+/** Emitted when a business consents to contribute to the intelligence layer. */
+export interface RealtyIntelligenceOptedInEvent extends BaseEvent {
+    readonly type: 'realty.intelligence.opted_in';
+}
+/** Emitted when a business withdraws intelligence consent. */
+export interface RealtyIntelligenceOptedOutEvent extends BaseEvent {
+    readonly type: 'realty.intelligence.opted_out';
+}
+/** A consented lead was syndicated to a counterparty (state → OFFERED). */
+export interface RealtySyndicationOfferedEvent extends BaseEvent {
+    readonly type: 'realty.syndication.offered';
+    syndicationId: string;
+    leadId: string;
+    fromBusinessId: string;
+    toBusinessId: string;
+}
+/** The counterparty accepted the syndication (state → ACCEPTED). */
+export interface RealtySyndicationAcceptedEvent extends BaseEvent {
+    readonly type: 'realty.syndication.accepted';
+    syndicationId: string;
+    leadId: string;
+    toBusinessId: string;
+}
+/** A syndicated deal closed; the commission pool and platform fee are settled. */
+export interface RealtySyndicationClosedEvent extends BaseEvent {
+    readonly type: 'realty.syndication.closed';
+    syndicationId: string;
+    leadId: string;
+    /** Commission pool in paise. */
+    commissionPoolPaise: number;
+    /** Platform fee in paise. */
+    platformFeePaise: number;
+}
+/** A syndication was contested by either side (state → DISPUTED). */
+export interface RealtySyndicationDisputedEvent extends BaseEvent {
+    readonly type: 'realty.syndication.disputed';
+    syndicationId: string;
+    leadId: string;
+    reason: string;
+}
+/** A business changed its subscription tier (upgrade/downgrade). */
+export interface RealtyPlanChangedEvent extends BaseEvent {
+    readonly type: 'realty.plan.changed';
+    fromPlan: string;
+    toPlan: string;
+}
+/** A lead was counted against the plan's monthly allotment. */
+export interface RealtyLeadUsageRecordedEvent extends BaseEvent {
+    readonly type: 'realty.lead_usage.recorded';
+    leadsUsed: number;
+    monthlyLeadLimit: number | null;
+    /** True when this lead fell beyond the included allotment (billed as overage). */
+    overage: boolean;
+}
+/** The plan's monthly lead limit was reached (soft cap — an upgrade is prompted). */
+export interface RealtyLeadLimitReachedEvent extends BaseEvent {
+    readonly type: 'realty.lead_limit.reached';
+    plan: string;
+    monthlyLeadLimit: number;
+    leadsUsed: number;
+}
+/** A consent was granted or revoked for a buyer phone (DPDPA ledger). */
+export interface RealtyConsentRecordedEvent extends BaseEvent {
+    readonly type: 'realty.consent.recorded';
+    phone: string;
+    consentType: string;
+    granted: boolean;
+    channel: string;
+}
+/** A buyer's data was erased (anonymized) on request or by retention policy. */
+export interface RealtyLeadErasedEvent extends BaseEvent {
+    readonly type: 'realty.lead.erased';
+    leadId: string;
+    /** "REQUEST" (right to erasure) | "RETENTION" (auto-anonymize). */
+    reason: string;
+    /** How many message rows had their sender info anonymized. */
+    messagesAnonymized: number;
+}
+/** A retention sweep finished for a business. */
+export interface RealtyRetentionRunEvent extends BaseEvent {
+    readonly type: 'realty.retention.run';
+    leadsAnonymized: number;
+    messagesAnonymized: number;
+    retentionMonths: number;
+}
+export type DomainEvent = MessageReceivedEvent | MessageSentEvent | MessageFailedEvent | MessageStoredEvent | ConversationCreatedEvent | ConversationResolvedEvent | ConversationEscalatedEvent | ConversationStatusChangedEvent | ConversationAssignedEvent | AIIntentClassifiedEvent | AIResponseGeneratedEvent | AIResponseApprovedEvent | AIResponseRejectedEvent | TaskCreatedEvent | TaskAssignedEvent | TaskResolvedEvent | OrderCreatedEvent | OrderConfirmedEvent | OrderCancelledEvent | OrderPackedEvent | OrderPaidEvent | OrderShippedEvent | OrderDeliveredEvent | OrderReturnedEvent | PaymentCreatedEvent | PaymentSuccessEvent | PaymentFailedEvent | PaymentRefundEvent | InvoiceCreatedEvent | InvoiceIssuedEvent | InvoicePaidEvent | BookingCreatedEvent | BookingCancelledEvent | BookingConfirmedEvent | BookingRescheduledEvent | BookingCompletedEvent | BookingReminderEvent | ClientProfileUpdatedEvent | CatalogItemCreatedEvent | CatalogItemUpdatedEvent | CatalogStockLowEvent | CatalogStockOutEvent | NotificationQueuedEvent | NotificationSentEvent | NotificationDeliveredEvent | NotificationFailedEvent | NotificationSkippedEvent | RealtyLeadCreatedEvent | RealtyLeadQualifiedEvent | RealtyLeadStageChangedEvent | RealtyLeadHotEvent | RealtyLeadOptedOutEvent | RealtyProjectCreatedEvent | RealtyUnitAvailabilityChangedEvent | RealtyAssetPublishedEvent | RealtyVisitBookedEvent | RealtyVisitConfirmedEvent | RealtyVisitRescheduledEvent | RealtyVisitCancelledEvent | RealtyVisitCompletedEvent | RealtyVisitNoShowEvent | RealtyVisitReminderEvent | RealtyLeadIngestedEvent | RealtyCadenceStartedEvent | RealtyCadenceStepSentEvent | RealtyCadenceCompletedEvent | RealtyBrokerAlertEvent | RealtyApprovalCreatedEvent | RealtyApprovalResolvedEvent | RealtyConversationTakenOverEvent | RealtyAiTurnCompletedEvent | RealtyMigrationCompletedEvent | RealtyAutonomyChangedEvent | RealtyNoShipIncidentEvent | RealtyLaunchGateEvaluatedEvent | RealtySyndicationOfferedEvent | RealtySyndicationAcceptedEvent | RealtySyndicationClosedEvent | RealtySyndicationDisputedEvent | RealtyIntelligenceAggregatesGeneratedEvent | RealtyIntelligenceOptedInEvent | RealtyIntelligenceOptedOutEvent | RealtyPlanChangedEvent | RealtyLeadUsageRecordedEvent | RealtyLeadLimitReachedEvent | RealtyConsentRecordedEvent | RealtyLeadErasedEvent | RealtyRetentionRunEvent;
 /** Infer the event type from the `type` discriminant */
 export type EventType = DomainEvent['type'];
 //# sourceMappingURL=index.d.ts.map

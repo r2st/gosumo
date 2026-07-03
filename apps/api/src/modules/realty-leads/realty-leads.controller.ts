@@ -14,6 +14,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { RealtyLeadsService } from './realty-leads.service';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
+import { PlanLimit } from '../billing/plan.decorator';
 import {
   CreateLeadDto,
   UpdateLeadDto,
@@ -34,9 +35,11 @@ export class RealtyLeadsController {
   constructor(private readonly leadsService: RealtyLeadsService) {}
 
   @Post()
+  @PlanLimit('leads')
   @ApiOperation({ summary: 'Capture a new lead (records attribution at birth)' })
   @ApiResponse({ status: 201, description: 'Lead created' })
   @ApiResponse({ status: 409, description: 'Lead with this phone already exists' })
+  @ApiResponse({ status: 429, description: 'Monthly lead limit reached — upgrade required' })
   async create(@TenantId() tenantId: string, @Body() dto: CreateLeadDto) {
     return this.leadsService.createLead(tenantId, dto);
   }

@@ -28,6 +28,14 @@ import type {
   BookVisitInput,
   CsvImportRow,
   CsvImportResult,
+  Syndication,
+  SyndicationState,
+  CreateSyndicationInput,
+  RateSyndicationInput,
+  ReliabilityScore,
+  ResaleListing,
+  ResaleListingStatus,
+  ExchangeMatchResult,
 } from '@/lib/realty-types';
 
 const LEADS_KEY = ['realty', 'leads'];
@@ -411,5 +419,157 @@ export function useImportCsv() {
       qc.invalidateQueries({ queryKey: LEADS_KEY });
       qc.invalidateQueries({ queryKey: BOARD_KEY });
     },
+  });
+}
+
+// ── Exchange (L2 co-broking) ─────────────────────────────────────────────────────
+
+const SYNDICATIONS_KEY = ['realty', 'exchange', 'syndications'];
+const RELIABILITY_KEY = ['realty', 'exchange', 'reliability'];
+const RESALE_KEY = ['realty', 'exchange', 'resale-listings'];
+
+export interface SyndicationFilters {
+  state?: SyndicationState;
+  role?: 'from' | 'to';
+}
+
+export function useSyndications(filters: SyndicationFilters = {}) {
+  return useQuery({
+    queryKey: [...SYNDICATIONS_KEY, filters],
+    queryFn: ({ signal }) =>
+      apiRequest<Syndication[]>(`/realty/exchange/syndications${toQuery({ ...filters })}`, { signal }),
+  });
+}
+
+export function useSyndication(id: string | null) {
+  return useQuery({
+    queryKey: ['realty', 'exchange', 'syndication', id],
+    queryFn: () => apiRequest<Syndication>(`/realty/exchange/syndications/${id}`),
+    enabled: !!id,
+  });
+}
+
+export function useCreateSyndication() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateSyndicationInput) =>
+      apiRequest<Syndication>('/realty/exchange/syndications', { method: 'POST', body: input }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: SYNDICATIONS_KEY }),
+  });
+}
+
+/** One hook for every no-body state transition: accept / visit / expire. */
+function useSyndicationAction(action: 'accept' | 'visit' | 'expire') {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiRequest<Syndication>(`/realty/exchange/syndications/${id}/${action}`, {
+        method: 'POST',
+        body: {},
+      }),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: SYNDICATIONS_KEY });
+      qc.invalidateQueries({ queryKey: ['realty', 'exchange', 'syndication', id] });
+    },
+  });
+}
+
+export const useAcceptSyndication = () => useSyndicationAction('accept');
+export const useRecordVisit = () => useSyndicationAction('visit');
+export const useExpireSyndication = () => useSyndicationAction('expire');
+
+export function useCloseSyndication() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      commissionPoolPaise,
+      platformFeeRate,
+    }: {
+      id: string;
+      commissionPoolPaise: number;
+      platformFeeRate?: number;
+    }) =>
+      apiRequest<Syndication>(`/realty/exchange/syndications/${id}/close`, {
+        method: 'POST',
+        body: { commissionPoolPaise, platformFeeRate },
+      }),
+    onSuccess: (_data, { id }) => {
+      qc.invalidateQueries({ queryKey: SYNDICATIONS_KEY });
+      qc.invalidateQueries({ queryKey: ['realty', 'exchange', 'syndication', id] });
+    },
+  });
+}
+
+export function useDisputeSyndication() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      apiRequest<Syndication>(`/realty/exchange/syndications/${id}/dispute`, {
+        method: 'POST',
+        body: { reason },
+      }),
+    onSuccess: (_data, { id }) => {
+      qc.invalidateQueries({ queryKey: SYNDICATIONS_KEY });
+      qc.invalidateQueries({ queryKey: ['realty', 'exchange', 'syndication', id] });
+    },
+  });
+}
+
+export function useRateSyndication() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ratings }: { id: string; ratings: RateSyndicationInput }) =>
+      apiRequest<ReliabilityScore>(`/realty/exchange/syndications/${id}/rate`, {
+        method: 'POST',
+        body: ratings,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: RELIABILITY_KEY }),
+  });
+}
+
+export function useExchangeMatch(
+  leadId: string | null,
+  opts: { limit?: number; aiRationale?: boolean } = {},
+) {
+  return useQuery({
+    queryKey: ['realty', 'exchange', 'match', leadId, opts],
+    queryFn: ({ signal }) =>
+      apiRequest<ExchangeMatchResult>(
+        `/realty/exchange/leads/${leadId}/match${toQuery({ ...opts })}`,
+        { signal },
+      ),
+    enabled: !!leadId,
+  });
+}
+
+export function useReliabilityScores() {
+  return useQuery({
+    queryKey: RELIABILITY_KEY,
+    queryFn: ({ signal }) =>
+      apiRequest<ReliabilityScore[]>('/realty/exchange/reliability', { signal }),
+  });
+}
+
+export function useResaleListings(filters: { status?: ResaleListingStatus; locality?: string } = {}) {
+  return useQuery({
+    queryKey: [...RESALE_KEY, filters],
+    queryFn: ({ signal }) =>
+      apiRequest<ResaleListing[]>(`/realty/exchange/resale-listings${toQuery({ ...filters })}`, { signal }),
+  });
+}
+
+export function useCreateResaleListing() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      locality: string;
+      config: string;
+      askingPricePaise: number;
+      sellerPhone: string;
+      carpetSqft?: number;
+      projectId?: string;
+    }) => apiRequest<ResaleListing>('/realty/exchange/resale-listings', { method: 'POST', body: input }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: RESALE_KEY }),
   });
 }

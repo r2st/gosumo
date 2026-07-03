@@ -62,6 +62,29 @@ describe('MessageBubble', () => {
     expect(img).not.toBeNull();
     expect(img?.getAttribute('src')).toBe('https://cdn/x.jpg');
   });
+
+  it('renders a voice note with a player and its transcription', () => {
+    const message = makeMessage({
+      contentType: 'AUDIO',
+      content: { type: 'VOICE', url: 'https://cdn/vn.ogg', mimeType: 'audio/ogg' },
+      metadata: { transcription: 'I want a 2BHK in Whitefield' },
+    });
+    const { container } = render(<MessageBubble message={message} />);
+    const audio = container.querySelector('audio');
+    expect(audio?.getAttribute('src')).toBe('https://cdn/vn.ogg');
+    expect(screen.getByText('“I want a 2BHK in Whitefield”')).toBeInTheDocument();
+  });
+
+  it('treats an audio mime-type as a voice note even when typed IMAGE', () => {
+    const message = makeMessage({
+      contentType: 'IMAGE',
+      content: { type: 'IMAGE', url: 'https://cdn/vn.ogg', mimeType: 'audio/ogg' },
+    });
+    const { container } = render(<MessageBubble message={message} />);
+    expect(container.querySelector('audio')).not.toBeNull();
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByText('Transcribing…')).toBeInTheDocument();
+  });
 });
 
 describe('aiConfidenceBadge (AI confidence routing)', () => {

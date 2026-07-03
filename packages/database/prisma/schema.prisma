@@ -547,6 +547,61 @@ enum NoShipKind {
 }
 
 // ─────────────────────────────────────────────
+// REALTY — BILLING & DPDPA COMPLIANCE (plan §9, §21)
+// ─────────────────────────────────────────────
+
+/// GoSumo Realty subscription tiers (business plan §9).
+enum RealtyPlan {
+  SOLO // ₹3,999/mo · 1 seat · 300 leads/mo
+  TEAM // ₹9,999/mo · 5 seats · 1,500 leads/mo · routing + analytics
+  DEVELOPER // ₹24,999/mo · unlimited seats + leads · CRM sync, IVR, priority
+}
+
+/// The DPDPA consent purpose a buyer has granted (or had revoked).
+enum ConsentType {
+  PROCESSING // core: process personal data to assist the property search
+  MARKETING // enrol in follow-up / marketing cadences
+  EXCHANGE // share the lead into the co-broking exchange
+}
+
+/// The corridor-pattern metrics computed by the micro-market intelligence layer
+/// (L1, blueprint §18). Each row in realty_intelligence_aggregates carries one of
+/// these; the JSONB metric_value shape is metric-specific (see the module CLAUDE.md).
+enum IntelligenceMetricType {
+  CADENCE_CONVERSION // which follow-up timing converts, by corridor
+  OBJECTION_FREQUENCY // recurring objections, by project/config type
+  PRICE_ELASTICITY // realistic budget bands, by locality
+  SOURCE_QUALITY // downstream quality of each lead source
+  SEASONAL_VELOCITY // lead inflow + conversion curve, by month
+}
+
+/// Lifecycle of a co-broking syndication (L2 exchange, blueprint §19).
+enum SyndicationState {
+  OFFERED
+  ACCEPTED
+  VISIT
+  CLOSED
+  EXPIRED
+  DISPUTED
+}
+
+/// Settlement posture of a syndication's money leg (tracked apart from state).
+enum SettlementState {
+  UNSETTLED
+  PENDING
+  SETTLED
+  REVERSED
+}
+
+/// Status of a resale listing — Tier-1 oxygen + exchange supply.
+enum ResaleListingStatus {
+  ACTIVE
+  UNDER_OFFER
+  SOLD
+  WITHDRAWN
+}
+
+// ─────────────────────────────────────────────
 // PLATFORM LAYER
 // ─────────────────────────────────────────────
 
@@ -581,6 +636,10 @@ model businesses {
   onboarding_progress Json @default("{}") @db.JsonB
 
   is_active  Boolean   @default(true)
+  /// Consent to contribute anonymized corridor patterns to the micro-market
+  /// intelligence layer (L1). Off by default (DPDPA purpose-limitation); the
+  /// nightly aggregator reads ONLY businesses where this is true.
+  intelligence_opt_in Boolean @default(false)
   created_at DateTime  @default(now()) @db.Timestamptz
   updated_at DateTime  @updatedAt @db.Timestamptz
   deleted_at DateTime? @db.Timestamptz
@@ -637,6 +696,13 @@ model businesses {
   realty_migration_runs       realty_migration_runs[]
   realty_autonomy_events      realty_autonomy_events[]
   realty_no_ship_incidents    realty_no_ship_incidents[]
+  realty_intelligence_aggregates realty_intelligence_aggregates[]
+  realty_syndications         realty_syndications[]
+  realty_reliability_scores   realty_reliability_scores[]
+  realty_resale_listings      realty_resale_listings[]
+  business_subscription       business_subscriptions?
+  consent_logs                consent_logs[]
+  realty_compliance_settings  realty_compliance_settings?
 
   @@index([slug])
   @@index([email])
@@ -2881,4 +2947,270 @@ model realty_no_ship_incidents {
   @@index([business_id, created_at(sort: Desc)])
   @@index([business_id, kind])
   @@map("realty_no_ship_incidents")
+}
+
+// ─────────────────────────────────────────────
+// REALTY — MICRO-MARKET INTELLIGENCE (L1, blueprint §18)
+// ─────────────────────────────────────────────
+
+/// A single consented, anonymized corridor aggregate — the unit of the data
+/// network effect. Built nightly ONLY from businesses with intelligence_opt_in,
+/// and only when sample_size >= min_n_threshold so no individual lead can be
+/// reconstructed. metric_value is a metric-specific JSONB payload; these priors
+/// are injected into the grounded AI prompt to make every broker's AI smarter.
+model realty_intelligence_aggregates {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  /// The micro-market corridor this pattern describes (a locality/sub-market key).
+  corridor    String                 @db.VarChar(180)
+  metric_type IntelligenceMetricType
+
+  /// Metric-specific aggregate payload (never raw rows — always summary stats).
+  metric_value Json @db.JsonB
+
+  /// Number of underlying data points behind this aggregate.
+  sample_size     Int
+  /// Minimum data points required to emit an aggregate (anti-reconstruction).
+  min_n_threshold Int @default(5)
+
+  period_start DateTime @db.Timestamptz
+  period_end   DateTime @db.Timestamptz
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  // One current aggregate per business + corridor + metric + period window.
+  @@unique([business_id, corridor, metric_type, period_start], map: "uq_realty_intel_business_corridor_metric_period")
+  @@index([business_id, corridor, metric_type])
+  @@index([business_id, metric_type, period_end(sort: Desc)])
+  @@map("realty_intelligence_aggregates")
+}
+
+// ─────────────────────────────────────────────
+// REALTY — EXCHANGE (L2 co-broking, blueprint §19)
+// ─────────────────────────────────────────────
+
+/// The immutable attribution ledger behind a co-broking deal share. The
+/// originating broker owns the row (`business_id` = `from_business_id`), scoping
+/// it for RLS. Attribution facts (lead, from/to/developer, split_terms,
+/// buyer_consent_at) are set once at OFFER and never rewritten; only the deal
+/// `state`, `settlement_state`, and the money legs advance through the lifecycle.
+/// `to_business_id` / `developer_id` are loose UUID references (module-boundary
+/// decoupling), FK-constrained on `business_id` only.
+model realty_syndications {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  /// The syndicated lead (loose reference to realty_leads).
+  lead_id String @db.Uuid
+
+  /// Originator (owns the lead) — mirrors business_id for query symmetry.
+  from_business_id String  @db.Uuid
+  /// Counterparty (inventory/closing side).
+  to_business_id   String  @db.Uuid
+  /// Optional developer/channel-partner counterparty on a primary deal.
+  developer_id     String? @db.Uuid
+
+  /// { originatorPct, counterpartyPct, developerPct?, note? } — sums to 100.
+  split_terms Json @default("{}") @db.JsonB
+
+  /// Buyer's explicit consent to share their lead across the network (gate).
+  buyer_consent_at DateTime? @db.Timestamptz
+
+  state SyndicationState @default(OFFERED)
+
+  // Money in rupees (Decimal) — paise at the API boundary.
+  commission_pool Decimal @default(0) @db.Decimal(14, 2)
+  platform_fee    Decimal @default(0) @db.Decimal(14, 2)
+
+  settlement_state SettlementState @default(UNSETTLED)
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, state])
+  @@index([business_id, lead_id])
+  @@index([to_business_id, state])
+  @@index([business_id, settlement_state])
+  @@index([deleted_at])
+  @@map("realty_syndications")
+}
+
+/// Per-member composite trust score that gates and ranks exchange matching.
+/// One row per (owner business, target member, period) — the owner's rolling
+/// view of a counterparty's reliability, recomputed each period from deal signals.
+model realty_reliability_scores {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  /// The member being scored (loose reference to businesses).
+  target_business_id String @db.Uuid
+
+  // All sub-scores and the composite are 0–100.
+  response_speed_score       Decimal @default(0) @db.Decimal(5, 2)
+  showup_integrity_score     Decimal @default(0) @db.Decimal(5, 2)
+  split_honoring_score       Decimal @default(0) @db.Decimal(5, 2)
+  documentation_hygiene_score Decimal @default(0) @db.Decimal(5, 2)
+  composite_score            Decimal @default(0) @db.Decimal(5, 2)
+
+  period_start DateTime @db.Timestamptz
+  period_end   DateTime @db.Timestamptz
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@unique([business_id, target_business_id, period_start])
+  @@index([business_id, target_business_id])
+  @@index([business_id, composite_score(sort: Desc)])
+  @@map("realty_reliability_scores")
+}
+
+/// A resale (secondary-market) listing — Tier-1 "oxygen" supply that also feeds
+/// the exchange. ACTIVE listings are matchable network-wide as co-broking supply.
+model realty_resale_listings {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  /// Optional link to a verified project (loose reference to realty_projects).
+  project_id String? @db.Uuid
+
+  locality     String  @db.VarChar(180)
+  config       String  @db.VarChar(60)
+  carpet_sqft  Int?
+  /// Asking price in rupees (Decimal) — paise at the API boundary.
+  asking_price Decimal @db.Decimal(14, 2)
+  /// Seller contact — PRIVATE, never surfaced to a counterparty pre-consent.
+  seller_phone String  @db.VarChar(20)
+
+  status      ResaleListingStatus @default(ACTIVE)
+  verified_at DateTime?           @db.Timestamptz
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, status])
+  @@index([status, locality, config])
+  @@index([deleted_at])
+  @@map("realty_resale_listings")
+}
+
+// ─────────────────────────────────────────────
+// REALTY — BILLING (pricing tier enforcement, plan §9)
+// ─────────────────────────────────────────────
+
+/// One subscription row per business — the pricing tier and its live usage
+/// counters. Lead limits are enforced against `leads_used_this_cycle`, which the
+/// billing module rolls over each `billing_cycle_start + 1 month`. A null limit
+/// means "unlimited" (DEVELOPER). All money in paise (integer).
+model business_subscriptions {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @unique @db.Uuid
+
+  plan RealtyPlan @default(SOLO)
+
+  /// Included leads per billing cycle — null = unlimited.
+  monthly_lead_limit Int?
+  /// Included seats (team members) — null = unlimited.
+  seat_limit         Int?
+  /// Recurring price in paise (e.g. 399900 = ₹3,999).
+  plan_price_paise   Int @default(399900)
+  /// Per-lead charge in paise once the included allotment is exhausted (₹8 = 800).
+  overage_rate_paise Int @default(800)
+
+  /// Start of the current billing cycle; usage resets one month after this.
+  billing_cycle_start   DateTime @default(now()) @db.Timestamptz
+  /// Leads captured within the current cycle (reset on rollover).
+  leads_used_this_cycle Int      @default(0)
+  /// Leads billed as overage within the current cycle (beyond the included limit).
+  overage_leads_this_cycle Int   @default(0)
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([plan])
+  @@map("business_subscriptions")
+}
+
+// ─────────────────────────────────────────────
+// REALTY — DPDPA COMPLIANCE (plan §21)
+// ─────────────────────────────────────────────
+
+/// Append-only consent ledger (DPDPA §6 — consent must be recorded, auditable,
+/// and withdrawable). One row per consent grant/revoke event; `revoked_at` is set
+/// in place when a previously-granted consent is withdrawn (the only mutation).
+model consent_logs {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  /// E.164 phone — the buyer identity key (matches realty_leads.whatsapp_phone).
+  phone        String      @db.VarChar(20)
+  consent_type ConsentType
+
+  granted_at DateTime  @default(now()) @db.Timestamptz
+  revoked_at DateTime? @db.Timestamptz
+
+  /// Channel the consent was captured on (WHATSAPP / WEB / IVR / SYSTEM …).
+  channel    String  @default("SYSTEM") @db.VarChar(30)
+  /// The message that carried the notice/opt-in, when applicable.
+  message_id String? @db.Uuid
+  /// Free-form provenance (e.g. "first_contact_notice", "exchange_opt_in").
+  source     String? @db.VarChar(80)
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, phone, consent_type])
+  @@index([business_id, consent_type, granted_at(sort: Desc)])
+  @@map("consent_logs")
+}
+
+/// Per-business DPDPA configuration. The broker is the data fiduciary; GoSumo is
+/// the data processor. Exactly one row per business.
+model realty_compliance_settings {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @unique @db.Uuid
+
+  /// Data-retention window in months; inactive leads/messages are anonymized
+  /// after this. Default 24 (plan §21).
+  retention_months Int @default(24)
+
+  /// The broker has accepted the data-processor agreement (fiduciary ⇄ processor).
+  data_processor_agreement Boolean   @default(false)
+  data_processor_agreed_at DateTime? @db.Timestamptz
+
+  /// Timestamp of the last completed retention sweep for this business.
+  last_retention_run_at DateTime? @db.Timestamptz
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@map("realty_compliance_settings")
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { Bell, BellOff, Flame, CheckSquare, Clock, Repeat, Users, ShieldAlert } from 'lucide-react';
+import { Bell, BellOff, Flame, CheckSquare, Clock, Repeat, Users, ShieldAlert, Mic, MicOff } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
 import { KpiCard } from '@/components/dashboard/kpi-card';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,6 +18,7 @@ import {
   useMarkAlertRead,
   useMarkAllAlertsRead,
 } from '@/hooks/use-realty';
+import { useVoiceCommands, type VoiceCommandStatus } from '@/hooks/use-voice';
 import {
   AUTONOMY_LABELS,
   type AutonomyLevel,
@@ -60,8 +61,72 @@ export default function BrokerConsolePage() {
           </div>
           <AutonomyDial />
         </div>
+
+        <VoiceCommandHistory />
       </div>
     </div>
+  );
+}
+
+const VOICE_STATUS_TONE: Record<VoiceCommandStatus, BadgeTone> = {
+  executed: 'success',
+  not_understood: 'neutral',
+  unresolved: 'warning',
+  failed: 'danger',
+};
+
+const VOICE_STATUS_LABEL: Record<VoiceCommandStatus, string> = {
+  executed: 'done',
+  not_understood: 'not understood',
+  unresolved: 'needs confirm',
+  failed: 'failed',
+};
+
+function VoiceCommandHistory() {
+  const { data, isLoading } = useVoiceCommands();
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Mic className="h-5 w-5" />
+          Voice commands
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <LoadingState label="Loading voice commands…" />
+        ) : !data || data.length === 0 ? (
+          <EmptyState
+            icon={MicOff}
+            title="No voice commands yet"
+            description='Dictate instructions on WhatsApp — e.g. "pause follow-ups for Rahul" or "Serene Heights 2BHK now 94L".'
+          />
+        ) : (
+          <ul className="divide-y divide-border">
+            {data.map((cmd) => {
+              const status = (cmd.status in VOICE_STATUS_TONE
+                ? cmd.status
+                : 'not_understood') as VoiceCommandStatus;
+              return (
+                <li key={cmd.id} className="flex items-start gap-3 py-3">
+                  <Badge tone={VOICE_STATUS_TONE[status]} className="mt-0.5 shrink-0">
+                    {VOICE_STATUS_LABEL[status]}
+                  </Badge>
+                  <div className="min-w-0 flex-1">
+                    <p className="break-words text-sm">“{cmd.transcription}”</p>
+                    <p className="text-xs text-muted-foreground">{cmd.detail}</p>
+                  </div>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {timeAgo(cmd.createdAt)}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

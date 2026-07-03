@@ -486,6 +486,21 @@ export class ChannelAdapterService {
   }
 
   // ─────────────────────────────────────────────
+  // Media
+  // ─────────────────────────────────────────────
+
+  /**
+   * Download a media asset (image, document, voice note) from a channel's CDN
+   * by its channel-assigned media id. Delegates to the channel adapter, which
+   * resolves the temporary download URL and streams the bytes. Used by the
+   * voice-note transcription pipeline for `whatsapp-media://<id>` references.
+   */
+  async downloadMedia(channelType: ChannelType, mediaId: string): Promise<Buffer> {
+    const adapter = this.getAdapter(channelType);
+    return adapter.downloadMedia(mediaId);
+  }
+
+  // ─────────────────────────────────────────────
   // Capabilities
   // ─────────────────────────────────────────────
 

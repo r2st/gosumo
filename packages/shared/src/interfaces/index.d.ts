@@ -298,6 +298,57 @@ export interface UnitMatch {
     reasons: string[];
 }
 /**
+ * How the commission on a syndicated deal is split. Percentages are integer
+ * basis-of-100 shares that MUST sum to 100 (e.g. the canonical 50:50 → 50/50).
+ * The originator is the broker who owns the lead; the counterparty is the
+ * inventory/closing side. An optional developer cut is carved out first.
+ */
+export interface SplitTerms {
+    /** Originating broker's share of the commission pool, in percent (0–100). */
+    originatorPct: number;
+    /** Counterparty (inventory side) share, in percent (0–100). */
+    counterpartyPct: number;
+    /** Optional developer/channel-partner cut taken off the top, in percent. */
+    developerPct?: number;
+    /** Free-form note captured at offer time (e.g. "post-visit only"). */
+    note?: string;
+}
+/**
+ * A network-supply candidate surfaced by the exchange matcher — a unit or
+ * resale listing from ANOTHER business, ranked by BLTC fit blended with the
+ * counterparty's reliability score. This is the cross-tenant read that makes
+ * the co-broking network liquid; only EXCHANGE-visible supply is ever exposed
+ * and no private commission terms are carried.
+ */
+export interface ExchangeMatch {
+    /** Source row id (a resale listing id or an EXCHANGE-visible unit id). */
+    listingId: string;
+    /** Which supply pool the candidate came from. */
+    sourceType: 'RESALE' | 'UNIT';
+    /** The counterparty business that owns the supply. */
+    ownerBusinessId: string;
+    projectName: string | null;
+    locality: string;
+    config: string;
+    askingPricePaise: number;
+    /** 0–100 BLTC fit score (config, price band, locality). */
+    fitScore: number;
+    /** 0–100 composite reliability of the counterparty at match time. */
+    reliabilityScore: number;
+    /** Ranking key: fit blended with counterparty reliability (0–100). */
+    blendedScore: number;
+    /** Human-readable reasons for the broker. */
+    reasons: string[];
+}
+/** The four reliability sub-scores plus their weighted composite (all 0–100). */
+export interface ReliabilityScoreBreakdown {
+    responseSpeedScore: number;
+    showupIntegrityScore: number;
+    splitHonoringScore: number;
+    documentationHygieneScore: number;
+    compositeScore: number;
+}
+/**
  * A normalized lead candidate produced by any ingestion path (Meta Leadgen,
  * portal-email parser, CSV import, CTWA context) and handed to
  * `RealtyLeadsService.ingestLead`, which owns the E.164 identity-merge.

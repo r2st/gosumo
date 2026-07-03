@@ -429,3 +429,114 @@ export const AUTONOMY_LABELS: Record<AutonomyLevel, string> = {
   ASSISTED: 'Assisted (auto-send high confidence)',
   AUTONOMOUS: 'Autonomous (AI runs the desk)',
 };
+
+// ── Exchange (L2 co-broking) ────────────────────────────────────────────────
+
+export type SyndicationState = 'OFFERED' | 'ACCEPTED' | 'VISIT' | 'CLOSED' | 'EXPIRED' | 'DISPUTED';
+export type SettlementState = 'UNSETTLED' | 'PENDING' | 'SETTLED' | 'REVERSED';
+export type ResaleListingStatus = 'ACTIVE' | 'UNDER_OFFER' | 'SOLD' | 'WITHDRAWN';
+
+export interface SplitTerms {
+  originatorPct: number;
+  counterpartyPct: number;
+  developerPct?: number;
+  note?: string;
+}
+
+export interface Syndication {
+  id: string;
+  businessId: string;
+  leadId: string;
+  fromBusinessId: string;
+  toBusinessId: string;
+  developerId: string | null;
+  splitTerms: SplitTerms;
+  buyerConsentAt: string | null;
+  state: SyndicationState;
+  commissionPoolPaise: number;
+  platformFeePaise: number;
+  settlementState: SettlementState;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ExchangeMatch {
+  listingId: string;
+  sourceType: 'RESALE' | 'UNIT';
+  ownerBusinessId: string;
+  projectName: string | null;
+  locality: string;
+  config: string;
+  askingPricePaise: number;
+  fitScore: number;
+  reliabilityScore: number;
+  blendedScore: number;
+  reasons: string[];
+}
+
+export interface ExchangeMatchResult {
+  leadId: string;
+  matches: ExchangeMatch[];
+  aiRationale: string | null;
+}
+
+export interface ReliabilityScore {
+  id: string;
+  businessId: string;
+  targetBusinessId: string;
+  responseSpeedScore: number;
+  showupIntegrityScore: number;
+  splitHonoringScore: number;
+  documentationHygieneScore: number;
+  compositeScore: number;
+  periodStart: string;
+  periodEnd: string;
+}
+
+export interface ResaleListing {
+  id: string;
+  businessId: string;
+  projectId: string | null;
+  locality: string;
+  config: string;
+  carpetSqft: number | null;
+  askingPricePaise: number;
+  sellerPhone: string;
+  status: ResaleListingStatus;
+  verifiedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateSyndicationInput {
+  leadId: string;
+  toBusinessId: string;
+  developerId?: string;
+  splitTerms: SplitTerms;
+}
+
+export interface RateSyndicationInput {
+  responseMinutes?: number;
+  showedUp?: boolean;
+  splitHonored?: boolean;
+  documented?: boolean;
+}
+
+export const SYNDICATION_STATE_LABELS: Record<SyndicationState, string> = {
+  OFFERED: 'Offered',
+  ACCEPTED: 'Accepted',
+  VISIT: 'Visited',
+  CLOSED: 'Closed',
+  EXPIRED: 'Expired',
+  DISPUTED: 'Disputed',
+};
+
+/** The happy-path lifecycle, in order — drives the state timeline. */
+export const SYNDICATION_FLOW: SyndicationState[] = ['OFFERED', 'ACCEPTED', 'VISIT', 'CLOSED'];
+
+export const RESALE_STATUS_LABELS: Record<ResaleListingStatus, string> = {
+  ACTIVE: 'Active',
+  UNDER_OFFER: 'Under offer',
+  SOLD: 'Sold',
+  WITHDRAWN: 'Withdrawn',
+};

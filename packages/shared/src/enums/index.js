@@ -3,8 +3,8 @@
 // CHANNEL & MESSAGING
 // ─────────────────────────────────────────────
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ApprovalStatus = exports.TemplateApprovalStatus = exports.TemplateCategory = exports.CadenceEnrollmentStatus = exports.CadenceStopOn = exports.CadenceTrigger = exports.RealtyRoutePolicy = exports.RealtyIntent = exports.RealtyPortal = exports.SiteVisitOutcome = exports.SiteVisitStatus = exports.RealtyAssetType = exports.NetworkVisibility = exports.UnitAvailability = exports.ProjectStatus = exports.LeadExchangeStatus = exports.FinancingStatus = exports.LeadPurpose = exports.LeadStage = exports.LeadTemperature = exports.LeadSource = exports.CartStatus = exports.DiscountType = exports.CatalogItemType = exports.CampaignType = exports.InvoiceStatus = exports.RefundMethod = exports.RefundType = exports.RefundStatus = exports.PaymentGateway = exports.TeamRole = exports.ShipmentStatus = exports.RecurrenceFrequency = exports.BookingActor = exports.BookingLocationType = exports.BookingStatus = exports.PaymentMethod = exports.PaymentStatus = exports.OrderStatus = exports.ConfidenceMode = exports.IntentType = exports.TaskPriority = exports.TaskType = exports.TaskStatus = exports.ConversationPriority = exports.ConversationStatus = exports.MessageStatus = exports.MessageContentType = exports.MessageDirection = exports.ChannelType = void 0;
-exports.LaunchCheckStatus = exports.LaunchGateStatus = exports.NoShipKind = exports.AutonomyActorType = exports.AutonomyDirection = exports.MigrationStatus = exports.MigrationKind = exports.BrokerAlertType = exports.ConversationOwner = exports.AutonomyLevel = void 0;
+exports.RealtyPlan = exports.TemplateApprovalStatus = exports.TemplateCategory = exports.CadenceEnrollmentStatus = exports.CadenceStopOn = exports.CadenceTrigger = exports.RealtyRoutePolicy = exports.RealtyIntent = exports.RealtyPortal = exports.SiteVisitOutcome = exports.SiteVisitStatus = exports.RealtyAssetType = exports.NetworkVisibility = exports.UnitAvailability = exports.ProjectStatus = exports.LeadExchangeStatus = exports.FinancingStatus = exports.LeadPurpose = exports.LeadStage = exports.LeadTemperature = exports.LeadSource = exports.CartStatus = exports.DiscountType = exports.CatalogItemType = exports.CampaignType = exports.InvoiceStatus = exports.RefundMethod = exports.RefundType = exports.RefundStatus = exports.PaymentGateway = exports.TeamRole = exports.ShipmentStatus = exports.RecurrenceFrequency = exports.BookingActor = exports.BookingLocationType = exports.BookingStatus = exports.PaymentMethod = exports.PaymentStatus = exports.OrderStatus = exports.ConfidenceMode = exports.IntentType = exports.TaskPriority = exports.TaskType = exports.TaskStatus = exports.ConversationPriority = exports.ConversationStatus = exports.MessageStatus = exports.MessageContentType = exports.MessageDirection = exports.ChannelType = void 0;
+exports.ResaleListingStatus = exports.SettlementState = exports.SyndicationState = exports.IntelligenceMetricType = exports.LaunchCheckStatus = exports.LaunchGateStatus = exports.NoShipKind = exports.AutonomyActorType = exports.AutonomyDirection = exports.MigrationStatus = exports.MigrationKind = exports.BrokerAlertType = exports.ConversationOwner = exports.AutonomyLevel = exports.ApprovalStatus = exports.ConsentType = void 0;
 var ChannelType;
 (function (ChannelType) {
     ChannelType["WHATSAPP"] = "WHATSAPP";
@@ -526,6 +526,23 @@ var TemplateApprovalStatus;
     TemplateApprovalStatus["REJECTED"] = "REJECTED";
 })(TemplateApprovalStatus || (exports.TemplateApprovalStatus = TemplateApprovalStatus = {}));
 // ─────────────────────────────────────────────
+// REALTY — BILLING & DPDPA COMPLIANCE (plan §9, §21)
+// ─────────────────────────────────────────────
+/** GoSumo Realty subscription tiers (business plan §9). */
+var RealtyPlan;
+(function (RealtyPlan) {
+    RealtyPlan["SOLO"] = "SOLO";
+    RealtyPlan["TEAM"] = "TEAM";
+    RealtyPlan["DEVELOPER"] = "DEVELOPER";
+})(RealtyPlan || (exports.RealtyPlan = RealtyPlan = {}));
+/** The DPDPA consent purpose a buyer has granted (or had revoked). */
+var ConsentType;
+(function (ConsentType) {
+    ConsentType["PROCESSING"] = "PROCESSING";
+    ConsentType["MARKETING"] = "MARKETING";
+    ConsentType["EXCHANGE"] = "EXCHANGE";
+})(ConsentType || (exports.ConsentType = ConsentType = {}));
+// ─────────────────────────────────────────────
 // REALTY — BROKER SURFACE (Phase 6, blueprint §16)
 // ─────────────────────────────────────────────
 /** State of an AI draft awaiting human review (70–89% confidence band). */
@@ -625,4 +642,64 @@ var LaunchCheckStatus;
     LaunchCheckStatus["FAIL"] = "FAIL";
     LaunchCheckStatus["INSUFFICIENT_DATA"] = "INSUFFICIENT_DATA";
 })(LaunchCheckStatus || (exports.LaunchCheckStatus = LaunchCheckStatus = {}));
+// ─────────────────────────────────────────────
+// REALTY — MICRO-MARKET INTELLIGENCE (L1, blueprint §18)
+// ─────────────────────────────────────────────
+/**
+ * The corridor-pattern metrics computed nightly by the micro-market intelligence
+ * layer. Each aggregate row carries exactly one; the JSONB payload shape is
+ * metric-specific (documented in the realty-intelligence module CLAUDE.md).
+ */
+var IntelligenceMetricType;
+(function (IntelligenceMetricType) {
+    IntelligenceMetricType["CADENCE_CONVERSION"] = "CADENCE_CONVERSION";
+    IntelligenceMetricType["OBJECTION_FREQUENCY"] = "OBJECTION_FREQUENCY";
+    IntelligenceMetricType["PRICE_ELASTICITY"] = "PRICE_ELASTICITY";
+    IntelligenceMetricType["SOURCE_QUALITY"] = "SOURCE_QUALITY";
+    IntelligenceMetricType["SEASONAL_VELOCITY"] = "SEASONAL_VELOCITY";
+})(IntelligenceMetricType || (exports.IntelligenceMetricType = IntelligenceMetricType = {}));
+// ─────────────────────────────────────────────
+// REALTY — EXCHANGE (L2 co-broking, blueprint §19)
+// ─────────────────────────────────────────────
+/**
+ * Lifecycle of a co-broking syndication — the formalised 50:50 deal share.
+ * OFFERED once the originating broker syndicates a consented lead; ACCEPTED
+ * when the counterparty takes it on; VISIT after the buyer physically visits;
+ * CLOSED on a booked deal (commission pool + platform fee settle); EXPIRED if
+ * the offer lapses unaccepted; DISPUTED if either side contests the split.
+ */
+var SyndicationState;
+(function (SyndicationState) {
+    SyndicationState["OFFERED"] = "OFFERED";
+    SyndicationState["ACCEPTED"] = "ACCEPTED";
+    SyndicationState["VISIT"] = "VISIT";
+    SyndicationState["CLOSED"] = "CLOSED";
+    SyndicationState["EXPIRED"] = "EXPIRED";
+    SyndicationState["DISPUTED"] = "DISPUTED";
+})(SyndicationState || (exports.SyndicationState = SyndicationState = {}));
+/**
+ * Settlement posture of a syndication's money leg — tracked separately from the
+ * deal `state` so a CLOSED deal can still be awaiting payout. UNSETTLED until
+ * close; PENDING once the platform fee is computed and collection is due;
+ * SETTLED after payout; REVERSED if a dispute unwinds it.
+ */
+var SettlementState;
+(function (SettlementState) {
+    SettlementState["UNSETTLED"] = "UNSETTLED";
+    SettlementState["PENDING"] = "PENDING";
+    SettlementState["SETTLED"] = "SETTLED";
+    SettlementState["REVERSED"] = "REVERSED";
+})(SettlementState || (exports.SettlementState = SettlementState = {}));
+/**
+ * Status of a resale listing — Tier-1 "oxygen" supply that also feeds the
+ * exchange. ACTIVE is matchable; UNDER_OFFER is soft-held; SOLD / WITHDRAWN are
+ * terminal and excluded from matching.
+ */
+var ResaleListingStatus;
+(function (ResaleListingStatus) {
+    ResaleListingStatus["ACTIVE"] = "ACTIVE";
+    ResaleListingStatus["UNDER_OFFER"] = "UNDER_OFFER";
+    ResaleListingStatus["SOLD"] = "SOLD";
+    ResaleListingStatus["WITHDRAWN"] = "WITHDRAWN";
+})(ResaleListingStatus || (exports.ResaleListingStatus = ResaleListingStatus = {}));
 //# sourceMappingURL=index.js.map

@@ -124,6 +124,32 @@ export class CadenceEngineService {
     return stopped;
   }
 
+  /**
+   * Broker override — pause every active cadence for a lead unconditionally
+   * (unlike `stopForLead`, which honours per-step stop signals). Used by the
+   * broker voice command "pause follow-ups for <name>". Returns how many
+   * enrolments were stopped.
+   */
+  async pauseForLead(businessId: string, leadId: string, reason = 'broker_paused'): Promise<number> {
+    const active = await this.repository.findActiveEnrollmentsForLead(businessId, leadId);
+    for (const enrollment of active) {
+      await this.finish(businessId, enrollment, 'STOPPED', reason);
+    }
+    return active.length;
+  }
+
+  /**
+   * Broker override — resume follow-ups for a lead by re-enrolling the default
+   * NO_RESPONSE chase. Returns the new enrolment, or null when there is no
+   * active cadence for the trigger or the lead is already enrolled.
+   */
+  async resumeForLead(
+    businessId: string,
+    leadId: string,
+  ): Promise<realty_cadence_enrollments | null> {
+    return this.enroll(businessId, leadId, CadenceTrigger.NO_RESPONSE);
+  }
+
   // ─────────────────────────────────────────────
   // SCHEDULED EXECUTION
   // ─────────────────────────────────────────────

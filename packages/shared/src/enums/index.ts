@@ -542,6 +542,24 @@ export enum TemplateApprovalStatus {
 }
 
 // ─────────────────────────────────────────────
+// REALTY — BILLING & DPDPA COMPLIANCE (plan §9, §21)
+// ─────────────────────────────────────────────
+
+/** GoSumo Realty subscription tiers (business plan §9). */
+export enum RealtyPlan {
+  SOLO = 'SOLO', // ₹3,999/mo · 1 seat · 300 leads/mo
+  TEAM = 'TEAM', // ₹9,999/mo · 5 seats · 1,500 leads/mo · routing + analytics
+  DEVELOPER = 'DEVELOPER', // ₹24,999/mo · unlimited seats + leads · CRM/IVR/priority
+}
+
+/** The DPDPA consent purpose a buyer has granted (or had revoked). */
+export enum ConsentType {
+  PROCESSING = 'PROCESSING', // process personal data to assist the property search
+  MARKETING = 'MARKETING', // enrol in follow-up / marketing cadences
+  EXCHANGE = 'EXCHANGE', // share the lead into the co-broking exchange
+}
+
+// ─────────────────────────────────────────────
 // REALTY — BROKER SURFACE (Phase 6, blueprint §16)
 // ─────────────────────────────────────────────
 
@@ -641,4 +659,66 @@ export enum LaunchCheckStatus {
   PASS = 'PASS',
   FAIL = 'FAIL',
   INSUFFICIENT_DATA = 'INSUFFICIENT_DATA', // the metric could not be measured
+}
+
+// ─────────────────────────────────────────────
+// REALTY — MICRO-MARKET INTELLIGENCE (L1, blueprint §18)
+// ─────────────────────────────────────────────
+
+/**
+ * The corridor-pattern metrics computed nightly by the micro-market intelligence
+ * layer. Each aggregate row carries exactly one; the JSONB payload shape is
+ * metric-specific (documented in the realty-intelligence module CLAUDE.md).
+ */
+export enum IntelligenceMetricType {
+  CADENCE_CONVERSION = 'CADENCE_CONVERSION', // which follow-up timing converts, by corridor
+  OBJECTION_FREQUENCY = 'OBJECTION_FREQUENCY', // recurring objections, by project/config type
+  PRICE_ELASTICITY = 'PRICE_ELASTICITY', // realistic budget bands, by locality
+  SOURCE_QUALITY = 'SOURCE_QUALITY', // downstream quality of each lead source
+  SEASONAL_VELOCITY = 'SEASONAL_VELOCITY', // lead inflow + conversion curve, by month
+}
+
+// ─────────────────────────────────────────────
+// REALTY — EXCHANGE (L2 co-broking, blueprint §19)
+// ─────────────────────────────────────────────
+
+/**
+ * Lifecycle of a co-broking syndication — the formalised 50:50 deal share.
+ * OFFERED once the originating broker syndicates a consented lead; ACCEPTED
+ * when the counterparty takes it on; VISIT after the buyer physically visits;
+ * CLOSED on a booked deal (commission pool + platform fee settle); EXPIRED if
+ * the offer lapses unaccepted; DISPUTED if either side contests the split.
+ */
+export enum SyndicationState {
+  OFFERED = 'OFFERED',
+  ACCEPTED = 'ACCEPTED',
+  VISIT = 'VISIT',
+  CLOSED = 'CLOSED',
+  EXPIRED = 'EXPIRED',
+  DISPUTED = 'DISPUTED',
+}
+
+/**
+ * Settlement posture of a syndication's money leg — tracked separately from the
+ * deal `state` so a CLOSED deal can still be awaiting payout. UNSETTLED until
+ * close; PENDING once the platform fee is computed and collection is due;
+ * SETTLED after payout; REVERSED if a dispute unwinds it.
+ */
+export enum SettlementState {
+  UNSETTLED = 'UNSETTLED',
+  PENDING = 'PENDING',
+  SETTLED = 'SETTLED',
+  REVERSED = 'REVERSED',
+}
+
+/**
+ * Status of a resale listing — Tier-1 "oxygen" supply that also feeds the
+ * exchange. ACTIVE is matchable; UNDER_OFFER is soft-held; SOLD / WITHDRAWN are
+ * terminal and excluded from matching.
+ */
+export enum ResaleListingStatus {
+  ACTIVE = 'ACTIVE',
+  UNDER_OFFER = 'UNDER_OFFER',
+  SOLD = 'SOLD',
+  WITHDRAWN = 'WITHDRAWN',
 }

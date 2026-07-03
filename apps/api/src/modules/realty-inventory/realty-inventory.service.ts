@@ -204,6 +204,11 @@ export class RealtyInventoryService {
     return units.map((u) => this.mapUnit(u));
   }
 
+  /** Fetch a single unit (used e.g. to resolve a lead's matched unit → project). */
+  async getUnit(businessId: string, unitId: string): Promise<UnitResponseDto> {
+    return this.mapUnit(await this.mustFindUnit(businessId, unitId));
+  }
+
   async updateUnit(
     businessId: string,
     unitId: string,

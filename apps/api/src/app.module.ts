@@ -28,12 +28,17 @@ import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { RealtyLeadsModule } from './modules/realty-leads/realty-leads.module';
 import { RealtyInventoryModule } from './modules/realty-inventory/realty-inventory.module';
 import { RealtyAiModule } from './modules/ai-engine/realty/realty-ai.module';
+import { RealtyVoiceModule } from './modules/ai-engine/realty/voice/realty-voice.module';
 import { RealtyVisitsModule } from './modules/realty-sitevisits/realty-sitevisits.module';
 import { RealtyIngestionModule } from './modules/realty-ingestion/realty-ingestion.module';
 import { RealtyCadenceModule } from './modules/realty-cadence/realty-cadence.module';
 import { RealtyBrokerModule } from './modules/realty-broker/realty-broker.module';
 import { RealtyHardeningModule } from './modules/realty-hardening/realty-hardening.module';
 import { RealtyPilotModule } from './modules/realty-pilot/realty-pilot.module';
+import { RealtyExchangeModule } from './modules/realty-exchange/realty-exchange.module';
+import { RealtyIntelligenceModule } from './modules/realty-intelligence/realty-intelligence.module';
+import { BillingModule } from './modules/billing/billing.module';
+import { ComplianceModule } from './modules/compliance/compliance.module';
 
 @Module({
   imports: [
@@ -100,12 +105,17 @@ import { RealtyPilotModule } from './modules/realty-pilot/realty-pilot.module';
     RealtyLeadsModule,
     RealtyInventoryModule,
     RealtyAiModule,
+    RealtyVoiceModule,
     RealtyVisitsModule,
     RealtyIngestionModule,
     RealtyCadenceModule,
     RealtyBrokerModule,
     RealtyHardeningModule,
     RealtyPilotModule,
+    RealtyExchangeModule,
+    RealtyIntelligenceModule,
+    BillingModule,
+    ComplianceModule,
   ],
 })
 export class AppModule {}

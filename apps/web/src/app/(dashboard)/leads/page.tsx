@@ -12,6 +12,10 @@ import { LeadCard } from '@/components/leads/lead-card';
 import { LeadDossier } from '@/components/leads/lead-dossier';
 import { useLeads, useLeadBoard } from '@/hooks/use-realty';
 import { useTeam } from '@/hooks/use-settings';
+import { usePullToRefresh, PullToRefreshIndicator } from '@/hooks/use-pull-to-refresh';
+import { leadsToCsv, downloadCsv } from '@/lib/csv-export';
+import { Button } from '@/components/ui/button';
+import { Download } from 'lucide-react';
 import {
   DEFAULT_LEAD_FILTERS,
   filterLeads,
@@ -39,6 +43,11 @@ function LeadsBoard() {
   // Pull a generous page of leads and group them into columns client-side.
   const leadsQ = useLeads({ limit: 100 });
   const teamQ = useTeam();
+
+  // Pull-to-refresh (touch only) refreshes both the board totals and the lead page.
+  const { containerRef, pullDistance, isRefreshing } = usePullToRefresh<HTMLDivElement>(async () => {
+    await Promise.all([boardQ.refetch(), leadsQ.refetch()]);
+  });
 
   const stageCounts = useMemo(() => {
     const map: Partial<Record<LeadStage, number>> = {};
@@ -121,6 +130,16 @@ function LeadsBoard() {
       <PageHeader
         title="Lead pipeline"
         description="Your AI-managed pipeline — every buyer captured, qualified, and followed up."
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={filtered.length === 0}
+            onClick={() => downloadCsv(`leads-${today}.csv`, leadsToCsv(filtered))}
+          >
+            <Download className="h-4 w-4" /> Export
+          </Button>
+        }
       />
 
       {/* Today's stats */}
@@ -191,7 +210,8 @@ function LeadsBoard() {
         </div>
       )}
 
-      <div className="flex-1 overflow-auto p-4 lg:p-6">
+      <div ref={containerRef} className="relative flex-1 overflow-auto p-4 lg:p-6">
+        <PullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshing} />
         {isLoading ? (
           <LoadingState label="Loading pipeline…" />
         ) : isError ? (

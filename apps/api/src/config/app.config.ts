@@ -48,6 +48,27 @@ export default registerAs('app', () => ({
     url: process.env['QDRANT_URL'] ?? 'http://localhost:6333',
   },
 
+  // Speech-to-text (voice-note transcription). OpenAI-compatible
+  // /audio/transcriptions endpoint (OpenRouter, Groq Whisper, or self-hosted).
+  // When the key is absent the transcriber runs in a no-op/simulation mode.
+  transcription: {
+    apiUrl:
+      process.env['TRANSCRIPTION_API_URL'] ?? 'https://api.openai.com/v1/audio/transcriptions',
+    apiKey: process.env['TRANSCRIPTION_API_KEY'] ?? process.env['OPENROUTER_API_KEY'],
+    model: process.env['TRANSCRIPTION_MODEL'] ?? 'whisper-1',
+  },
+
+  // GoSumo Realty ingress secrets. `ivrWebhookSecret` verifies the HMAC on the
+  // missed-call → WhatsApp IVR webhook; `portalIngestToken` gates the portal
+  // enquiry webhook; `metaLeadgenVerifyToken` is the Meta GET-challenge token.
+  realty: {
+    ivrWebhookSecret: process.env['IVR_WEBHOOK_SECRET'],
+    portalIngestToken: process.env['REALTY_PORTAL_INGEST_TOKEN'],
+    metaLeadgenVerifyToken: process.env['REALTY_META_LEADGEN_VERIFY_TOKEN'],
+    // Optional default greeting for a fresh IVR missed call (before enrichment).
+    ivrGreeting: process.env['IVR_GREETING'],
+  },
+
   // WhatsApp / Meta
   whatsapp: {
     verifyToken: process.env['WHATSAPP_VERIFY_TOKEN'],
