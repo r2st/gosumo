@@ -68,10 +68,15 @@ const config: Config = {
         'spin-slow': {
           to: { transform: 'rotate(360deg)' },
         },
+        'toast-in': {
+          from: { opacity: '0', transform: 'translateX(16px) scale(0.98)' },
+          to: { opacity: '1', transform: 'translateX(0) scale(1)' },
+        },
       },
       animation: {
         'fade-in': 'fade-in 0.2s ease-out',
         'spin-slow': 'spin-slow 1s linear infinite',
+        'toast-in': 'toast-in 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
       },
     },
   },

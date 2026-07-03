@@ -8,6 +8,7 @@ import { Modal } from '@/components/ui/modal';
 import { Select } from '@/components/ui/select';
 import { useAssignLead, useEnrollCadence, useTransitionStage } from '@/hooks/use-realty';
 import { useTeam } from '@/hooks/use-settings';
+import { useToast } from '@/providers/toast-provider';
 import {
   CADENCE_TRIGGER_LABELS,
   LEAD_STAGES,
@@ -56,6 +57,7 @@ export function LeadActions({ lead }: { lead: Lead }) {
 }
 
 function AssignAgentModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
+  const toast = useToast();
   const teamQ = useTeam();
   const assign = useAssignLead();
   const members = teamQ.data?.data ?? [];
@@ -68,7 +70,20 @@ function AssignAgentModal({ lead, onClose }: { lead: Lead; onClose: () => void }
 
   const submit = () => {
     if (!agentId) return;
-    assign.mutate({ id: lead.id, agentId }, { onSuccess: onClose });
+    const agentName = members.find((m) => m.id === agentId)?.name;
+    assign.mutate(
+      { id: lead.id, agentId },
+      {
+        onSuccess: () => {
+          toast.success(
+            agentName ? `Lead assigned to ${agentName}.` : 'Lead assigned.',
+            { title: 'Agent assigned' },
+          );
+          onClose();
+        },
+        onError: () => toast.error('Could not assign the lead. Please try again.'),
+      },
+    );
   };
 
   return (
@@ -103,6 +118,7 @@ function AssignAgentModal({ lead, onClose }: { lead: Lead; onClose: () => void }
 }
 
 function ChangeStageModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
+  const toast = useToast();
   const transition = useTransitionStage();
   const [stage, setStage] = useState<LeadStage>(lead.stage);
 
@@ -113,7 +129,16 @@ function ChangeStageModal({ lead, onClose }: { lead: Lead; onClose: () => void }
       onClose();
       return;
     }
-    transition.mutate({ id: lead.id, stage }, { onSuccess: onClose });
+    transition.mutate(
+      { id: lead.id, stage },
+      {
+        onSuccess: () => {
+          toast.success(`Moved to “${STAGE_LABELS[stage]}”.`, { title: 'Stage updated' });
+          onClose();
+        },
+        onError: () => toast.error('Could not update the stage. Please try again.'),
+      },
+    );
   };
 
   return (
@@ -147,6 +172,7 @@ function ChangeStageModal({ lead, onClose }: { lead: Lead; onClose: () => void }
 }
 
 function StartCadenceModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
+  const toast = useToast();
   const enroll = useEnrollCadence();
   const [trigger, setTrigger] = useState<CadenceTrigger>('NO_RESPONSE');
   const [noCadence, setNoCadence] = useState(false);
@@ -160,9 +186,18 @@ function StartCadenceModal({ lead, onClose }: { lead: Lead; onClose: () => void 
       {
         onSuccess: (data) => {
           // The API returns null when no active cadence matches the trigger.
-          if (data) onClose();
-          else setNoCadence(true);
+          if (data) {
+            toast.success(
+              `Enrolled in the ${CADENCE_TRIGGER_LABELS[trigger]} sequence.`,
+              { title: 'Cadence started' },
+            );
+            onClose();
+          } else {
+            setNoCadence(true);
+            toast.warning('No active cadence is configured for this trigger yet.');
+          }
         },
+        onError: () => toast.error('Could not enrol the lead. Please try again.'),
       },
     );
   };
