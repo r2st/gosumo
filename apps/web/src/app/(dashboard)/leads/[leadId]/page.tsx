@@ -87,18 +87,18 @@ function LeadDetail({ lead }: { lead: Lead }) {
               <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                 <a
                   href={`tel:${lead.whatsappPhone}`}
-                  className="flex items-center gap-1.5 hover:text-primary"
+                  className="flex min-w-0 items-center gap-1.5 hover:text-primary"
                 >
-                  <Phone className="h-3.5 w-3.5 text-muted-foreground" />
-                  {lead.whatsappPhone}
+                  <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{lead.whatsappPhone}</span>
                 </a>
                 {lead.email && (
                   <a
                     href={`mailto:${lead.email}`}
-                    className="flex items-center gap-1.5 hover:text-primary"
+                    className="flex min-w-0 items-center gap-1.5 hover:text-primary"
                   >
-                    <Mail className="h-3.5 w-3.5 text-muted-foreground" />
-                    {lead.email}
+                    <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 break-all">{lead.email}</span>
                   </a>
                 )}
               </div>
@@ -117,8 +117,10 @@ function LeadDetail({ lead }: { lead: Lead }) {
         </CardContent>
       </Card>
 
-      {/* Two-column body */}
-      <div className="grid gap-5 lg:grid-cols-2">
+      {/* Two-column body. grid-cols-1 (minmax(0,1fr)) keeps the column bounded to the
+          viewport on mobile — without it the implicit auto column grows to the widest
+          nowrap child inside the scroll container and pushes content off-screen. */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <div className="flex flex-col gap-5">
           <Card>
             <CardHeader>

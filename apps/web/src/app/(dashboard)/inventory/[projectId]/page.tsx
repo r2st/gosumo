@@ -113,8 +113,10 @@ function ProjectDetail({ project, projectId }: { project: RealtyProject; project
         </CardContent>
       </Card>
 
-      {/* Assets + broker controls */}
-      <div className="grid gap-5 lg:grid-cols-3">
+      {/* Assets + broker controls. grid-cols-1 keeps the mobile column bounded to the
+          viewport (minmax(0,1fr)); a bare `grid` would grow to its widest nowrap child
+          inside the scroll container and push content off-screen. */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <Card>
             <CardHeader>

@@ -55,7 +55,7 @@ export function LeadDossier({ lead, onClose }: { lead: Lead | null; onClose: () 
       description={`${STAGE_LABELS[lead.stage]} · Qualification score ${lead.qualScore}`}
       className="max-w-4xl"
     >
-      <div className="grid gap-6 lg:grid-cols-[1fr_1.05fr]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_1.05fr]">
         <LeftPanel lead={lead} />
         <RightPanel lead={lead} match={match} />
       </div>
@@ -77,15 +77,15 @@ function LeftPanel({ lead }: { lead: Lead }) {
           </div>
           <a
             href={`tel:${lead.whatsappPhone}`}
-            className="mt-2 flex items-center gap-1.5 text-sm hover:text-primary"
+            className="mt-2 flex min-w-0 items-center gap-1.5 text-sm hover:text-primary"
           >
-            <Phone className="h-3.5 w-3.5 text-muted-foreground" />
-            {lead.whatsappPhone}
+            <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="truncate">{lead.whatsappPhone}</span>
           </a>
           {lead.email && (
-            <p className="mt-1 flex items-center gap-1.5 text-sm">
-              <Mail className="h-3.5 w-3.5 text-muted-foreground" />
-              {lead.email}
+            <p className="mt-1 flex min-w-0 items-center gap-1.5 text-sm">
+              <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 break-all">{lead.email}</span>
             </p>
           )}
         </div>
