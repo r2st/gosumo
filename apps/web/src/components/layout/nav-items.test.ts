@@ -20,9 +20,16 @@ describe('nav-items', () => {
       'Cadences',
       'Broker Console',
       'Exchange',
+      'Intelligence',
       'Approvals',
       'Import',
     ]);
+  });
+
+  it('gives every nav item an i18n labelKey', () => {
+    for (const item of NAV_ITEMS) {
+      expect(item.labelKey).toMatch(/^nav\./);
+    }
   });
 
   it('keeps Dashboard as the standalone top entry', () => {
@@ -36,7 +43,7 @@ describe('nav-items', () => {
     expect(NAV_ITEMS[0]?.href).toBe('/dashboard');
     const hrefs = NAV_ITEMS.map((i) => i.href);
     expect(new Set(hrefs).size).toBe(hrefs.length);
-    // 1 top + 8 + 3 + 3 + 2 grouped
-    expect(NAV_ITEMS).toHaveLength(17);
+    // 1 top + 9 + 3 + 3 + 2 grouped
+    expect(NAV_ITEMS).toHaveLength(18);
   });
 });

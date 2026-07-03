@@ -5,10 +5,12 @@ import { usePathname } from 'next/navigation';
 import { X } from 'lucide-react';
 import { Logo } from '@/components/logo';
 import { NAV_SECTIONS, NAV_TOP, type NavItem } from './nav-items';
+import { useT } from '@/providers/language-provider';
 import { cn } from '@/lib/utils';
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname();
+  const t = useT();
 
   const renderItem = (item: NavItem) => {
     const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -31,7 +33,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
             active ? 'text-primary' : 'text-sidebar-muted group-hover:text-foreground',
           )}
         />
-        {item.label}
+        {t(item.labelKey)}
       </Link>
     );
   };
@@ -68,7 +70,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           {NAV_SECTIONS.map((section) => (
             <div key={section.label} className="mt-4">
               <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-sidebar-muted/70">
-                {section.label}
+                {t(section.labelKey)}
               </p>
               <div className="space-y-0.5">{section.items.map(renderItem)}</div>
             </div>

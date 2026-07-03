@@ -1,12 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, LogOut, Menu, Moon, Settings, Sun, User } from 'lucide-react';
+import { ChevronDown, Languages, LogOut, Menu, Moon, Settings, Sun, User } from 'lucide-react';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { NotificationCenter } from '@/components/notifications/notification-center';
 import { useAuth } from '@/providers/auth-provider';
 import { useTheme } from '@/providers/theme-provider';
+import { useLanguage } from '@/providers/language-provider';
+import { UI_LANGUAGE_LABELS } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 
@@ -35,6 +37,9 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
           </p>
         )}
       </div>
+
+      {/* Language switcher */}
+      <LanguageToggle />
 
       {/* Theme toggle */}
       <ThemeToggle />
@@ -79,6 +84,22 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
         )}
       </div>
     </header>
+  );
+}
+
+function LanguageToggle() {
+  const { lang, setLang } = useLanguage();
+  const next = lang === 'en' ? 'hi' : 'en';
+  return (
+    <button
+      onClick={() => setLang(next)}
+      className="flex h-9 items-center gap-1 rounded-md px-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      aria-label={`Switch to ${UI_LANGUAGE_LABELS[next]}`}
+      title={`Switch to ${UI_LANGUAGE_LABELS[next]}`}
+    >
+      <Languages className="h-4 w-4" />
+      <span>{UI_LANGUAGE_LABELS[lang]}</span>
+    </button>
   );
 }
 

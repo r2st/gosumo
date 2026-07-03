@@ -1,12 +1,22 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
+import { Inter, Noto_Sans_Devanagari } from 'next/font/google';
 import './globals.css';
 import { AuthProvider } from '@/providers/auth-provider';
 import { QueryProvider } from '@/providers/query-provider';
+import { LanguageProvider, langInitScript } from '@/providers/language-provider';
 import { ThemeProvider, themeInitScript } from '@/providers/theme-provider';
 import { ToastProvider } from '@/providers/toast-provider';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans', display: 'swap' });
+
+// Devanagari face for Hindi UI labels. Inter has no Devanagari glyphs, so the font
+// stack (see tailwind.config.ts) falls through to this for any Hindi codepoints.
+const notoDevanagari = Noto_Sans_Devanagari({
+  subsets: ['devanagari', 'latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-devanagari',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: {
@@ -39,18 +49,25 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={inter.variable} suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`${inter.variable} ${notoDevanagari.variable}`}
+      suppressHydrationWarning
+    >
       <head>
-        {/* Apply the saved theme before paint to avoid a flash of the wrong theme. */}
+        {/* Apply the saved theme + UI language before paint to avoid a flash. */}
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        <script dangerouslySetInnerHTML={{ __html: langInitScript }} />
       </head>
       <body>
         <ThemeProvider>
-          <QueryProvider>
-            <ToastProvider>
-              <AuthProvider>{children}</AuthProvider>
-            </ToastProvider>
-          </QueryProvider>
+          <LanguageProvider>
+            <QueryProvider>
+              <ToastProvider>
+                <AuthProvider>{children}</AuthProvider>
+              </ToastProvider>
+            </QueryProvider>
+          </LanguageProvider>
         </ThemeProvider>
       </body>
     </html>

@@ -58,7 +58,9 @@ const config: Config = {
         lg: 'var(--shadow-lg)',
       },
       fontFamily: {
-        sans: ['var(--font-sans)', 'system-ui', 'sans-serif'],
+        // Inter for Latin; Noto Sans Devanagari catches any Hindi glyphs Inter lacks.
+        sans: ['var(--font-sans)', 'var(--font-devanagari)', 'system-ui', 'sans-serif'],
+        devanagari: ['var(--font-devanagari)', 'var(--font-sans)', 'sans-serif'],
       },
       keyframes: {
         'fade-in': {

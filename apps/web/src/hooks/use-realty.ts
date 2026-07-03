@@ -38,6 +38,14 @@ import type {
   ResaleListingStatus,
   ExchangeMatchResult,
 } from '@/lib/realty-types';
+import type {
+  IntelligenceAggregate,
+  IntelligenceMetricType,
+  CorridorsResponse,
+  CorridorPriorsResponse,
+  SourceQualityReport,
+  OptInStatus,
+} from '@/lib/intelligence-types';
 
 const LEADS_KEY = ['realty', 'leads'];
 const BOARD_KEY = ['realty', 'leads', 'board'];
@@ -619,5 +627,81 @@ export function useCreateResaleListing() {
       projectId?: string;
     }) => apiRequest<ResaleListing>('/realty/exchange/resale-listings', { method: 'POST', body: input }),
     onSuccess: () => qc.invalidateQueries({ queryKey: RESALE_KEY }),
+  });
+}
+
+// ── Micro-market intelligence (L1) ──────────────────────────────────────────────
+
+const INTEL_KEY = ['realty', 'intelligence'];
+const INTEL_CORRIDORS_KEY = ['realty', 'intelligence', 'corridors'];
+const INTEL_SOURCE_QUALITY_KEY = ['realty', 'intelligence', 'source-quality'];
+const INTEL_OPT_IN_KEY = ['realty', 'intelligence', 'opt-in'];
+
+/** Corridors (localities) that currently have aggregates for this business. */
+export function useIntelligenceCorridors() {
+  return useQuery({
+    queryKey: INTEL_CORRIDORS_KEY,
+    queryFn: ({ signal }) =>
+      apiRequest<CorridorsResponse>('/realty/intelligence/corridors', { signal }),
+  });
+}
+
+/** All stored aggregates, optionally filtered to one corridor / metric. */
+export function useIntelligenceAggregates(
+  filters: { corridor?: string; metricType?: IntelligenceMetricType } = {},
+) {
+  return useQuery({
+    queryKey: [...INTEL_KEY, 'aggregates', filters],
+    queryFn: ({ signal }) =>
+      apiRequest<IntelligenceAggregate[]>(
+        `/realty/intelligence/aggregates${toQuery({ ...filters })}`,
+        { signal },
+      ),
+  });
+}
+
+/** Latest priors for one corridor plus the AI prompt-context narrative. */
+export function useCorridorPriors(corridor: string | null) {
+  return useQuery({
+    queryKey: [...INTEL_KEY, 'corridor-priors', corridor],
+    queryFn: ({ signal }) =>
+      apiRequest<CorridorPriorsResponse>(
+        `/realty/intelligence/corridor-priors${toQuery({ corridor })}`,
+        { signal },
+      ),
+    enabled: !!corridor,
+  });
+}
+
+/** This business's own per-source ROI report (no minimum-n suppression). */
+export function useSourceQuality() {
+  return useQuery({
+    queryKey: INTEL_SOURCE_QUALITY_KEY,
+    queryFn: ({ signal }) =>
+      apiRequest<SourceQualityReport>('/realty/intelligence/source-quality', { signal }),
+  });
+}
+
+/** Whether this business contributes anonymized patterns to the network. */
+export function useIntelligenceOptIn() {
+  return useQuery({
+    queryKey: INTEL_OPT_IN_KEY,
+    queryFn: ({ signal }) => apiRequest<OptInStatus>('/realty/intelligence/opt-in', { signal }),
+  });
+}
+
+/** Toggle intelligence-contribution consent (opt-in / opt-out). */
+export function useSetIntelligenceOptIn() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (optIn: boolean) =>
+      apiRequest<OptInStatus>(`/realty/intelligence/${optIn ? 'opt-in' : 'opt-out'}`, {
+        method: 'POST',
+        body: {},
+      }),
+    onSuccess: (data) => {
+      qc.setQueryData(INTEL_OPT_IN_KEY, data);
+      qc.invalidateQueries({ queryKey: INTEL_OPT_IN_KEY });
+    },
   });
 }
