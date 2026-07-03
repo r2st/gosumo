@@ -4,11 +4,37 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { X } from 'lucide-react';
 import { Logo } from '@/components/logo';
-import { NAV_ITEMS } from './nav-items';
+import { NAV_SECTIONS, NAV_TOP, type NavItem } from './nav-items';
 import { cn } from '@/lib/utils';
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname();
+
+  const renderItem = (item: NavItem) => {
+    const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+    const Icon = item.icon;
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        onClick={onClose}
+        className={cn(
+          'group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+          active
+            ? 'bg-accent text-accent-foreground'
+            : 'text-sidebar-muted hover:bg-muted hover:text-foreground',
+        )}
+      >
+        <Icon
+          className={cn(
+            'h-5 w-5 shrink-0 transition-colors',
+            active ? 'text-primary' : 'text-sidebar-muted group-hover:text-foreground',
+          )}
+        />
+        {item.label}
+      </Link>
+    );
+  };
 
   return (
     <>
@@ -37,32 +63,16 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           </button>
         </div>
 
-        <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-2 scrollbar-thin">
-          {NAV_ITEMS.map((item) => {
-            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onClose}
-                className={cn(
-                  'group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                  active
-                    ? 'bg-accent text-accent-foreground'
-                    : 'text-sidebar-muted hover:bg-muted hover:text-foreground',
-                )}
-              >
-                <Icon
-                  className={cn(
-                    'h-5 w-5 shrink-0 transition-colors',
-                    active ? 'text-primary' : 'text-sidebar-muted group-hover:text-foreground',
-                  )}
-                />
-                {item.label}
-              </Link>
-            );
-          })}
+        <nav className="flex-1 overflow-y-auto px-3 py-2 scrollbar-thin">
+          <div className="space-y-0.5">{NAV_TOP.map(renderItem)}</div>
+          {NAV_SECTIONS.map((section) => (
+            <div key={section.label} className="mt-4">
+              <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-sidebar-muted/70">
+                {section.label}
+              </p>
+              <div className="space-y-0.5">{section.items.map(renderItem)}</div>
+            </div>
+          ))}
         </nav>
 
         <div className="border-t border-sidebar-border p-4 text-xs text-sidebar-muted">

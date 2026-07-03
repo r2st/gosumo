@@ -15,24 +15,24 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         </div>
         <div className="relative space-y-6">
           <h1 className="text-3xl font-bold leading-tight tracking-tight">
-            One AI inbox for every customer conversation.
+            Every lead answered in 30 seconds. Every buyer qualified. Every follow-up kept.
           </h1>
           <p className="max-w-md text-indigo-100">
-            WhatsApp, Instagram, SMS, Web Chat and Email — handled by AI, with your team in the loop
-            exactly when it matters.
+            WhatsApp-native AI that qualifies buyers on Budget-Location-Timeline-Configuration, books
+            site visits, and follows up for 90 days.
           </p>
           <ul className="space-y-3 text-sm text-indigo-50">
             <li className="flex items-center gap-3">
               <Bot className="h-5 w-5 text-indigo-200" />
-              AI drafts replies and you approve in one click
+              AI qualifies buyers against your live inventory in real-time
             </li>
             <li className="flex items-center gap-3">
               <Sparkles className="h-5 w-5 text-indigo-200" />
-              Confidence-based routing keeps quality high
+              Site visits booked, confirmed, and reminded automatically
             </li>
             <li className="flex items-center gap-3">
               <ShieldCheck className="h-5 w-5 text-indigo-200" />
-              Multi-tenant, secure, built for India
+              90-day follow-up cadences — no lead forgotten, ever
             </li>
           </ul>
         </div>
