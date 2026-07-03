@@ -32,6 +32,7 @@ import { RealtyVisitsModule } from './modules/realty-sitevisits/realty-sitevisit
 import { RealtyIngestionModule } from './modules/realty-ingestion/realty-ingestion.module';
 import { RealtyCadenceModule } from './modules/realty-cadence/realty-cadence.module';
 import { RealtyBrokerModule } from './modules/realty-broker/realty-broker.module';
+import { RealtyHardeningModule } from './modules/realty-hardening/realty-hardening.module';
 
 @Module({
   imports: [
@@ -102,6 +103,7 @@ import { RealtyBrokerModule } from './modules/realty-broker/realty-broker.module
     RealtyIngestionModule,
     RealtyCadenceModule,
     RealtyBrokerModule,
+    RealtyHardeningModule,
   ],
 })
 export class AppModule {}

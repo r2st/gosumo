@@ -506,6 +506,14 @@ enum BrokerAlertType {
   VISIT_REMINDER
 }
 
+/// Lifecycle of a dead-lettered realty operation (Phase 7 hardening).
+enum DeadLetterStatus {
+  PENDING
+  REPLAYED
+  RESOLVED
+  DISCARDED
+}
+
 // ─────────────────────────────────────────────
 // PLATFORM LAYER
 // ─────────────────────────────────────────────
@@ -593,6 +601,7 @@ model businesses {
   realty_account_settings     realty_account_settings?
   realty_broker_alerts        realty_broker_alerts[]
   realty_conversation_control realty_conversation_control[]
+  realty_dead_letters         realty_dead_letters[]
 
   @@index([slug])
   @@index([email])
@@ -2695,4 +2704,52 @@ model realty_conversation_control {
   @@index([business_id, owner])
   @@index([business_id, lead_id])
   @@map("realty_conversation_control")
+}
+
+// ─────────────────────────────────────────────
+// REALTY — HARDENING (Phase 7): dead-letter queue
+// ─────────────────────────────────────────────
+
+/// A realty operation that failed after exhausting its retries. Captured (never
+/// dropped) so it can be inspected and deterministically replayed during the
+/// 7-day unattended soak. Append-mostly: only `status`/replay bookkeeping mutate.
+model realty_dead_letters {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  /// Logical source of the failed work, e.g. "realty-cadence" | "realty-sitevisits".
+  source    String @db.VarChar(80)
+  /// The queue or operation name, e.g. "cadence.step.send" | "visit.reminder".
+  operation String @db.VarChar(120)
+
+  /// The full job payload, sufficient to replay the operation verbatim.
+  payload Json @db.JsonB
+
+  /// The terminal error class + message that sent this to the DLQ.
+  error_message String  @db.Text
+  error_stack   String? @db.Text
+  /// How many attempts were made before dead-lettering.
+  attempts      Int     @default(0)
+
+  status         DeadLetterStatus @default(PENDING)
+  /// Free-form note captured when a human resolves/discards the entry.
+  resolution     String?          @db.Text
+  correlation_id String?          @db.VarChar(64)
+
+  /// Optional bridges back to the offending domain objects (loose UUID refs).
+  lead_id         String? @db.Uuid
+  conversation_id String? @db.Uuid
+
+  replayed_at DateTime? @db.Timestamptz
+  resolved_at DateTime? @db.Timestamptz
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, status, created_at(sort: Desc)])
+  @@index([business_id, source, operation])
+  @@index([business_id, lead_id])
+  @@map("realty_dead_letters")
 }

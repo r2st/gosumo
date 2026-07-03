@@ -7,6 +7,7 @@ import { RealtyVisitsRepository } from './realty-sitevisits.repository';
 import { RealtyVisitsProcessor } from './realty-sitevisits.processor';
 import { RealtyLeadsModule } from '../realty-leads/realty-leads.module';
 import { BookingModule } from '../booking/booking.module';
+import { RealtyHardeningModule } from '../realty-hardening/realty-hardening.module';
 import { REALTY_VISITS_QUEUE } from './realty-sitevisits.constants';
 
 /**
@@ -22,6 +23,7 @@ import { REALTY_VISITS_QUEUE } from './realty-sitevisits.constants';
     BullModule.registerQueue({ name: REALTY_VISITS_QUEUE }),
     RealtyLeadsModule,
     BookingModule,
+    RealtyHardeningModule,
   ],
   controllers: [RealtyVisitsController],
   providers: [
