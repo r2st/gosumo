@@ -259,6 +259,19 @@ export interface SiteVisitListResponse {
   totalPages: number;
 }
 
+/**
+ * Realty list endpoints return a flat envelope (`{ data, total, page, limit,
+ * totalPages }`), NOT the legacy nested `{ data, pagination }` shape. Keep this
+ * in sync with the backend realty-leads service response.
+ */
+export interface LeadListResponse {
+  data: Lead[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
 // ─────────────────────────────────────────────
 // Phase 4 — Ingestion (CSV import)
 // ─────────────────────────────────────────────

@@ -3,9 +3,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/api-client';
 import { toQuery } from '@/lib/utils';
-import type { PaginatedResponse } from '@/lib/types';
 import type {
   Lead,
+  LeadListResponse,
   LeadBoardColumn,
   LeadStage,
   RealtyProject,
@@ -65,7 +65,7 @@ export function useLeads(filters: LeadListFilters = {}) {
   return useQuery({
     queryKey: [...LEADS_KEY, filters],
     queryFn: ({ signal }) =>
-      apiRequest<PaginatedResponse<Lead>>(`/realty/leads${toQuery({ ...filters })}`, { signal }),
+      apiRequest<LeadListResponse>(`/realty/leads${toQuery({ ...filters })}`, { signal }),
   });
 }
 

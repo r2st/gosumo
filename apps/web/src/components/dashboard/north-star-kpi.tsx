@@ -22,7 +22,7 @@ export function NorthStarKpi() {
 
   if (leadsQ.isError || visitsQ.isError) return null;
 
-  const totalLeads = leadsQ.data?.pagination.total ?? 0;
+  const totalLeads = leadsQ.data?.total ?? 0;
   const totalVisits = visitsQ.data?.total ?? 0;
   const ratio = visitsPer100Leads(totalVisits, totalLeads);
   const onTarget = ratio >= NORTH_STAR_GOAL;
