@@ -63,8 +63,9 @@ import { ComplianceModule } from './modules/compliance/compliance.module';
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
         redis: {
-          host: configService.get<string>('redis.host', 'localhost'),
-          port: configService.get<number>('redis.port', 6379),
+          host: configService.get<string>('app.redis.host', 'localhost'),
+          port: configService.get<number>('app.redis.port', 6379),
+          password: configService.get<string>('app.redis.password'),
         },
         defaultJobOptions: {
           attempts: 3,
