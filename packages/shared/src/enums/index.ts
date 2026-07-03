@@ -413,3 +413,167 @@ export enum RealtyAssetType {
   VIDEO = 'VIDEO',
   PIN = 'PIN', // location pin
 }
+
+// ─────────────────────────────────────────────
+// REALTY — SITE VISITS (Phase 3, blueprint §14)
+// ─────────────────────────────────────────────
+
+/**
+ * Lifecycle of a scheduled site visit. BOOKED on creation; CONFIRMED once the
+ * buyer acknowledges; COMPLETED / NO_SHOW are terminal outcomes; RESCHEDULED
+ * marks a moved visit; CANCELLED frees the slot.
+ */
+export enum SiteVisitStatus {
+  BOOKED = 'BOOKED',
+  CONFIRMED = 'CONFIRMED',
+  COMPLETED = 'COMPLETED',
+  NO_SHOW = 'NO_SHOW',
+  RESCHEDULED = 'RESCHEDULED',
+  CANCELLED = 'CANCELLED',
+}
+
+/**
+ * Post-visit outcome logged by the broker (drives the follow-up track and
+ * pipeline stage). PENDING until the visit is completed and reviewed.
+ */
+export enum SiteVisitOutcome {
+  PENDING = 'PENDING',
+  INTERESTED = 'INTERESTED',
+  NOT_INTERESTED = 'NOT_INTERESTED',
+  WANTS_ALTERNATIVE = 'WANTS_ALTERNATIVE',
+  NEEDS_FOLLOWUP = 'NEEDS_FOLLOWUP',
+  TOKEN_BOOKED = 'TOKEN_BOOKED',
+}
+
+// ─────────────────────────────────────────────
+// REALTY — INGESTION (Phase 4, blueprint §15)
+// ─────────────────────────────────────────────
+
+/**
+ * Recognised property-portal enquiry sources. Parsed from portal enquiry
+ * emails and stored as the lead's `sub_source` for source-level ROI.
+ */
+export enum RealtyPortal {
+  NINETYNINE_ACRES = '99ACRES',
+  MAGICBRICKS = 'MAGICBRICKS',
+  HOUSING = 'HOUSING',
+  UNKNOWN = 'UNKNOWN',
+}
+
+// ─────────────────────────────────────────────
+// REALTY — AI LOOP (intent set + routing, blueprint §16)
+// ─────────────────────────────────────────────
+
+/**
+ * The 14 real-estate conversational intents the AI loop classifies every
+ * inbound buyer/seller message into (blueprint §16.1). `GENERAL` is the
+ * catch-all fallback when nothing more specific is resolved.
+ */
+export enum RealtyIntent {
+  NEW_ENQUIRY = 'NEW_ENQUIRY', // first contact about a property/listing
+  PRICE_INQUIRY = 'PRICE_INQUIRY', // "kitne ka hai", asking price/rate
+  AVAILABILITY = 'AVAILABILITY', // is X config/unit available?
+  SITE_VISIT = 'SITE_VISIT', // wants to visit / book a viewing
+  DOC_REQUEST = 'DOC_REQUEST', // brochure, floor plan, price sheet, RERA doc
+  LOCATION_AMENITY = 'LOCATION_AMENITY', // where is it, what's nearby, amenities
+  LOAN_QUERY = 'LOAN_QUERY', // home loan / EMI / financing question
+  NEGOTIATION = 'NEGOTIATION', // asking for a discount / price drop
+  LEGAL_RERA = 'LEGAL_RERA', // RERA, possession date, approvals, legal
+  SELLER_LEAD = 'SELLER_LEAD', // owner wanting to sell/list a property
+  RENTAL = 'RENTAL', // looking to rent, not buy
+  REACTIVATION_REPLY = 'REACTIVATION_REPLY', // replying to a nurture/cadence ping
+  COMPLAINT_ABUSE = 'COMPLAINT_ABUSE', // complaint, spam report, abuse
+  GENERAL = 'GENERAL', // fallback — greeting/chit-chat/unclear
+}
+
+/**
+ * Per-intent default autonomy ceiling. Overrides any numeric confidence — the
+ * AI may never act beyond an intent's policy (blueprint §16.3 hard rules).
+ */
+export enum RealtyRoutePolicy {
+  /** May auto-execute when data + policy are clear (e.g. fresh AVAILABILITY, DOC send). */
+  AUTO_ALLOWED = 'AUTO_ALLOWED',
+  /** Never auto-send; always draft for a human first (e.g. PRICE_INQUIRY). */
+  DRAFT_ONLY = 'DRAFT_ONLY',
+  /** Always a full human hand-off (NEGOTIATION, LEGAL_RERA, LOAN_QUERY, SELLER_LEAD, COMPLAINT_ABUSE). */
+  ESCALATE = 'ESCALATE',
+}
+
+// ─────────────────────────────────────────────
+// REALTY — CADENCES & COMPLIANCE (Phase 5, blueprint §17 / §21)
+// ─────────────────────────────────────────────
+
+/** What enrols a lead into a follow-up cadence. */
+export enum CadenceTrigger {
+  NO_RESPONSE = 'NO_RESPONSE', // buyer went quiet after an enquiry
+  POST_VISIT = 'POST_VISIT', // site visit completed — nurture to close
+  DORMANT = 'DORMANT', // long-cold lead reactivation
+}
+
+/** A signal that halts a running cadence immediately. */
+export enum CadenceStopOn {
+  REPLY = 'REPLY', // buyer replied — human/AI takes the wheel
+  OPTOUT = 'OPTOUT', // buyer opted out — absolute stop
+  STAGE_CHANGE = 'STAGE_CHANGE', // pipeline moved on — cadence no longer applies
+}
+
+/** Lifecycle of a single lead's enrolment in a cadence. */
+export enum CadenceEnrollmentStatus {
+  ACTIVE = 'ACTIVE',
+  COMPLETED = 'COMPLETED', // ran to the last step
+  STOPPED = 'STOPPED', // halted by a stop_on signal
+}
+
+/**
+ * WhatsApp template category. Enforced in code: a MARKETING template may never
+ * be sent inside a closed 24h service window, and only category-correct
+ * templates are allowed (blueprint §21 WhatsApp hygiene).
+ */
+export enum TemplateCategory {
+  UTILITY = 'UTILITY',
+  MARKETING = 'MARKETING',
+}
+
+/** Meta approval state of a template — sends are blocked unless APPROVED. */
+export enum TemplateApprovalStatus {
+  PENDING = 'PENDING',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+}
+
+// ─────────────────────────────────────────────
+// REALTY — BROKER SURFACE (Phase 6, blueprint §16)
+// ─────────────────────────────────────────────
+
+/** State of an AI draft awaiting human review (70–89% confidence band). */
+export enum ApprovalStatus {
+  PENDING = 'PENDING',
+  APPROVED = 'APPROVED', // sent verbatim
+  EDITED = 'EDITED', // broker edited then sent
+  REJECTED = 'REJECTED', // discarded
+}
+
+/**
+ * Per-account AI independence level (the "autonomy dial"). Raised only on
+ * evidence during pilot migration.
+ */
+export enum AutonomyLevel {
+  SUGGEST = 'SUGGEST', // AI drafts everything; broker approves every send
+  ASSISTED = 'ASSISTED', // AI auto-sends high-confidence, drafts the rest
+  AUTONOMOUS = 'AUTONOMOUS', // AI runs the desk; only escalations surface
+}
+
+/** Who currently owns a conversation — the AI or a human broker (takeover). */
+export enum ConversationOwner {
+  AI = 'AI',
+  HUMAN = 'HUMAN',
+}
+
+/** Kinds of item that surface in the broker's notification centre. */
+export enum BrokerAlertType {
+  HOT_LEAD = 'HOT_LEAD', // a lead crossed the hot threshold
+  MORNING_BRIEFING = 'MORNING_BRIEFING', // the 7:30 AM digest
+  APPROVAL_PENDING = 'APPROVAL_PENDING', // an AI draft needs review
+  TAKEOVER = 'TAKEOVER', // a conversation was handed to a human
+  VISIT_REMINDER = 'VISIT_REMINDER', // an upcoming site visit
+}
