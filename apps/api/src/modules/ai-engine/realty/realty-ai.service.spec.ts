@@ -55,7 +55,7 @@ describe('RealtyAiService (grounded loop, zero invented facts)', () => {
 
   const completionOf = (obj: unknown) => ({
     text: JSON.stringify(obj),
-    modelId: 'claude-sonnet-4-5',
+    modelId: 'openai/gpt-oss-120b:free',
     promptTokens: 100,
     completionTokens: 50,
     latencyMs: 200,

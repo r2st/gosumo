@@ -63,7 +63,7 @@ describe('RealtyIntentClassifierService', () => {
     it('uses the LLM when no rule matches and returns its intent + policy', async () => {
       llm.complete.mockResolvedValue({
         text: '{}',
-        modelId: 'claude-haiku-4-5',
+        modelId: 'openai/gpt-oss-20b:free',
         promptTokens: 10,
         completionTokens: 5,
         latencyMs: 20,
