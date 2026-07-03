@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Sidebar } from './sidebar';
 import { Topbar } from './topbar';
+import { BottomNav } from './bottom-nav';
 import { useAuth } from '@/providers/auth-provider';
 import { LoadingState } from '@/components/ui/states';
 import { OnboardingGate } from '@/components/onboarding/onboarding-gate';
@@ -33,8 +34,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar onMenuClick={() => setSidebarOpen(true)} />
-        <main className="flex-1 overflow-x-hidden">{children}</main>
+        {/* pb-14 keeps content clear of the fixed mobile bottom nav; reset from md up. */}
+        <main className="flex-1 overflow-x-hidden pb-14 md:pb-0">{children}</main>
       </div>
+      <BottomNav onMore={() => setSidebarOpen(true)} />
       <OnboardingGate />
     </div>
   );

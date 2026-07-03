@@ -19,6 +19,7 @@ describe('nav-items', () => {
       'Site Visits',
       'Cadences',
       'Broker Console',
+      'Exchange',
       'Approvals',
       'Import',
     ]);
@@ -35,7 +36,7 @@ describe('nav-items', () => {
     expect(NAV_ITEMS[0]?.href).toBe('/dashboard');
     const hrefs = NAV_ITEMS.map((i) => i.href);
     expect(new Set(hrefs).size).toBe(hrefs.length);
-    // 1 top + 7 + 3 + 3 + 2 grouped
-    expect(NAV_ITEMS).toHaveLength(16);
+    // 1 top + 8 + 3 + 3 + 2 grouped
+    expect(NAV_ITEMS).toHaveLength(17);
   });
 });

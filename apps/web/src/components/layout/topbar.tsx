@@ -16,7 +16,9 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
 
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border bg-card/80 px-4 backdrop-blur lg:px-6">
-      <button onClick={onMenuClick} className="rounded-md p-2 hover:bg-muted lg:hidden">
+      {/* Tablet-only drawer trigger. On mobile the bottom nav's "More" tab opens the sidebar,
+          so the hamburger is hidden below md; on desktop the sidebar is always visible. */}
+      <button onClick={onMenuClick} className="hidden rounded-md p-2 hover:bg-muted md:inline-flex lg:hidden">
         <Menu className="h-5 w-5" />
       </button>
 
