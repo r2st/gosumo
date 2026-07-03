@@ -84,8 +84,8 @@ export class RealtyCadenceService {
   // ── Seeding ──────────────────────────────────
 
   /**
-   * Install the 12 pre-built templates and 3 default cadences for a tenant.
-   * Idempotent: templates/cadences that already exist (by name) are skipped.
+   * Install the pre-built templates (English + Hindi) and 3 default cadences for
+   * a tenant. Idempotent: templates/cadences that already exist (by name) are skipped.
    */
   async seedDefaults(businessId: string): Promise<{ templates: number; cadences: number }> {
     let templateCount = 0;

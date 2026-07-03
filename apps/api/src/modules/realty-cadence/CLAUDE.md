@@ -8,7 +8,7 @@ into a booked visit without a human touching the keyboard (blueprint §17).
 
 **RealtyCadenceService** (management surface)
 ```typescript
-seedDefaults(businessId)                         // install 12 templates + 3 cadences (idempotent)
+seedDefaults(businessId)                         // install templates (en+hi) + 3 cadences (idempotent)
 createTemplate / listTemplates / getTemplate / updateTemplate / setTemplateApproval / deleteTemplate
 createCadence / listCadences / getCadence / updateCadence / deleteCadence
 listEnrollments(businessId, { leadId?, status? })

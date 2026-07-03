@@ -2,7 +2,7 @@
  * RealtyCadenceService unit tests.
  *
  * Coverage:
- *  1. Seeding — installs the 12 templates + 3 cadences; idempotent on re-run.
+ *  1. Seeding — installs the default templates + 3 cadences; idempotent on re-run.
  *  2. Templates — create (name conflict), content edit re-opens approval, set approval.
  *  3. Cadences — create validates every referenced template; update replaces steps.
  *
@@ -15,6 +15,9 @@ import { TemplateCategory, TemplateApprovalStatus, CadenceTrigger, CadenceStopOn
 
 import { RealtyCadenceService } from './realty-cadence.service';
 import { RealtyCadenceRepository } from './realty-cadence.repository';
+import { DEFAULT_TEMPLATES } from './default-templates';
+
+const TEMPLATE_COUNT = DEFAULT_TEMPLATES.length;
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
 const TEMPLATE_ID = '00000000-0000-4000-a000-000000000030';
@@ -92,7 +95,7 @@ describe('RealtyCadenceService', () => {
 
   // ── Seeding ──
   describe('seedDefaults', () => {
-    it('installs the 12 templates and 3 cadences on a fresh tenant', async () => {
+    it('installs every default template and 3 cadences on a fresh tenant', async () => {
       repository.findTemplateByName.mockResolvedValue(null);
       repository.createTemplate.mockImplementation(async (d) => makeTemplate({ name: d.name }) as never);
       repository.listCadences.mockResolvedValue([]);
@@ -101,9 +104,9 @@ describe('RealtyCadenceService', () => {
 
       const result = await service.seedDefaults(BUSINESS_ID);
 
-      expect(result.templates).toBe(12);
+      expect(result.templates).toBe(TEMPLATE_COUNT);
       expect(result.cadences).toBe(3);
-      expect(repository.createTemplate).toHaveBeenCalledTimes(12);
+      expect(repository.createTemplate).toHaveBeenCalledTimes(TEMPLATE_COUNT);
     });
 
     it('is idempotent — skips templates/cadences that already exist', async () => {
