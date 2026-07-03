@@ -16,9 +16,11 @@ export function LogoMark({ className }: { className?: string }) {
         </linearGradient>
       </defs>
       <rect width="512" height="512" rx="116" ry="116" fill="url(#gosumo-mark)" />
-      <g fill="none" stroke="#FFFFFF" strokeWidth="56" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M347.93 333.13 A120 120 0 1 1 347.93 178.87" />
-        <path d="M256 256 L347.93 256 L347.93 333.13" />
+      <g fill="none" stroke="#FFFFFF" strokeWidth="66" strokeLinecap="round" strokeLinejoin="round">
+        {/* G loop with an integrated gabled rooftop — a property silhouette that still reads as the letter */}
+        <path d="M369 186 L256 84 L143 186 A140 140 0 1 0 375 342" />
+        {/* horizontal spur bar of the G */}
+        <path d="M250 268 L375 268 L375 342" />
       </g>
     </svg>
   );
