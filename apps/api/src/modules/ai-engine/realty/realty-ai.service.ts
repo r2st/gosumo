@@ -4,6 +4,7 @@ import {
   RealtyIntent,
   LeadPurpose,
   FinancingStatus,
+  generateId,
   generateCorrelationId,
 } from '@gosumo/shared';
 import type {
@@ -11,6 +12,7 @@ import type {
   BltcContradiction,
   RealtyConfidence,
   RealtyGroundedResponse,
+  RealtyAiTurnCompletedEvent,
 } from '@gosumo/shared';
 import { LlmClientService, LlmUnavailableError } from '../pipeline/llm-client.service';
 import { GuardrailsService } from '../safety/guardrails.service';
@@ -183,14 +185,21 @@ export class RealtyAiService {
       correlationId: traceId,
     });
 
-    this.eventEmitter.emit('realty.ai.turn_completed', {
+    const turnEvent: RealtyAiTurnCompletedEvent = {
+      id: generateId(),
+      timestamp: new Date().toISOString(),
       businessId,
+      correlationId: traceId,
+      type: 'realty.ai.turn_completed',
       leadId: dto.leadId,
+      conversationId: dto.conversationId ?? lead.conversationId ?? undefined,
       intent,
       routeMode,
       confidence: confidence.finalScore,
-      correlationId: traceId,
-    });
+      violations: guard.violations.map((v) => v.code),
+      blockingViolations: guard.violations.filter((v) => v.severity === 'BLOCK').map((v) => v.code),
+    };
+    this.eventEmitter.emit('realty.ai.turn_completed', turnEvent);
 
     this.logger.log(
       `[${traceId}] Realty turn lead=${dto.leadId} intent=${intent} → ${routeMode} (confidence ${confidence.finalScore})`,

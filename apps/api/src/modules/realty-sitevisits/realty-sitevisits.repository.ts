@@ -151,6 +151,18 @@ export class RealtyVisitsRepository {
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
+  /** Visit counts by status — the source for the show-up + visits/100 KPIs. */
+  async statusCounts(businessId: string): Promise<Record<string, number>> {
+    const rows = await this.prisma.realty_site_visits.groupBy({
+      by: ['status'],
+      where: { business_id: businessId, deleted_at: null },
+      _count: { _all: true },
+    });
+    const out: Record<string, number> = {};
+    for (const r of rows) out[r.status] = r._count._all;
+    return out;
+  }
+
   /** All active + non-deleted visits in a time range — powers the calendar view. */
   async listInRange(
     businessId: string,

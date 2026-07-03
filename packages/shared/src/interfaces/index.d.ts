@@ -506,3 +506,136 @@ export interface BrokerConsoleMetrics {
     autonomyLevel: string;
     aiHandledPct: number;
 }
+/** One error against a specific 1-based row of a migration file. */
+export interface MigrationRowError {
+    row: number;
+    reason: string;
+}
+/**
+ * The outcome of a pilot-migration run — how many rows became new records, how
+ * many folded into existing ones (E.164 identity merge for leads), and the
+ * per-row errors. `dryRun` runs validate only and never persist.
+ */
+export interface MigrationSummary {
+    kind: string;
+    status: string;
+    dryRun: boolean;
+    total: number;
+    created: number;
+    merged: number;
+    skipped: number;
+    errors: MigrationRowError[];
+}
+/**
+ * A raw inventory-import row: one project and, optionally, one of its units in
+ * the same line (the common "one row per unit" broker spreadsheet). Rows sharing
+ * a project name+locality collapse into a single project with many units.
+ */
+export interface InventoryImportRow {
+    projectName?: string;
+    developer?: string;
+    locality?: string;
+    reraNumber?: string;
+    possessionDate?: string;
+    projectStatus?: string;
+    priceBandMin?: string | number;
+    priceBandMax?: string | number;
+    config?: string;
+    carpetSqft?: string | number;
+    floor?: string | number;
+    facing?: string;
+    allInPrice?: string | number;
+    availability?: string;
+}
+/** A validated project (with its units) ready to be committed to inventory. */
+export interface NormalizedInventoryProject {
+    name: string;
+    developer?: string;
+    locality: string;
+    reraNumber?: string;
+    possessionDate?: string;
+    status?: string;
+    priceBandMinPaise?: number;
+    priceBandMaxPaise?: number;
+    units: NormalizedInventoryUnit[];
+}
+export interface NormalizedInventoryUnit {
+    config: string;
+    carpetSqft?: number;
+    floor?: number;
+    facing?: string;
+    allInPricePaise: number;
+    availability?: string;
+}
+/** A rung on the autonomy ladder — a level+threshold with its evidence gates. */
+export interface AutonomyRung {
+    level: string;
+    threshold: number;
+    minDecisions: number;
+    minAccuracy: number;
+    minDays: number;
+}
+/** The evidence gathered for one autonomy-dial evaluation. */
+export interface AutonomyEvidence {
+    daysActive: number;
+    decisionsObserved: number;
+    approvedVerbatim: number;
+    approvalAccuracy: number;
+    noShipIncidents: number;
+    hotAlertActionRate: number;
+}
+/** The recommendation a dial evaluation produces (pure, from the ladder util). */
+export interface AutonomyRecommendation {
+    direction: string;
+    from: {
+        level: string;
+        threshold: number;
+    };
+    to: {
+        level: string;
+        threshold: number;
+    };
+    gatesFailed: string[];
+    reason: string;
+    evidence: AutonomyEvidence;
+}
+/**
+ * The measured KPIs the launch gate evaluates. A null value means the metric
+ * could not be measured for this business/window (→ INSUFFICIENT_DATA), which
+ * blocks GO without hard-failing.
+ */
+export interface LaunchMetrics {
+    responseP95Seconds: number | null;
+    engagementRatePct: number | null;
+    qualificationRatePct: number | null;
+    visitsPer100Leads: number | null;
+    showUpRatePct: number | null;
+    aiAutonomyPct: number | null;
+    hotAlertActionRatePct: number | null;
+    noShipIncidents: number;
+    /** Per-kind no-ship counts (NoShipKind → count); powers the itemized checks. */
+    noShipByKind?: Record<string, number>;
+    totalLeads: number;
+}
+/** One line of the launch-gate report. */
+export interface LaunchGateCheck {
+    key: string;
+    label: string;
+    status: string;
+    actual: number | null;
+    threshold: number;
+    comparator: 'gte' | 'lte' | 'eq';
+    detail: string;
+}
+/** The full GO / NO-GO launch-readiness report (blueprint §24). */
+export interface LaunchGateReport {
+    status: string;
+    kpiChecks: LaunchGateCheck[];
+    noShipChecks: LaunchGateCheck[];
+    passed: number;
+    failed: number;
+    insufficient: number;
+    windowDays: number | null;
+    generatedAt: string;
+}
+//# sourceMappingURL=index.d.ts.map

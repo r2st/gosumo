@@ -33,6 +33,7 @@ import { RealtyIngestionModule } from './modules/realty-ingestion/realty-ingesti
 import { RealtyCadenceModule } from './modules/realty-cadence/realty-cadence.module';
 import { RealtyBrokerModule } from './modules/realty-broker/realty-broker.module';
 import { RealtyHardeningModule } from './modules/realty-hardening/realty-hardening.module';
+import { RealtyPilotModule } from './modules/realty-pilot/realty-pilot.module';
 
 @Module({
   imports: [
@@ -104,6 +105,7 @@ import { RealtyHardeningModule } from './modules/realty-hardening/realty-hardeni
     RealtyCadenceModule,
     RealtyBrokerModule,
     RealtyHardeningModule,
+    RealtyPilotModule,
   ],
 })
 export class AppModule {}

@@ -796,6 +796,74 @@ export interface RealtyConversationTakenOverEvent extends BaseEvent {
 }
 
 // ─────────────────────────────────────────────
+// REALTY — AI LOOP EVENTS (Phase 2, formalized in Phase 8)
+// ─────────────────────────────────────────────
+
+/**
+ * Emitted after the realty AI loop finishes one turn. Carries the routed mode,
+ * confidence, and any guardrail violation codes so downstream watchers (the
+ * no-ship ledger) can detect a violation that co-occurred with an actual send.
+ */
+export interface RealtyAiTurnCompletedEvent extends BaseEvent {
+  readonly type: 'realty.ai.turn_completed';
+  leadId: string;
+  conversationId?: string;
+  intent: string;
+  routeMode: string; // AUTO | DRAFT | GUIDED | ESCALATE
+  confidence: number;
+  /** Guardrail violation codes fired on the proposed response (empty when clean). */
+  violations: string[];
+  /** Violation codes that were BLOCK-severity (must never ship autonomously). */
+  blockingViolations: string[];
+}
+
+// ─────────────────────────────────────────────
+// REALTY — PILOT MIGRATION EVENTS (Phase 8)
+// ─────────────────────────────────────────────
+
+/** Emitted when a pilot-migration run is recorded (dry-run or committed). */
+export interface RealtyMigrationCompletedEvent extends BaseEvent {
+  readonly type: 'realty.migration.completed';
+  runId: string;
+  kind: string; // MigrationKind
+  status: string; // MigrationStatus
+  dryRun: boolean;
+  created: number;
+  merged: number;
+  skipped: number;
+}
+
+/** Emitted when the evidence-driven autonomy dial changes (OPEN / CLOSE). */
+export interface RealtyAutonomyChangedEvent extends BaseEvent {
+  readonly type: 'realty.autonomy.changed';
+  autonomyEventId: string;
+  direction: string; // AutonomyDirection
+  fromLevel: string;
+  toLevel: string;
+  fromThreshold: number;
+  toThreshold: number;
+  actorType: string; // AutonomyActorType
+}
+
+/** Emitted when a no-ship incident is recorded (a hard-fail for the launch gate). */
+export interface RealtyNoShipIncidentEvent extends BaseEvent {
+  readonly type: 'realty.no_ship.incident';
+  incidentId: string;
+  kind: string; // NoShipKind
+  leadId?: string;
+  source: string;
+}
+
+/** Emitted whenever the launch-readiness gate is evaluated (GO / NO-GO / NOT_READY). */
+export interface RealtyLaunchGateEvaluatedEvent extends BaseEvent {
+  readonly type: 'realty.launch_gate.evaluated';
+  status: string; // LaunchGateStatus
+  passed: number;
+  failed: number;
+  insufficient: number;
+}
+
+// ─────────────────────────────────────────────
 // UNION TYPE (for typed event bus subscriptions)
 // ─────────────────────────────────────────────
 
@@ -869,7 +937,12 @@ export type DomainEvent =
   | RealtyBrokerAlertEvent
   | RealtyApprovalCreatedEvent
   | RealtyApprovalResolvedEvent
-  | RealtyConversationTakenOverEvent;
+  | RealtyConversationTakenOverEvent
+  | RealtyAiTurnCompletedEvent
+  | RealtyMigrationCompletedEvent
+  | RealtyAutonomyChangedEvent
+  | RealtyNoShipIncidentEvent
+  | RealtyLaunchGateEvaluatedEvent;
 
 /** Infer the event type from the `type` discriminant */
 export type EventType = DomainEvent['type'];

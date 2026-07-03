@@ -636,3 +636,152 @@ export interface BrokerConsoleMetrics {
   autonomyLevel: string;
   aiHandledPct: number;
 }
+
+// ─────────────────────────────────────────────
+// REALTY — PILOT MIGRATION (Phase 8, blueprint §22 / §24)
+// ─────────────────────────────────────────────
+
+/** One error against a specific 1-based row of a migration file. */
+export interface MigrationRowError {
+  row: number;
+  reason: string;
+}
+
+/**
+ * The outcome of a pilot-migration run — how many rows became new records, how
+ * many folded into existing ones (E.164 identity merge for leads), and the
+ * per-row errors. `dryRun` runs validate only and never persist.
+ */
+export interface MigrationSummary {
+  kind: string; // MigrationKind
+  status: string; // MigrationStatus
+  dryRun: boolean;
+  total: number;
+  created: number;
+  merged: number;
+  skipped: number;
+  errors: MigrationRowError[];
+}
+
+/**
+ * A raw inventory-import row: one project and, optionally, one of its units in
+ * the same line (the common "one row per unit" broker spreadsheet). Rows sharing
+ * a project name+locality collapse into a single project with many units.
+ */
+export interface InventoryImportRow {
+  projectName?: string;
+  developer?: string;
+  locality?: string;
+  reraNumber?: string;
+  possessionDate?: string; // ISO date
+  projectStatus?: string; // ProjectStatus
+  priceBandMin?: string | number; // rupees (converted to paise on commit)
+  priceBandMax?: string | number;
+  config?: string; // unit config e.g. 2BHK
+  carpetSqft?: string | number;
+  floor?: string | number;
+  facing?: string;
+  allInPrice?: string | number; // rupees
+  availability?: string; // UnitAvailability
+}
+
+/** A validated project (with its units) ready to be committed to inventory. */
+export interface NormalizedInventoryProject {
+  name: string;
+  developer?: string;
+  locality: string;
+  reraNumber?: string;
+  possessionDate?: string;
+  status?: string;
+  priceBandMinPaise?: number;
+  priceBandMaxPaise?: number;
+  units: NormalizedInventoryUnit[];
+}
+
+export interface NormalizedInventoryUnit {
+  config: string;
+  carpetSqft?: number;
+  floor?: number;
+  facing?: string;
+  allInPricePaise: number;
+  availability?: string;
+}
+
+// ─────────────────────────────────────────────
+// REALTY — AUTONOMY DIAL (evidence-driven, Phase 8)
+// ─────────────────────────────────────────────
+
+/** A rung on the autonomy ladder — a level+threshold with its evidence gates. */
+export interface AutonomyRung {
+  level: string; // AutonomyLevel
+  threshold: number; // auto_approve_threshold (0–100)
+  minDecisions: number; // resolved approvals observed
+  minAccuracy: number; // fraction approved verbatim (0–1)
+  minDays: number; // days the desk has been live
+}
+
+/** The evidence gathered for one autonomy-dial evaluation. */
+export interface AutonomyEvidence {
+  daysActive: number;
+  decisionsObserved: number; // resolved approvals (approved+edited+rejected)
+  approvedVerbatim: number;
+  approvalAccuracy: number; // approvedVerbatim / decisionsObserved (0–1)
+  noShipIncidents: number; // in the window — any > 0 forces CLOSE
+  hotAlertActionRate: number; // 0–1, share of hot alerts acted on <30 min
+}
+
+/** The recommendation a dial evaluation produces (pure, from the ladder util). */
+export interface AutonomyRecommendation {
+  direction: string; // AutonomyDirection
+  from: { level: string; threshold: number };
+  to: { level: string; threshold: number };
+  gatesFailed: string[]; // which evidence gates blocked an OPEN (empty on OPEN/CLOSE)
+  reason: string;
+  evidence: AutonomyEvidence;
+}
+
+// ─────────────────────────────────────────────
+// REALTY — LAUNCH-READINESS GATE (Phase 8, blueprint §24)
+// ─────────────────────────────────────────────
+
+/**
+ * The measured KPIs the launch gate evaluates. A null value means the metric
+ * could not be measured for this business/window (→ INSUFFICIENT_DATA), which
+ * blocks GO without hard-failing.
+ */
+export interface LaunchMetrics {
+  responseP95Seconds: number | null; // < 60
+  engagementRatePct: number | null; // ≥ 40
+  qualificationRatePct: number | null; // ≥ 60
+  visitsPer100Leads: number | null; // ≥ 8 (North Star)
+  showUpRatePct: number | null; // ≥ 60
+  aiAutonomyPct: number | null; // ≥ 70 (target 85)
+  hotAlertActionRatePct: number | null; // ≥ 70 (<30 min)
+  noShipIncidents: number; // must be 0 (aggregate)
+  /** Per-kind no-ship counts (NoShipKind → count); powers the itemized checks. */
+  noShipByKind?: Record<string, number>;
+  totalLeads: number; // context for the report
+}
+
+/** One line of the launch-gate report. */
+export interface LaunchGateCheck {
+  key: string;
+  label: string;
+  status: string; // LaunchCheckStatus
+  actual: number | null;
+  threshold: number;
+  comparator: 'gte' | 'lte' | 'eq';
+  detail: string;
+}
+
+/** The full GO / NO-GO launch-readiness report (blueprint §24). */
+export interface LaunchGateReport {
+  status: string; // LaunchGateStatus
+  kpiChecks: LaunchGateCheck[];
+  noShipChecks: LaunchGateCheck[];
+  passed: number;
+  failed: number;
+  insufficient: number;
+  windowDays: number | null;
+  generatedAt: string;
+}

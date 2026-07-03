@@ -514,6 +514,38 @@ enum DeadLetterStatus {
   DISCARDED
 }
 
+// Realty — pilot migration (Phase 8)
+enum MigrationKind {
+  LEADS
+  CONTACTS
+  INVENTORY
+}
+
+enum MigrationStatus {
+  VALIDATED
+  COMMITTED
+  FAILED
+}
+
+enum AutonomyDirection {
+  OPEN
+  HOLD
+  CLOSE
+}
+
+enum AutonomyActorType {
+  HUMAN
+  AI
+}
+
+enum NoShipKind {
+  UNVERIFIED_PRICE
+  STALE_AVAILABILITY
+  OPTED_OUT_SEND
+  RERA_CLAIM
+  CROSS_BUYER
+}
+
 // ─────────────────────────────────────────────
 // PLATFORM LAYER
 // ─────────────────────────────────────────────
@@ -602,6 +634,9 @@ model businesses {
   realty_broker_alerts        realty_broker_alerts[]
   realty_conversation_control realty_conversation_control[]
   realty_dead_letters         realty_dead_letters[]
+  realty_migration_runs       realty_migration_runs[]
+  realty_autonomy_events      realty_autonomy_events[]
+  realty_no_ship_incidents    realty_no_ship_incidents[]
 
   @@index([slug])
   @@index([email])
@@ -2752,4 +2787,98 @@ model realty_dead_letters {
   @@index([business_id, source, operation])
   @@index([business_id, lead_id])
   @@map("realty_dead_letters")
+}
+
+// ─────────────────────────────────────────────
+// REALTY — PILOT MIGRATION (Phase 8, blueprint §22 / §24)
+// ─────────────────────────────────────────────
+
+/// The audit record of one pilot-firm data import (leads / contacts / inventory).
+/// A dry-run ends VALIDATED (nothing written); a commit ends COMMITTED or FAILED.
+model realty_migration_runs {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  kind    MigrationKind
+  status  MigrationStatus @default(VALIDATED)
+  dry_run Boolean         @default(false)
+
+  total_rows    Int @default(0)
+  created_count Int @default(0)
+  merged_count  Int @default(0)
+  skipped_count Int @default(0)
+  error_count   Int @default(0)
+
+  /// Per-row errors ([{ row, reason }]) and a free-form summary of the outcome.
+  errors  Json @default("[]") @db.JsonB
+  summary Json @default("{}") @db.JsonB
+
+  /// The team member who ran the import (null for automated runs).
+  created_by String? @db.Uuid
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, kind, created_at(sort: Desc)])
+  @@index([business_id, status])
+  @@index([deleted_at])
+  @@map("realty_migration_runs")
+}
+
+/// Append-only ledger of every autonomy-dial evaluation that changed (or held)
+/// the dial. The dial "opens gradually on evidence" — each row captures the
+/// evidence snapshot behind an OPEN/HOLD/CLOSE. Never updated or deleted.
+model realty_autonomy_events {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  direction AutonomyDirection
+
+  from_level     AutonomyLevel
+  to_level       AutonomyLevel
+  from_threshold Int
+  to_threshold   Int
+
+  /// The evidence gathered for this evaluation (AutonomyEvidence shape).
+  evidence Json   @default("{}") @db.JsonB
+  reason   String @db.VarChar(500)
+
+  actor_type AutonomyActorType @default(HUMAN)
+  actor_id   String?           @db.Uuid
+
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, created_at(sort: Desc)])
+  @@map("realty_autonomy_events")
+}
+
+/// Append-only ledger of "no-ship" incidents — a price/availability/opt-out/RERA
+/// violation that reached (or would have reached) a buyer. The launch gate hard
+/// fails if any exist in its window. Guardrails keep this empty in a healthy run.
+model realty_no_ship_incidents {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  kind            NoShipKind
+  lead_id         String?    @db.Uuid
+  conversation_id String?    @db.Uuid
+
+  /// What was detected + where it came from (e.g. "realty-ai:auto_send").
+  detail String @db.VarChar(500)
+  source String @db.VarChar(80)
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, created_at(sort: Desc)])
+  @@index([business_id, kind])
+  @@map("realty_no_ship_incidents")
 }

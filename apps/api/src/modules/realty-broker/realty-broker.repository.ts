@@ -89,6 +89,35 @@ export class RealtyBrokerRepository {
     });
   }
 
+  /** Resolved-approval counts by status — the evidence behind the autonomy dial. */
+  async approvalStatusCounts(businessId: string): Promise<Record<string, number>> {
+    const rows = await this.prisma.realty_approvals.groupBy({
+      by: ['status'],
+      where: { business_id: businessId, deleted_at: null },
+      _count: { _all: true },
+    });
+    const out: Record<string, number> = {};
+    for (const r of rows) out[r.status] = r._count._all;
+    return out;
+  }
+
+  /** Hot-lead alert timings — created vs read — for the <30 min action-rate KPI. */
+  async findHotAlerts(
+    businessId: string,
+    since?: Date,
+  ): Promise<Array<Pick<realty_broker_alerts, 'created_at' | 'read_at'>>> {
+    return this.prisma.realty_broker_alerts.findMany({
+      where: {
+        business_id: businessId,
+        type: 'HOT_LEAD',
+        ...(since ? { created_at: { gte: since } } : {}),
+      },
+      select: { created_at: true, read_at: true },
+      orderBy: { created_at: 'desc' },
+      take: 1000,
+    });
+  }
+
   // ── Account settings ─────────────────────────
 
   async findSettings(businessId: string): Promise<realty_account_settings | null> {

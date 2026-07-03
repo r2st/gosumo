@@ -167,6 +167,43 @@ export class RealtyBrokerService {
   }
 
   // ─────────────────────────────────────────────
+  // EVIDENCE READS (consumed by the Phase-8 autonomy dial + launch gate)
+  // ─────────────────────────────────────────────
+
+  /**
+   * Approval-queue accuracy evidence: how many drafts have been resolved, and
+   * of those how many were approved verbatim (the AI got it exactly right).
+   */
+  async getApprovalStats(businessId: string): Promise<{ resolved: number; approvedVerbatim: number }> {
+    const counts = await this.repository.approvalStatusCounts(businessId);
+    const approvedVerbatim = counts[ApprovalStatus.APPROVED] ?? 0;
+    const resolved =
+      approvedVerbatim + (counts[ApprovalStatus.EDITED] ?? 0) + (counts[ApprovalStatus.REJECTED] ?? 0);
+    return { resolved, approvedVerbatim };
+  }
+
+  /**
+   * Share of hot-lead alerts acted on (marked read) within 30 minutes — the
+   * KPI proxy for hot-alert responsiveness. Returns null when there are none.
+   */
+  async getHotAlertActionRate(businessId: string, since?: Date): Promise<number | null> {
+    const alerts = await this.repository.findHotAlerts(businessId, since);
+    if (alerts.length === 0) return null;
+    const THIRTY_MIN_MS = 30 * 60 * 1000;
+    const acted = alerts.filter(
+      (a) => a.read_at != null && a.read_at.getTime() - a.created_at.getTime() <= THIRTY_MIN_MS,
+    ).length;
+    return acted / alerts.length;
+  }
+
+  /** Percentage of asserted conversations the AI still owns (vs human takeover). */
+  async getAiHandledPct(businessId: string): Promise<number> {
+    const control = await this.repository.countControlByOwner(businessId);
+    const total = control.ai + control.human;
+    return total === 0 ? 100 : Math.round((control.ai / total) * 100);
+  }
+
+  // ─────────────────────────────────────────────
   // APPROVAL QUEUE
   // ─────────────────────────────────────────────
 

@@ -577,3 +577,68 @@ export enum BrokerAlertType {
   TAKEOVER = 'TAKEOVER', // a conversation was handed to a human
   VISIT_REMINDER = 'VISIT_REMINDER', // an upcoming site visit
 }
+
+// ─────────────────────────────────────────────
+// REALTY — PILOT MIGRATION (Phase 8, blueprint §22 / §24)
+// ─────────────────────────────────────────────
+
+/** What kind of existing broker data a pilot-migration run imported. */
+export enum MigrationKind {
+  LEADS = 'LEADS', // active enquiries with (partial) BLTC
+  CONTACTS = 'CONTACTS', // a plain phonebook — leads with minimal profile
+  INVENTORY = 'INVENTORY', // projects + units (+ assets)
+}
+
+/**
+ * Lifecycle of a migration run. A dry-run ends at VALIDATED (nothing written);
+ * a committed run ends COMMITTED (or FAILED if the write path errored).
+ */
+export enum MigrationStatus {
+  VALIDATED = 'VALIDATED', // parsed + validated, nothing persisted (dry-run)
+  COMMITTED = 'COMMITTED', // rows written to the domain modules
+  FAILED = 'FAILED', // the commit path errored out
+}
+
+/**
+ * Direction the evidence-driven autonomy dial moved on an evaluation. The dial
+ * only ever OPENs one rung at a time, and any no-ship incident forces a CLOSE
+ * back to the safe floor (blueprint §24 no-ship rule).
+ */
+export enum AutonomyDirection {
+  OPEN = 'OPEN', // evidence met — AI given more independence
+  HOLD = 'HOLD', // evidence not yet sufficient — no change
+  CLOSE = 'CLOSE', // a no-ship incident (or regression) pulled the dial back
+}
+
+/** Who triggered an autonomy-dial change — an operator or an automatic sweep. */
+export enum AutonomyActorType {
+  HUMAN = 'HUMAN',
+  AI = 'AI',
+}
+
+/**
+ * A "no-ship" condition that reached (or would have reached) a buyer — the
+ * launch-gate hard fails if any occurred in the window (blueprint §24). In a
+ * healthy system the guardrails block these upstream, so the ledger stays empty.
+ */
+export enum NoShipKind {
+  UNVERIFIED_PRICE = 'UNVERIFIED_PRICE', // a price absent from a verified sheet
+  STALE_AVAILABILITY = 'STALE_AVAILABILITY', // availability affirmed for SOLD/HOLD/UNVERIFIED
+  OPTED_OUT_SEND = 'OPTED_OUT_SEND', // a send to an opted-out number
+  RERA_CLAIM = 'RERA_CLAIM', // a RERA claim beyond sheet-verbatim
+  CROSS_BUYER = 'CROSS_BUYER', // another buyer's information disclosed
+}
+
+/** Overall verdict of the launch-readiness gate (blueprint §24). */
+export enum LaunchGateStatus {
+  GO = 'GO', // every gate passed — cleared to launch
+  NO_GO = 'NO_GO', // at least one gate hard-failed
+  NOT_READY = 'NOT_READY', // no hard fail, but a gate lacks data to clear
+}
+
+/** Per-check outcome inside a launch-gate report. */
+export enum LaunchCheckStatus {
+  PASS = 'PASS',
+  FAIL = 'FAIL',
+  INSUFFICIENT_DATA = 'INSUFFICIENT_DATA', // the metric could not be measured
+}

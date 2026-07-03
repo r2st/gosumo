@@ -650,6 +650,62 @@ export interface RealtyConversationTakenOverEvent extends BaseEvent {
     owner: string;
     takenOverBy?: string;
 }
-export type DomainEvent = MessageReceivedEvent | MessageSentEvent | MessageFailedEvent | MessageStoredEvent | ConversationCreatedEvent | ConversationResolvedEvent | ConversationEscalatedEvent | ConversationStatusChangedEvent | ConversationAssignedEvent | AIIntentClassifiedEvent | AIResponseGeneratedEvent | AIResponseApprovedEvent | AIResponseRejectedEvent | TaskCreatedEvent | TaskAssignedEvent | TaskResolvedEvent | OrderCreatedEvent | OrderConfirmedEvent | OrderCancelledEvent | OrderPackedEvent | OrderPaidEvent | OrderShippedEvent | OrderDeliveredEvent | OrderReturnedEvent | PaymentCreatedEvent | PaymentSuccessEvent | PaymentFailedEvent | PaymentRefundEvent | InvoiceCreatedEvent | InvoiceIssuedEvent | InvoicePaidEvent | BookingCreatedEvent | BookingCancelledEvent | BookingConfirmedEvent | BookingRescheduledEvent | BookingCompletedEvent | BookingReminderEvent | ClientProfileUpdatedEvent | CatalogItemCreatedEvent | CatalogItemUpdatedEvent | CatalogStockLowEvent | CatalogStockOutEvent | NotificationQueuedEvent | NotificationSentEvent | NotificationDeliveredEvent | NotificationFailedEvent | NotificationSkippedEvent | RealtyLeadCreatedEvent | RealtyLeadQualifiedEvent | RealtyLeadStageChangedEvent | RealtyLeadHotEvent | RealtyLeadOptedOutEvent | RealtyProjectCreatedEvent | RealtyUnitAvailabilityChangedEvent | RealtyAssetPublishedEvent | RealtyVisitBookedEvent | RealtyVisitConfirmedEvent | RealtyVisitRescheduledEvent | RealtyVisitCancelledEvent | RealtyVisitCompletedEvent | RealtyVisitNoShowEvent | RealtyVisitReminderEvent | RealtyLeadIngestedEvent | RealtyCadenceStartedEvent | RealtyCadenceStepSentEvent | RealtyCadenceCompletedEvent | RealtyBrokerAlertEvent | RealtyApprovalCreatedEvent | RealtyApprovalResolvedEvent | RealtyConversationTakenOverEvent;
+/**
+ * Emitted after the realty AI loop finishes one turn. Carries the routed mode,
+ * confidence, and any guardrail violation codes so downstream watchers (the
+ * no-ship ledger) can detect a violation that co-occurred with an actual send.
+ */
+export interface RealtyAiTurnCompletedEvent extends BaseEvent {
+    readonly type: 'realty.ai.turn_completed';
+    leadId: string;
+    conversationId?: string;
+    intent: string;
+    routeMode: string;
+    confidence: number;
+    /** Guardrail violation codes fired on the proposed response (empty when clean). */
+    violations: string[];
+    /** Violation codes that were BLOCK-severity (must never ship autonomously). */
+    blockingViolations: string[];
+}
+/** Emitted when a pilot-migration run is recorded (dry-run or committed). */
+export interface RealtyMigrationCompletedEvent extends BaseEvent {
+    readonly type: 'realty.migration.completed';
+    runId: string;
+    kind: string;
+    status: string;
+    dryRun: boolean;
+    created: number;
+    merged: number;
+    skipped: number;
+}
+/** Emitted when the evidence-driven autonomy dial changes (OPEN / CLOSE). */
+export interface RealtyAutonomyChangedEvent extends BaseEvent {
+    readonly type: 'realty.autonomy.changed';
+    autonomyEventId: string;
+    direction: string;
+    fromLevel: string;
+    toLevel: string;
+    fromThreshold: number;
+    toThreshold: number;
+    actorType: string;
+}
+/** Emitted when a no-ship incident is recorded (a hard-fail for the launch gate). */
+export interface RealtyNoShipIncidentEvent extends BaseEvent {
+    readonly type: 'realty.no_ship.incident';
+    incidentId: string;
+    kind: string;
+    leadId?: string;
+    source: string;
+}
+/** Emitted whenever the launch-readiness gate is evaluated (GO / NO-GO / NOT_READY). */
+export interface RealtyLaunchGateEvaluatedEvent extends BaseEvent {
+    readonly type: 'realty.launch_gate.evaluated';
+    status: string;
+    passed: number;
+    failed: number;
+    insufficient: number;
+}
+export type DomainEvent = MessageReceivedEvent | MessageSentEvent | MessageFailedEvent | MessageStoredEvent | ConversationCreatedEvent | ConversationResolvedEvent | ConversationEscalatedEvent | ConversationStatusChangedEvent | ConversationAssignedEvent | AIIntentClassifiedEvent | AIResponseGeneratedEvent | AIResponseApprovedEvent | AIResponseRejectedEvent | TaskCreatedEvent | TaskAssignedEvent | TaskResolvedEvent | OrderCreatedEvent | OrderConfirmedEvent | OrderCancelledEvent | OrderPackedEvent | OrderPaidEvent | OrderShippedEvent | OrderDeliveredEvent | OrderReturnedEvent | PaymentCreatedEvent | PaymentSuccessEvent | PaymentFailedEvent | PaymentRefundEvent | InvoiceCreatedEvent | InvoiceIssuedEvent | InvoicePaidEvent | BookingCreatedEvent | BookingCancelledEvent | BookingConfirmedEvent | BookingRescheduledEvent | BookingCompletedEvent | BookingReminderEvent | ClientProfileUpdatedEvent | CatalogItemCreatedEvent | CatalogItemUpdatedEvent | CatalogStockLowEvent | CatalogStockOutEvent | NotificationQueuedEvent | NotificationSentEvent | NotificationDeliveredEvent | NotificationFailedEvent | NotificationSkippedEvent | RealtyLeadCreatedEvent | RealtyLeadQualifiedEvent | RealtyLeadStageChangedEvent | RealtyLeadHotEvent | RealtyLeadOptedOutEvent | RealtyProjectCreatedEvent | RealtyUnitAvailabilityChangedEvent | RealtyAssetPublishedEvent | RealtyVisitBookedEvent | RealtyVisitConfirmedEvent | RealtyVisitRescheduledEvent | RealtyVisitCancelledEvent | RealtyVisitCompletedEvent | RealtyVisitNoShowEvent | RealtyVisitReminderEvent | RealtyLeadIngestedEvent | RealtyCadenceStartedEvent | RealtyCadenceStepSentEvent | RealtyCadenceCompletedEvent | RealtyBrokerAlertEvent | RealtyApprovalCreatedEvent | RealtyApprovalResolvedEvent | RealtyConversationTakenOverEvent | RealtyAiTurnCompletedEvent | RealtyMigrationCompletedEvent | RealtyAutonomyChangedEvent | RealtyNoShipIncidentEvent | RealtyLaunchGateEvaluatedEvent;
 /** Infer the event type from the `type` discriminant */
 export type EventType = DomainEvent['type'];
+//# sourceMappingURL=index.d.ts.map

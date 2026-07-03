@@ -194,6 +194,18 @@ export class RealtyVisitsService {
     };
   }
 
+  /**
+   * Aggregate visit stats for the launch-readiness gate (Phase 8): total visits
+   * (for visits/100-leads) and completed vs no-show (for the show-up rate).
+   */
+  async getVisitStats(
+    businessId: string,
+  ): Promise<{ total: number; completed: number; noShow: number }> {
+    const counts = await this.repository.statusCounts(businessId);
+    const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
+    return { total, completed: counts['COMPLETED'] ?? 0, noShow: counts['NO_SHOW'] ?? 0 };
+  }
+
   /** Visits within a date range for the calendar view. */
   async getCalendar(businessId: string, from: string, to: string): Promise<SiteVisitDto[]> {
     const fromDate = new Date(from);

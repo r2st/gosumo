@@ -4,7 +4,7 @@
 // ─────────────────────────────────────────────
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ApprovalStatus = exports.TemplateApprovalStatus = exports.TemplateCategory = exports.CadenceEnrollmentStatus = exports.CadenceStopOn = exports.CadenceTrigger = exports.RealtyRoutePolicy = exports.RealtyIntent = exports.RealtyPortal = exports.SiteVisitOutcome = exports.SiteVisitStatus = exports.RealtyAssetType = exports.NetworkVisibility = exports.UnitAvailability = exports.ProjectStatus = exports.LeadExchangeStatus = exports.FinancingStatus = exports.LeadPurpose = exports.LeadStage = exports.LeadTemperature = exports.LeadSource = exports.CartStatus = exports.DiscountType = exports.CatalogItemType = exports.CampaignType = exports.InvoiceStatus = exports.RefundMethod = exports.RefundType = exports.RefundStatus = exports.PaymentGateway = exports.TeamRole = exports.ShipmentStatus = exports.RecurrenceFrequency = exports.BookingActor = exports.BookingLocationType = exports.BookingStatus = exports.PaymentMethod = exports.PaymentStatus = exports.OrderStatus = exports.ConfidenceMode = exports.IntentType = exports.TaskPriority = exports.TaskType = exports.TaskStatus = exports.ConversationPriority = exports.ConversationStatus = exports.MessageStatus = exports.MessageContentType = exports.MessageDirection = exports.ChannelType = void 0;
-exports.BrokerAlertType = exports.ConversationOwner = exports.AutonomyLevel = void 0;
+exports.LaunchCheckStatus = exports.LaunchGateStatus = exports.NoShipKind = exports.AutonomyActorType = exports.AutonomyDirection = exports.MigrationStatus = exports.MigrationKind = exports.BrokerAlertType = exports.ConversationOwner = exports.AutonomyLevel = void 0;
 var ChannelType;
 (function (ChannelType) {
     ChannelType["WHATSAPP"] = "WHATSAPP";
@@ -561,4 +561,68 @@ var BrokerAlertType;
     BrokerAlertType["TAKEOVER"] = "TAKEOVER";
     BrokerAlertType["VISIT_REMINDER"] = "VISIT_REMINDER";
 })(BrokerAlertType || (exports.BrokerAlertType = BrokerAlertType = {}));
+// ─────────────────────────────────────────────
+// REALTY — PILOT MIGRATION (Phase 8, blueprint §22 / §24)
+// ─────────────────────────────────────────────
+/** What kind of existing broker data a pilot-migration run imported. */
+var MigrationKind;
+(function (MigrationKind) {
+    MigrationKind["LEADS"] = "LEADS";
+    MigrationKind["CONTACTS"] = "CONTACTS";
+    MigrationKind["INVENTORY"] = "INVENTORY";
+})(MigrationKind || (exports.MigrationKind = MigrationKind = {}));
+/**
+ * Lifecycle of a migration run. A dry-run ends at VALIDATED (nothing written);
+ * a committed run ends COMMITTED (or FAILED if the write path errored).
+ */
+var MigrationStatus;
+(function (MigrationStatus) {
+    MigrationStatus["VALIDATED"] = "VALIDATED";
+    MigrationStatus["COMMITTED"] = "COMMITTED";
+    MigrationStatus["FAILED"] = "FAILED";
+})(MigrationStatus || (exports.MigrationStatus = MigrationStatus = {}));
+/**
+ * Direction the evidence-driven autonomy dial moved on an evaluation. The dial
+ * only ever OPENs one rung at a time, and any no-ship incident forces a CLOSE
+ * back to the safe floor (blueprint §24 no-ship rule).
+ */
+var AutonomyDirection;
+(function (AutonomyDirection) {
+    AutonomyDirection["OPEN"] = "OPEN";
+    AutonomyDirection["HOLD"] = "HOLD";
+    AutonomyDirection["CLOSE"] = "CLOSE";
+})(AutonomyDirection || (exports.AutonomyDirection = AutonomyDirection = {}));
+/** Who triggered an autonomy-dial change — an operator or an automatic sweep. */
+var AutonomyActorType;
+(function (AutonomyActorType) {
+    AutonomyActorType["HUMAN"] = "HUMAN";
+    AutonomyActorType["AI"] = "AI";
+})(AutonomyActorType || (exports.AutonomyActorType = AutonomyActorType = {}));
+/**
+ * A "no-ship" condition that reached (or would have reached) a buyer — the
+ * launch-gate hard fails if any occurred in the window (blueprint §24). In a
+ * healthy system the guardrails block these upstream, so the ledger stays empty.
+ */
+var NoShipKind;
+(function (NoShipKind) {
+    NoShipKind["UNVERIFIED_PRICE"] = "UNVERIFIED_PRICE";
+    NoShipKind["STALE_AVAILABILITY"] = "STALE_AVAILABILITY";
+    NoShipKind["OPTED_OUT_SEND"] = "OPTED_OUT_SEND";
+    NoShipKind["RERA_CLAIM"] = "RERA_CLAIM";
+    NoShipKind["CROSS_BUYER"] = "CROSS_BUYER";
+})(NoShipKind || (exports.NoShipKind = NoShipKind = {}));
+/** Overall verdict of the launch-readiness gate (blueprint §24). */
+var LaunchGateStatus;
+(function (LaunchGateStatus) {
+    LaunchGateStatus["GO"] = "GO";
+    LaunchGateStatus["NO_GO"] = "NO_GO";
+    LaunchGateStatus["NOT_READY"] = "NOT_READY";
+})(LaunchGateStatus || (exports.LaunchGateStatus = LaunchGateStatus = {}));
+/** Per-check outcome inside a launch-gate report. */
+var LaunchCheckStatus;
+(function (LaunchCheckStatus) {
+    LaunchCheckStatus["PASS"] = "PASS";
+    LaunchCheckStatus["FAIL"] = "FAIL";
+    LaunchCheckStatus["INSUFFICIENT_DATA"] = "INSUFFICIENT_DATA";
+})(LaunchCheckStatus || (exports.LaunchCheckStatus = LaunchCheckStatus = {}));
 //# sourceMappingURL=index.js.map
