@@ -10,8 +10,10 @@ import type {
   LeadStage,
   RealtyProject,
   UnitMatch,
+  RealtyUnit,
   MessageTemplate,
   Cadence,
+  CadenceEnrollment,
   CadenceTrigger,
   Approval,
   ApprovalStatus,
@@ -79,7 +81,8 @@ export function useTransitionStage() {
   return useMutation({
     mutationFn: ({ id, stage }: { id: string; stage: LeadStage }) =>
       apiRequest<Lead>(`/realty/leads/${id}/stage`, { method: 'POST', body: { stage } }),
-    onSuccess: () => {
+    onSuccess: (_data, { id }) => {
+      qc.invalidateQueries({ queryKey: ['realty', 'lead', id] });
       qc.invalidateQueries({ queryKey: LEADS_KEY });
       qc.invalidateQueries({ queryKey: BOARD_KEY });
     },
@@ -93,6 +96,18 @@ export function useMatchForLead() {
   });
 }
 
+export function useAssignLead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, agentId }: { id: string; agentId: string }) =>
+      apiRequest<Lead>(`/realty/leads/${id}/assign`, { method: 'POST', body: { agentId } }),
+    onSuccess: (_data, { id }) => {
+      qc.invalidateQueries({ queryKey: ['realty', 'lead', id] });
+      qc.invalidateQueries({ queryKey: LEADS_KEY });
+    },
+  });
+}
+
 // ── Inventory ─────────────────────────────────────────────────────────────────
 
 export function useProjects(filters: { locality?: string; status?: string } = {}) {
@@ -100,6 +115,16 @@ export function useProjects(filters: { locality?: string; status?: string } = {}
     queryKey: [...PROJECTS_KEY, filters],
     queryFn: ({ signal }) =>
       apiRequest<RealtyProject[]>(`/realty/projects${toQuery({ ...filters })}`, { signal }),
+  });
+}
+
+/** Units for one project — powers config range, price range, availability, and freshness on inventory cards. */
+export function useProjectUnits(projectId: string | null) {
+  return useQuery({
+    queryKey: [...PROJECTS_KEY, projectId, 'units'],
+    queryFn: ({ signal }) =>
+      apiRequest<RealtyUnit[]>(`/realty/projects/${projectId}/units`, { signal }),
+    enabled: !!projectId,
   });
 }
 
@@ -141,6 +166,22 @@ export function useUpdateCadence() {
     mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
       apiRequest<Cadence>(`/realty/cadence/cadences/${id}`, { method: 'PATCH', body: { isActive } }),
     onSuccess: () => qc.invalidateQueries({ queryKey: CADENCES_KEY }),
+  });
+}
+
+/** Manually enrol a lead into the active cadence for a given trigger. */
+export function useEnrollCadence() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ leadId, trigger }: { leadId: string; trigger: CadenceTrigger }) =>
+      apiRequest<CadenceEnrollment | null>(`/realty/cadence/enroll`, {
+        method: 'POST',
+        body: { leadId, trigger },
+      }),
+    onSuccess: (_data, { leadId }) => {
+      qc.invalidateQueries({ queryKey: ['realty', 'lead', leadId] });
+      qc.invalidateQueries({ queryKey: LEADS_KEY });
+    },
   });
 }
 

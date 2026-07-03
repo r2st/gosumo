@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, LogOut, Menu, Settings, User } from 'lucide-react';
+import { ChevronDown, LogOut, Menu, Moon, Settings, Sun, User } from 'lucide-react';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { NotificationCenter } from '@/components/notifications/notification-center';
 import { useAuth } from '@/providers/auth-provider';
+import { useTheme } from '@/providers/theme-provider';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 
@@ -32,6 +33,9 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
           </p>
         )}
       </div>
+
+      {/* Theme toggle */}
+      <ThemeToggle />
 
       {/* Notifications */}
       <NotificationCenter />
@@ -73,6 +77,21 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
         )}
       </div>
     </header>
+  );
+}
+
+function ThemeToggle() {
+  const { theme, toggleTheme } = useTheme();
+  const isDark = theme === 'dark';
+  return (
+    <button
+      onClick={toggleTheme}
+      className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+    >
+      {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+    </button>
   );
 }
 

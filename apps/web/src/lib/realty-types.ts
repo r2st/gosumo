@@ -102,6 +102,28 @@ export interface RealtyProject {
   updatedAt: string;
 }
 
+export type UnitAvailability = 'AVAILABLE' | 'HELD' | 'SOLD' | 'UNVERIFIED';
+
+export interface RealtyUnit {
+  id: string;
+  businessId: string;
+  projectId: string;
+  config: string;
+  carpetSqft: number | null;
+  builtupSqft: number | null;
+  floor: number | null;
+  facing: string | null;
+  basePricePaise: number | null;
+  allInPricePaise: number;
+  availability: UnitAvailability;
+  verifiedAt: string | null;
+  /** Whether availability is within the 24h freshness window (24-hour rule). */
+  isFresh: boolean;
+  networkVisibility: NetworkVisibility;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface UnitMatch {
   unitId: string;
   projectId: string;

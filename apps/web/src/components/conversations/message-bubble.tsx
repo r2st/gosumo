@@ -7,6 +7,46 @@ import { cn } from '@/lib/utils';
 const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
 const num = (v: unknown): number | undefined => (typeof v === 'number' ? v : undefined);
 
+interface AiConfidence {
+  label: string;
+  dot: string;
+  text: string;
+  score: number;
+}
+
+/**
+ * Maps an AI message's confidence (0–100) to a routing badge, mirroring the
+ * platform's confidence routing: ≥90 auto-executes, 70–89 drafts for review,
+ * <70 escalates to a human. Confidence is read from `aiConfidence`, falling back
+ * to `metadata.aiConfidence` / `metadata.confidence`. Returns null for
+ * non-AI messages or when no confidence score is available.
+ */
+export function aiConfidenceBadge(message: Message): AiConfidence | null {
+  if (!message.sentByAi) return null;
+  const meta = message.metadata ?? {};
+  const score =
+    num(message.aiConfidence) ?? num(meta.aiConfidence) ?? num(meta.confidence);
+  if (score == null) return null;
+
+  if (score >= 90) return { label: 'Auto', dot: 'bg-emerald-500', text: 'text-emerald-700', score };
+  if (score >= 70) return { label: 'Draft', dot: 'bg-amber-500', text: 'text-amber-700', score };
+  return { label: 'Escalated', dot: 'bg-rose-500', text: 'text-rose-700', score };
+}
+
+function AiConfidenceBadge({ message }: { message: Message }) {
+  const badge = aiConfidenceBadge(message);
+  if (!badge) return null;
+  return (
+    <span
+      className="mb-1 inline-flex items-center gap-1 rounded-full bg-background/60 px-1.5 py-0.5 text-[10px] font-semibold"
+      title={`AI confidence ${Math.round(badge.score)}%`}
+    >
+      <span className={cn('h-1.5 w-1.5 rounded-full', badge.dot)} />
+      <span className={badge.text}>{badge.label}</span>
+    </span>
+  );
+}
+
 export function MessageBody({ message }: { message: Message }) {
   // The stored `content` payload is polymorphic JSONB and isn't always the
   // discriminated union the type claims: text messages may arrive as a plain
@@ -122,6 +162,11 @@ export function MessageBubble({ message }: { message: Message }) {
             : 'rounded-bl-sm border border-border bg-card text-card-foreground',
         )}
       >
+        {message.sentByAi && (
+          <div className="flex">
+            <AiConfidenceBadge message={message} />
+          </div>
+        )}
         <MessageBody message={message} />
         <div
           className={cn(
@@ -132,7 +177,6 @@ export function MessageBubble({ message }: { message: Message }) {
           {message.sentByAi && (
             <span className="flex items-center gap-0.5">
               <Bot className="h-3 w-3" />
-              {typeof message.aiConfidence === 'number' && `${Math.round(message.aiConfidence)}%`}
             </span>
           )}
           <span>{formatTimeIST(message.timestamp)}</span>

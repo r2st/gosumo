@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import { AuthProvider } from '@/providers/auth-provider';
 import { QueryProvider } from '@/providers/query-provider';
+import { ThemeProvider, themeInitScript } from '@/providers/theme-provider';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans', display: 'swap' });
 
@@ -31,11 +32,17 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
+      <head>
+        {/* Apply the saved theme before paint to avoid a flash of the wrong theme. */}
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body>
-        <QueryProvider>
-          <AuthProvider>{children}</AuthProvider>
-        </QueryProvider>
+        <ThemeProvider>
+          <QueryProvider>
+            <AuthProvider>{children}</AuthProvider>
+          </QueryProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

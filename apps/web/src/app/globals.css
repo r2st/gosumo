@@ -48,6 +48,61 @@
     --shadow-sm: 0 1px 2px 0 rgb(16 24 40 / 0.04), 0 1px 3px 0 rgb(16 24 40 / 0.06);
     --shadow-md: 0 2px 4px -2px rgb(16 24 40 / 0.06), 0 4px 12px -2px rgb(16 24 40 / 0.08);
     --shadow-lg: 0 4px 6px -2px rgb(16 24 40 / 0.05), 0 12px 28px -4px rgb(16 24 40 / 0.12);
+
+    color-scheme: light;
+  }
+
+  /*
+   * Dark theme — applied by toggling `.dark` on <html> (see ThemeProvider).
+   * Every token from :root is remapped, so any component built on the semantic
+   * Tailwind colours (bg-background, text-foreground, border-border, bg-card,
+   * bg-muted, text-muted-foreground, …) adapts automatically.
+   */
+  .dark {
+    /* Deep slate canvas */
+    --background: 222 47% 7%;
+    --foreground: 210 40% 96%;
+
+    --card: 222 40% 10%;
+    --card-foreground: 210 40% 96%;
+
+    /* Raised neutral surfaces for hover / secondary backgrounds */
+    --muted: 217 33% 16%;
+    --muted-foreground: 215 20% 65%;
+
+    /* Brand: brighten indigo a touch so it reads on dark */
+    --primary: 243 80% 68%;
+    --primary-foreground: 0 0% 100%;
+
+    --accent: 243 42% 22%;
+    --accent-foreground: 243 90% 86%;
+
+    --success: 142 64% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 55%;
+    --warning-foreground: 24 60% 12%;
+
+    --danger: 0 72% 58%;
+    --danger-foreground: 0 0% 100%;
+
+    --border: 217 30% 20%;
+    --input: 217 30% 24%;
+    --ring: 243 80% 68%;
+
+    /* Muted, near-black sidebar that sits below the canvas */
+    --sidebar: 222 45% 9%;
+    --sidebar-foreground: 210 40% 96%;
+    --sidebar-muted: 215 20% 60%;
+    --sidebar-active: 243 80% 68%;
+    --sidebar-border: 217 30% 18%;
+
+    /* Deeper, blacker shadows so elevation still reads on a dark canvas */
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.30), 0 1px 3px 0 rgb(0 0 0 / 0.35);
+    --shadow-md: 0 2px 4px -2px rgb(0 0 0 / 0.35), 0 4px 12px -2px rgb(0 0 0 / 0.45);
+    --shadow-lg: 0 4px 6px -2px rgb(0 0 0 / 0.40), 0 12px 28px -4px rgb(0 0 0 / 0.55);
+
+    color-scheme: dark;
   }
 
   * {
