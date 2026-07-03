@@ -16,6 +16,8 @@ export interface PlanDefinition {
   seatLimit: number | null;
   /** Whether the tier unlocks the co-broking exchange. */
   exchangeEnabled: boolean;
+  /** Whether the tier unlocks CRM sync (Sell.Do / LeadSquared / Privyr push). */
+  crmSyncEnabled: boolean;
   /** Short feature bullets (surfaced on the billing page). */
   features: string[];
 }
@@ -40,6 +42,7 @@ export const PLAN_DEFINITIONS: Record<RealtyPlan, PlanDefinition> = {
     monthlyLeadLimit: 300,
     seatLimit: 1,
     exchangeEnabled: false,
+    crmSyncEnabled: false,
     features: ['1 WhatsApp number', '300 leads/mo', 'AI lead manager', '1 seat'],
   },
   [RealtyPlan.TEAM]: {
@@ -49,6 +52,7 @@ export const PLAN_DEFINITIONS: Record<RealtyPlan, PlanDefinition> = {
     monthlyLeadLimit: 1500,
     seatLimit: 5,
     exchangeEnabled: true,
+    crmSyncEnabled: false,
     features: ['5 seats', '1,500 leads/mo', 'Lead routing', 'Analytics', 'Co-broking exchange'],
   },
   [RealtyPlan.DEVELOPER]: {
@@ -58,6 +62,7 @@ export const PLAN_DEFINITIONS: Record<RealtyPlan, PlanDefinition> = {
     monthlyLeadLimit: null,
     seatLimit: null,
     exchangeEnabled: true,
+    crmSyncEnabled: true,
     features: [
       'Unlimited leads',
       'Unlimited seats',
@@ -79,4 +84,4 @@ export function planDefinition(plan: RealtyPlan): PlanDefinition {
 }
 
 /** The resources a plan gates. */
-export type PlanResource = 'leads' | 'seats' | 'exchange';
+export type PlanResource = 'leads' | 'seats' | 'exchange' | 'crm_sync';

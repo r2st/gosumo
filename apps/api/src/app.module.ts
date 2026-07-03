@@ -39,6 +39,7 @@ import { RealtyExchangeModule } from './modules/realty-exchange/realty-exchange.
 import { RealtyIntelligenceModule } from './modules/realty-intelligence/realty-intelligence.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { ComplianceModule } from './modules/compliance/compliance.module';
+import { RealtyIntegrationsModule } from './modules/realty-integrations/realty-integrations.module';
 
 @Module({
   imports: [
@@ -117,6 +118,7 @@ import { ComplianceModule } from './modules/compliance/compliance.module';
     RealtyIntelligenceModule,
     BillingModule,
     ComplianceModule,
+    RealtyIntegrationsModule,
   ],
 })
 export class AppModule {}

@@ -1,0 +1,531 @@
+/**
+ * BillingService unit tests (GoSumo Realty pricing-tier enforcement, plan §9).
+ *
+ * Coverage:
+ *  1. addMonths — the UTC-safe month arithmetic (normal, day-clamp, year wrap, n>1)
+ *  2. getSubscription — lazy default-SOLO creation on first access, existing passthrough
+ *  3. Cycle rollover — no-op when current, single- and multi-month advance + counter reset
+ *  4. checkPlanLimits — exchange gating (SOLO blocked), seat cap, lead cap w/ overage vs hard-cap
+ *  5. canUseExchange — convenience wrapper
+ *  6. recordLeadUsage — increment + event, overage detection, limit-reached fires exactly once
+ *  7. onLeadCreated — best-effort listener that swallows billing errors
+ *  8. getUsageSummary — meters, overage charge, cycle-end computation
+ *  9. upgradePlan — plan switch (event + audit + limit changes) and same-plan no-op
+ *
+ * The repository, EventEmitter2, and audit service are mocked; no database is touched.
+ */
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { RealtyPlan } from '@prisma/client';
+import type { business_subscriptions } from '@prisma/client';
+import type { RealtyLeadCreatedEvent } from '@gosumo/shared';
+
+import { BillingService, addMonths } from './billing.service';
+import { BillingRepository } from './billing.repository';
+import { RealtyOperationsAuditService } from '../realty-hardening/realty-operations-audit.service';
+import { OVERAGE_RATE_PAISE, PLAN_DEFINITIONS } from './billing.constants';
+
+const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
+const SUB_ID = '00000000-0000-4000-a000-0000000000ff';
+const CYCLE_START = new Date('2026-07-01T00:00:00Z');
+
+function makeSub(overrides: Partial<business_subscriptions> = {}): business_subscriptions {
+  const def = PLAN_DEFINITIONS[RealtyPlan.SOLO];
+  return {
+    id: SUB_ID,
+    business_id: BUSINESS_ID,
+    plan: RealtyPlan.SOLO,
+    monthly_lead_limit: def.monthlyLeadLimit,
+    seat_limit: def.seatLimit,
+    plan_price_paise: def.pricePaise,
+    overage_rate_paise: OVERAGE_RATE_PAISE,
+    billing_cycle_start: CYCLE_START,
+    leads_used_this_cycle: 0,
+    overage_leads_this_cycle: 0,
+    metadata: {},
+    created_at: CYCLE_START,
+    updated_at: CYCLE_START,
+    ...overrides,
+  } as business_subscriptions;
+}
+
+describe('addMonths', () => {
+  it('adds a whole month within a normal window', () => {
+    expect(addMonths(new Date('2026-07-01T00:00:00Z'), 1).toISOString()).toBe(
+      '2026-08-01T00:00:00.000Z',
+    );
+  });
+
+  it('clamps to month-end when the target month is shorter (Jan 31 → Feb 28)', () => {
+    expect(addMonths(new Date('2026-01-31T00:00:00Z'), 1).toISOString()).toBe(
+      '2026-02-28T00:00:00.000Z',
+    );
+  });
+
+  it('wraps the year (Dec → Jan)', () => {
+    expect(addMonths(new Date('2026-12-15T09:30:00Z'), 1).toISOString()).toBe(
+      '2027-01-15T09:30:00.000Z',
+    );
+  });
+
+  it('adds several months at once and preserves time-of-day', () => {
+    expect(addMonths(new Date('2026-07-01T13:45:07Z'), 5).toISOString()).toBe(
+      '2026-12-01T13:45:07.000Z',
+    );
+  });
+});
+
+describe('BillingService', () => {
+  let service: BillingService;
+  let repository: jest.Mocked<BillingRepository>;
+  let eventEmitter: jest.Mocked<EventEmitter2>;
+  let audit: jest.Mocked<RealtyOperationsAuditService>;
+
+  beforeEach(async () => {
+    const mockRepository: Partial<Record<keyof BillingRepository, jest.Mock>> = {
+      findByBusiness: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      incrementUsage: jest.fn(),
+      countSeats: jest.fn(),
+    };
+    const mockEventEmitter = { emit: jest.fn() };
+    const mockAudit = { record: jest.fn() };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        BillingService,
+        { provide: BillingRepository, useValue: mockRepository },
+        { provide: EventEmitter2, useValue: mockEventEmitter },
+        { provide: RealtyOperationsAuditService, useValue: mockAudit },
+      ],
+    }).compile();
+
+    service = module.get(BillingService);
+    repository = module.get(BillingRepository) as jest.Mocked<BillingRepository>;
+    eventEmitter = module.get(EventEmitter2) as jest.Mocked<EventEmitter2>;
+    audit = module.get(RealtyOperationsAuditService) as jest.Mocked<RealtyOperationsAuditService>;
+    jest.clearAllMocks();
+  });
+
+  it('should be defined', () => {
+    expect(service).toBeDefined();
+  });
+
+  // ── Subscription lifecycle ──
+  describe('getSubscription', () => {
+    it('lazily creates a default SOLO subscription on first access', async () => {
+      repository.findByBusiness.mockResolvedValue(null);
+      const created = makeSub();
+      repository.create.mockResolvedValue(created);
+
+      const result = await service.getSubscription(BUSINESS_ID, CYCLE_START);
+
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          businessId: BUSINESS_ID,
+          plan: RealtyPlan.SOLO,
+          monthlyLeadLimit: 300,
+          seatLimit: 1,
+          planPricePaise: 399900,
+          overageRatePaise: OVERAGE_RATE_PAISE,
+          billingCycleStart: CYCLE_START,
+        }),
+      );
+      expect(result.plan).toBe(RealtyPlan.SOLO);
+    });
+
+    it('returns the existing subscription without creating a new one', async () => {
+      repository.findByBusiness.mockResolvedValue(makeSub({ plan: RealtyPlan.TEAM }));
+
+      const result = await service.getSubscription(BUSINESS_ID, CYCLE_START);
+
+      expect(repository.create).not.toHaveBeenCalled();
+      expect(result.plan).toBe(RealtyPlan.TEAM);
+    });
+  });
+
+  // ── Cycle rollover ──
+  describe('billing cycle rollover', () => {
+    it('does not roll over while the cycle is still current', async () => {
+      repository.findByBusiness.mockResolvedValue(makeSub({ leads_used_this_cycle: 42 }));
+
+      const result = await service.getSubscription(
+        BUSINESS_ID,
+        new Date('2026-07-20T00:00:00Z'),
+      );
+
+      expect(repository.update).not.toHaveBeenCalled();
+      expect(result.leads_used_this_cycle).toBe(42);
+    });
+
+    it('rolls the cycle forward and resets usage counters once a month elapses', async () => {
+      repository.findByBusiness.mockResolvedValue(
+        makeSub({ leads_used_this_cycle: 120, overage_leads_this_cycle: 3 }),
+      );
+      repository.update.mockResolvedValue(
+        makeSub({
+          billing_cycle_start: new Date('2026-08-01T00:00:00Z'),
+          leads_used_this_cycle: 0,
+          overage_leads_this_cycle: 0,
+        }),
+      );
+
+      const result = await service.getSubscription(
+        BUSINESS_ID,
+        new Date('2026-08-05T00:00:00Z'),
+      );
+
+      expect(repository.update).toHaveBeenCalledWith(BUSINESS_ID, {
+        billingCycleStart: new Date('2026-08-01T00:00:00Z'),
+        leadsUsedThisCycle: 0,
+        overageLeadsThisCycle: 0,
+      });
+      expect(result.leads_used_this_cycle).toBe(0);
+    });
+
+    it('advances multiple whole months when several cycles were skipped', async () => {
+      // Cycle started 2026-05-01; "now" is 2026-07-03 → two months elapsed → 2026-07-01.
+      repository.findByBusiness.mockResolvedValue(
+        makeSub({ billing_cycle_start: new Date('2026-05-01T00:00:00Z') }),
+      );
+      repository.update.mockResolvedValue(makeSub());
+
+      await service.getSubscription(BUSINESS_ID, new Date('2026-07-03T00:00:00Z'));
+
+      expect(repository.update).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        expect.objectContaining({
+          billingCycleStart: new Date('2026-07-01T00:00:00Z'),
+          leadsUsedThisCycle: 0,
+          overageLeadsThisCycle: 0,
+        }),
+      );
+    });
+  });
+
+  // ── Limit checks ──
+  describe('checkPlanLimits — exchange', () => {
+    it('blocks the exchange on SOLO', async () => {
+      repository.findByBusiness.mockResolvedValue(makeSub({ plan: RealtyPlan.SOLO }));
+      const check = await service.checkPlanLimits(BUSINESS_ID, 'exchange', CYCLE_START);
+      expect(check.allowed).toBe(false);
+    });
+
+    it('allows the exchange on TEAM', async () => {
+      repository.findByBusiness.mockResolvedValue(makeSub({ plan: RealtyPlan.TEAM }));
+      const check = await service.checkPlanLimits(BUSINESS_ID, 'exchange', CYCLE_START);
+      expect(check.allowed).toBe(true);
+    });
+
+    it('allows the exchange on DEVELOPER', async () => {
+      repository.findByBusiness.mockResolvedValue(makeSub({ plan: RealtyPlan.DEVELOPER }));
+      const check = await service.checkPlanLimits(BUSINESS_ID, 'exchange', CYCLE_START);
+      expect(check.allowed).toBe(true);
+    });
+  });
+
+  describe('checkPlanLimits — seats', () => {
+    it('allows a new seat below the limit', async () => {
+      repository.findByBusiness.mockResolvedValue(makeSub({ seat_limit: 5 }));
+      repository.countSeats.mockResolvedValue(2);
+
+      const check = await service.checkPlanLimits(BUSINESS_ID, 'seats', CYCLE_START);
+
+      expect(check.allowed).toBe(true);
+      expect(check.remaining).toBe(3);
+      expect(check.overLimit).toBe(false);
+    });
+
+    it('blocks a new seat at the limit', async () => {
+      repository.findByBusiness.mockResolvedValue(makeSub({ seat_limit: 1 }));
+      repository.countSeats.mockResolvedValue(1);
+
+      const check = await service.checkPlanLimits(BUSINESS_ID, 'seats', CYCLE_START);
+
+      expect(check.allowed).toBe(false);
+      expect(check.overLimit).toBe(true);
+      expect(check.remaining).toBe(0);
+    });
+
+    it('treats a null seat limit as unlimited (DEVELOPER)', async () => {
+      repository.findByBusiness.mockResolvedValue(
+        makeSub({ plan: RealtyPlan.DEVELOPER, seat_limit: null }),
+      );
+      repository.countSeats.mockResolvedValue(999);
+
+      const check = await service.checkPlanLimits(BUSINESS_ID, 'seats', CYCLE_START);
+
+      expect(check.allowed).toBe(true);
+      expect(check.limit).toBeNull();
+      expect(check.remaining).toBeNull();
+    });
+  });
+
+  describe('checkPlanLimits — leads', () => {
+    it('allows a lead below the monthly limit', async () => {
+      repository.findByBusiness.mockResolvedValue(
+        makeSub({ monthly_lead_limit: 300, leads_used_this_cycle: 100 }),
+      );
+
+      const check = await service.checkPlanLimits(BUSINESS_ID, 'leads', CYCLE_START);
+
+      expect(check.allowed).toBe(true);
+      expect(check.overLimit).toBe(false);
+      expect(check.remaining).toBe(200);
+    });
+
+    it('allows an over-limit lead when the plan auto-bills overage (default)', async () => {
+      repository.findByBusiness.mockResolvedValue(
+        makeSub({ monthly_lead_limit: 300, leads_used_this_cycle: 300 }),
+      );
+
+      const check = await service.checkPlanLimits(BUSINESS_ID, 'leads', CYCLE_START);
+
+      expect(check.overLimit).toBe(true);
+      expect(check.autoBillOverage).toBe(true);
+      expect(check.allowed).toBe(true);
+      expect(check.remaining).toBe(0);
+    });
+
+    it('hard-blocks an over-limit lead when metadata.hardCap is set', async () => {
+      repository.findByBusiness.mockResolvedValue(
+        makeSub({
+          monthly_lead_limit: 300,
+          leads_used_this_cycle: 300,
+          metadata: { hardCap: true },
+        }),
+      );
+
+      const check = await service.checkPlanLimits(BUSINESS_ID, 'leads', CYCLE_START);
+
+      expect(check.overLimit).toBe(true);
+      expect(check.autoBillOverage).toBe(false);
+      expect(check.allowed).toBe(false);
+    });
+
+    it('treats a null lead limit as unlimited (DEVELOPER)', async () => {
+      repository.findByBusiness.mockResolvedValue(
+        makeSub({ plan: RealtyPlan.DEVELOPER, monthly_lead_limit: null, leads_used_this_cycle: 5000 }),
+      );
+
+      const check = await service.checkPlanLimits(BUSINESS_ID, 'leads', CYCLE_START);
+
+      expect(check.allowed).toBe(true);
+      expect(check.overLimit).toBe(false);
+      expect(check.remaining).toBeNull();
+    });
+  });
+
+  describe('canUseExchange', () => {
+    it('returns false for SOLO and true for TEAM', async () => {
+      repository.findByBusiness.mockResolvedValueOnce(makeSub({ plan: RealtyPlan.SOLO }));
+      expect(await service.canUseExchange(BUSINESS_ID)).toBe(false);
+
+      repository.findByBusiness.mockResolvedValueOnce(makeSub({ plan: RealtyPlan.TEAM }));
+      expect(await service.canUseExchange(BUSINESS_ID)).toBe(true);
+    });
+  });
+
+  // ── Usage recording ──
+  describe('recordLeadUsage', () => {
+    it('increments usage and emits realty.lead_usage.recorded', async () => {
+      repository.findByBusiness.mockResolvedValue(
+        makeSub({ monthly_lead_limit: 300, leads_used_this_cycle: 10 }),
+      );
+      repository.incrementUsage.mockResolvedValue(
+        makeSub({ monthly_lead_limit: 300, leads_used_this_cycle: 11 }),
+      );
+
+      await service.recordLeadUsage(BUSINESS_ID, CYCLE_START);
+
+      expect(repository.incrementUsage).toHaveBeenCalledWith(BUSINESS_ID, 1, 0);
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'realty.lead_usage.recorded',
+        expect.objectContaining({
+          type: 'realty.lead_usage.recorded',
+          leadsUsed: 11,
+          monthlyLeadLimit: 300,
+          overage: false,
+        }),
+      );
+    });
+
+    it('bills a lead beyond the included allotment as overage', async () => {
+      repository.findByBusiness.mockResolvedValue(
+        makeSub({ monthly_lead_limit: 300, leads_used_this_cycle: 300 }),
+      );
+      repository.incrementUsage.mockResolvedValue(
+        makeSub({ monthly_lead_limit: 300, leads_used_this_cycle: 301, overage_leads_this_cycle: 1 }),
+      );
+
+      await service.recordLeadUsage(BUSINESS_ID, CYCLE_START);
+
+      // overageDelta of 1 → the lead is billed as overage.
+      expect(repository.incrementUsage).toHaveBeenCalledWith(BUSINESS_ID, 1, 1);
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'realty.lead_usage.recorded',
+        expect.objectContaining({ overage: true }),
+      );
+    });
+
+    it('fires realty.lead_limit.reached exactly once, on the lead that hits the cap', async () => {
+      repository.findByBusiness.mockResolvedValue(
+        makeSub({ monthly_lead_limit: 300, leads_used_this_cycle: 299 }),
+      );
+      repository.incrementUsage.mockResolvedValue(
+        makeSub({ monthly_lead_limit: 300, leads_used_this_cycle: 300 }),
+      );
+
+      await service.recordLeadUsage(BUSINESS_ID, CYCLE_START);
+
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'realty.lead_limit.reached',
+        expect.objectContaining({
+          type: 'realty.lead_limit.reached',
+          plan: RealtyPlan.SOLO,
+          monthlyLeadLimit: 300,
+          leadsUsed: 300,
+        }),
+      );
+    });
+
+    it('does not re-fire the limit alert once already over the cap', async () => {
+      repository.findByBusiness.mockResolvedValue(
+        makeSub({ monthly_lead_limit: 300, leads_used_this_cycle: 305 }),
+      );
+      repository.incrementUsage.mockResolvedValue(
+        makeSub({ monthly_lead_limit: 300, leads_used_this_cycle: 306, overage_leads_this_cycle: 6 }),
+      );
+
+      await service.recordLeadUsage(BUSINESS_ID, CYCLE_START);
+
+      expect(eventEmitter.emit).not.toHaveBeenCalledWith(
+        'realty.lead_limit.reached',
+        expect.anything(),
+      );
+    });
+
+    it('never bills overage or fires the limit alert on an unlimited plan', async () => {
+      repository.findByBusiness.mockResolvedValue(
+        makeSub({ plan: RealtyPlan.DEVELOPER, monthly_lead_limit: null, leads_used_this_cycle: 9000 }),
+      );
+      repository.incrementUsage.mockResolvedValue(
+        makeSub({ plan: RealtyPlan.DEVELOPER, monthly_lead_limit: null, leads_used_this_cycle: 9001 }),
+      );
+
+      await service.recordLeadUsage(BUSINESS_ID, CYCLE_START);
+
+      expect(repository.incrementUsage).toHaveBeenCalledWith(BUSINESS_ID, 1, 0);
+      expect(eventEmitter.emit).not.toHaveBeenCalledWith(
+        'realty.lead_limit.reached',
+        expect.anything(),
+      );
+    });
+  });
+
+  // ── Event listener ──
+  describe('onLeadCreated', () => {
+    const event = {
+      businessId: BUSINESS_ID,
+      type: 'realty.lead.created',
+    } as RealtyLeadCreatedEvent;
+
+    it('records usage for the created lead', async () => {
+      const spy = jest.spyOn(service, 'recordLeadUsage').mockResolvedValue(makeSub());
+      await service.onLeadCreated(event);
+      expect(spy).toHaveBeenCalledWith(BUSINESS_ID);
+    });
+
+    it('swallows a billing error so lead capture is never aborted', async () => {
+      jest.spyOn(service, 'recordLeadUsage').mockRejectedValue(new Error('db down'));
+      await expect(service.onLeadCreated(event)).resolves.toBeUndefined();
+    });
+  });
+
+  // ── Usage summary ──
+  describe('getUsageSummary', () => {
+    it('summarises plan, meters, seats, and the accrued overage charge', async () => {
+      repository.findByBusiness.mockResolvedValue(
+        makeSub({
+          plan: RealtyPlan.TEAM,
+          monthly_lead_limit: 1500,
+          seat_limit: 5,
+          plan_price_paise: 999900,
+          leads_used_this_cycle: 1600,
+          overage_leads_this_cycle: 100,
+          overage_rate_paise: 800,
+        }),
+      );
+      repository.countSeats.mockResolvedValue(3);
+
+      const summary = await service.getUsageSummary(BUSINESS_ID, CYCLE_START);
+
+      expect(summary.plan).toBe(RealtyPlan.TEAM);
+      expect(summary.planLabel).toBe('Team');
+      expect(summary.exchangeEnabled).toBe(true);
+      expect(summary.leadsUsedThisCycle).toBe(1600);
+      expect(summary.overageLeadsThisCycle).toBe(100);
+      expect(summary.overageChargePaise).toBe(80000); // 100 × 800
+      expect(summary.seatsUsed).toBe(3);
+      expect(summary.billingCycleEnd).toEqual(new Date('2026-08-01T00:00:00Z'));
+      expect(summary.meters).toEqual([
+        { key: 'leads', label: 'Leads this cycle', used: 1600, limit: 1500, unit: 'leads' },
+        { key: 'seats', label: 'Team seats', used: 3, limit: 5, unit: 'seats' },
+      ]);
+    });
+  });
+
+  // ── Upgrades ──
+  describe('upgradePlan', () => {
+    it('switches the plan, applies the new limits, and emits + audits the change', async () => {
+      const solo = makeSub({ plan: RealtyPlan.SOLO, leads_used_this_cycle: 50 });
+      // getSubscription (start) then getUsageSummary (end) both hit findByBusiness.
+      repository.findByBusiness
+        .mockResolvedValueOnce(solo)
+        .mockResolvedValueOnce(makeSub({ plan: RealtyPlan.TEAM, leads_used_this_cycle: 50 }));
+      repository.update.mockResolvedValue(makeSub({ plan: RealtyPlan.TEAM }));
+      repository.countSeats.mockResolvedValue(1);
+
+      const summary = await service.upgradePlan(BUSINESS_ID, RealtyPlan.TEAM, CYCLE_START);
+
+      expect(repository.update).toHaveBeenCalledWith(BUSINESS_ID, {
+        plan: RealtyPlan.TEAM,
+        monthlyLeadLimit: 1500,
+        seatLimit: 5,
+        planPricePaise: 999900,
+      });
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'realty.plan.changed',
+        expect.objectContaining({
+          type: 'realty.plan.changed',
+          fromPlan: RealtyPlan.SOLO,
+          toPlan: RealtyPlan.TEAM,
+        }),
+      );
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          businessId: BUSINESS_ID,
+          action: 'UPDATE',
+          resourceType: 'business_subscription',
+          before: { plan: RealtyPlan.SOLO },
+          after: { plan: RealtyPlan.TEAM, pricePaise: 999900 },
+        }),
+      );
+      // Mid-cycle upgrade preserves the running lead counter.
+      expect(summary.leadsUsedThisCycle).toBe(50);
+    });
+
+    it('is a no-op when the target plan matches the current plan', async () => {
+      repository.findByBusiness.mockResolvedValue(makeSub({ plan: RealtyPlan.TEAM }));
+      repository.countSeats.mockResolvedValue(1);
+
+      await service.upgradePlan(BUSINESS_ID, RealtyPlan.TEAM, CYCLE_START);
+
+      expect(repository.update).not.toHaveBeenCalled();
+      expect(eventEmitter.emit).not.toHaveBeenCalledWith('realty.plan.changed', expect.anything());
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+  });
+});

@@ -703,6 +703,8 @@ model businesses {
   business_subscription       business_subscriptions?
   consent_logs                consent_logs[]
   realty_compliance_settings  realty_compliance_settings?
+  realty_integration_connections realty_integration_connections[]
+  realty_eoi_requests            realty_eoi_requests[]
 
   @@index([slug])
   @@index([email])
@@ -3213,4 +3215,152 @@ model realty_compliance_settings {
   business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
 
   @@map("realty_compliance_settings")
+}
+
+// ─────────────────────────────────────────────
+// REALTY — OUTBOUND INTEGRATIONS (Phase 5)
+//   Google Sheets export · CRM push · Razorpay EOI · parser health
+// ─────────────────────────────────────────────
+
+/// External systems a business can wire GoSumo Realty into.
+enum RealtyIntegrationProvider {
+  GOOGLE_SHEETS
+  SELLDO
+  LEADSQUARED
+  PRIVYR
+}
+
+/// Connection health for an outbound integration.
+enum RealtyIntegrationStatus {
+  DISCONNECTED
+  CONNECTED
+  ERROR
+}
+
+/// Lifecycle of an Expression-of-Interest (टोकन) payment request.
+enum RealtyEoiStatus {
+  PENDING_APPROVAL
+  APPROVED
+  LINK_SENT
+  PAID
+  EXPIRED
+  REJECTED
+  CANCELLED
+}
+
+/// Result of a portal-email parser health probe.
+enum RealtyParserHealthStatus {
+  HEALTHY
+  DEGRADED
+  FAILED
+}
+
+/// One connection per (business, provider) to an external system — Google Sheets
+/// (nightly leads/inventory export) or an Indian CRM (Sell.Do / LeadSquared /
+/// Privyr) that leads are pushed to on create/update/stage-change. `config` holds
+/// the provider credentials (OAuth tokens, API keys) and settings; it is never
+/// surfaced on read DTOs.
+model realty_integration_connections {
+  id          String                    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String                    @db.Uuid
+  provider    RealtyIntegrationProvider
+  status      RealtyIntegrationStatus   @default(DISCONNECTED)
+
+  /// Provider secrets + settings — { accessToken, refreshToken, apiKey, spreadsheetId, ... }.
+  /// PRIVATE: stripped from every response DTO; only the sync worker reads it.
+  config Json @default("{}") @db.JsonB
+
+  /// A human-facing external reference (spreadsheet id, CRM account id/subdomain).
+  external_ref String? @db.VarChar(255)
+
+  last_sync_at   DateTime? @db.Timestamptz
+  last_error     String?   @db.Text
+  sync_count     Int       @default(0)
+  pushed_count   Int       @default(0)
+  metadata       Json      @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@unique([business_id, provider], map: "uq_realty_integration_business_provider")
+  @@index([business_id, status])
+  @@index([provider, status])
+  @@index([deleted_at])
+  @@map("realty_integration_connections")
+}
+
+/// An Expression-of-Interest token (बुकिंग टोकन) payment request against a
+/// qualified lead. A broker must APPROVE before the Razorpay payment link is
+/// generated and sent; the link's payment then advances the lead's stage.
+/// Money in rupees (Decimal); paise at the API boundary.
+model realty_eoi_requests {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  /// Loose UUID references (module-boundary decoupling), FK-enforced at the DB.
+  lead_id String  @db.Uuid
+  unit_id String? @db.Uuid
+
+  /// Token amount in rupees.
+  amount   Decimal @db.Decimal(14, 2)
+  currency String  @default("INR") @db.Char(3)
+  /// Buyer-facing label for the token, e.g. "टोकन", "बुकिंग राशि".
+  token_label String @default("टोकन") @db.VarChar(60)
+
+  status RealtyEoiStatus @default(PENDING_APPROVAL)
+
+  /// Razorpay payment-link id (plink_xxx) + its short url, set once approved+sent.
+  payment_link_id   String? @db.VarChar(120)
+  payment_link_url  String? @db.Text
+  gateway_payment_id String? @db.VarChar(120)
+
+  requested_by  String?   @db.Uuid
+  approved_by   String?   @db.Uuid
+  approved_at   DateTime? @db.Timestamptz
+  sent_at       DateTime? @db.Timestamptz
+  paid_at       DateTime? @db.Timestamptz
+  expires_at    DateTime? @db.Timestamptz
+  reject_reason String?   @db.Text
+
+  notes    Json @default("{}") @db.JsonB
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, status])
+  @@index([business_id, lead_id])
+  @@index([business_id, payment_link_id])
+  @@map("realty_eoi_requests")
+}
+
+/// A platform-ops snapshot of a portal-email parser probe (99acres / MagicBricks
+/// / Housing.com). NOT tenant-scoped — parsers are global code, and this table
+/// records whether they still extract a valid candidate from known-good sample
+/// emails, so format drift (a portal changing its template) is caught early. No
+/// tenant data is stored, so no RLS.
+model realty_parser_health_checks {
+  id     String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  portal String                   @db.VarChar(40)
+  status RealtyParserHealthStatus
+
+  sample_count Int
+  pass_count   Int
+  fail_count   Int
+  empty_count  Int @default(0)
+
+  /// Per-sample outcomes + which expected fields went missing.
+  details Json @default("{}") @db.JsonB
+
+  checked_at DateTime @default(now()) @db.Timestamptz
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  @@index([portal, checked_at(sort: Desc)])
+  @@index([status, checked_at(sort: Desc)])
+  @@map("realty_parser_health_checks")
 }

@@ -81,6 +81,15 @@ export class PlanGuard implements CanActivate {
       });
     }
 
+    if (resource === 'crm_sync') {
+      throw new ForbiddenException({
+        code: 'PLAN_CRM_SYNC_LOCKED',
+        message: `CRM sync is not available on the ${planLabel(check.plan)} plan. Upgrade to Developer to push leads to Sell.Do, LeadSquared, or Privyr.`,
+        plan: check.plan,
+        upgrade: true,
+      });
+    }
+
     // exchange
     throw new ForbiddenException({
       code: 'PLAN_EXCHANGE_LOCKED',

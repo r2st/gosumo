@@ -176,8 +176,11 @@ export class BillingService {
     const sub = await this.getSubscription(businessId, now);
     const plan = sub.plan;
 
-    if (resource === 'exchange') {
-      const enabled = PLAN_DEFINITIONS[plan].exchangeEnabled;
+    if (resource === 'exchange' || resource === 'crm_sync') {
+      const enabled =
+        resource === 'exchange'
+          ? PLAN_DEFINITIONS[plan].exchangeEnabled
+          : PLAN_DEFINITIONS[plan].crmSyncEnabled;
       return {
         resource,
         allowed: enabled,
@@ -226,6 +229,16 @@ export class BillingService {
   /** Convenience: whether the plan unlocks the co-broking exchange. */
   async canUseExchange(businessId: string): Promise<boolean> {
     const check = await this.checkPlanLimits(businessId, 'exchange');
+    return check.allowed;
+  }
+
+  /**
+   * Convenience: whether the plan unlocks CRM sync (Developer only). The
+   * event-driven CRM push path is gated on this — advertised on the Developer
+   * tier as "CRM sync", enforced here.
+   */
+  async canUseCrmSync(businessId: string): Promise<boolean> {
+    const check = await this.checkPlanLimits(businessId, 'crm_sync');
     return check.allowed;
   }
 
