@@ -26,7 +26,7 @@ updateProgress(businessId, dto)          // set one step's status (default COMPL
 complete(businessId)                     // requires all REQUIRED_STEPS done; skips remaining
 
 // OnboardingAssistantService — AI help
-chat(businessId, dto)                    // grounded Claude reply; static fallback if LLM down
+chat(businessId, dto)                    // grounded LLM reply via OpenRouter; static fallback if LLM down
 ```
 
 ## Endpoints (controller path `onboarding`; `/v1` is the documented version prefix)
@@ -54,9 +54,9 @@ The module owns no tables of its own.
 
 ## AI assistant
 
-Reuses ai-engine's `LlmClientService` (stateless Claude wrapper, only needs
+Reuses ai-engine's `LlmClientService` (stateless OpenRouter LLM wrapper, only needs
 `ConfigService`). Answers are grounded in `ONBOARDING_KNOWLEDGE` per step. If the
-LLM is unavailable (no `ANTHROPIC_API_KEY`, timeout, error) it returns a
+LLM is unavailable (no `OPENROUTER_API_KEY`, timeout, error) it returns a
 deterministic fallback built from the same knowledge base, with
 `source: 'fallback'`.
 

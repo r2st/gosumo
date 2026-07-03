@@ -17,7 +17,7 @@ import { RealtyAuditService } from './realty-audit.service';
  * RealtyAiModule — the GoSumo Realty AI loop (blueprint §16), layered on top of
  * the general `ai-engine`. It grounds every turn in verified inventory
  * (`realty-inventory`) and lead state (`realty-leads`), and reuses the base
- * `LlmClientService` (Claude) + `GuardrailsService` (jailbreak/PII), which are
+ * `LlmClientService` (OpenRouter) + `GuardrailsService` (jailbreak/PII), which are
  * stateless and provided locally here.
  */
 @Module({

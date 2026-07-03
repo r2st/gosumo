@@ -1,10 +1,10 @@
 # Module: ai-engine
 
-The cognitive core of GoSumo. Receives conversation context, classifies intent, retrieves business knowledge via RAG, calls Anthropic Claude, scores confidence deterministically, and routes the result to auto-execute, draft review, or full escalation. Also owns the knowledge base ingestion pipeline.
+The cognitive core of GoSumo. Receives conversation context, classifies intent, retrieves business knowledge via RAG, calls an LLM through **OpenRouter** (free-tier models, OpenAI-compatible chat-completions API), scores confidence deterministically, and routes the result to auto-execute, draft review, or full escalation. Also owns the knowledge base ingestion pipeline.
 
 ## Purpose
 
-Classify intent, retrieve RAG context from Qdrant, assemble system prompts, call Claude, parse structured responses, score confidence, and route to the correct action path.
+Classify intent, retrieve RAG context from Qdrant, assemble system prompts, call the LLM via OpenRouter, parse structured responses, score confidence, and route to the correct action path.
 
 ## Public API (IAIEngineService)
 
@@ -60,7 +60,7 @@ confidence = (data_availability × 0.5) + (policy_clarity × 0.5)
 - `@gosumo/payment` — `createPaymentLink()`
 - `@gosumo/order` — `getOrderStatus()`
 - `@gosumo/tenant` — `getAIConfig()`, `getPolicies()`
-- Anthropic SDK, Qdrant client, BullMQ
+- OpenRouter (via `fetch`, no provider SDK), Qdrant client, BullMQ
 
 ## Test Command
 

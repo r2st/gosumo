@@ -57,7 +57,7 @@ export const REALTY_INTENT_POLICY: Record<RealtyIntent, RealtyRoutePolicy> = {
 };
 
 // ─────────────────────────────────────────────
-// Model routing — pick a Claude tier by intent
+// Model routing — pick an OpenRouter free-model tier by intent
 // ─────────────────────────────────────────────
 
 /** Classification + BLTC extraction is cheap; run it on the fast tier every turn. */

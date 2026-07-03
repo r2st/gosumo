@@ -34,7 +34,7 @@ Respond with a single valid JSON object and nothing else:
   "reasoning": "<one sentence>"
 }`;
 
-/** Shape the realty classifier expects back from Claude. */
+/** Shape the realty classifier expects back from the model. */
 export interface RealtyLlmIntentResult {
   primaryIntent: RealtyIntentValue;
   secondaryIntent: RealtyIntentValue | null;

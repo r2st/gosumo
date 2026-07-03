@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { LLM_MAX_TOKENS, LLM_TIMEOUT_MS, DEFAULT_MODEL } from '../ai-engine.constants';
 
 /**
- * Options for a single Claude completion.
+ * Options for a single LLM completion (served by OpenRouter).
  */
 export interface LlmCompletionRequest {
   system: string;
@@ -122,11 +122,11 @@ export class LlmClientService {
         const isLast = attempt === this.maxAttempts;
         if (isLast) {
           this.logger.error(
-            `Claude completion failed after ${attempt} attempt(s): ${lastError.message}`,
+            `OpenRouter completion failed after ${attempt} attempt(s): ${lastError.message}`,
           );
         } else {
           this.logger.warn(
-            `Claude completion attempt ${attempt} failed, retrying: ${lastError.message}`,
+            `OpenRouter completion attempt ${attempt} failed, retrying: ${lastError.message}`,
           );
           await this.sleep(1000);
         }
@@ -134,7 +134,7 @@ export class LlmClientService {
     }
 
     throw new LlmUnavailableError(
-      lastError?.message ?? 'Claude completion failed after all retries',
+      lastError?.message ?? 'OpenRouter completion failed after all retries',
     );
   }
 

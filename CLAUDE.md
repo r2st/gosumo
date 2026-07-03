@@ -13,7 +13,7 @@ GoSumo is an AI-powered client management platform that lets small businesses in
 | Primary DB | PostgreSQL 16 |
 | Cache / Queue broker | Redis 7 (BullMQ, sessions, pub/sub) |
 | Vector store | Qdrant |
-| AI | Anthropic Claude (primary LLM) |
+| AI | OpenRouter (free-tier models, e.g. `openai/gpt-oss-20b:free` / `openai/gpt-oss-120b:free`) via the OpenAI-compatible chat-completions API |
 | Monorepo | Turborepo + pnpm workspaces |
 
 ## Key Commands
@@ -100,4 +100,4 @@ Example: `feat(payment): add COD confirmation flow`
 
 ## Environment
 
-Copy `apps/api/.env.example` to `apps/api/.env` and fill in values before running. Required: `DATABASE_URL`, `REDIS_URL`, `ANTHROPIC_API_KEY`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `JWT_SECRET`.
+Copy `apps/api/.env.example` to `apps/api/.env` and fill in values before running. Required: `DATABASE_URL`, `REDIS_URL`, `OPENROUTER_API_KEY`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `JWT_SECRET`.

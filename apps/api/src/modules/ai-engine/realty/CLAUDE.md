@@ -28,7 +28,7 @@ The AI may quote ONLY what is in `<verified_fact_sheets>` (matched projects/unit
 
 ## Reuses
 
-- `LlmClientService` (Claude) + `GuardrailsService` (jailbreak/PII) from the base `ai-engine` (provided locally — both stateless).
+- `LlmClientService` (OpenRouter, free-tier models) + `GuardrailsService` (jailbreak/PII) from the base `ai-engine` (provided locally — both stateless).
 - `RealtyLeadsService` (BLTC merge + qualification) and `RealtyInventoryService` (BLTC→unit matching + fact sheets).
 
 ## Test
