@@ -222,4 +222,79 @@ export interface ChannelAdapter {
     downloadMedia(mediaId: string): Promise<Buffer>;
     uploadMedia(buffer: Buffer, mimeType: string): Promise<string>;
 }
+/**
+ * The structured buyer requirement the AI extracts conversationally
+ * (blueprint §16.2). Everything downstream — matching, cadences, the
+ * exchange — keys off this object. Amounts are integer paise.
+ *
+ * A slot is "known" when its value is non-null; the BLTC state machine
+ * asks for at most one unknown slot per turn and never re-asks a known one.
+ */
+export interface BltcProfile {
+    /** Budget floor in paise (null = unknown). */
+    budgetMinPaise: number | null;
+    /** Budget ceiling in paise (null = unknown). */
+    budgetMaxPaise: number | null;
+    /** Preferred localities/corridors (empty = unknown). */
+    localities: string[];
+    /** Purchase horizon in months (null = unknown). */
+    timelineMonths: number | null;
+    /** Unit configuration, e.g. "2BHK" (null = unknown). */
+    config: string | null;
+    /** End-use vs investment (null = unknown). */
+    purpose: LeadPurposeValue | null;
+    /** Financing posture (null = unknown). */
+    financing: FinancingStatusValue | null;
+}
+/** String-literal mirror of the LeadPurpose enum (shared has no runtime dep). */
+export type LeadPurposeValue = 'END_USE' | 'INVEST';
+/** String-literal mirror of the FinancingStatus enum. */
+export type FinancingStatusValue = 'CASH' | 'PREAPPROVED' | 'NEEDS_LOAN';
+/** Which BLTC slots remain UNKNOWN — the state-machine's working set. */
+export interface BltcSlotState {
+    budget: boolean;
+    location: boolean;
+    timeline: boolean;
+    config: boolean;
+    purpose: boolean;
+    financing: boolean;
+}
+/**
+ * A single memory fact the AI must never lose (blueprint §5.1):
+ * an extracted fact ("wife wants east-facing"), an objection, or a promise.
+ */
+export interface LeadMemoryEntry {
+    text: string;
+    /** ISO-8601 capture time. */
+    at: string;
+    /** Optional source message id for provenance. */
+    messageId?: string;
+}
+/** Result of scoring a lead (blueprint §16.2 weights). */
+export interface LeadScoreResult {
+    /** 0–100 composite qualification score. */
+    score: number;
+    temperature: 'HOT' | 'WARM' | 'COLD' | 'JUNK';
+    /** Per-factor contribution for explainability. */
+    breakdown: {
+        budgetFit: number;
+        timeline: number;
+        engagement: number;
+        financing: number;
+        purpose: number;
+    };
+}
+/** A matched unit returned by the inventory matching service, ranked by fit. */
+export interface UnitMatch {
+    unitId: string;
+    projectId: string;
+    projectName: string;
+    config: string;
+    allInPricePaise: number;
+    locality: string;
+    /** 0–100 fit score. */
+    fitScore: number;
+    /** Why it matched — human-readable reasons for the broker/AI. */
+    reasons: string[];
+}
 //# sourceMappingURL=index.d.ts.map

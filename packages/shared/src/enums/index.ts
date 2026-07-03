@@ -310,3 +310,106 @@ export enum CartStatus {
   CONVERTED = 'CONVERTED',
   ABANDONED = 'ABANDONED',
 }
+
+// ─────────────────────────────────────────────
+// REALTY — LEADS
+// ─────────────────────────────────────────────
+
+/**
+ * Where a real-estate lead was born. Attribution is recorded at birth
+ * (blueprint §14) and never mutated — it drives source-level ROI.
+ */
+export enum LeadSource {
+  PORTAL = 'PORTAL', // 99acres / MagicBricks / Housing enquiry emails
+  META_LEAD_AD = 'META_LEAD_AD', // Meta Lead Ads webhook
+  CTWA = 'CTWA', // Click-to-WhatsApp ad / listing chat link
+  IVR = 'IVR', // Missed-call → WhatsApp
+  REFERRAL = 'REFERRAL',
+  CSV = 'CSV', // Bulk / historical import
+  WALK_IN = 'WALK_IN',
+  EXCHANGE_INBOUND = 'EXCHANGE_INBOUND', // Syndicated from another broker (L2)
+  MANUAL = 'MANUAL',
+}
+
+/** Lead heat, derived from the qualification score. */
+export enum LeadTemperature {
+  HOT = 'HOT',
+  WARM = 'WARM',
+  COLD = 'COLD',
+  JUNK = 'JUNK',
+}
+
+/**
+ * Pipeline stage. Ordered NEW → … → CLOSED; DORMANT is a re-activation pool.
+ * Mirrors the broker's pipeline board on the dashboard.
+ */
+export enum LeadStage {
+  NEW = 'NEW',
+  CONTACTED = 'CONTACTED',
+  QUALIFIED = 'QUALIFIED',
+  VISIT_BOOKED = 'VISIT_BOOKED',
+  VISITED = 'VISITED',
+  NEGOTIATING = 'NEGOTIATING',
+  CLOSED_WON = 'CLOSED_WON',
+  CLOSED_LOST = 'CLOSED_LOST',
+  DORMANT = 'DORMANT',
+}
+
+/** Why the buyer is buying — changes matching and the follow-up track. */
+export enum LeadPurpose {
+  END_USE = 'END_USE',
+  INVEST = 'INVEST',
+}
+
+/** Financing posture — one of the BLTC-adjacent qualification slots. */
+export enum FinancingStatus {
+  CASH = 'CASH',
+  PREAPPROVED = 'PREAPPROVED',
+  NEEDS_LOAN = 'NEEDS_LOAN',
+}
+
+/** A lead's participation state in the co-broking exchange (L2). */
+export enum LeadExchangeStatus {
+  NONE = 'NONE',
+  ELIGIBLE = 'ELIGIBLE', // qualified but unmatched to own inventory
+  OFFERED = 'OFFERED',
+  SYNDICATED = 'SYNDICATED',
+  CLOSED = 'CLOSED',
+}
+
+// ─────────────────────────────────────────────
+// REALTY — INVENTORY (grounding layer)
+// ─────────────────────────────────────────────
+
+/** Construction / sale status of a project. */
+export enum ProjectStatus {
+  PRELAUNCH = 'PRELAUNCH',
+  UC = 'UC', // under construction
+  RTM = 'RTM', // ready to move
+}
+
+/**
+ * Availability of a specific unit. The AI may only assert AVAILABLE when
+ * `verified_at` is within 24 h — otherwise it must say "confirming".
+ */
+export enum UnitAvailability {
+  AVAILABLE = 'AVAILABLE',
+  HOLD = 'HOLD',
+  SOLD = 'SOLD',
+  UNVERIFIED = 'UNVERIFIED',
+}
+
+/** Whether a project/unit is exposed to the co-broking exchange (L2/L3). */
+export enum NetworkVisibility {
+  PRIVATE = 'PRIVATE',
+  EXCHANGE = 'EXCHANGE',
+}
+
+/** Kind of verified media asset attached to a project. */
+export enum RealtyAssetType {
+  BROCHURE = 'BROCHURE',
+  FLOORPLAN = 'FLOORPLAN',
+  PRICESHEET = 'PRICESHEET',
+  VIDEO = 'VIDEO',
+  PIN = 'PIN', // location pin
+}

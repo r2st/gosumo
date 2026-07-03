@@ -25,6 +25,8 @@ import { AdminModule } from './modules/admin/admin.module';
 import { ChannelsModule } from './modules/channels/channels.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { OnboardingModule } from './modules/onboarding/onboarding.module';
+import { RealtyLeadsModule } from './modules/realty-leads/realty-leads.module';
+import { RealtyInventoryModule } from './modules/realty-inventory/realty-inventory.module';
 
 @Module({
   imports: [
@@ -86,6 +88,10 @@ import { OnboardingModule } from './modules/onboarding/onboarding.module';
     ChannelsModule,
     IntegrationsModule,
     OnboardingModule,
+
+    // GoSumo Realty
+    RealtyLeadsModule,
+    RealtyInventoryModule,
   ],
 })
 export class AppModule {}

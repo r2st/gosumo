@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  Building2,
   CalendarClock,
   CreditCard,
   LayoutDashboard,
@@ -7,6 +8,7 @@ import {
   Package,
   Settings,
   ShoppingCart,
+  Target,
   Users,
   type LucideIcon,
 } from 'lucide-react';
@@ -19,6 +21,8 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { label: 'Leads', href: '/leads', icon: Target },
+  { label: 'Inventory', href: '/inventory', icon: Building2 },
   { label: 'Conversations', href: '/conversations', icon: MessagesSquare },
   { label: 'Clients', href: '/clients', icon: Users },
   { label: 'Catalog', href: '/catalog', icon: Package },

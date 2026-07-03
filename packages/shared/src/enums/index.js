@@ -3,7 +3,7 @@
 // CHANNEL & MESSAGING
 // ─────────────────────────────────────────────
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CartStatus = exports.DiscountType = exports.CatalogItemType = exports.CampaignType = exports.InvoiceStatus = exports.RefundMethod = exports.RefundType = exports.RefundStatus = exports.PaymentGateway = exports.TeamRole = exports.ShipmentStatus = exports.RecurrenceFrequency = exports.BookingActor = exports.BookingLocationType = exports.BookingStatus = exports.PaymentMethod = exports.PaymentStatus = exports.OrderStatus = exports.ConfidenceMode = exports.IntentType = exports.TaskPriority = exports.TaskType = exports.TaskStatus = exports.ConversationPriority = exports.ConversationStatus = exports.MessageStatus = exports.MessageContentType = exports.MessageDirection = exports.ChannelType = void 0;
+exports.RealtyAssetType = exports.NetworkVisibility = exports.UnitAvailability = exports.ProjectStatus = exports.LeadExchangeStatus = exports.FinancingStatus = exports.LeadPurpose = exports.LeadStage = exports.LeadTemperature = exports.LeadSource = exports.CartStatus = exports.DiscountType = exports.CatalogItemType = exports.CampaignType = exports.InvoiceStatus = exports.RefundMethod = exports.RefundType = exports.RefundStatus = exports.PaymentGateway = exports.TeamRole = exports.ShipmentStatus = exports.RecurrenceFrequency = exports.BookingActor = exports.BookingLocationType = exports.BookingStatus = exports.PaymentMethod = exports.PaymentStatus = exports.OrderStatus = exports.ConfidenceMode = exports.IntentType = exports.TaskPriority = exports.TaskType = exports.TaskStatus = exports.ConversationPriority = exports.ConversationStatus = exports.MessageStatus = exports.MessageContentType = exports.MessageDirection = exports.ChannelType = void 0;
 var ChannelType;
 (function (ChannelType) {
     ChannelType["WHATSAPP"] = "WHATSAPP";
@@ -300,4 +300,105 @@ var CartStatus;
     CartStatus["CONVERTED"] = "CONVERTED";
     CartStatus["ABANDONED"] = "ABANDONED";
 })(CartStatus || (exports.CartStatus = CartStatus = {}));
+// ─────────────────────────────────────────────
+// REALTY — LEADS
+// ─────────────────────────────────────────────
+/**
+ * Where a real-estate lead was born. Attribution is recorded at birth
+ * (blueprint §14) and never mutated — it drives source-level ROI.
+ */
+var LeadSource;
+(function (LeadSource) {
+    LeadSource["PORTAL"] = "PORTAL";
+    LeadSource["META_LEAD_AD"] = "META_LEAD_AD";
+    LeadSource["CTWA"] = "CTWA";
+    LeadSource["IVR"] = "IVR";
+    LeadSource["REFERRAL"] = "REFERRAL";
+    LeadSource["CSV"] = "CSV";
+    LeadSource["WALK_IN"] = "WALK_IN";
+    LeadSource["EXCHANGE_INBOUND"] = "EXCHANGE_INBOUND";
+    LeadSource["MANUAL"] = "MANUAL";
+})(LeadSource || (exports.LeadSource = LeadSource = {}));
+/** Lead heat, derived from the qualification score. */
+var LeadTemperature;
+(function (LeadTemperature) {
+    LeadTemperature["HOT"] = "HOT";
+    LeadTemperature["WARM"] = "WARM";
+    LeadTemperature["COLD"] = "COLD";
+    LeadTemperature["JUNK"] = "JUNK";
+})(LeadTemperature || (exports.LeadTemperature = LeadTemperature = {}));
+/**
+ * Pipeline stage. Ordered NEW → … → CLOSED; DORMANT is a re-activation pool.
+ * Mirrors the broker's pipeline board on the dashboard.
+ */
+var LeadStage;
+(function (LeadStage) {
+    LeadStage["NEW"] = "NEW";
+    LeadStage["CONTACTED"] = "CONTACTED";
+    LeadStage["QUALIFIED"] = "QUALIFIED";
+    LeadStage["VISIT_BOOKED"] = "VISIT_BOOKED";
+    LeadStage["VISITED"] = "VISITED";
+    LeadStage["NEGOTIATING"] = "NEGOTIATING";
+    LeadStage["CLOSED_WON"] = "CLOSED_WON";
+    LeadStage["CLOSED_LOST"] = "CLOSED_LOST";
+    LeadStage["DORMANT"] = "DORMANT";
+})(LeadStage || (exports.LeadStage = LeadStage = {}));
+/** Why the buyer is buying — changes matching and the follow-up track. */
+var LeadPurpose;
+(function (LeadPurpose) {
+    LeadPurpose["END_USE"] = "END_USE";
+    LeadPurpose["INVEST"] = "INVEST";
+})(LeadPurpose || (exports.LeadPurpose = LeadPurpose = {}));
+/** Financing posture — one of the BLTC-adjacent qualification slots. */
+var FinancingStatus;
+(function (FinancingStatus) {
+    FinancingStatus["CASH"] = "CASH";
+    FinancingStatus["PREAPPROVED"] = "PREAPPROVED";
+    FinancingStatus["NEEDS_LOAN"] = "NEEDS_LOAN";
+})(FinancingStatus || (exports.FinancingStatus = FinancingStatus = {}));
+/** A lead's participation state in the co-broking exchange (L2). */
+var LeadExchangeStatus;
+(function (LeadExchangeStatus) {
+    LeadExchangeStatus["NONE"] = "NONE";
+    LeadExchangeStatus["ELIGIBLE"] = "ELIGIBLE";
+    LeadExchangeStatus["OFFERED"] = "OFFERED";
+    LeadExchangeStatus["SYNDICATED"] = "SYNDICATED";
+    LeadExchangeStatus["CLOSED"] = "CLOSED";
+})(LeadExchangeStatus || (exports.LeadExchangeStatus = LeadExchangeStatus = {}));
+// ─────────────────────────────────────────────
+// REALTY — INVENTORY (grounding layer)
+// ─────────────────────────────────────────────
+/** Construction / sale status of a project. */
+var ProjectStatus;
+(function (ProjectStatus) {
+    ProjectStatus["PRELAUNCH"] = "PRELAUNCH";
+    ProjectStatus["UC"] = "UC";
+    ProjectStatus["RTM"] = "RTM";
+})(ProjectStatus || (exports.ProjectStatus = ProjectStatus = {}));
+/**
+ * Availability of a specific unit. The AI may only assert AVAILABLE when
+ * `verified_at` is within 24 h — otherwise it must say "confirming".
+ */
+var UnitAvailability;
+(function (UnitAvailability) {
+    UnitAvailability["AVAILABLE"] = "AVAILABLE";
+    UnitAvailability["HOLD"] = "HOLD";
+    UnitAvailability["SOLD"] = "SOLD";
+    UnitAvailability["UNVERIFIED"] = "UNVERIFIED";
+})(UnitAvailability || (exports.UnitAvailability = UnitAvailability = {}));
+/** Whether a project/unit is exposed to the co-broking exchange (L2/L3). */
+var NetworkVisibility;
+(function (NetworkVisibility) {
+    NetworkVisibility["PRIVATE"] = "PRIVATE";
+    NetworkVisibility["EXCHANGE"] = "EXCHANGE";
+})(NetworkVisibility || (exports.NetworkVisibility = NetworkVisibility = {}));
+/** Kind of verified media asset attached to a project. */
+var RealtyAssetType;
+(function (RealtyAssetType) {
+    RealtyAssetType["BROCHURE"] = "BROCHURE";
+    RealtyAssetType["FLOORPLAN"] = "FLOORPLAN";
+    RealtyAssetType["PRICESHEET"] = "PRICESHEET";
+    RealtyAssetType["VIDEO"] = "VIDEO";
+    RealtyAssetType["PIN"] = "PIN";
+})(RealtyAssetType || (exports.RealtyAssetType = RealtyAssetType = {}));
 //# sourceMappingURL=index.js.map

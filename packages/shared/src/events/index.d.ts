@@ -456,7 +456,69 @@ export interface NotificationSkippedEvent extends BaseEvent {
     category: string;
     reason: string;
 }
-export type DomainEvent = MessageReceivedEvent | MessageSentEvent | MessageFailedEvent | MessageStoredEvent | ConversationCreatedEvent | ConversationResolvedEvent | ConversationEscalatedEvent | ConversationStatusChangedEvent | ConversationAssignedEvent | AIIntentClassifiedEvent | AIResponseGeneratedEvent | AIResponseApprovedEvent | AIResponseRejectedEvent | TaskCreatedEvent | TaskAssignedEvent | TaskResolvedEvent | OrderCreatedEvent | OrderConfirmedEvent | OrderCancelledEvent | OrderPackedEvent | OrderPaidEvent | OrderShippedEvent | OrderDeliveredEvent | OrderReturnedEvent | PaymentCreatedEvent | PaymentSuccessEvent | PaymentFailedEvent | PaymentRefundEvent | InvoiceCreatedEvent | InvoiceIssuedEvent | InvoicePaidEvent | BookingCreatedEvent | BookingCancelledEvent | BookingConfirmedEvent | BookingRescheduledEvent | BookingCompletedEvent | BookingReminderEvent | ClientProfileUpdatedEvent | CatalogItemCreatedEvent | CatalogItemUpdatedEvent | CatalogStockLowEvent | CatalogStockOutEvent | NotificationQueuedEvent | NotificationSentEvent | NotificationDeliveredEvent | NotificationFailedEvent | NotificationSkippedEvent;
+/** Emitted when a new real-estate lead is captured from any source. */
+export interface RealtyLeadCreatedEvent extends BaseEvent {
+    readonly type: 'realty.lead.created';
+    leadId: string;
+    source: string;
+    whatsappPhone: string;
+    listingRef?: string;
+    conversationId?: string;
+}
+/** Emitted when a lead reaches 4/4 BLTC slots + reachable contact. */
+export interface RealtyLeadQualifiedEvent extends BaseEvent {
+    readonly type: 'realty.lead.qualified';
+    leadId: string;
+    qualScore: number;
+    temperature: string;
+}
+/** Emitted on any pipeline stage transition. */
+export interface RealtyLeadStageChangedEvent extends BaseEvent {
+    readonly type: 'realty.lead.stage_changed';
+    leadId: string;
+    fromStage: string;
+    toStage: string;
+}
+/**
+ * Emitted when a lead crosses the hot threshold — triggers the broker's
+ * real-time dossier alert (name · BLTC · source · best-fit · takeover).
+ */
+export interface RealtyLeadHotEvent extends BaseEvent {
+    readonly type: 'realty.lead.hot';
+    leadId: string;
+    qualScore: number;
+    assignedAgentId?: string;
+    matchedUnitIds: string[];
+}
+/** Emitted when a lead opts out — must halt all automated sends. */
+export interface RealtyLeadOptedOutEvent extends BaseEvent {
+    readonly type: 'realty.lead.opted_out';
+    leadId: string;
+    whatsappPhone: string;
+}
+/** Emitted when a verified project is added to the grounding layer. */
+export interface RealtyProjectCreatedEvent extends BaseEvent {
+    readonly type: 'realty.project.created';
+    projectId: string;
+    reraNumber?: string;
+    locality: string;
+}
+/** Emitted whenever a unit's availability changes (feeds freshness rules). */
+export interface RealtyUnitAvailabilityChangedEvent extends BaseEvent {
+    readonly type: 'realty.unit.availability_changed';
+    unitId: string;
+    projectId: string;
+    availability: string;
+}
+/** Emitted when a verified asset (brochure, floor plan, etc.) is published. */
+export interface RealtyAssetPublishedEvent extends BaseEvent {
+    readonly type: 'realty.asset.published';
+    assetId: string;
+    projectId: string;
+    assetType: string;
+    version: number;
+}
+export type DomainEvent = MessageReceivedEvent | MessageSentEvent | MessageFailedEvent | MessageStoredEvent | ConversationCreatedEvent | ConversationResolvedEvent | ConversationEscalatedEvent | ConversationStatusChangedEvent | ConversationAssignedEvent | AIIntentClassifiedEvent | AIResponseGeneratedEvent | AIResponseApprovedEvent | AIResponseRejectedEvent | TaskCreatedEvent | TaskAssignedEvent | TaskResolvedEvent | OrderCreatedEvent | OrderConfirmedEvent | OrderCancelledEvent | OrderPackedEvent | OrderPaidEvent | OrderShippedEvent | OrderDeliveredEvent | OrderReturnedEvent | PaymentCreatedEvent | PaymentSuccessEvent | PaymentFailedEvent | PaymentRefundEvent | InvoiceCreatedEvent | InvoiceIssuedEvent | InvoicePaidEvent | BookingCreatedEvent | BookingCancelledEvent | BookingConfirmedEvent | BookingRescheduledEvent | BookingCompletedEvent | BookingReminderEvent | ClientProfileUpdatedEvent | CatalogItemCreatedEvent | CatalogItemUpdatedEvent | CatalogStockLowEvent | CatalogStockOutEvent | NotificationQueuedEvent | NotificationSentEvent | NotificationDeliveredEvent | NotificationFailedEvent | NotificationSkippedEvent | RealtyLeadCreatedEvent | RealtyLeadQualifiedEvent | RealtyLeadStageChangedEvent | RealtyLeadHotEvent | RealtyLeadOptedOutEvent | RealtyProjectCreatedEvent | RealtyUnitAvailabilityChangedEvent | RealtyAssetPublishedEvent;
 /** Infer the event type from the `type` discriminant */
 export type EventType = DomainEvent['type'];
 //# sourceMappingURL=index.d.ts.map

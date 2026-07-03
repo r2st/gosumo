@@ -352,6 +352,86 @@ enum AnalyticsEventCategory {
 }
 
 // ─────────────────────────────────────────────
+// REALTY ENUMS (GoSumo Realty)
+// ─────────────────────────────────────────────
+
+enum LeadSource {
+  PORTAL
+  META_LEAD_AD
+  CTWA
+  IVR
+  REFERRAL
+  CSV
+  WALK_IN
+  EXCHANGE_INBOUND
+  MANUAL
+}
+
+enum LeadTemperature {
+  HOT
+  WARM
+  COLD
+  JUNK
+}
+
+enum LeadStage {
+  NEW
+  CONTACTED
+  QUALIFIED
+  VISIT_BOOKED
+  VISITED
+  NEGOTIATING
+  CLOSED_WON
+  CLOSED_LOST
+  DORMANT
+}
+
+enum LeadPurpose {
+  END_USE
+  INVEST
+}
+
+enum FinancingStatus {
+  CASH
+  PREAPPROVED
+  NEEDS_LOAN
+}
+
+enum LeadExchangeStatus {
+  NONE
+  ELIGIBLE
+  OFFERED
+  SYNDICATED
+  CLOSED
+}
+
+enum ProjectStatus {
+  PRELAUNCH
+  UC
+  RTM
+}
+
+enum UnitAvailability {
+  AVAILABLE
+  HOLD
+  SOLD
+  UNVERIFIED
+}
+
+enum NetworkVisibility {
+  PRIVATE
+  EXCHANGE
+}
+
+enum RealtyAssetType {
+  BROCHURE
+  FLOORPLAN
+  PRICESHEET
+  VIDEO
+  PIN
+}
+
+// ─────────────────────────────────────────────
 // PLATFORM LAYER
 // ─────────────────────────────────────────────
 
@@ -425,6 +505,10 @@ model businesses {
   carts                      carts[]
   cart_items                 cart_items[]
   coupons                    coupons[]
+  realty_leads               realty_leads[]
+  realty_projects            realty_projects[]
+  realty_units               realty_units[]
+  realty_assets              realty_assets[]
 
   @@index([slug])
   @@index([email])
@@ -2042,4 +2126,201 @@ model audit_logs {
   @@index([actor_id, created_at(sort: Desc)])
   @@index([created_at(sort: Desc)])
   @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────
+// REALTY — LEADS (GoSumo Realty core entity)
+// ─────────────────────────────────────────────
+
+/// A property buyer lead — the central object of the AI Lead Manager.
+/// Normalized across every source; one buyer, one history (merge on phone).
+model realty_leads {
+  id                String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id       String  @db.Uuid
+  /// FK to team_members — the broker/agent who owns this lead
+  assigned_agent_id String? @db.Uuid
+  /// Optional bridge to the messaging spine
+  client_id         String? @db.Uuid
+  conversation_id   String? @db.Uuid
+
+  // Identity — E.164 phone is the primary cross-source join key
+  whatsapp_phone String  @db.VarChar(20)
+  alt_phone      String? @db.VarChar(20)
+  email          String? @db.VarChar(320)
+  name           String? @db.VarChar(255)
+  /// e.g. "hi", "en", "hinglish"
+  language_pref  String  @default("hinglish") @db.VarChar(20)
+
+  // Attribution — recorded at birth, never mutated
+  source        LeadSource
+  sub_source    String?   @db.VarChar(120)
+  campaign_id   String?   @db.Uuid
+  /// The specific listing/ad the buyer enquired about
+  listing_ref   String?   @db.VarChar(255)
+  first_touch_at DateTime @default(now()) @db.Timestamptz
+
+  // Requirement profile (BLTC+) — amounts in rupees (Decimal), paise at API edge
+  budget_min      Decimal? @db.Decimal(14, 2)
+  budget_max      Decimal? @db.Decimal(14, 2)
+  localities      String[] @default([])
+  timeline_months Int?
+  config          String?          @db.VarChar(60)
+  purpose         LeadPurpose?
+  financing       FinancingStatus?
+
+  // State
+  qual_score       Int             @default(0)
+  temperature      LeadTemperature @default(COLD)
+  stage            LeadStage       @default(NEW)
+  matched_unit_ids String[]        @default([]) @db.Uuid
+
+  // Memory — the compounding asset
+  extracted_facts Json @default("[]") @db.JsonB
+  objections      Json @default("[]") @db.JsonB
+  promises        Json @default("[]") @db.JsonB
+
+  // Compliance & network
+  opt_out         Boolean            @default(false)
+  consent_log     Json               @default("[]") @db.JsonB
+  share_consent   Boolean            @default(false)
+  exchange_status LeadExchangeStatus @default(NONE)
+
+  // Persistence (follow-up engine state)
+  cadence_id      String?   @db.Uuid
+  cadence_step    Int       @default(0)
+  next_followup_at DateTime? @db.Timestamptz
+
+  last_activity_at DateTime? @db.Timestamptz
+  metadata         Json      @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@unique([business_id, whatsapp_phone], map: "uq_realty_leads_business_phone")
+  @@index([business_id, stage, last_activity_at(sort: Desc)])
+  @@index([business_id, temperature, qual_score(sort: Desc)])
+  @@index([business_id, assigned_agent_id, stage])
+  @@index([business_id, source])
+  @@index([business_id, next_followup_at])
+  @@index([deleted_at])
+  @@map("realty_leads")
+}
+
+// ─────────────────────────────────────────────
+// REALTY — INVENTORY GROUNDING LAYER
+// ─────────────────────────────────────────────
+
+/// A verified real-estate project — the sole ground truth the AI may quote.
+model realty_projects {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  name      String  @db.VarChar(255)
+  developer String? @db.VarChar(255)
+  locality  String  @db.VarChar(180)
+  /// { lat, lng }
+  geo       Json?   @db.JsonB
+
+  /// RERA registration number — cited verbatim in outbound where required
+  rera_number     String?       @db.VarChar(120)
+  possession_date DateTime?     @db.Date
+  status          ProjectStatus @default(UC)
+  amenities       String[]      @default([])
+
+  // Price band (rupees) — paise at the API boundary
+  price_band_min Decimal? @db.Decimal(14, 2)
+  price_band_max Decimal? @db.Decimal(14, 2)
+
+  /// FK to file_uploads — the registered fact sheet
+  fact_sheet_doc_id String? @db.Uuid
+  /// CP commission terms — PRIVATE, never surfaced to buyers
+  commission_terms  Json    @default("{}") @db.JsonB
+
+  network_visibility NetworkVisibility @default(PRIVATE)
+  is_active          Boolean           @default(true)
+  metadata           Json              @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses      @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  units    realty_units[]
+  assets   realty_assets[]
+
+  @@index([business_id, locality, status])
+  @@index([business_id, network_visibility])
+  @@index([business_id, is_active])
+  @@index([deleted_at])
+  @@map("realty_projects")
+}
+
+/// A sellable unit within a project. Availability freshness (`verified_at`)
+/// gates whether the AI may assert availability (hard rule: staler than 24h ⇒ "confirming").
+model realty_units {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+  project_id  String @db.Uuid
+
+  /// e.g. "2BHK", "3BHK+Study"
+  config       String  @db.VarChar(60)
+  carpet_sqft  Int?
+  builtup_sqft Int?
+  floor        Int?
+  facing       String? @db.VarChar(40)
+
+  // Prices in rupees (Decimal) — paise at the API boundary
+  base_price   Decimal? @db.Decimal(14, 2)
+  all_in_price Decimal  @db.Decimal(14, 2)
+
+  availability UnitAvailability @default(UNVERIFIED)
+  /// Last time availability was verified — drives the 24h freshness rule
+  verified_at  DateTime?        @db.Timestamptz
+
+  network_visibility NetworkVisibility @default(PRIVATE)
+  metadata           Json              @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses      @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  project  realty_projects @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, project_id, availability])
+  @@index([business_id, config, availability])
+  @@index([business_id, all_in_price])
+  @@index([deleted_at])
+  @@map("realty_units")
+}
+
+/// A pre-uploaded verified media asset (brochure, floor plan, price sheet…)
+/// sent instantly on WhatsApp. Versioned to prevent stale price-sheet leaks.
+model realty_assets {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+  project_id  String @db.Uuid
+
+  type    RealtyAssetType
+  /// WhatsApp-side media id for instant re-send without re-upload
+  wa_media_id String? @db.VarChar(255)
+  url         String? @db.Text
+  title       String? @db.VarChar(255)
+  version     Int     @default(1)
+  is_current  Boolean @default(true)
+  metadata    Json    @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses      @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  project  realty_projects @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, project_id, type, is_current])
+  @@index([deleted_at])
+  @@map("realty_assets")
 }
