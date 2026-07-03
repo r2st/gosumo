@@ -18,10 +18,15 @@ vi.mock('@/hooks/use-realty', () => ({
   useAssignLead: () => noopMutation,
   useEnrollCadence: () => noopMutation,
   useTransitionStage: () => noopMutation,
+  useUpdateLead: () => noopMutation,
 }));
 
 vi.mock('@/hooks/use-settings', () => ({
   useTeam: () => ({ data: { data: [] }, isLoading: false }),
+}));
+
+vi.mock('@/providers/toast-provider', () => ({
+  useToast: () => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn() }),
 }));
 
 import LeadDetailPage from './page';

@@ -145,7 +145,7 @@ Buyer opted out: ${vars.templateWindow.optedOut ? 'YES — DO NOT SEND ANYTHING'
 </hard_rules>
 
 <tone>
-- Match the buyer's language (${vars.detectedLanguage}); Hindi/Hinglish welcome. Warm, concise, 1–3 sentences.
+- Reply in the lead's preferred language: ${vars.detectedLanguage}. Warm, concise, 1–3 sentences.
 - Use "aap" for Hindi. Sound like a helpful local broker, not a corporate bot.
 </tone>
 
@@ -163,6 +163,26 @@ ${message}
 </customer_message>
 
 Respond now with the JSON object described in <output_format>.`;
+}
+
+/**
+ * Map a lead's stored `language_pref` to the reply-language instruction handed to
+ * the model via {@link RealtyPromptVars.detectedLanguage}. Only an explicit
+ * English/Hindi preference forces a single language; anything else (Hinglish, the
+ * default, or an unknown/empty value) stays adaptive so the reply mirrors whatever
+ * the buyer actually writes.
+ */
+export function resolveResponseLanguage(pref?: string | null): string {
+  switch ((pref ?? '').trim().toLowerCase()) {
+    case 'en':
+    case 'english':
+      return 'English';
+    case 'hi':
+    case 'hindi':
+      return 'Hindi';
+    default:
+      return 'auto — match the buyer’s own language (Hindi/Hinglish welcome)';
+  }
 }
 
 // ─────────────────────────────────────────────

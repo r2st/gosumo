@@ -2,19 +2,23 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CalendarPlus, Send, UserCog, Workflow } from 'lucide-react';
+import { CalendarPlus, Languages, Send, UserCog, Workflow } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { Select } from '@/components/ui/select';
-import { useAssignLead, useEnrollCadence, useTransitionStage } from '@/hooks/use-realty';
+import { useAssignLead, useEnrollCadence, useTransitionStage, useUpdateLead } from '@/hooks/use-realty';
 import { useTeam } from '@/hooks/use-settings';
 import { useToast } from '@/providers/toast-provider';
 import {
   CADENCE_TRIGGER_LABELS,
+  LANGUAGE_LABELS,
+  LEAD_LANGUAGES,
   LEAD_STAGES,
   STAGE_LABELS,
+  normalizeLeadLanguage,
   type CadenceTrigger,
   type Lead,
+  type LeadLanguage,
   type LeadStage,
 } from '@/lib/realty-types';
 
@@ -49,10 +53,59 @@ export function LeadActions({ lead }: { lead: Lead }) {
         </Button>
       </div>
 
+      <LanguageSelector lead={lead} />
+
       {active === 'assign' && <AssignAgentModal lead={lead} onClose={close} />}
       {active === 'stage' && <ChangeStageModal lead={lead} onClose={close} />}
       {active === 'cadence' && <StartCadenceModal lead={lead} onClose={close} />}
     </>
+  );
+}
+
+/**
+ * Inline follow-up language switcher. Saves on change to the lead's `languagePref`,
+ * which selects the English vs. Hindi cadence templates and the AI's reply language.
+ */
+function LanguageSelector({ lead }: { lead: Lead }) {
+  const toast = useToast();
+  const update = useUpdateLead();
+  const current = normalizeLeadLanguage(lead.languagePref);
+
+  const options = LEAD_LANGUAGES.map((code) => ({ label: LANGUAGE_LABELS[code], value: code }));
+
+  const onChange = (next: LeadLanguage) => {
+    if (next === current) return;
+    update.mutate(
+      { id: lead.id, patch: { languagePref: next } },
+      {
+        onSuccess: () =>
+          toast.success(`Follow-ups will use ${LANGUAGE_LABELS[next]}.`, { title: 'Language updated' }),
+        onError: () => toast.error('Could not update the language. Please try again.'),
+      },
+    );
+  };
+
+  return (
+    <div className="mt-3 flex flex-col gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-start gap-2">
+        <Languages className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+        <div>
+          <p className="text-sm font-medium text-foreground">Follow-up language</p>
+          <p className="text-xs text-muted-foreground">
+            Sets which cadence templates are sent and the language the AI replies in.
+          </p>
+        </div>
+      </div>
+      <div className="sm:w-44">
+        <Select
+          value={current}
+          onChange={(e) => onChange(e.target.value as LeadLanguage)}
+          options={options}
+          disabled={update.isPending}
+          aria-label="Follow-up language"
+        />
+      </div>
+    </div>
   );
 }
 

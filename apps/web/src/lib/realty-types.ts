@@ -205,6 +205,28 @@ export const STAGE_LABELS: Record<LeadStage, string> = {
   DORMANT: 'Dormant',
 };
 
+/**
+ * A lead's follow-up language preference. Drives which cadence templates (English
+ * vs. the `_hi` Hindi variants) are sent and the language the AI replies in.
+ * `hinglish` keeps replies adaptive to whatever the buyer writes.
+ */
+export const LEAD_LANGUAGES = ['en', 'hi', 'hinglish'] as const;
+export type LeadLanguage = (typeof LEAD_LANGUAGES)[number];
+
+export const LANGUAGE_LABELS: Record<LeadLanguage, string> = {
+  en: 'English',
+  hi: 'Hindi',
+  hinglish: 'Hinglish',
+};
+
+/** Normalize a stored `languagePref` (which may be legacy/unknown) to a known code. */
+export function normalizeLeadLanguage(pref: string | null | undefined): LeadLanguage {
+  const v = (pref ?? '').trim().toLowerCase();
+  if (v === 'en' || v === 'english') return 'en';
+  if (v === 'hi' || v === 'hindi') return 'hi';
+  return 'hinglish';
+}
+
 // ─────────────────────────────────────────────
 // Phase 3 — Site visits
 // ─────────────────────────────────────────────

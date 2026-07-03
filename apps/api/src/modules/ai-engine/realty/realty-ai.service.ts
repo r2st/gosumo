@@ -39,6 +39,7 @@ import {
   buildRealtyUserPrompt,
   ProjectFactSheet,
   RealtyPromptVars,
+  resolveResponseLanguage,
 } from './realty-prompt';
 import { REALTY_INTENT_MODEL } from './realty-intent.constants';
 import { RealtyTurnDto } from './dto';
@@ -158,6 +159,7 @@ export class RealtyAiService {
         lead.name,
         traceId,
         corridorContext,
+        lead.languagePref,
       );
     }
 
@@ -300,6 +302,7 @@ export class RealtyAiService {
     leadName: string | null,
     traceId: string,
     corridorContext: string | null,
+    languagePref: string | null,
   ): Promise<RealtyGroundedResponse | null> {
     try {
       const vars: RealtyPromptVars = {
@@ -318,7 +321,7 @@ export class RealtyAiService {
           serviceWindowOpen: dto.serviceWindowOpen ?? true,
           optedOut: false,
         },
-        detectedLanguage: 'auto',
+        detectedLanguage: resolveResponseLanguage(languagePref),
         corridorContext,
       };
 

@@ -2,6 +2,7 @@ import type { BltcProfile } from '@gosumo/shared';
 import {
   buildRealtySystemPrompt,
   buildRealtyUserPrompt,
+  resolveResponseLanguage,
   RealtyPromptVars,
   ProjectFactSheet,
 } from './realty-prompt';
@@ -80,6 +81,14 @@ describe('buildRealtySystemPrompt', () => {
     }
   });
 
+  it('instructs the model to reply in the lead’s preferred language', () => {
+    const en = buildRealtySystemPrompt(vars({ detectedLanguage: resolveResponseLanguage('en') }));
+    expect(en).toContain("Reply in the lead's preferred language: English");
+
+    const hi = buildRealtySystemPrompt(vars({ detectedLanguage: resolveResponseLanguage('hi') }));
+    expect(hi).toContain("Reply in the lead's preferred language: Hindi");
+  });
+
   it('includes the strict JSON output contract', () => {
     const p = buildRealtySystemPrompt(vars());
     expect(p).toContain('"response_text"');
@@ -142,5 +151,26 @@ describe('buildRealtyUserPrompt', () => {
     expect(u).toContain('<customer_message>');
     expect(u).toContain('untrusted data');
     expect(u).toContain('50% discount');
+  });
+});
+
+describe('resolveResponseLanguage', () => {
+  it('forces English for an explicit English preference', () => {
+    expect(resolveResponseLanguage('en')).toBe('English');
+    expect(resolveResponseLanguage('English')).toBe('English');
+  });
+
+  it('forces Hindi for an explicit Hindi preference', () => {
+    expect(resolveResponseLanguage('hi')).toBe('Hindi');
+    expect(resolveResponseLanguage(' HINDI ')).toBe('Hindi');
+  });
+
+  it('stays adaptive for Hinglish, empty, or unknown values', () => {
+    const adaptive = 'auto — match the buyer’s own language (Hindi/Hinglish welcome)';
+    expect(resolveResponseLanguage('hinglish')).toBe(adaptive);
+    expect(resolveResponseLanguage('')).toBe(adaptive);
+    expect(resolveResponseLanguage(null)).toBe(adaptive);
+    expect(resolveResponseLanguage(undefined)).toBe(adaptive);
+    expect(resolveResponseLanguage('mr')).toBe(adaptive);
   });
 });

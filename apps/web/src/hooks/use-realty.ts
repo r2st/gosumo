@@ -117,6 +117,22 @@ export function useAssignLead() {
   });
 }
 
+export type UpdateLeadInput = Partial<Pick<Lead, 'name' | 'email' | 'altPhone' | 'languagePref'>>;
+
+/** Patch editable lead fields (name, contact, language preference). */
+export function useUpdateLead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: UpdateLeadInput }) =>
+      apiRequest<Lead>(`/realty/leads/${id}`, { method: 'PATCH', body: patch }),
+    onSuccess: (data, { id }) => {
+      qc.setQueryData(['realty', 'lead', id], data);
+      qc.invalidateQueries({ queryKey: LEADS_KEY });
+      qc.invalidateQueries({ queryKey: BOARD_KEY });
+    },
+  });
+}
+
 // ── Inventory ─────────────────────────────────────────────────────────────────
 
 export function useProjects(filters: { locality?: string; status?: string } = {}) {
