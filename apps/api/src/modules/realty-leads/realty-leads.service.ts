@@ -568,6 +568,54 @@ export class RealtyLeadsService {
   // ─────────────────────────────────────────────
 
   /**
+   * Find-or-create the lead for a channel phone identifier, so one buyer maps to
+   * exactly one history (blueprint §15). Existing leads are only touched (last
+   * activity + conversation link). Race-safe: a lost create race re-reads the
+   * winner instead of failing.
+   *
+   * The phone is used as the channel delivers it (WhatsApp `wa_id`), matching how
+   * every other realty lookup (voice, cadence) resolves a lead — this is the
+   * single capture path shared by the ingest listener and the realty AI bridge.
+   * Returns `null` for a blank identifier.
+   */
+  async ensureLeadByPhone(
+    businessId: string,
+    rawPhone: string,
+    opts: { conversationId?: string; clientId?: string; source?: LeadSource } = {},
+  ): Promise<LeadResponseDto | null> {
+    const phone = rawPhone?.trim();
+    if (!phone) {
+      this.logger.warn('Blank phone identifier — cannot resolve a lead');
+      return null;
+    }
+
+    const existing = await this.repository.findByPhone(businessId, phone);
+    if (existing) {
+      const updated = await this.repository.update(businessId, existing.id, {
+        conversationId: existing.conversation_id ?? opts.conversationId,
+        lastActivityAt: new Date(),
+      });
+      return this.mapResponse(updated);
+    }
+
+    try {
+      return await this.createLead(businessId, {
+        whatsappPhone: phone,
+        source: opts.source ?? LeadSource.CTWA,
+        conversationId: opts.conversationId,
+        clientId: opts.clientId,
+      });
+    } catch (err) {
+      // Lost a create race (a concurrent listener captured the same phone first).
+      if (err instanceof ConflictException) {
+        const again = await this.repository.findByPhone(businessId, phone);
+        if (again) return this.mapResponse(again);
+      }
+      throw err;
+    }
+  }
+
+  /**
    * Auto-capture a lead when an inbound WhatsApp message arrives for a phone
    * we haven't seen. Idempotent: existing leads are only touched (last activity).
    */
@@ -576,19 +624,10 @@ export class RealtyLeadsService {
     const phone = event.senderExternalId;
     if (!phone) return;
     try {
-      const existing = await this.repository.findByPhone(event.businessId, phone);
-      if (existing) {
-        await this.repository.update(event.businessId, existing.id, {
-          conversationId: existing.conversation_id ?? event.conversationId,
-          lastActivityAt: new Date(),
-        });
-        return;
-      }
-      await this.createLead(event.businessId, {
-        whatsappPhone: phone,
-        source: LeadSource.CTWA,
+      await this.ensureLeadByPhone(event.businessId, phone, {
         conversationId: event.conversationId,
         clientId: event.clientId,
+        source: LeadSource.CTWA,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

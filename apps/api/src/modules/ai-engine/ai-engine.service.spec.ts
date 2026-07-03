@@ -18,6 +18,7 @@ import { KnowledgeIngestionService } from './rag/knowledge-ingestion.service';
 import { EmbeddingService } from './rag/embedding.service';
 import { AiEngineRepository } from './ai-engine.repository';
 import { ChannelAdapterService } from '../channel-adapter/channel-adapter.service';
+import { RealtyTenantService } from './realty/realty-tenant.service';
 
 // ─────────────────────────────────────────────
 // Builders
@@ -69,6 +70,7 @@ interface Harness {
   createReviewTask: jest.Mock;
   sendMessage: jest.Mock;
   emit: jest.Mock;
+  isRealtyTenant: jest.Mock;
   context: { value: EnrichedContext };
   ragChunks: { value: ReturnType<typeof makeChunks> };
 }
@@ -141,6 +143,10 @@ function makeHarness(): Harness {
   const knowledgeIngestion = {} as unknown as KnowledgeIngestionService;
   const embeddings = {} as unknown as EmbeddingService;
 
+  // Default: not a realty tenant, so the generic pipeline runs as before.
+  const isRealtyTenant = jest.fn().mockResolvedValue(false);
+  const realtyTenants = { isRealtyTenant } as unknown as RealtyTenantService;
+
   const prisma = {} as unknown as PrismaService;
   const service = new AiEngineService(
     prisma,
@@ -159,6 +165,7 @@ function makeHarness(): Harness {
     repository,
     channelAdapter,
     eventEmitter,
+    realtyTenants,
   );
 
   return {
@@ -169,6 +176,7 @@ function makeHarness(): Harness {
     createReviewTask,
     sendMessage,
     emit,
+    isRealtyTenant,
     context: contextHolder,
     ragChunks: chunksHolder,
   };
@@ -247,6 +255,45 @@ describe('AiEngineService — processMessage pipeline', () => {
     h.context.value = makeContext('kal 3 baje book karna hai');
     await h.service.processMessage('b1', dto);
     expect(h.emit).toHaveBeenCalledWith('ai.intent.classified', expect.any(Object));
+  });
+});
+
+describe('AiEngineService — message.received realty gating', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  const event = {
+    id: 'evt-1',
+    timestamp: '2026-07-03T10:00:00Z',
+    businessId: 'b1',
+    correlationId: 'corr-1',
+    type: 'message.received',
+    messageId: 'm1',
+    conversationId: 'c1',
+    channelAccountId: 'acc1',
+    channel: 'WHATSAPP',
+    senderExternalId: '+919876543210',
+    clientId: 'cl1',
+  } as never;
+
+  it('skips the generic pipeline for a realty tenant (the realty loop owns it)', async () => {
+    const h = makeHarness();
+    h.isRealtyTenant.mockResolvedValueOnce(true);
+    const spy = jest.spyOn(h.service, 'processMessage');
+
+    await h.service.handleMessageReceived(event);
+
+    expect(spy).not.toHaveBeenCalled();
+    expect(h.createDecision).not.toHaveBeenCalled();
+  });
+
+  it('runs the generic pipeline for a non-realty tenant', async () => {
+    const h = makeHarness();
+    h.context.value = makeContext('kal 3 baje book karna hai');
+
+    await h.service.handleMessageReceived(event);
+
+    expect(h.isRealtyTenant).toHaveBeenCalledWith('b1');
+    expect(h.createDecision).toHaveBeenCalled();
   });
 });
 

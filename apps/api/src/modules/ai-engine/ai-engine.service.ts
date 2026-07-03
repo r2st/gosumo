@@ -40,6 +40,7 @@ import { KnowledgeIngestionService } from './rag/knowledge-ingestion.service';
 import { EmbeddingService } from './rag/embedding.service';
 import { AiEngineRepository } from './ai-engine.repository';
 import { ChannelAdapterService } from '../channel-adapter/channel-adapter.service';
+import { RealtyTenantService } from './realty/realty-tenant.service';
 import {
   ProcessMessageDto,
   IntentClassificationDto,
@@ -93,6 +94,7 @@ export class AiEngineService {
     private readonly repository: AiEngineRepository,
     private readonly channelAdapter: ChannelAdapterService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly realtyTenants: RealtyTenantService,
   ) {}
 
   // ─────────────────────────────────────────────
@@ -573,6 +575,15 @@ export class AiEngineService {
 
   @OnEvent('message.received')
   async handleMessageReceived(event: MessageReceivedEvent): Promise<void> {
+    // Realty tenants run the grounded realty AI loop instead of this generic
+    // pipeline — RealtyMessageBridgeService owns those messages. Skip them here
+    // so a message is never processed by both pipelines.
+    if (await this.realtyTenants.isRealtyTenant(event.businessId)) {
+      this.logger.debug(
+        `Skipping generic pipeline for realty tenant ${event.businessId} — handled by the realty loop`,
+      );
+      return;
+    }
     if (!event.conversationId || !event.messageId) {
       this.logger.debug(
         `Skipping message.received ${event.messageId || '(no id)'}: conversation not yet resolved`,
