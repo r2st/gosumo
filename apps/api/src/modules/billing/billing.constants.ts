@@ -1,4 +1,4 @@
-import { RealtyPlan } from '@gosumo/shared';
+import { RealtyPlan } from '@prisma/client';
 
 /**
  * GoSumo Realty pricing tiers (business plan §9). Money in paise (integer).
