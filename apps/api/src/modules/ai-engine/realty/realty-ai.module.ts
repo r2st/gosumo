@@ -3,6 +3,8 @@ import { ConfigModule } from '@nestjs/config';
 import { PrismaService } from '../../../common/services/prisma.service';
 import { RealtyLeadsModule } from '../../realty-leads/realty-leads.module';
 import { RealtyInventoryModule } from '../../realty-inventory/realty-inventory.module';
+import { RealtyIntelligenceModule } from '../../realty-intelligence/realty-intelligence.module';
+import { ComplianceModule } from '../../compliance/compliance.module';
 import { LlmClientService } from '../pipeline/llm-client.service';
 import { GuardrailsService } from '../safety/guardrails.service';
 import { RealtyAiController } from './realty-ai.controller';
@@ -21,7 +23,13 @@ import { RealtyAuditService } from './realty-audit.service';
  * stateless and provided locally here.
  */
 @Module({
-  imports: [ConfigModule, RealtyLeadsModule, RealtyInventoryModule],
+  imports: [
+    ConfigModule,
+    RealtyLeadsModule,
+    RealtyInventoryModule,
+    RealtyIntelligenceModule,
+    ComplianceModule,
+  ],
   controllers: [RealtyAiController],
   providers: [
     RealtyAiService,

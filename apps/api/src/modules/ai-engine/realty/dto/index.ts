@@ -45,6 +45,15 @@ export class RealtyTurnDto {
   @IsString()
   calendarSnapshot?: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Pre-formatted micro-market corridor priors (L1). When omitted, the loop ' +
+      'fetches them from the intelligence layer using the lead\'s primary locality.',
+  })
+  @IsOptional()
+  @IsString()
+  corridorContext?: string;
+
   @ApiPropertyOptional({ description: 'Correlation id for tracing' })
   @IsOptional()
   @IsString()

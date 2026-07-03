@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   RealtyIntent,
@@ -31,6 +31,8 @@ import {
 } from './realty-guardrails.service';
 import { RealtyResponseParserService } from './realty-response.parser';
 import { RealtyAuditService } from './realty-audit.service';
+import { RealtyIntelligenceService } from '../../realty-intelligence/realty-intelligence.service';
+import { ComplianceNoticeService } from '../../compliance/compliance-notice.service';
 import { computeRealtyConfidence } from './realty-confidence.util';
 import {
   buildRealtySystemPrompt,
@@ -90,6 +92,18 @@ export class RealtyAiService {
     private readonly inventory: RealtyInventoryService,
     private readonly audit: RealtyAuditService,
     private readonly eventEmitter: EventEmitter2,
+    /**
+     * Optional — the L1 intelligence layer. When wired, the loop injects
+     * anonymized corridor priors into the grounded prompt. Absent in unit tests
+     * and any deployment without the intelligence module, which just skips them.
+     */
+    @Optional() private readonly intelligence?: RealtyIntelligenceService,
+    /**
+     * Optional — the DPDPA compliance notice injector (§21). When wired, the loop
+     * prepends the first-contact data-processing notice to the first AI message a
+     * buyer receives. Absent in unit tests / non-realty deployments (no-op).
+     */
+    @Optional() private readonly notice?: ComplianceNoticeService,
   ) {}
 
   async processTurn(businessId: string, dto: RealtyTurnDto): Promise<RealtyDecision> {
@@ -128,6 +142,9 @@ export class RealtyAiService {
     const { factSheets, grounding } = await this.loadGrounding(businessId, dto.leadId, lead.bltc, lead.optOut);
     const matchedUnitIds = grounding.freshAvailableUnitIds;
 
+    // Micro-market corridor priors (L1) — anonymized guidance, never quotable.
+    const corridorContext = await this.resolveCorridorContext(businessId, dto, profile);
+
     // ── DECIDE ────────────────────────────────
     let grounded: RealtyGroundedResponse | null = null;
     if (!safety.jailbreakDetected && !lead.optOut) {
@@ -140,6 +157,7 @@ export class RealtyAiService {
         factSheets,
         lead.name,
         traceId,
+        corridorContext,
       );
     }
 
@@ -163,7 +181,7 @@ export class RealtyAiService {
     });
 
     // ── ACT ───────────────────────────────────
-    const { routeMode, responseText, escalationReason } = this.resolveOutcome(
+    const outcome = this.resolveOutcome(
       confidence,
       guard,
       grounded,
@@ -171,6 +189,19 @@ export class RealtyAiService {
       lead.optOut,
       turn.nextQuestion,
     );
+    const { routeMode, escalationReason } = outcome;
+    let responseText = outcome.responseText;
+
+    // DPDPA first-contact notice (§21): prepend the data-processing notice to the
+    // first AI message a buyer receives. Idempotent + best-effort — optional dep,
+    // so it is a no-op when the compliance layer is not wired (e.g. unit tests).
+    if (this.notice && responseText && lead.whatsappPhone) {
+      responseText = await this.notice.decorateFirstContact(
+        businessId,
+        lead.whatsappPhone,
+        responseText,
+      );
+    }
 
     await this.audit.record({
       businessId,
@@ -227,6 +258,35 @@ export class RealtyAiService {
   }
 
   // ─────────────────────────────────────────────
+  // Micro-market intelligence (L1)
+  // ─────────────────────────────────────────────
+
+  /**
+   * Resolve the corridor-priors prompt section. Honors an explicit
+   * `dto.corridorContext` (the orchestrator may pre-fetch it); otherwise pulls it
+   * from the intelligence layer using the lead's primary locality. Best-effort:
+   * any failure or missing data yields null and the prompt simply omits it.
+   */
+  private async resolveCorridorContext(
+    businessId: string,
+    dto: RealtyTurnDto,
+    profile: BltcProfile,
+  ): Promise<string | null> {
+    if (dto.corridorContext) return dto.corridorContext;
+    if (!this.intelligence) return null;
+    const corridor = profile.localities?.[0];
+    if (!corridor) return null;
+    try {
+      return await this.intelligence.buildCorridorContext(businessId, corridor);
+    } catch (err) {
+      this.logger.debug(
+        `Corridor context unavailable: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return null;
+    }
+  }
+
+  // ─────────────────────────────────────────────
   // Generation
   // ─────────────────────────────────────────────
 
@@ -239,6 +299,7 @@ export class RealtyAiService {
     factSheets: ProjectFactSheet[],
     leadName: string | null,
     traceId: string,
+    corridorContext: string | null,
   ): Promise<RealtyGroundedResponse | null> {
     try {
       const vars: RealtyPromptVars = {
@@ -258,6 +319,7 @@ export class RealtyAiService {
           optedOut: false,
         },
         detectedLanguage: 'auto',
+        corridorContext,
       };
 
       const completion = await this.llm.complete({

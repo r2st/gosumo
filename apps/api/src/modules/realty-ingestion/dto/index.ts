@@ -155,6 +155,51 @@ export class CtwaContextDto {
 }
 
 // ─────────────────────────────────────────────
+// IVR MISSED-CALL (webhook body — generic/canonical shape)
+// ─────────────────────────────────────────────
+
+/**
+ * The canonical IVR missed-call notification. Provider payloads (Exotel,
+ * Knowlarity) are normalized to this shape by `parseIvrCallback` before the DTO
+ * is validated, so the same endpoint accepts any supported provider.
+ */
+export class IvrCallbackDto {
+  @ApiProperty({ description: 'Caller phone (any Indian format; normalized to E.164)' })
+  @IsString()
+  @MaxLength(30)
+  phone!: string;
+
+  @ApiPropertyOptional({ description: 'The business virtual/DID number that was dialled' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  calledNumber?: string;
+
+  @ApiPropertyOptional({ description: 'ISO-8601 time the call was placed' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  callTime?: string;
+
+  @ApiPropertyOptional({ description: 'Call-flow / campaign id (recorded as lead sub_source)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  campaignId?: string;
+}
+
+/** The outcome of processing one IVR missed call. */
+export interface IvrCallbackResult {
+  leadId: string;
+  /** True when folded into an existing lead (same phone); false when created. */
+  merged: boolean;
+  /** Whether the instant WhatsApp greeting was dispatched this call. */
+  whatsappTriggered: boolean;
+  /** True when suppressed by the 5-minute repeat-call de-dup window. */
+  deduped: boolean;
+}
+
+// ─────────────────────────────────────────────
 // RESULTS
 // ─────────────────────────────────────────────
 

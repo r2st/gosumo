@@ -16,6 +16,8 @@ import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { RealtyIngestionService } from './realty-ingestion.service';
+import { RealtyIvrService } from './realty-ivr.service';
+import { parseIvrCallback } from './ivr/ivr-callback.parser';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { CsvImportDto, PortalEmailDto, CtwaContextDto } from './dto';
@@ -38,8 +40,46 @@ export class RealtyIngestionController {
 
   constructor(
     private readonly ingestionService: RealtyIngestionService,
+    private readonly ivrService: RealtyIvrService,
     private readonly configService: ConfigService,
   ) {}
+
+  // ─────────────────────────────────────────────
+  // IVR missed-call → WhatsApp webhook
+  // ─────────────────────────────────────────────
+
+  @Public()
+  @Post('realty/ingestion/ivr-callback')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'IVR missed-call webhook (Exotel / Knowlarity / generic) → WhatsApp' })
+  @ApiResponse({ status: 200, description: 'Acknowledged' })
+  async handleIvrCallback(
+    @Req() req: Request,
+    @Headers('x-ivr-signature') signature: string,
+    @Headers('x-business-id') businessId: string,
+    @Body() body: unknown,
+  ): Promise<{ status: string }> {
+    const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
+    if (!this.ivrService.verifyIvrSignature(rawBody, signature)) {
+      // Invalid signature: log + discard, but still 200 so the provider does
+      // not enter a retry storm (channel-adapter convention).
+      this.logger.warn('IVR webhook rejected: invalid signature');
+      return { status: 'ok' };
+    }
+    try {
+      const call = parseIvrCallback(body);
+      if (!call) {
+        this.logger.warn('IVR webhook payload had no caller phone — ignoring');
+        return { status: 'ok' };
+      }
+      await this.ivrService.processIvrCallback(businessId ?? 'unknown', call);
+    } catch (err) {
+      this.logger.error(
+        `Error processing IVR callback: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    return { status: 'ok' };
+  }
 
   // ─────────────────────────────────────────────
   // Meta Leadgen webhook
