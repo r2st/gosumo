@@ -25,4 +25,16 @@ export declare function paiseToCurrency(paise: number): string;
  * @returns Integer paise value
  */
 export declare function currencyToPaise(amount: number): number;
-//# sourceMappingURL=index.d.ts.map
+/**
+ * Normalize a raw Indian phone number to E.164 (`+91XXXXXXXXXX`).
+ *
+ * Handles the common shapes seen across portals, CSV exports, and ad forms:
+ * `+91 98765 43210`, `0091-9876543210`, `09876543210`, `9876543210`,
+ * `91 9876543210`, and numbers with spaces / hyphens / parentheses. Returns
+ * `null` when the input cannot be resolved to a valid 10-digit Indian mobile
+ * (leading digit 6–9) — callers treat `null` as an unusable identity.
+ *
+ * This is the single authorized phone-normalization point (root rule: phones
+ * are stored E.164). Ingestion merges leads on the E.164 result.
+ */
+export declare function normalizeIndianPhone(raw: string | null | undefined): string | null;

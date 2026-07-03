@@ -16,6 +16,7 @@ import { Avatar } from '@/components/ui/avatar';
 import { StatusBadge } from '@/components/status-badge';
 import { ChannelIcon } from '@/components/channel-icon';
 import { EmptyState, ErrorState } from '@/components/ui/states';
+import { MorningBriefing } from '@/components/dashboard/morning-briefing';
 import {
   useBookings,
   useConversationReport,
@@ -41,6 +42,9 @@ export default function DashboardPage() {
       <PageHeader title="Dashboard" description="Today at a glance across all your channels." />
 
       <div className="space-y-6 p-4 lg:p-6">
+        {/* GoSumo Realty — broker's 7:30 AM digest */}
+        <MorningBriefing />
+
         {metricsQ.isError ? (
           <ErrorState
             message={(metricsQ.error as Error)?.message}

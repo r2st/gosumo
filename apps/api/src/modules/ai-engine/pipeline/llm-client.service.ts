@@ -30,30 +30,31 @@ export class LlmUnavailableError extends Error {
   }
 }
 
-interface AnthropicMessagesResponse {
-  content: Array<{ type: string; text?: string }>;
+/** OpenAI-compatible chat-completions response (as returned by OpenRouter). */
+interface OpenRouterChatResponse {
+  choices: Array<{ message?: { content?: string }; finish_reason?: string }>;
   model: string;
-  usage: { input_tokens: number; output_tokens: number };
+  usage?: { prompt_tokens?: number; completion_tokens?: number };
 }
 
 /**
- * Thin Anthropic Claude client built on `fetch`.
+ * Thin LLM client built on `fetch`, targeting OpenRouter's OpenAI-compatible
+ * chat-completions API (https://openrouter.ai/api/v1/chat/completions).
  *
  * Responsibilities:
- *  - Call the Messages API with a system prompt + single user turn.
+ *  - Call the chat API with a system + single user turn.
  *  - Enforce a per-call timeout ({@link LLM_TIMEOUT_MS}).
  *  - Retry once on 5xx / network / timeout errors with a short backoff.
  *  - Surface token usage and latency for cost tracking on every call.
  *
- * It deliberately avoids the `@anthropic-ai/sdk` runtime dependency so the
- * module compiles and unit-tests with a mocked `global.fetch`, exactly like
- * the channel adapters do for the Meta API.
+ * The default models are OpenRouter free-tier slugs (see `ai-engine.constants`).
+ * No provider SDK dependency — it compiles and unit-tests with a mocked
+ * `global.fetch`, exactly like the channel adapters do for the Meta API.
  */
 @Injectable()
 export class LlmClientService {
   private readonly logger = new Logger(LlmClientService.name);
-  private readonly apiUrl = 'https://api.anthropic.com/v1/messages';
-  private readonly apiVersion = '2023-06-01';
+  private readonly defaultApiUrl = 'https://openrouter.ai/api/v1/chat/completions';
   private readonly maxAttempts = 2;
 
   constructor(private readonly configService: ConfigService) {}
@@ -64,9 +65,9 @@ export class LlmClientService {
    * pipeline can fall back to escalation.
    */
   async complete(request: LlmCompletionRequest): Promise<LlmCompletionResult> {
-    const apiKey = this.configService.get<string>('anthropic.apiKey', '');
+    const apiKey = this.configService.get<string>('openrouter.apiKey', '');
     if (!apiKey) {
-      throw new LlmUnavailableError('ANTHROPIC_API_KEY is not configured');
+      throw new LlmUnavailableError('OPENROUTER_API_KEY is not configured');
     }
 
     const model = request.model ?? DEFAULT_MODEL;
@@ -74,8 +75,10 @@ export class LlmClientService {
       model,
       max_tokens: request.maxTokens ?? LLM_MAX_TOKENS,
       temperature: request.temperature ?? 0.3,
-      system: request.system,
-      messages: [{ role: 'user', content: request.user }],
+      messages: [
+        { role: 'system', content: request.system },
+        { role: 'user', content: request.user },
+      ],
     };
 
     let lastError: Error | undefined;
@@ -90,25 +93,24 @@ export class LlmClientService {
           // 4xx are non-retryable (bad request, auth) — fail fast.
           if (response.status < 500) {
             throw new LlmUnavailableError(
-              `Claude API error ${response.status}: ${errText}`,
+              `OpenRouter API error ${response.status}: ${errText}`,
             );
           }
           // 5xx — retryable
-          throw new Error(`Claude API ${response.status}: ${errText}`);
+          throw new Error(`OpenRouter API ${response.status}: ${errText}`);
         }
 
-        const json = (await response.json()) as AnthropicMessagesResponse;
-        const text = (json.content ?? [])
-          .filter((block) => block.type === 'text' && typeof block.text === 'string')
-          .map((block) => block.text)
+        const json = (await response.json()) as OpenRouterChatResponse;
+        const text = (json.choices ?? [])
+          .map((choice) => choice.message?.content ?? '')
           .join('')
           .trim();
 
         return {
           text,
           modelId: json.model ?? model,
-          promptTokens: json.usage?.input_tokens ?? 0,
-          completionTokens: json.usage?.output_tokens ?? 0,
+          promptTokens: json.usage?.prompt_tokens ?? 0,
+          completionTokens: json.usage?.completion_tokens ?? 0,
           latencyMs: Date.now() - startMs,
         };
       } catch (err) {
@@ -170,13 +172,16 @@ export class LlmClientService {
   ): Promise<Response> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
+    const url = this.configService.get<string>('openrouter.baseUrl', this.defaultApiUrl);
     try {
-      return await fetch(this.apiUrl, {
+      return await fetch(url, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': this.apiVersion,
+          authorization: `Bearer ${apiKey}`,
+          // OpenRouter attribution headers (optional but recommended).
+          'http-referer': this.configService.get<string>('openrouter.referer', 'https://gosumo.aiknol.com'),
+          'x-title': this.configService.get<string>('openrouter.title', 'GoSumo'),
         },
         body: JSON.stringify(body),
         signal: controller.signal,

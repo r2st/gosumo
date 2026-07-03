@@ -21,12 +21,18 @@ function budgetLabel(lead: Lead): string | null {
   return paiseToCompactRupees(budgetMaxPaise ?? budgetMinPaise);
 }
 
-export function LeadCard({ lead }: { lead: Lead }) {
+export function LeadCard({ lead, onClick }: { lead: Lead; onClick?: () => void }) {
   const budget = budgetLabel(lead);
   const bits = [lead.bltc.config, lead.bltc.localities[0], budget].filter(Boolean);
 
   return (
-    <div className="rounded-lg border border-border bg-card p-3 shadow-sm transition hover:border-accent">
+    <div
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => (e.key === 'Enter' || e.key === ' ') && onClick() : undefined}
+      className={`rounded-lg border border-border bg-card p-3 shadow-sm transition hover:border-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-accent${onClick ? ' cursor-pointer' : ''}`}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold">{lead.name ?? 'Unknown buyer'}</p>

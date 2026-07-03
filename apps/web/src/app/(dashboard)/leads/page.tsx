@@ -1,11 +1,12 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Users } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
 import { Badge } from '@/components/ui/badge';
 import { LoadingState, EmptyState, ErrorState } from '@/components/ui/states';
 import { LeadCard } from '@/components/leads/lead-card';
+import { LeadDetailDrawer } from '@/components/leads/lead-detail-drawer';
 import { useLeads, useLeadBoard } from '@/hooks/use-realty';
 import { LEAD_STAGES, STAGE_LABELS, type Lead, type LeadStage } from '@/lib/realty-types';
 
@@ -28,6 +29,8 @@ export default function LeadsPage() {
     for (const lead of leadsQ.data?.data ?? []) map[lead.stage]?.push(lead);
     return map;
   }, [leadsQ.data]);
+
+  const [selected, setSelected] = useState<Lead | null>(null);
 
   const isLoading = boardQ.isLoading || leadsQ.isLoading;
   const isError = boardQ.isError || leadsQ.isError;
@@ -63,7 +66,9 @@ export default function LeadsPage() {
                   {byStage[stage].length === 0 ? (
                     <p className="px-1 py-6 text-center text-xs text-muted-foreground">No leads</p>
                   ) : (
-                    byStage[stage].map((lead) => <LeadCard key={lead.id} lead={lead} />)
+                    byStage[stage].map((lead) => (
+                      <LeadCard key={lead.id} lead={lead} onClick={() => setSelected(lead)} />
+                    ))
                   )}
                 </div>
               </div>
@@ -71,6 +76,8 @@ export default function LeadsPage() {
           </div>
         )}
       </div>
+
+      <LeadDetailDrawer lead={selected} onClose={() => setSelected(null)} />
     </div>
   );
 }

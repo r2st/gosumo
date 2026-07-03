@@ -3,7 +3,8 @@
 // CHANNEL & MESSAGING
 // ─────────────────────────────────────────────
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RealtyAssetType = exports.NetworkVisibility = exports.UnitAvailability = exports.ProjectStatus = exports.LeadExchangeStatus = exports.FinancingStatus = exports.LeadPurpose = exports.LeadStage = exports.LeadTemperature = exports.LeadSource = exports.CartStatus = exports.DiscountType = exports.CatalogItemType = exports.CampaignType = exports.InvoiceStatus = exports.RefundMethod = exports.RefundType = exports.RefundStatus = exports.PaymentGateway = exports.TeamRole = exports.ShipmentStatus = exports.RecurrenceFrequency = exports.BookingActor = exports.BookingLocationType = exports.BookingStatus = exports.PaymentMethod = exports.PaymentStatus = exports.OrderStatus = exports.ConfidenceMode = exports.IntentType = exports.TaskPriority = exports.TaskType = exports.TaskStatus = exports.ConversationPriority = exports.ConversationStatus = exports.MessageStatus = exports.MessageContentType = exports.MessageDirection = exports.ChannelType = void 0;
+exports.ApprovalStatus = exports.TemplateApprovalStatus = exports.TemplateCategory = exports.CadenceEnrollmentStatus = exports.CadenceStopOn = exports.CadenceTrigger = exports.RealtyRoutePolicy = exports.RealtyIntent = exports.RealtyPortal = exports.SiteVisitOutcome = exports.SiteVisitStatus = exports.RealtyAssetType = exports.NetworkVisibility = exports.UnitAvailability = exports.ProjectStatus = exports.LeadExchangeStatus = exports.FinancingStatus = exports.LeadPurpose = exports.LeadStage = exports.LeadTemperature = exports.LeadSource = exports.CartStatus = exports.DiscountType = exports.CatalogItemType = exports.CampaignType = exports.InvoiceStatus = exports.RefundMethod = exports.RefundType = exports.RefundStatus = exports.PaymentGateway = exports.TeamRole = exports.ShipmentStatus = exports.RecurrenceFrequency = exports.BookingActor = exports.BookingLocationType = exports.BookingStatus = exports.PaymentMethod = exports.PaymentStatus = exports.OrderStatus = exports.ConfidenceMode = exports.IntentType = exports.TaskPriority = exports.TaskType = exports.TaskStatus = exports.ConversationPriority = exports.ConversationStatus = exports.MessageStatus = exports.MessageContentType = exports.MessageDirection = exports.ChannelType = void 0;
+exports.BrokerAlertType = exports.ConversationOwner = exports.AutonomyLevel = void 0;
 var ChannelType;
 (function (ChannelType) {
     ChannelType["WHATSAPP"] = "WHATSAPP";
@@ -401,4 +402,163 @@ var RealtyAssetType;
     RealtyAssetType["VIDEO"] = "VIDEO";
     RealtyAssetType["PIN"] = "PIN";
 })(RealtyAssetType || (exports.RealtyAssetType = RealtyAssetType = {}));
+// ─────────────────────────────────────────────
+// REALTY — SITE VISITS (Phase 3, blueprint §14)
+// ─────────────────────────────────────────────
+/**
+ * Lifecycle of a scheduled site visit. BOOKED on creation; CONFIRMED once the
+ * buyer acknowledges; COMPLETED / NO_SHOW are terminal outcomes; RESCHEDULED
+ * marks a moved visit; CANCELLED frees the slot.
+ */
+var SiteVisitStatus;
+(function (SiteVisitStatus) {
+    SiteVisitStatus["BOOKED"] = "BOOKED";
+    SiteVisitStatus["CONFIRMED"] = "CONFIRMED";
+    SiteVisitStatus["COMPLETED"] = "COMPLETED";
+    SiteVisitStatus["NO_SHOW"] = "NO_SHOW";
+    SiteVisitStatus["RESCHEDULED"] = "RESCHEDULED";
+    SiteVisitStatus["CANCELLED"] = "CANCELLED";
+})(SiteVisitStatus || (exports.SiteVisitStatus = SiteVisitStatus = {}));
+/**
+ * Post-visit outcome logged by the broker (drives the follow-up track and
+ * pipeline stage). PENDING until the visit is completed and reviewed.
+ */
+var SiteVisitOutcome;
+(function (SiteVisitOutcome) {
+    SiteVisitOutcome["PENDING"] = "PENDING";
+    SiteVisitOutcome["INTERESTED"] = "INTERESTED";
+    SiteVisitOutcome["NOT_INTERESTED"] = "NOT_INTERESTED";
+    SiteVisitOutcome["WANTS_ALTERNATIVE"] = "WANTS_ALTERNATIVE";
+    SiteVisitOutcome["NEEDS_FOLLOWUP"] = "NEEDS_FOLLOWUP";
+    SiteVisitOutcome["TOKEN_BOOKED"] = "TOKEN_BOOKED";
+})(SiteVisitOutcome || (exports.SiteVisitOutcome = SiteVisitOutcome = {}));
+// ─────────────────────────────────────────────
+// REALTY — INGESTION (Phase 4, blueprint §15)
+// ─────────────────────────────────────────────
+/**
+ * Recognised property-portal enquiry sources. Parsed from portal enquiry
+ * emails and stored as the lead's `sub_source` for source-level ROI.
+ */
+var RealtyPortal;
+(function (RealtyPortal) {
+    RealtyPortal["NINETYNINE_ACRES"] = "99ACRES";
+    RealtyPortal["MAGICBRICKS"] = "MAGICBRICKS";
+    RealtyPortal["HOUSING"] = "HOUSING";
+    RealtyPortal["UNKNOWN"] = "UNKNOWN";
+})(RealtyPortal || (exports.RealtyPortal = RealtyPortal = {}));
+// ─────────────────────────────────────────────
+// REALTY — AI LOOP (intent set + routing, blueprint §16)
+// ─────────────────────────────────────────────
+/**
+ * The 14 real-estate conversational intents the AI loop classifies every
+ * inbound buyer/seller message into (blueprint §16.1). `GENERAL` is the
+ * catch-all fallback when nothing more specific is resolved.
+ */
+var RealtyIntent;
+(function (RealtyIntent) {
+    RealtyIntent["NEW_ENQUIRY"] = "NEW_ENQUIRY";
+    RealtyIntent["PRICE_INQUIRY"] = "PRICE_INQUIRY";
+    RealtyIntent["AVAILABILITY"] = "AVAILABILITY";
+    RealtyIntent["SITE_VISIT"] = "SITE_VISIT";
+    RealtyIntent["DOC_REQUEST"] = "DOC_REQUEST";
+    RealtyIntent["LOCATION_AMENITY"] = "LOCATION_AMENITY";
+    RealtyIntent["LOAN_QUERY"] = "LOAN_QUERY";
+    RealtyIntent["NEGOTIATION"] = "NEGOTIATION";
+    RealtyIntent["LEGAL_RERA"] = "LEGAL_RERA";
+    RealtyIntent["SELLER_LEAD"] = "SELLER_LEAD";
+    RealtyIntent["RENTAL"] = "RENTAL";
+    RealtyIntent["REACTIVATION_REPLY"] = "REACTIVATION_REPLY";
+    RealtyIntent["COMPLAINT_ABUSE"] = "COMPLAINT_ABUSE";
+    RealtyIntent["GENERAL"] = "GENERAL";
+})(RealtyIntent || (exports.RealtyIntent = RealtyIntent = {}));
+/**
+ * Per-intent default autonomy ceiling. Overrides any numeric confidence — the
+ * AI may never act beyond an intent's policy (blueprint §16.3 hard rules).
+ */
+var RealtyRoutePolicy;
+(function (RealtyRoutePolicy) {
+    /** May auto-execute when data + policy are clear (e.g. fresh AVAILABILITY, DOC send). */
+    RealtyRoutePolicy["AUTO_ALLOWED"] = "AUTO_ALLOWED";
+    /** Never auto-send; always draft for a human first (e.g. PRICE_INQUIRY). */
+    RealtyRoutePolicy["DRAFT_ONLY"] = "DRAFT_ONLY";
+    /** Always a full human hand-off (NEGOTIATION, LEGAL_RERA, LOAN_QUERY, SELLER_LEAD, COMPLAINT_ABUSE). */
+    RealtyRoutePolicy["ESCALATE"] = "ESCALATE";
+})(RealtyRoutePolicy || (exports.RealtyRoutePolicy = RealtyRoutePolicy = {}));
+// ─────────────────────────────────────────────
+// REALTY — CADENCES & COMPLIANCE (Phase 5, blueprint §17 / §21)
+// ─────────────────────────────────────────────
+/** What enrols a lead into a follow-up cadence. */
+var CadenceTrigger;
+(function (CadenceTrigger) {
+    CadenceTrigger["NO_RESPONSE"] = "NO_RESPONSE";
+    CadenceTrigger["POST_VISIT"] = "POST_VISIT";
+    CadenceTrigger["DORMANT"] = "DORMANT";
+})(CadenceTrigger || (exports.CadenceTrigger = CadenceTrigger = {}));
+/** A signal that halts a running cadence immediately. */
+var CadenceStopOn;
+(function (CadenceStopOn) {
+    CadenceStopOn["REPLY"] = "REPLY";
+    CadenceStopOn["OPTOUT"] = "OPTOUT";
+    CadenceStopOn["STAGE_CHANGE"] = "STAGE_CHANGE";
+})(CadenceStopOn || (exports.CadenceStopOn = CadenceStopOn = {}));
+/** Lifecycle of a single lead's enrolment in a cadence. */
+var CadenceEnrollmentStatus;
+(function (CadenceEnrollmentStatus) {
+    CadenceEnrollmentStatus["ACTIVE"] = "ACTIVE";
+    CadenceEnrollmentStatus["COMPLETED"] = "COMPLETED";
+    CadenceEnrollmentStatus["STOPPED"] = "STOPPED";
+})(CadenceEnrollmentStatus || (exports.CadenceEnrollmentStatus = CadenceEnrollmentStatus = {}));
+/**
+ * WhatsApp template category. Enforced in code: a MARKETING template may never
+ * be sent inside a closed 24h service window, and only category-correct
+ * templates are allowed (blueprint §21 WhatsApp hygiene).
+ */
+var TemplateCategory;
+(function (TemplateCategory) {
+    TemplateCategory["UTILITY"] = "UTILITY";
+    TemplateCategory["MARKETING"] = "MARKETING";
+})(TemplateCategory || (exports.TemplateCategory = TemplateCategory = {}));
+/** Meta approval state of a template — sends are blocked unless APPROVED. */
+var TemplateApprovalStatus;
+(function (TemplateApprovalStatus) {
+    TemplateApprovalStatus["PENDING"] = "PENDING";
+    TemplateApprovalStatus["APPROVED"] = "APPROVED";
+    TemplateApprovalStatus["REJECTED"] = "REJECTED";
+})(TemplateApprovalStatus || (exports.TemplateApprovalStatus = TemplateApprovalStatus = {}));
+// ─────────────────────────────────────────────
+// REALTY — BROKER SURFACE (Phase 6, blueprint §16)
+// ─────────────────────────────────────────────
+/** State of an AI draft awaiting human review (70–89% confidence band). */
+var ApprovalStatus;
+(function (ApprovalStatus) {
+    ApprovalStatus["PENDING"] = "PENDING";
+    ApprovalStatus["APPROVED"] = "APPROVED";
+    ApprovalStatus["EDITED"] = "EDITED";
+    ApprovalStatus["REJECTED"] = "REJECTED";
+})(ApprovalStatus || (exports.ApprovalStatus = ApprovalStatus = {}));
+/**
+ * Per-account AI independence level (the "autonomy dial"). Raised only on
+ * evidence during pilot migration.
+ */
+var AutonomyLevel;
+(function (AutonomyLevel) {
+    AutonomyLevel["SUGGEST"] = "SUGGEST";
+    AutonomyLevel["ASSISTED"] = "ASSISTED";
+    AutonomyLevel["AUTONOMOUS"] = "AUTONOMOUS";
+})(AutonomyLevel || (exports.AutonomyLevel = AutonomyLevel = {}));
+/** Who currently owns a conversation — the AI or a human broker (takeover). */
+var ConversationOwner;
+(function (ConversationOwner) {
+    ConversationOwner["AI"] = "AI";
+    ConversationOwner["HUMAN"] = "HUMAN";
+})(ConversationOwner || (exports.ConversationOwner = ConversationOwner = {}));
+/** Kinds of item that surface in the broker's notification centre. */
+var BrokerAlertType;
+(function (BrokerAlertType) {
+    BrokerAlertType["HOT_LEAD"] = "HOT_LEAD";
+    BrokerAlertType["MORNING_BRIEFING"] = "MORNING_BRIEFING";
+    BrokerAlertType["APPROVAL_PENDING"] = "APPROVAL_PENDING";
+    BrokerAlertType["TAKEOVER"] = "TAKEOVER";
+    BrokerAlertType["VISIT_REMINDER"] = "VISIT_REMINDER";
+})(BrokerAlertType || (exports.BrokerAlertType = BrokerAlertType = {}));
 //# sourceMappingURL=index.js.map

@@ -34,9 +34,13 @@ export default registerAs('app', () => ({
   // Dashboard frontend — OAuth redirects and password-reset links point here
   frontendUrl: process.env['FRONTEND_URL'] ?? 'http://localhost:3001',
 
-  // Anthropic
-  anthropic: {
-    apiKey: process.env['ANTHROPIC_API_KEY'],
+  // OpenRouter — LLM provider (OpenAI-compatible chat completions, free models)
+  openrouter: {
+    apiKey: process.env['OPENROUTER_API_KEY'],
+    baseUrl: process.env['OPENROUTER_BASE_URL'] ?? 'https://openrouter.ai/api/v1/chat/completions',
+    // Attribution headers OpenRouter uses for its dashboard/rankings.
+    referer: process.env['OPENROUTER_REFERER'] ?? 'https://gosumo.aiknol.com',
+    title: process.env['OPENROUTER_TITLE'] ?? 'GoSumo',
   },
 
   // Qdrant vector DB

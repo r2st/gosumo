@@ -633,6 +633,169 @@ export interface RealtyAssetPublishedEvent extends BaseEvent {
 }
 
 // ─────────────────────────────────────────────
+// REALTY — SITE VISIT EVENTS (Phase 3)
+// ─────────────────────────────────────────────
+
+/** Emitted when a site visit is booked — moves the lead to VISIT_BOOKED. */
+export interface RealtyVisitBookedEvent extends BaseEvent {
+  readonly type: 'realty.visit.booked';
+  visitId: string;
+  leadId: string;
+  projectId: string;
+  unitId?: string;
+  scheduledAt: string;
+  assignedAgentId?: string;
+}
+
+/** Emitted when the buyer confirms attendance. */
+export interface RealtyVisitConfirmedEvent extends BaseEvent {
+  readonly type: 'realty.visit.confirmed';
+  visitId: string;
+  leadId: string;
+  scheduledAt: string;
+}
+
+/** Emitted when a visit is moved to a new time. */
+export interface RealtyVisitRescheduledEvent extends BaseEvent {
+  readonly type: 'realty.visit.rescheduled';
+  visitId: string;
+  leadId: string;
+  oldScheduledAt: string;
+  newScheduledAt: string;
+}
+
+/** Emitted when a visit is cancelled and its slot freed. */
+export interface RealtyVisitCancelledEvent extends BaseEvent {
+  readonly type: 'realty.visit.cancelled';
+  visitId: string;
+  leadId: string;
+  reason?: string;
+}
+
+/** Emitted when a visit completes — moves the lead to VISITED, carries outcome. */
+export interface RealtyVisitCompletedEvent extends BaseEvent {
+  readonly type: 'realty.visit.completed';
+  visitId: string;
+  leadId: string;
+  projectId: string;
+  outcome: string;
+}
+
+/** Emitted when a buyer does not show up for a booked visit. */
+export interface RealtyVisitNoShowEvent extends BaseEvent {
+  readonly type: 'realty.visit.no_show';
+  visitId: string;
+  leadId: string;
+  scheduledAt: string;
+}
+
+/**
+ * Emitted at each reminder offset (T-24h, T-2h) before a visit. Self-consumed
+ * by the notification path to send the WhatsApp reminder template.
+ */
+export interface RealtyVisitReminderEvent extends BaseEvent {
+  readonly type: 'realty.visit.reminder';
+  visitId: string;
+  leadId: string;
+  scheduledAt: string;
+  minutesBefore: number;
+}
+
+// ─────────────────────────────────────────────
+// REALTY — INGESTION EVENTS (Phase 4)
+// ─────────────────────────────────────────────
+
+/**
+ * Emitted whenever a lead is ingested from any external source (Meta Leadgen,
+ * portal email, CSV, CTWA). Carries source metadata for attribution ROI.
+ * `merged` is true when the ingest folded into an existing lead (same E.164
+ * phone) rather than creating a new one — one buyer, one history.
+ */
+export interface RealtyLeadIngestedEvent extends BaseEvent {
+  readonly type: 'realty.lead.ingested';
+  leadId: string;
+  source: string;
+  subSource?: string;
+  listingRef?: string;
+  whatsappPhone: string;
+  merged: boolean;
+}
+
+// ─────────────────────────────────────────────
+// REALTY — CADENCE EVENTS (Phase 5)
+// ─────────────────────────────────────────────
+
+/** Emitted when a lead is enrolled into a follow-up cadence. */
+export interface RealtyCadenceStartedEvent extends BaseEvent {
+  readonly type: 'realty.cadence.started';
+  enrollmentId: string;
+  leadId: string;
+  cadenceId: string;
+  trigger: string;
+}
+
+/** Emitted when a cadence step's template is dispatched (or would be). */
+export interface RealtyCadenceStepSentEvent extends BaseEvent {
+  readonly type: 'realty.cadence.step_sent';
+  enrollmentId: string;
+  leadId: string;
+  cadenceId: string;
+  stepOrder: number;
+  templateId: string;
+}
+
+/** Emitted when a cadence finishes — either ran out of steps or was stopped. */
+export interface RealtyCadenceCompletedEvent extends BaseEvent {
+  readonly type: 'realty.cadence.completed';
+  enrollmentId: string;
+  leadId: string;
+  cadenceId: string;
+  /** COMPLETED (ran all steps) or STOPPED (halted by a stop_on signal). */
+  outcome: string;
+  stopReason?: string;
+}
+
+// ─────────────────────────────────────────────
+// REALTY — BROKER SURFACE EVENTS (Phase 6)
+// ─────────────────────────────────────────────
+
+/** Emitted when any item is pushed to the broker's notification centre. */
+export interface RealtyBrokerAlertEvent extends BaseEvent {
+  readonly type: 'realty.broker.alert';
+  alertId: string;
+  alertType: string;
+  leadId?: string;
+  title: string;
+}
+
+/** Emitted when an AI draft enters the human approval queue (70–89% band). */
+export interface RealtyApprovalCreatedEvent extends BaseEvent {
+  readonly type: 'realty.approval.created';
+  approvalId: string;
+  leadId: string;
+  conversationId?: string;
+  confidence: number;
+}
+
+/** Emitted when a broker approves / edits / rejects an AI draft. */
+export interface RealtyApprovalResolvedEvent extends BaseEvent {
+  readonly type: 'realty.approval.resolved';
+  approvalId: string;
+  leadId: string;
+  outcome: string; // APPROVED | EDITED | REJECTED
+  reviewedBy?: string;
+}
+
+/** Emitted when a broker takes a conversation over from the AI (handoff). */
+export interface RealtyConversationTakenOverEvent extends BaseEvent {
+  readonly type: 'realty.conversation.taken_over';
+  conversationId: string;
+  leadId?: string;
+  owner: string; // AI | HUMAN
+  takenOverBy?: string;
+}
+
+// ─────────────────────────────────────────────
 // UNION TYPE (for typed event bus subscriptions)
 // ─────────────────────────────────────────────
 
@@ -691,7 +854,22 @@ export type DomainEvent =
   | RealtyLeadOptedOutEvent
   | RealtyProjectCreatedEvent
   | RealtyUnitAvailabilityChangedEvent
-  | RealtyAssetPublishedEvent;
+  | RealtyAssetPublishedEvent
+  | RealtyVisitBookedEvent
+  | RealtyVisitConfirmedEvent
+  | RealtyVisitRescheduledEvent
+  | RealtyVisitCancelledEvent
+  | RealtyVisitCompletedEvent
+  | RealtyVisitNoShowEvent
+  | RealtyVisitReminderEvent
+  | RealtyLeadIngestedEvent
+  | RealtyCadenceStartedEvent
+  | RealtyCadenceStepSentEvent
+  | RealtyCadenceCompletedEvent
+  | RealtyBrokerAlertEvent
+  | RealtyApprovalCreatedEvent
+  | RealtyApprovalResolvedEvent
+  | RealtyConversationTakenOverEvent;
 
 /** Infer the event type from the `type` discriminant */
 export type EventType = DomainEvent['type'];

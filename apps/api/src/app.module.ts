@@ -28,6 +28,10 @@ import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { RealtyLeadsModule } from './modules/realty-leads/realty-leads.module';
 import { RealtyInventoryModule } from './modules/realty-inventory/realty-inventory.module';
 import { RealtyAiModule } from './modules/ai-engine/realty/realty-ai.module';
+import { RealtyVisitsModule } from './modules/realty-sitevisits/realty-sitevisits.module';
+import { RealtyIngestionModule } from './modules/realty-ingestion/realty-ingestion.module';
+import { RealtyCadenceModule } from './modules/realty-cadence/realty-cadence.module';
+import { RealtyBrokerModule } from './modules/realty-broker/realty-broker.module';
 
 @Module({
   imports: [
@@ -94,6 +98,10 @@ import { RealtyAiModule } from './modules/ai-engine/realty/realty-ai.module';
     RealtyLeadsModule,
     RealtyInventoryModule,
     RealtyAiModule,
+    RealtyVisitsModule,
+    RealtyIngestionModule,
+    RealtyCadenceModule,
+    RealtyBrokerModule,
   ],
 })
 export class AppModule {}

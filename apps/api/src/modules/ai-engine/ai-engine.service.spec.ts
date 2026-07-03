@@ -75,13 +75,13 @@ interface Harness {
 
 function makeHarness(): Harness {
   const config = {
-    get: (k: string, fb?: string) => (k === 'anthropic.apiKey' ? 'test-key' : fb ?? ''),
+    get: (k: string, fb?: string) => (k === 'openrouter.apiKey' ? 'test-key' : fb ?? ''),
   } as unknown as ConfigService;
 
   const llm = new LlmClientService(config);
   const llmComplete = jest.spyOn(llm, 'complete').mockResolvedValue({
     text: llmResponse('BOOKING'),
-    modelId: 'claude-sonnet-4-5',
+    modelId: 'openai/gpt-oss-20b:free',
     promptTokens: 100,
     completionTokens: 20,
     latencyMs: 50,

@@ -3,7 +3,7 @@ import { LlmClientService, LlmUnavailableError } from './llm-client.service';
 
 function makeClient(apiKey = 'test-key'): LlmClientService {
   const config = {
-    get: (key: string, fallback?: string) => (key === 'anthropic.apiKey' ? apiKey : fallback ?? ''),
+    get: (key: string, fallback?: string) => (key === 'openrouter.apiKey' ? apiKey : fallback ?? ''),
   } as unknown as ConfigService;
   return new LlmClientService(config);
 }
@@ -23,9 +23,9 @@ describe('LlmClientService', () => {
       ok: true,
       status: 200,
       json: async () => ({
-        content: [{ type: 'text', text: '{"response_text":"hi"}' }],
-        model: 'claude-sonnet-4-5',
-        usage: { input_tokens: 42, output_tokens: 8 },
+        choices: [{ message: { content: '{"response_text":"hi"}' }, finish_reason: 'stop' }],
+        model: 'openai/gpt-oss-20b:free',
+        usage: { prompt_tokens: 42, completion_tokens: 8 },
       }),
     } as unknown as Response);
 
@@ -33,7 +33,7 @@ describe('LlmClientService', () => {
     const result = await client.complete(req);
 
     expect(result.text).toBe('{"response_text":"hi"}');
-    expect(result.modelId).toBe('claude-sonnet-4-5');
+    expect(result.modelId).toBe('openai/gpt-oss-20b:free');
     expect(result.promptTokens).toBe(42);
     expect(result.completionTokens).toBe(8);
     expect(result.latencyMs).toBeGreaterThanOrEqual(0);

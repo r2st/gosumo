@@ -297,4 +297,212 @@ export interface UnitMatch {
     /** Why it matched — human-readable reasons for the broker/AI. */
     reasons: string[];
 }
-//# sourceMappingURL=index.d.ts.map
+/**
+ * A normalized lead candidate produced by any ingestion path (Meta Leadgen,
+ * portal-email parser, CSV import, CTWA context) and handed to
+ * `RealtyLeadsService.ingestLead`, which owns the E.164 identity-merge.
+ *
+ * `whatsappPhone` is the join key — it MUST be normalized to E.164 by the
+ * caller (`normalizeIndianPhone`). Fields left undefined are not written on a
+ * merge (existing values are never clobbered by ingestion).
+ */
+export interface LeadIngestCandidate {
+    /** E.164 phone — the cross-source identity key. */
+    whatsappPhone: string;
+    /** Attribution at birth — one of the LeadSource values. */
+    source: string;
+    /** Fine-grained source, e.g. "99acres", the ad/campaign, or portal name. */
+    subSource?: string;
+    /** The specific listing/ad/project the buyer enquired about (CTWA context). */
+    listingRef?: string;
+    name?: string;
+    email?: string;
+    altPhone?: string;
+    languagePref?: string;
+    /** Bridge to an existing conversation when the ingest arrived over a channel. */
+    conversationId?: string;
+    /** Bridge to an existing client record. */
+    clientId?: string;
+    /** Free-form provenance retained on lead metadata (raw form fields, headers). */
+    raw?: Record<string, unknown>;
+}
+/** The outcome of an ingest: the resolved lead id and whether it merged. */
+export interface LeadIngestResult {
+    leadId: string;
+    /** True when folded into an existing lead (same phone); false when created. */
+    merged: boolean;
+}
+/** String-literal mirror of the RealtyIntent enum (shared has no runtime dep). */
+export type RealtyIntentValue = 'NEW_ENQUIRY' | 'PRICE_INQUIRY' | 'AVAILABILITY' | 'SITE_VISIT' | 'DOC_REQUEST' | 'LOCATION_AMENITY' | 'LOAN_QUERY' | 'NEGOTIATION' | 'LEGAL_RERA' | 'SELLER_LEAD' | 'RENTAL' | 'REACTIVATION_REPLY' | 'COMPLAINT_ABUSE' | 'GENERAL';
+/** The four core BLTC slots the qualifier drives to completion. */
+export type BltcSlot = 'budget' | 'location' | 'timeline' | 'config';
+/**
+ * The candidate BLTC values the extractor lifted from a single turn. Only the
+ * slots the buyer actually mentioned are present; everything else is absent.
+ */
+export interface BltcExtraction {
+    budgetMinPaise?: number | null;
+    budgetMaxPaise?: number | null;
+    localities?: string[];
+    timelineMonths?: number | null;
+    config?: string | null;
+    purpose?: LeadPurposeValue | null;
+    financing?: FinancingStatusValue | null;
+}
+/** A slot whose incoming value conflicts with a value already on file. */
+export interface BltcContradiction {
+    slot: string;
+    existing: unknown;
+    incoming: unknown;
+}
+/**
+ * The BLTC state-machine's decision for one conversational turn: what it merged,
+ * what conflicted, and the single question it should ask next (blueprint §16.2).
+ */
+export interface BltcTurnResult {
+    /** Profile after merging non-conflicting extractions. */
+    profile: BltcProfile;
+    /** Names of slots newly filled this turn. */
+    filledThisTurn: string[];
+    /** Conflicts surfaced for a human — never silently overwritten. */
+    contradictions: BltcContradiction[];
+    /** The single slot to ask about next, or null when nothing remains. */
+    nextSlotToAsk: BltcSlot | null;
+    /** A ready-to-send question for `nextSlotToAsk`, or null. */
+    nextQuestion: string | null;
+    /** True when all 4 core BLTC slots are filled. */
+    bltcComplete: boolean;
+    /** True when complete AND the contact is reachable ⇒ QUALIFIED. */
+    qualified: boolean;
+}
+/** A concrete side-effect the grounded turn wants the system to perform. */
+export interface RealtyAction {
+    type: string;
+    parameters: Record<string, unknown>;
+}
+/**
+ * The strict JSON contract the grounded realty turn returns (blueprint §16.3).
+ * `confidence` is on a 0–100 scale to match the realty routing bands.
+ */
+export interface RealtyGroundedResponse {
+    responseText: string | null;
+    confidence: number;
+    intent: RealtyIntentValue;
+    bltcUpdates: BltcExtraction;
+    stageTransition: string | null;
+    actions: RealtyAction[];
+    escalationReason?: string | null;
+}
+/** Routing mode chosen from a realty confidence score. */
+export type RealtyRouteMode = 'AUTO' | 'DRAFT' | 'GUIDED' | 'ESCALATE';
+/** A hard rule that fired and (usually) capped confidence downward. */
+export interface RealtyOverride {
+    code: string;
+    reason: string;
+}
+/**
+ * Realty confidence breakdown (blueprint §16.4):
+ * finalScore = dataAvailability × 0.5 + policyClarity × 0.5, then hard-rule
+ * overrides cap it. All components are on a 0–100 scale.
+ */
+export interface RealtyConfidence {
+    dataAvailability: number;
+    policyClarity: number;
+    finalScore: number;
+    mode: RealtyRouteMode;
+    overrides: RealtyOverride[];
+}
+/** String-literal mirrors of the cadence enums (shared has no runtime dep). */
+export type CadenceTriggerValue = 'NO_RESPONSE' | 'POST_VISIT' | 'DORMANT';
+export type CadenceStopOnValue = 'REPLY' | 'OPTOUT' | 'STAGE_CHANGE';
+export type TemplateCategoryValue = 'UTILITY' | 'MARKETING';
+/**
+ * An optional guard on a cadence step — the step only fires when the lead still
+ * matches. Any field left undefined is not checked.
+ */
+export interface CadenceStepCondition {
+    /** Only fire if the lead is still in one of these stages. */
+    stageIn?: string[];
+    /** Only fire if the lead's temperature is one of these. */
+    temperatureIn?: string[];
+    /** Only fire above this qualification score. */
+    minQualScore?: number;
+    /** Only fire at/below this qualification score. */
+    maxQualScore?: number;
+}
+/** A declarative step in a cadence definition (day-offset scheduling). */
+export interface CadenceStepDefinition {
+    /** 0-based execution order within the cadence. */
+    order: number;
+    /** Days after enrolment to fire this step. */
+    dayOffset: number;
+    /** The WhatsApp template to send at this step. */
+    templateId: string;
+    /** Optional guard; the step is skipped (not stopped) when unmet. */
+    condition?: CadenceStepCondition;
+    /** Signals that abort the whole cadence at/after this step. */
+    stopOn: CadenceStopOnValue[];
+}
+/**
+ * The verdict of the WhatsApp compliance gate for a single outbound send
+ * (blueprint §21). A send proceeds only when `allowed` is true.
+ */
+export interface ComplianceDecision {
+    allowed: boolean;
+    /** Machine-readable reason a send was blocked (`OK` when allowed). */
+    code: 'OK' | 'OPTED_OUT' | 'TEMPLATE_NOT_APPROVED' | 'MARKETING_OUTSIDE_WINDOW' | 'CATEGORY_MISMATCH' | 'NO_TEMPLATE';
+    /** Human-readable explanation for the audit log / broker. */
+    reason: string;
+    /** Whether the send must go out as an approved template (window closed). */
+    requiresTemplate: boolean;
+}
+/**
+ * The hot-lead dossier pushed to the broker the instant a lead turns HOT
+ * (blueprint §16): who, what they want, where they came from, best-fit units,
+ * and a one-tap takeover handle.
+ */
+export interface HotLeadDossier {
+    leadId: string;
+    name: string | null;
+    whatsappPhone: string;
+    qualScore: number;
+    temperature: string;
+    stage: string;
+    source: string;
+    bltcSummary: string;
+    matchedUnitIds: string[];
+    conversationId: string | null;
+    assignedAgentId: string | null;
+}
+/** One line-item in the morning briefing. */
+export interface BriefingItem {
+    leadId: string;
+    name: string | null;
+    detail: string;
+}
+/**
+ * The 7:30 AM broker digest (blueprint §16): today's visits, hot leads,
+ * pending follow-ups due today, and a pipeline snapshot.
+ */
+export interface MorningBriefing {
+    date: string;
+    hotLeads: BriefingItem[];
+    visitsToday: BriefingItem[];
+    followupsDue: BriefingItem[];
+    pendingApprovals: number;
+    pipeline: Array<{
+        stage: string;
+        count: number;
+    }>;
+    generatedAt: string;
+}
+/** Aggregate metrics for the broker console header. */
+export interface BrokerConsoleMetrics {
+    activeLeads: number;
+    hotLeads: number;
+    pendingApprovals: number;
+    followupsDueToday: number;
+    activeCadences: number;
+    autonomyLevel: string;
+    aiHandledPct: number;
+}

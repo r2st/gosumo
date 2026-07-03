@@ -136,3 +136,274 @@ export const STAGE_LABELS: Record<LeadStage, string> = {
   CLOSED_LOST: 'Closed Lost',
   DORMANT: 'Dormant',
 };
+
+// ─────────────────────────────────────────────
+// Phase 3 — Site visits
+// ─────────────────────────────────────────────
+
+export type SiteVisitStatus =
+  | 'BOOKED'
+  | 'CONFIRMED'
+  | 'COMPLETED'
+  | 'NO_SHOW'
+  | 'RESCHEDULED'
+  | 'CANCELLED';
+
+export type SiteVisitOutcome =
+  | 'PENDING'
+  | 'INTERESTED'
+  | 'NOT_INTERESTED'
+  | 'WANTS_ALTERNATIVE'
+  | 'NEEDS_FOLLOWUP'
+  | 'TOKEN_BOOKED';
+
+export interface SiteVisit {
+  id: string;
+  businessId: string;
+  leadId: string;
+  projectId: string;
+  unitId: string | null;
+  assignedAgentId: string | null;
+  scheduledAt: string;
+  durationMinutes: number;
+  timezone: string;
+  status: SiteVisitStatus;
+  bookingId: string | null;
+  calendarEventId: string | null;
+  calendarId: string | null;
+  reminderState: Record<string, boolean>;
+  remindersSent: number;
+  lastReminderAt: string | null;
+  feedback: string | null;
+  outcome: SiteVisitOutcome;
+  rescheduledFrom: string | null;
+  cancellationReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const SITE_VISIT_STATUSES: SiteVisitStatus[] = [
+  'BOOKED',
+  'CONFIRMED',
+  'COMPLETED',
+  'NO_SHOW',
+  'RESCHEDULED',
+  'CANCELLED',
+];
+
+export const SITE_VISIT_STATUS_LABELS: Record<SiteVisitStatus, string> = {
+  BOOKED: 'Booked',
+  CONFIRMED: 'Confirmed',
+  COMPLETED: 'Completed',
+  NO_SHOW: 'No-show',
+  RESCHEDULED: 'Rescheduled',
+  CANCELLED: 'Cancelled',
+};
+
+export const SITE_VISIT_OUTCOMES: SiteVisitOutcome[] = [
+  'PENDING',
+  'INTERESTED',
+  'NOT_INTERESTED',
+  'WANTS_ALTERNATIVE',
+  'NEEDS_FOLLOWUP',
+  'TOKEN_BOOKED',
+];
+
+export const SITE_VISIT_OUTCOME_LABELS: Record<SiteVisitOutcome, string> = {
+  PENDING: 'Pending',
+  INTERESTED: 'Interested',
+  NOT_INTERESTED: 'Not interested',
+  WANTS_ALTERNATIVE: 'Wants alternative',
+  NEEDS_FOLLOWUP: 'Needs follow-up',
+  TOKEN_BOOKED: 'Token booked',
+};
+
+export interface BookVisitInput {
+  leadId: string;
+  projectId: string;
+  unitId?: string;
+  scheduledAt: string;
+  durationMinutes?: number;
+  assignedAgentId?: string;
+  staffId?: string;
+  notes?: string;
+}
+
+export interface SiteVisitListResponse {
+  data: SiteVisit[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+// ─────────────────────────────────────────────
+// Phase 4 — Ingestion (CSV import)
+// ─────────────────────────────────────────────
+
+export interface CsvImportRow {
+  phone: string;
+  name?: string;
+  email?: string;
+  source?: string;
+  subSource?: string;
+  listingRef?: string;
+}
+
+export interface CsvImportResult {
+  total: number;
+  created: number;
+  merged: number;
+  skipped: number;
+  errors: Array<{ row: number; reason: string }>;
+}
+
+// ─────────────────────────────────────────────
+// Phase 5 — Cadences & compliance
+// ─────────────────────────────────────────────
+
+export type CadenceTrigger = 'NO_RESPONSE' | 'POST_VISIT' | 'DORMANT';
+export type CadenceStopOn = 'REPLY' | 'OPTOUT' | 'STAGE_CHANGE';
+export type TemplateCategory = 'UTILITY' | 'MARKETING';
+export type TemplateApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+export type CadenceEnrollmentStatus = 'ACTIVE' | 'COMPLETED' | 'STOPPED';
+
+export interface MessageTemplate {
+  id: string;
+  name: string;
+  category: TemplateCategory;
+  language: string;
+  body: string;
+  variables: string[];
+  approvalStatus: TemplateApprovalStatus;
+  approvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CadenceStep {
+  id: string;
+  order: number;
+  dayOffset: number;
+  templateId: string;
+  templateName: string;
+  stopOn: CadenceStopOn[];
+}
+
+export interface Cadence {
+  id: string;
+  name: string;
+  description: string | null;
+  trigger: CadenceTrigger;
+  isActive: boolean;
+  steps: CadenceStep[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CadenceEnrollment {
+  id: string;
+  leadId: string;
+  cadenceId: string;
+  trigger: CadenceTrigger;
+  status: CadenceEnrollmentStatus;
+  currentStep: number;
+  nextRunAt: string | null;
+  stopReason: string | null;
+  lastStepSentAt: string | null;
+  startedAt: string;
+  completedAt: string | null;
+}
+
+export const CADENCE_TRIGGER_LABELS: Record<CadenceTrigger, string> = {
+  NO_RESPONSE: 'No response',
+  POST_VISIT: 'Post-visit',
+  DORMANT: 'Dormant reactivation',
+};
+
+// ─────────────────────────────────────────────
+// Phase 6 — Broker surface
+// ─────────────────────────────────────────────
+
+export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'EDITED' | 'REJECTED';
+export type AutonomyLevel = 'SUGGEST' | 'ASSISTED' | 'AUTONOMOUS';
+export type BrokerAlertType =
+  | 'HOT_LEAD'
+  | 'MORNING_BRIEFING'
+  | 'APPROVAL_PENDING'
+  | 'TAKEOVER'
+  | 'VISIT_REMINDER';
+
+export interface Approval {
+  id: string;
+  leadId: string;
+  conversationId: string | null;
+  draftText: string;
+  editedText: string | null;
+  confidence: number;
+  intent: string | null;
+  status: ApprovalStatus;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  reason: string | null;
+  createdAt: string;
+}
+
+export interface BrokerSettings {
+  autonomyLevel: AutonomyLevel;
+  autoApproveThreshold: number;
+  killSwitch: boolean;
+  briefingEnabled: boolean;
+  briefingHour: number;
+  briefingMinute: number;
+  hotAlertWhatsapp: string | null;
+}
+
+export interface BrokerAlert {
+  id: string;
+  type: BrokerAlertType;
+  leadId: string | null;
+  title: string;
+  body: string | null;
+  payload: Record<string, unknown>;
+  isRead: boolean;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface AlertsResponse {
+  alerts: BrokerAlert[];
+  unread: number;
+}
+
+export interface BriefingItem {
+  leadId: string;
+  name: string | null;
+  detail: string;
+}
+
+export interface MorningBriefing {
+  date: string;
+  hotLeads: BriefingItem[];
+  visitsToday: BriefingItem[];
+  followupsDue: BriefingItem[];
+  pendingApprovals: number;
+  pipeline: { stage: string; count: number }[];
+  generatedAt: string;
+}
+
+export interface BrokerConsoleMetrics {
+  activeLeads: number;
+  hotLeads: number;
+  pendingApprovals: number;
+  followupsDueToday: number;
+  activeCadences: number;
+  autonomyLevel: string;
+  aiHandledPct: number;
+}
+
+export const AUTONOMY_LABELS: Record<AutonomyLevel, string> = {
+  SUGGEST: 'Suggest (approve every send)',
+  ASSISTED: 'Assisted (auto-send high confidence)',
+  AUTONOMOUS: 'Autonomous (AI runs the desk)',
+};

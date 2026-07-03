@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
@@ -10,6 +11,7 @@ import type { realty_leads } from '@prisma/client';
 import {
   generateId,
   generateCorrelationId,
+  normalizeIndianPhone,
   LeadStage,
   LeadSource,
 } from '@gosumo/shared';
@@ -17,11 +19,14 @@ import type {
   BltcProfile,
   LeadMemoryEntry,
   LeadScoreResult,
+  LeadIngestCandidate,
+  LeadIngestResult,
   RealtyLeadCreatedEvent,
   RealtyLeadQualifiedEvent,
   RealtyLeadStageChangedEvent,
   RealtyLeadHotEvent,
   RealtyLeadOptedOutEvent,
+  RealtyLeadIngestedEvent,
   MessageReceivedEvent,
 } from '@gosumo/shared';
 import { RealtyLeadsRepository } from './realty-leads.repository';
@@ -155,9 +160,127 @@ export class RealtyLeadsService {
     return this.mapResponse(lead);
   }
 
+  /**
+   * Ingest a lead from an external source (Meta Leadgen, portal email, CSV,
+   * CTWA) with E.164 identity-merge — the single entry point the ingestion
+   * module calls (blueprint §15: one buyer, one history).
+   *
+   * The candidate phone is normalized to E.164; if a lead already exists for
+   * that phone we MERGE (fill only empty identity fields, attach CTWA/listing
+   * context + raw provenance to metadata, touch activity) rather than create a
+   * duplicate. Attribution on an existing lead is never mutated. Emits
+   * `realty.lead.ingested` (with `merged`) in both paths, plus
+   * `realty.lead.created` on a fresh capture.
+   */
+  async ingestLead(
+    businessId: string,
+    candidate: LeadIngestCandidate,
+  ): Promise<LeadIngestResult> {
+    const phone = normalizeIndianPhone(candidate.whatsappPhone);
+    if (!phone) {
+      throw new BadRequestException(
+        `Ingest candidate has an unusable phone: "${candidate.whatsappPhone}"`,
+      );
+    }
+
+    const existing = await this.repository.findByPhone(businessId, phone);
+    let leadId: string;
+    let merged: boolean;
+
+    if (existing) {
+      merged = true;
+      leadId = existing.id;
+      const provenance = {
+        source: candidate.source,
+        subSource: candidate.subSource,
+        listingRef: candidate.listingRef,
+        at: new Date().toISOString(),
+        ...(candidate.raw ? { raw: candidate.raw } : {}),
+      };
+      const ingestHistory = [
+        ...this.readIngestHistory(existing.metadata),
+        provenance,
+      ];
+      const data: UpdateLeadData = {
+        lastActivityAt: new Date(),
+        metadata: {
+          ...(existing.metadata as Record<string, unknown>),
+          ingestHistory,
+          ...(candidate.listingRef ? { lastListingRef: candidate.listingRef } : {}),
+        } as Prisma.InputJsonValue,
+      };
+      // Fill only missing identity fields — never clobber known values.
+      if (!existing.name && candidate.name) data.name = candidate.name;
+      if (!existing.email && candidate.email) data.email = candidate.email;
+      if (!existing.alt_phone && candidate.altPhone) data.altPhone = candidate.altPhone;
+      if (!existing.conversation_id && candidate.conversationId) {
+        data.conversationId = candidate.conversationId;
+      }
+      if (!existing.client_id && candidate.clientId) data.clientId = candidate.clientId;
+      await this.repository.update(businessId, leadId, data);
+      this.logger.log(`Merged ingest (${candidate.source}) into lead ${leadId}`);
+    } else {
+      merged = false;
+      const created = await this.createLead(businessId, {
+        whatsappPhone: phone,
+        source: candidate.source as LeadSource,
+        name: candidate.name,
+        email: candidate.email,
+        altPhone: candidate.altPhone,
+        languagePref: candidate.languagePref,
+        subSource: candidate.subSource,
+        listingRef: candidate.listingRef,
+        conversationId: candidate.conversationId,
+        clientId: candidate.clientId,
+      });
+      leadId = created.id;
+      if (candidate.raw) {
+        await this.repository.update(businessId, leadId, {
+          metadata: {
+            ingestHistory: [
+              {
+                source: candidate.source,
+                subSource: candidate.subSource,
+                listingRef: candidate.listingRef,
+                at: new Date().toISOString(),
+                raw: candidate.raw,
+              },
+            ],
+          } as Prisma.InputJsonValue,
+        });
+      }
+    }
+
+    this.emit<RealtyLeadIngestedEvent>('realty.lead.ingested', {
+      ...this.baseEvent(businessId),
+      type: 'realty.lead.ingested',
+      leadId,
+      source: candidate.source,
+      subSource: candidate.subSource,
+      listingRef: candidate.listingRef,
+      whatsappPhone: phone,
+      merged,
+    });
+
+    return { leadId, merged };
+  }
+
   async getLead(businessId: string, leadId: string): Promise<LeadResponseDto> {
     const lead = await this.mustFind(businessId, leadId);
     return this.mapResponse(lead);
+  }
+
+  /**
+   * Resolve a lead by its E.164 WhatsApp phone (the cross-source join key).
+   * Returns null when unseen. Used by the cadence engine to stop follow-ups the
+   * moment a buyer replies (blueprint §17 stop-on-reply).
+   */
+  async findLeadByPhone(
+    businessId: string,
+    whatsappPhone: string,
+  ): Promise<LeadResponseDto | null> {
+    const lead = await this.repository.findByPhone(businessId, whatsappPhone);
+    return lead ? this.mapResponse(lead) : null;
   }
 
   async updateLead(
@@ -497,6 +620,11 @@ export class RealtyLeadsService {
 
   private readMemory(value: unknown): LeadMemoryEntry[] {
     return Array.isArray(value) ? (value as LeadMemoryEntry[]) : [];
+  }
+
+  private readIngestHistory(metadata: unknown): Record<string, unknown>[] {
+    const history = (metadata as Record<string, unknown>)?.['ingestHistory'];
+    return Array.isArray(history) ? (history as Record<string, unknown>[]) : [];
   }
 
   private stageRank(stage: string): number {

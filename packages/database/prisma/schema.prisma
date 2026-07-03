@@ -431,6 +431,81 @@ enum RealtyAssetType {
   PIN
 }
 
+enum SiteVisitStatus {
+  BOOKED
+  CONFIRMED
+  COMPLETED
+  NO_SHOW
+  RESCHEDULED
+  CANCELLED
+}
+
+enum SiteVisitOutcome {
+  PENDING
+  INTERESTED
+  NOT_INTERESTED
+  WANTS_ALTERNATIVE
+  NEEDS_FOLLOWUP
+  TOKEN_BOOKED
+}
+
+// Realty — cadences & compliance (Phase 5)
+enum CadenceTrigger {
+  NO_RESPONSE
+  POST_VISIT
+  DORMANT
+}
+
+enum CadenceStopOn {
+  REPLY
+  OPTOUT
+  STAGE_CHANGE
+}
+
+enum CadenceEnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  STOPPED
+}
+
+enum TemplateCategory {
+  UTILITY
+  MARKETING
+}
+
+enum TemplateApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// Realty — broker surface (Phase 6)
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  EDITED
+  REJECTED
+}
+
+enum AutonomyLevel {
+  SUGGEST
+  ASSISTED
+  AUTONOMOUS
+}
+
+enum ConversationOwner {
+  AI
+  HUMAN
+}
+
+enum BrokerAlertType {
+  HOT_LEAD
+  MORNING_BRIEFING
+  APPROVAL_PENDING
+  TAKEOVER
+  VISIT_REMINDER
+}
+
 // ─────────────────────────────────────────────
 // PLATFORM LAYER
 // ─────────────────────────────────────────────
@@ -471,44 +546,53 @@ model businesses {
   deleted_at DateTime? @db.Timestamptz
 
   // Relations
-  team_members               team_members[]
-  clients                    clients[]
-  channel_accounts           channel_accounts[]
-  channel_contacts           channel_contacts[]
-  conversations              conversations[]
-  messages                   messages[]
-  business_rules             business_rules[]
-  catalog_categories         catalog_categories[]
-  catalog_items              catalog_items[]
-  catalog_variants           catalog_variants[]
-  catalog_packages           catalog_packages[]
-  orders                     orders[]
-  payments                   payments[]
-  bookings                   bookings[]
-  shipments                  shipments[]
-  campaigns                  campaigns[]
-  notification_templates     notification_templates[]
-  notifications              notifications[]
-  notification_preferences   notification_preferences[]
-  notification_triggers      notification_triggers[]
-  tasks                      tasks[]
-  ai_decisions               ai_decisions[]
-  ai_precedents              ai_precedents[]
-  analytics_events           analytics_events[]
-  vector_embeddings_metadata vector_embeddings_metadata[]
-  file_uploads               file_uploads[]
-  audit_logs                 audit_logs[]
-  webhook_events             webhook_events[]
-  shipping_addresses         shipping_addresses[]
-  shipping_options           shipping_options[]
-  refunds                    refunds[]
-  carts                      carts[]
-  cart_items                 cart_items[]
-  coupons                    coupons[]
-  realty_leads               realty_leads[]
-  realty_projects            realty_projects[]
-  realty_units               realty_units[]
-  realty_assets              realty_assets[]
+  team_members                team_members[]
+  clients                     clients[]
+  channel_accounts            channel_accounts[]
+  channel_contacts            channel_contacts[]
+  conversations               conversations[]
+  messages                    messages[]
+  business_rules              business_rules[]
+  catalog_categories          catalog_categories[]
+  catalog_items               catalog_items[]
+  catalog_variants            catalog_variants[]
+  catalog_packages            catalog_packages[]
+  orders                      orders[]
+  payments                    payments[]
+  bookings                    bookings[]
+  shipments                   shipments[]
+  campaigns                   campaigns[]
+  notification_templates      notification_templates[]
+  notifications               notifications[]
+  notification_preferences    notification_preferences[]
+  notification_triggers       notification_triggers[]
+  tasks                       tasks[]
+  ai_decisions                ai_decisions[]
+  ai_precedents               ai_precedents[]
+  analytics_events            analytics_events[]
+  vector_embeddings_metadata  vector_embeddings_metadata[]
+  file_uploads                file_uploads[]
+  audit_logs                  audit_logs[]
+  webhook_events              webhook_events[]
+  shipping_addresses          shipping_addresses[]
+  shipping_options            shipping_options[]
+  refunds                     refunds[]
+  carts                       carts[]
+  cart_items                  cart_items[]
+  coupons                     coupons[]
+  realty_leads                realty_leads[]
+  realty_projects             realty_projects[]
+  realty_units                realty_units[]
+  realty_assets               realty_assets[]
+  realty_site_visits          realty_site_visits[]
+  realty_message_templates    realty_message_templates[]
+  realty_cadences             realty_cadences[]
+  realty_cadence_steps        realty_cadence_steps[]
+  realty_cadence_enrollments  realty_cadence_enrollments[]
+  realty_approvals            realty_approvals[]
+  realty_account_settings     realty_account_settings?
+  realty_broker_alerts        realty_broker_alerts[]
+  realty_conversation_control realty_conversation_control[]
 
   @@index([slug])
   @@index([email])
@@ -2152,17 +2236,17 @@ model realty_leads {
   language_pref  String  @default("hinglish") @db.VarChar(20)
 
   // Attribution — recorded at birth, never mutated
-  source        LeadSource
-  sub_source    String?   @db.VarChar(120)
-  campaign_id   String?   @db.Uuid
+  source         LeadSource
+  sub_source     String?    @db.VarChar(120)
+  campaign_id    String?    @db.Uuid
   /// The specific listing/ad the buyer enquired about
-  listing_ref   String?   @db.VarChar(255)
-  first_touch_at DateTime @default(now()) @db.Timestamptz
+  listing_ref    String?    @db.VarChar(255)
+  first_touch_at DateTime   @default(now()) @db.Timestamptz
 
   // Requirement profile (BLTC+) — amounts in rupees (Decimal), paise at API edge
-  budget_min      Decimal? @db.Decimal(14, 2)
-  budget_max      Decimal? @db.Decimal(14, 2)
-  localities      String[] @default([])
+  budget_min      Decimal?         @db.Decimal(14, 2)
+  budget_max      Decimal?         @db.Decimal(14, 2)
+  localities      String[]         @default([])
   timeline_months Int?
   config          String?          @db.VarChar(60)
   purpose         LeadPurpose?
@@ -2186,8 +2270,8 @@ model realty_leads {
   exchange_status LeadExchangeStatus @default(NONE)
 
   // Persistence (follow-up engine state)
-  cadence_id      String?   @db.Uuid
-  cadence_step    Int       @default(0)
+  cadence_id       String?   @db.Uuid
+  cadence_step     Int       @default(0)
   next_followup_at DateTime? @db.Timestamptz
 
   last_activity_at DateTime? @db.Timestamptz
@@ -2304,14 +2388,14 @@ model realty_assets {
   business_id String @db.Uuid
   project_id  String @db.Uuid
 
-  type    RealtyAssetType
+  type        RealtyAssetType
   /// WhatsApp-side media id for instant re-send without re-upload
-  wa_media_id String? @db.VarChar(255)
-  url         String? @db.Text
-  title       String? @db.VarChar(255)
-  version     Int     @default(1)
-  is_current  Boolean @default(true)
-  metadata    Json    @default("{}") @db.JsonB
+  wa_media_id String?         @db.VarChar(255)
+  url         String?         @db.Text
+  title       String?         @db.VarChar(255)
+  version     Int             @default(1)
+  is_current  Boolean         @default(true)
+  metadata    Json            @default("{}") @db.JsonB
 
   created_at DateTime  @default(now()) @db.Timestamptz
   updated_at DateTime  @updatedAt @db.Timestamptz
@@ -2323,4 +2407,292 @@ model realty_assets {
   @@index([business_id, project_id, type, is_current])
   @@index([deleted_at])
   @@map("realty_assets")
+}
+
+// ─────────────────────────────────────────────
+// REALTY — SITE VISITS (Phase 3)
+// ─────────────────────────────────────────────
+
+/// A scheduled property site visit. Sits on top of the `booking` module for
+/// Google Calendar sync; owns the realty-specific reminder cadence (T-24h,
+/// T-2h), reschedule/cancel flows, and post-visit feedback + outcome logging.
+/// lead_id / project_id / unit_id are loose UUID references (module-boundary
+/// decoupling) with FK constraints enforced at the DB level.
+model realty_site_visits {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  lead_id           String  @db.Uuid
+  project_id        String  @db.Uuid
+  unit_id           String? @db.Uuid
+  assigned_agent_id String? @db.Uuid
+
+  scheduled_at     DateTime @db.Timestamptz
+  duration_minutes Int      @default(45)
+  timezone         String   @default("Asia/Kolkata") @db.VarChar(60)
+
+  status SiteVisitStatus @default(BOOKED)
+
+  // Google Calendar linkage (via the booking module's OAuth connection)
+  booking_id        String? @db.Uuid
+  calendar_event_id String? @db.VarChar(255)
+  calendar_id       String? @db.VarChar(255)
+
+  // Reminder tracking — { "1440": true, "120": false } keyed by minutes-before
+  reminder_state   Json      @default("{}") @db.JsonB
+  reminders_sent   Int       @default(0)
+  last_reminder_at DateTime? @db.Timestamptz
+
+  // Post-visit capture
+  feedback String?          @db.Text
+  outcome  SiteVisitOutcome @default(PENDING)
+
+  rescheduled_from    DateTime? @db.Timestamptz
+  cancellation_reason String?   @db.Text
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, status, scheduled_at])
+  @@index([business_id, lead_id])
+  @@index([business_id, scheduled_at])
+  @@index([business_id, assigned_agent_id, scheduled_at])
+  @@index([deleted_at])
+  @@map("realty_site_visits")
+}
+
+// ─────────────────────────────────────────────
+// REALTY — CADENCES & COMPLIANCE (Phase 5)
+// ─────────────────────────────────────────────
+
+/// A WhatsApp message template mirror of the Meta template registry.
+/// Sends are blocked unless approval_status = APPROVED and the category
+/// is correct for the current service-window state (blueprint §21).
+model realty_message_templates {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  /// Stable key referenced by cadence steps, e.g. "followup_d3"
+  name            String                 @db.VarChar(120)
+  category        TemplateCategory       @default(UTILITY)
+  /// BCP-47-ish language tag, e.g. "en", "hi", "en_US"
+  language        String                 @db.VarChar(20)
+  /// The template body with {{1}}, {{2}} placeholders
+  body            String                 @db.Text
+  /// Ordered placeholder variable names for {{1..n}}
+  variables       String[]               @default([])
+  approval_status TemplateApprovalStatus @default(PENDING)
+  approved_at     DateTime?              @db.Timestamptz
+  metadata        Json                   @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses             @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  steps    realty_cadence_steps[]
+
+  @@unique([business_id, name], map: "uq_realty_templates_business_name")
+  @@index([business_id, approval_status])
+  @@index([deleted_at])
+  @@map("realty_message_templates")
+}
+
+/// A declarative follow-up sequence. Leads auto-enroll when the trigger fires.
+model realty_cadences {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  name        String         @db.VarChar(160)
+  description String?        @db.Text
+  trigger     CadenceTrigger
+  is_active   Boolean        @default(true)
+  metadata    Json           @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business    businesses                   @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  steps       realty_cadence_steps[]
+  enrollments realty_cadence_enrollments[]
+
+  @@index([business_id, trigger, is_active])
+  @@index([deleted_at])
+  @@map("realty_cadences")
+}
+
+/// One step in a cadence: fire `template` on day `day_offset` after enrolment,
+/// gated by `condition`, and abort the cadence on any `stop_on` signal.
+model realty_cadence_steps {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+  cadence_id  String @db.Uuid
+  template_id String @db.Uuid
+
+  step_order Int
+  day_offset Int
+  /// Optional per-step guard (stageIn / temperatureIn / score bounds)
+  condition  Json            @default("{}") @db.JsonB
+  stop_on    CadenceStopOn[] @default([])
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses               @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  cadence  realty_cadences          @relation(fields: [cadence_id], references: [id], onDelete: Cascade)
+  template realty_message_templates @relation(fields: [template_id], references: [id], onDelete: Restrict)
+
+  @@unique([cadence_id, step_order], map: "uq_realty_cadence_step_order")
+  @@index([business_id, cadence_id])
+  @@index([deleted_at])
+  @@map("realty_cadence_steps")
+}
+
+/// A single lead's run through a cadence. Scheduling state (next_run_at,
+/// current_step) lives here so the engine can process due steps cheaply.
+model realty_cadence_enrollments {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+  cadence_id  String @db.Uuid
+  lead_id     String @db.Uuid
+
+  status            CadenceEnrollmentStatus @default(ACTIVE)
+  current_step      Int                     @default(0)
+  next_run_at       DateTime?               @db.Timestamptz
+  trigger           CadenceTrigger
+  stop_reason       String?                 @db.VarChar(60)
+  last_step_sent_at DateTime?               @db.Timestamptz
+  started_at        DateTime                @default(now()) @db.Timestamptz
+  completed_at      DateTime?               @db.Timestamptz
+  metadata          Json                    @default("{}") @db.JsonB
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses      @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  cadence  realty_cadences @relation(fields: [cadence_id], references: [id], onDelete: Cascade)
+
+  /// One active enrolment per lead at a time is enforced in the service layer.
+  @@index([business_id, status, next_run_at])
+  @@index([business_id, lead_id, status])
+  @@index([business_id, cadence_id])
+  @@map("realty_cadence_enrollments")
+}
+
+// ─────────────────────────────────────────────
+// REALTY — BROKER SURFACE (Phase 6)
+// ─────────────────────────────────────────────
+
+/// An AI draft parked for human review (70–89% confidence band).
+model realty_approvals {
+  id              String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id     String  @db.Uuid
+  lead_id         String  @db.Uuid
+  conversation_id String? @db.Uuid
+
+  draft_text  String         @db.Text
+  edited_text String?        @db.Text
+  /// 0–100 realty confidence that produced this draft
+  confidence  Int
+  intent      String?        @db.VarChar(60)
+  status      ApprovalStatus @default(PENDING)
+  reviewed_by String?        @db.Uuid
+  reviewed_at DateTime?      @db.Timestamptz
+  reason      String?        @db.VarChar(500)
+  metadata    Json           @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, status, created_at])
+  @@index([business_id, lead_id])
+  @@index([deleted_at])
+  @@map("realty_approvals")
+}
+
+/// Per-account broker configuration — the autonomy dial + kill switch + digest.
+/// Exactly one row per business.
+model realty_account_settings {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @unique @db.Uuid
+
+  autonomy_level         AutonomyLevel @default(SUGGEST)
+  /// Confidence at/above which the AI may auto-send in ASSISTED/AUTONOMOUS (0–100)
+  auto_approve_threshold Int           @default(90)
+  /// Master off-switch — when true, the AI never sends autonomously
+  kill_switch            Boolean       @default(false)
+  briefing_enabled       Boolean       @default(true)
+  /// Local-time hour (IST) the morning briefing is generated
+  briefing_hour          Int           @default(7)
+  briefing_minute        Int           @default(30)
+  /// Where hot-lead alerts are pushed
+  hot_alert_whatsapp     String?       @db.VarChar(20)
+  metadata               Json          @default("{}") @db.JsonB
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@map("realty_account_settings")
+}
+
+/// The broker's notification-centre feed — hot leads, briefings, approvals, etc.
+model realty_broker_alerts {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  type    BrokerAlertType
+  lead_id String?         @db.Uuid
+  title   String          @db.VarChar(200)
+  body    String?         @db.Text
+  /// Structured payload (e.g. the hot-lead dossier)
+  payload Json            @default("{}") @db.JsonB
+  is_read Boolean         @default(false)
+  read_at DateTime?       @db.Timestamptz
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, is_read, created_at])
+  @@index([business_id, type, created_at])
+  @@index([business_id, lead_id])
+  @@map("realty_broker_alerts")
+}
+
+/// Who currently owns a conversation — the AI or a human broker (takeover).
+/// A row exists only once a conversation's control has ever been asserted.
+model realty_conversation_control {
+  id              String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id     String  @db.Uuid
+  conversation_id String  @db.Uuid
+  lead_id         String? @db.Uuid
+
+  owner         ConversationOwner @default(AI)
+  taken_over_by String?           @db.Uuid
+  taken_over_at DateTime?         @db.Timestamptz
+  released_at   DateTime?         @db.Timestamptz
+  metadata      Json              @default("{}") @db.JsonB
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@unique([business_id, conversation_id], map: "uq_realty_conv_control")
+  @@index([business_id, owner])
+  @@index([business_id, lead_id])
+  @@map("realty_conversation_control")
 }
