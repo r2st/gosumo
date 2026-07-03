@@ -83,6 +83,23 @@ export interface LeadBoardColumn {
 export type ProjectStatus = 'PRELAUNCH' | 'UC' | 'RTM';
 export type NetworkVisibility = 'PRIVATE' | 'EXCHANGE';
 
+/**
+ * CP commission terms — free-form JSON on the project. PRIVATE: this is broker-only
+ * and is never surfaced to buyers or fed to the AI. Common keys are typed for
+ * convenient rendering; unknown keys are tolerated and shown generically.
+ */
+export interface CommissionTerms {
+  /** Brokerage as a percentage of deal value, e.g. 2 for 2%. */
+  pct?: number;
+  /** Flat brokerage in paise (alternative to `pct`). */
+  flatPaise?: number;
+  /** Payout schedule, e.g. "50% on booking, 50% on registration". */
+  payoutTerms?: string;
+  /** Free-text notes. */
+  notes?: string;
+  [key: string]: unknown;
+}
+
 export interface RealtyProject {
   id: string;
   businessId: string;
@@ -96,11 +113,40 @@ export interface RealtyProject {
   priceBandMinPaise: number | null;
   priceBandMaxPaise: number | null;
   factSheetDocId: string | null;
+  commissionTerms: CommissionTerms;
   networkVisibility: NetworkVisibility;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
 }
+
+export type RealtyAssetType = 'BROCHURE' | 'FLOORPLAN' | 'PRICESHEET' | 'VIDEO' | 'PIN';
+
+export interface RealtyAsset {
+  id: string;
+  projectId: string;
+  type: RealtyAssetType;
+  url: string | null;
+  waMediaId: string | null;
+  title: string | null;
+  version: number;
+  isCurrent: boolean;
+  createdAt: string;
+}
+
+export const ASSET_TYPE_LABELS: Record<RealtyAssetType, string> = {
+  BROCHURE: 'Brochure',
+  FLOORPLAN: 'Floor plan',
+  PRICESHEET: 'Price sheet',
+  VIDEO: 'Video',
+  PIN: 'Location pin',
+};
+
+export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
+  PRELAUNCH: 'Pre-launch',
+  UC: 'Under construction',
+  RTM: 'Ready to move',
+};
 
 export type UnitAvailability = 'AVAILABLE' | 'HELD' | 'SOLD' | 'UNVERIFIED';
 

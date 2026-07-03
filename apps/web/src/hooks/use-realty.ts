@@ -9,6 +9,7 @@ import type {
   LeadBoardColumn,
   LeadStage,
   RealtyProject,
+  RealtyAsset,
   UnitMatch,
   RealtyUnit,
   MessageTemplate,
@@ -126,6 +127,14 @@ export function useProjects(filters: { locality?: string; status?: string } = {}
   });
 }
 
+export function useProject(id: string | null) {
+  return useQuery({
+    queryKey: ['realty', 'project', id],
+    queryFn: () => apiRequest<RealtyProject>(`/realty/projects/${id}`),
+    enabled: !!id,
+  });
+}
+
 /** Units for one project — powers config range, price range, availability, and freshness on inventory cards. */
 export function useProjectUnits(projectId: string | null) {
   return useQuery({
@@ -133,6 +142,29 @@ export function useProjectUnits(projectId: string | null) {
     queryFn: ({ signal }) =>
       apiRequest<RealtyUnit[]>(`/realty/projects/${projectId}/units`, { signal }),
     enabled: !!projectId,
+  });
+}
+
+/** Versioned media assets (brochures, floor plans, price sheets, videos) for one project. */
+export function useProjectAssets(projectId: string | null) {
+  return useQuery({
+    queryKey: [...PROJECTS_KEY, projectId, 'assets'],
+    queryFn: ({ signal }) =>
+      apiRequest<RealtyAsset[]>(`/realty/projects/${projectId}/assets`, { signal }),
+    enabled: !!projectId,
+  });
+}
+
+/** Patch a project — used by the detail page's network-visibility toggle. */
+export function useUpdateProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string } & Partial<RealtyProject>) =>
+      apiRequest<RealtyProject>(`/realty/projects/${id}`, { method: 'PATCH', body }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['realty', 'project', data.id] });
+      qc.invalidateQueries({ queryKey: PROJECTS_KEY });
+    },
   });
 }
 

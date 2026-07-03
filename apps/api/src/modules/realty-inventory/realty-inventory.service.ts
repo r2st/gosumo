@@ -49,6 +49,11 @@ export interface ProjectResponseDto {
   priceBandMinPaise: number | null;
   priceBandMaxPaise: number | null;
   factSheetDocId: string | null;
+  /**
+   * CP commission terms (free-form JSON). PRIVATE — the AI/buyer-facing layer
+   * strips this; it is only ever returned on this JWT-guarded broker console.
+   */
+  commissionTerms: Record<string, unknown>;
   networkVisibility: string;
   isActive: boolean;
   createdAt: Date;
@@ -386,6 +391,7 @@ export class RealtyInventoryService {
       priceBandMinPaise: decimalToPaise(p.price_band_min),
       priceBandMaxPaise: decimalToPaise(p.price_band_max),
       factSheetDocId: p.fact_sheet_doc_id,
+      commissionTerms: (p.commission_terms as Record<string, unknown> | null) ?? {},
       networkVisibility: p.network_visibility,
       isActive: p.is_active,
       createdAt: p.created_at,

@@ -1,7 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import { Building2, Home, Layers, MapPin, ShieldCheck } from 'lucide-react';
-import { Badge, type BadgeTone } from '@/components/ui/badge';
+import { Badge } from '@/components/ui/badge';
 import { useProjectUnits } from '@/hooks/use-realty';
 import { cn } from '@/lib/utils';
 import {
@@ -10,27 +11,11 @@ import {
   freshness,
   latestVerifiedAt,
   unitPriceRange,
+  PROJECT_STATUS_GRADIENT,
+  PROJECT_STATUS_SHORT,
+  PROJECT_STATUS_TONE,
 } from '@/lib/realty-ui';
-import type { ProjectStatus, RealtyProject } from '@/lib/realty-types';
-
-const STATUS_TONE: Record<ProjectStatus, BadgeTone> = {
-  PRELAUNCH: 'info',
-  UC: 'warning',
-  RTM: 'success',
-};
-
-const STATUS_LABEL: Record<ProjectStatus, string> = {
-  PRELAUNCH: 'Pre-launch',
-  UC: 'UC',
-  RTM: 'RTM',
-};
-
-// A gradient per status gives each photo-placeholder a distinct, on-brand tint.
-const STATUS_GRADIENT: Record<ProjectStatus, string> = {
-  PRELAUNCH: 'from-sky-100 to-indigo-100',
-  UC: 'from-amber-100 to-orange-100',
-  RTM: 'from-emerald-100 to-teal-100',
-};
+import type { RealtyProject } from '@/lib/realty-types';
 
 export function InventoryCard({ project }: { project: RealtyProject }) {
   const unitsQ = useProjectUnits(project.id);
@@ -47,17 +32,22 @@ export function InventoryCard({ project }: { project: RealtyProject }) {
   const fresh = freshness(latestVerifiedAt(units) ?? project.updatedAt);
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm transition hover:shadow-md">
+    <Link
+      href={`/inventory/${project.id}`}
+      className="flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm transition hover:border-primary/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+    >
       {/* Photo placeholder */}
       <div
         className={cn(
           'relative flex h-32 items-center justify-center bg-gradient-to-br',
-          STATUS_GRADIENT[project.status],
+          PROJECT_STATUS_GRADIENT[project.status],
         )}
       >
         <Building2 className="h-10 w-10 text-white/70" />
         <div className="absolute right-2.5 top-2.5 flex gap-1.5">
-          <Badge tone={STATUS_TONE[project.status]}>{STATUS_LABEL[project.status]}</Badge>
+          <Badge tone={PROJECT_STATUS_TONE[project.status]}>
+            {PROJECT_STATUS_SHORT[project.status]}
+          </Badge>
         </div>
         {fresh && (
           <span
@@ -113,6 +103,6 @@ export function InventoryCard({ project }: { project: RealtyProject }) {
           {project.networkVisibility === 'EXCHANGE' && <Badge tone="primary">Exchange</Badge>}
         </div>
       </div>
-    </div>
+    </Link>
   );
 }

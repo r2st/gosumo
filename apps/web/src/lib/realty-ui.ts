@@ -9,8 +9,49 @@ import type {
   LeadSource,
   LeadStage,
   LeadTemperature,
+  ProjectStatus,
   RealtyUnit,
+  UnitAvailability,
 } from '@/lib/realty-types';
+
+// ── Project status ────────────────────────────────────────────────────────────
+
+/** Short status chip label — the compact form used on cards. */
+export const PROJECT_STATUS_SHORT: Record<ProjectStatus, string> = {
+  PRELAUNCH: 'Pre-launch',
+  UC: 'UC',
+  RTM: 'RTM',
+};
+
+export const PROJECT_STATUS_TONE: Record<ProjectStatus, BadgeTone> = {
+  PRELAUNCH: 'info',
+  UC: 'warning',
+  RTM: 'success',
+};
+
+/** A gradient per status gives each project's photo-placeholder a distinct tint. */
+export const PROJECT_STATUS_GRADIENT: Record<ProjectStatus, string> = {
+  PRELAUNCH: 'from-sky-100 to-indigo-100',
+  UC: 'from-amber-100 to-orange-100',
+  RTM: 'from-emerald-100 to-teal-100',
+};
+
+// ── Unit availability ─────────────────────────────────────────────────────────
+
+/** AVAILABLE=green, HELD=amber, SOLD=red, UNVERIFIED=gray (blueprint §6). */
+export const UNIT_AVAILABILITY_TONE: Record<UnitAvailability, BadgeTone> = {
+  AVAILABLE: 'success',
+  HELD: 'warning',
+  SOLD: 'danger',
+  UNVERIFIED: 'neutral',
+};
+
+export const UNIT_AVAILABILITY_LABEL: Record<UnitAvailability, string> = {
+  AVAILABLE: 'Available',
+  HELD: 'On hold',
+  SOLD: 'Sold',
+  UNVERIFIED: 'Unverified',
+};
 
 // ── Lead temperature ────────────────────────────────────────────────────────
 
