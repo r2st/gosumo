@@ -1122,4 +1122,249 @@ describe('ClientIntelligenceService — branches', () => {
       expect(result.optOuts).toEqual({});
     });
   });
+  // ───────────────────────────────────────────────────────────────────
+  // Null profile blobs — every reader defaults them
+  // ───────────────────────────────────────────────────────────────────
+
+  /**
+   * `profile` is nullable JSONB and starts null on a freshly-created client.
+   * Every reader has to default it before indexing, or the first message from a
+   * brand-new customer throws on a property read of null.
+   */
+  describe('a client whose profile blob is still null', () => {
+    beforeEach(() => {
+      repository.getClientById.mockResolvedValue(makeClient({ profile: null }));
+      repository.updateClientProfile.mockResolvedValue(makeClient());
+    });
+
+    it('stores the first extracted fact', async () => {
+      await service.extractAndStoreFacts(
+        BUSINESS_ID,
+        CLIENT_ID,
+        MESSAGE_ID,
+        'my email is asha@example.com',
+      );
+
+      const patch = repository.updateClientProfile.mock.calls[0]![2] as {
+        profile: { facts: unknown[] };
+      };
+      expect(patch.profile.facts).toHaveLength(1);
+    });
+
+    it('records the first sentiment reading', async () => {
+      await service.recordSentiment(BUSINESS_ID, CLIENT_ID, MESSAGE_ID, 0.5);
+
+      const patch = repository.updateClientProfile.mock.calls[0]![2] as {
+        profile: { sentimentHistory: unknown[] };
+      };
+      expect(patch.profile.sentimentHistory).toHaveLength(1);
+    });
+
+    it('reports an empty sentiment trend', async () => {
+      const trend = await service.getClientSentimentTrend(BUSINESS_ID, CLIENT_ID, 30);
+      expect(trend.entries).toEqual([]);
+    });
+
+    it('builds an AI summary with no stored facts or sentiment', async () => {
+      const { summary } = await service.getClientSummaryForAI(BUSINESS_ID, CLIENT_ID);
+      expect(typeof summary).toBe('string');
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────
+  // Change tracking on a profile update
+  // ───────────────────────────────────────────────────────────────────
+
+  /**
+   * The emitted event names which fields moved. Downstream listeners act on
+   * that list, so a field that updates without being named is a silent change.
+   */
+  describe('updateClientProfile change tracking', () => {
+    beforeEach(() => {
+      repository.getClientById.mockResolvedValue(makeClient());
+      repository.updateClientProfile.mockResolvedValue(makeClient());
+    });
+
+    function changedFields(): string[] {
+      const call = eventEmitter.emit.mock.calls.find(
+        (c) => c[0] === 'client.profile.updated',
+      );
+      return (call?.[1] as { changedFields: string[] }).changedFields;
+    }
+
+    it.each([
+      ['name', { name: 'Asha' }],
+      ['email', { email: 'asha@example.com' }],
+      ['phone', { phone: '+919812345678' }],
+      ['avatarUrl', { avatarUrl: 'https://cdn.example/a.png' }],
+      ['profile', { profile: { vip: true } }],
+    ])('names %s when only that field is supplied', async (field, dto) => {
+      await service.updateClientProfile(BUSINESS_ID, CLIENT_ID, dto);
+      expect(changedFields()).toEqual([field]);
+    });
+
+    it('names every field when the whole profile is replaced', async () => {
+      await service.updateClientProfile(BUSINESS_ID, CLIENT_ID, {
+        name: 'Asha',
+        email: 'asha@example.com',
+        phone: '+919812345678',
+        avatarUrl: 'https://cdn.example/a.png',
+        profile: { vip: true },
+      });
+
+      expect(changedFields()).toEqual([
+        'name',
+        'email',
+        'phone',
+        'avatarUrl',
+        'profile',
+      ]);
+    });
+
+    /** A no-op patch must not announce a change nobody made. */
+    it('emits nothing for an empty patch', async () => {
+      await service.updateClientProfile(BUSINESS_ID, CLIENT_ID, {});
+
+      expect(
+        eventEmitter.emit.mock.calls.some((c) => c[0] === 'client.profile.updated'),
+      ).toBe(false);
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────
+  // AI summary length cap
+  // ───────────────────────────────────────────────────────────────────
+
+  /**
+   * The summary is injected into the AI prompt, so it is capped at 300 chars.
+   * A client with a long fact list is the case that actually reaches the cap.
+   */
+  it('truncates an over-long AI summary to 300 characters', async () => {
+    const facts = Array.from({ length: 40 }, (_, i) => ({
+      factType: `preference_${i}`,
+      value: `a fairly long stored preference value number ${i}`,
+      confidence: 0.9,
+      extractedAt: new Date('2026-01-01T00:00:00Z').toISOString(),
+      messageId: MESSAGE_ID,
+    }));
+    repository.getClientById.mockResolvedValue(
+      makeClient({ profile: { facts } }),
+    );
+
+    const { summary } = await service.getClientSummaryForAI(BUSINESS_ID, CLIENT_ID);
+
+    expect(summary).toHaveLength(300);
+    expect(summary.endsWith('...')).toBe(true);
+  });
+
+  // ───────────────────────────────────────────────────────────────────
+  // Last-activity fallback chain
+  // ───────────────────────────────────────────────────────────────────
+
+  /**
+   * Recency drives both the churn score and the segment. It falls back
+   * interaction → order → first seen, so a client who has ordered but never
+   * messaged is dated from the order, and one who has done neither from signup
+   * rather than from "now" (which would read as perfectly recent).
+   */
+  describe('recency falls back through the activity chain', () => {
+    beforeEach(() => {
+      repository.getClientById.mockResolvedValue(makeClient());
+      repository.updateIntelligenceScores.mockResolvedValue(makeClient());
+      repository.getClientOrderAggregates.mockResolvedValue({
+        totalRevenue: 0,
+        orderCount: 0,
+      });
+    });
+
+    /** The churn score the refresh actually persisted, as a 0–1 fraction. */
+    function churnRiskWritten(): number {
+      const patch = repository.updateIntelligenceScores.mock.calls[0]![2] as {
+        churnRisk: number;
+      };
+      return patch.churnRisk;
+    }
+
+    it('dates a never-messaged client from its last order', async () => {
+      repository.getClientRFMData.mockResolvedValue(
+        rfm({ lastInteractionAt: null, lastOrderAt: daysAgo(400) }),
+      );
+
+      await service.refreshIntelligenceScores(BUSINESS_ID, CLIENT_ID);
+      expect(churnRiskWritten()).toBeGreaterThanOrEqual(0.8);
+    });
+
+    it('dates a client with no activity at all from first seen', async () => {
+      repository.getClientRFMData.mockResolvedValue(
+        rfm({
+          lastInteractionAt: null,
+          lastOrderAt: null,
+          firstSeenAt: daysAgo(400),
+        }),
+      );
+
+      await service.refreshIntelligenceScores(BUSINESS_ID, CLIENT_ID);
+      expect(churnRiskWritten()).toBeGreaterThanOrEqual(0.8);
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────
+  // Non-Error rejections in the best-effort paths
+  // ───────────────────────────────────────────────────────────────────
+
+  /**
+   * A driver-level reject is not always an Error instance. Each of these paths
+   * formats the failure into a log line, so a non-Error must stringify rather
+   * than read `.message` off it and log "undefined".
+   */
+  describe('non-Error rejections', () => {
+    /**
+     * Extraction is pure and already done by the time storage is attempted, so a
+     * storage failure still returns what was lifted — the caller gets the facts
+     * even though they did not land on the profile.
+     */
+    it('still returns the extracted facts when storing them fails', async () => {
+      repository.getClientById.mockRejectedValue('connection reset');
+
+      await expect(
+        service.extractAndStoreFacts(
+          BUSINESS_ID,
+          CLIENT_ID,
+          MESSAGE_ID,
+          'my email is a@b.com',
+        ),
+      ).resolves.toEqual([expect.objectContaining({ factType: 'email' })]);
+    });
+
+    it('swallows a non-Error during sentiment recording', async () => {
+      repository.getClientById.mockRejectedValue('connection reset');
+
+      await expect(
+        service.recordSentiment(BUSINESS_ID, CLIENT_ID, MESSAGE_ID, 0.5),
+      ).resolves.toBeUndefined();
+    });
+
+    it('swallows a non-Error on order.delivered', async () => {
+      repository.getClientById.mockRejectedValue('connection reset');
+
+      await expect(
+        service.handleOrderDelivered({
+          businessId: BUSINESS_ID,
+          clientId: CLIENT_ID,
+          orderId: 'order-1',
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    it('swallows a non-Error on payment.success', async () => {
+      repository.getClientById.mockRejectedValue('connection reset');
+
+      await expect(
+        service.handlePaymentSuccess({
+          businessId: BUSINESS_ID,
+          clientId: CLIENT_ID,
+        } as PaymentSuccessEvent),
+      ).resolves.toBeUndefined();
+    });
+  });
 });
