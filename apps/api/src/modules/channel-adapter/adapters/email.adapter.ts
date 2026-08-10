@@ -14,6 +14,10 @@ import {
 } from "@gosumo/shared";
 import { generateId } from "@gosumo/shared";
 import { BaseChannelAdapter } from "./base.adapter";
+import {
+  isProductionEnv,
+  verifySharedSecretSignature,
+} from "../../../common/utils/webhook-verification.util";
 
 @Injectable()
 export class EmailAdapter extends BaseChannelAdapter {
@@ -22,17 +26,44 @@ export class EmailAdapter extends BaseChannelAdapter {
   private readonly apiKey: string;
   private readonly fromEmail: string;
   private readonly fromName: string;
+  private readonly inboundSecret: string;
+  /** Fail-closed switch: an unverifiable webhook is rejected in production. */
+  private readonly isProduction: boolean;
 
   constructor(private readonly configService: ConfigService) {
     super("EmailAdapter");
     this.apiKey = this.configService.get<string>("sendgrid.apiKey", "");
     this.fromEmail = this.configService.get<string>("sendgrid.fromEmail", "");
     this.fromName = this.configService.get<string>("sendgrid.fromName", "GoSumo");
+    this.inboundSecret = this.configService.get<string>("channelWebhook.emailSecret", "");
+    this.isProduction = isProductionEnv(this.configService);
   }
 
-  /** Email comes via polling/push, not external webhook — always valid. */
-  validateWebhook(_req: RawRequest): boolean {
-    return true;
+  /**
+   * Verify an inbound email relay callback.
+   *
+   * This used to return `true` unconditionally, on the reasoning that email
+   * "comes via polling/push, not external webhook". That stopped being true the
+   * moment `POST /webhooks/:channel` shipped: the route is `@Public()` and
+   * accepts any `ChannelType`, so `POST /webhooks/email` reached this method
+   * straight from the internet and it authenticated nobody. Anyone who knew the
+   * URL could forge an inbound email into a tenant's inbox — and pick the tenant
+   * with the `x-business-id` header.
+   *
+   * Email relays (Resend/SendGrid/Postmark inbound parse) have no signature
+   * scheme we share, so the relay is configured to HMAC the body with
+   * `EMAIL_INBOUND_WEBHOOK_SECRET`. Root rule #3 applies here like anywhere else.
+   */
+  validateWebhook(req: RawRequest): boolean {
+    return verifySharedSecretSignature({
+      logger: this.logger,
+      isProduction: this.isProduction,
+      secret: this.inboundSecret,
+      headerName: "x-gosumo-signature",
+      headers: req.headers,
+      rawBody: req.rawBody,
+      channelLabel: "EMAIL",
+    });
   }
 
   /**

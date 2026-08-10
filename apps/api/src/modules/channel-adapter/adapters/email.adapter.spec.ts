@@ -25,7 +25,11 @@ describe("EmailAdapter", () => {
     expect(caps.maxMessageLength).toBe(100000);
   });
 
-  it("validateWebhook always returns true", () => {
+  it("validateWebhook accepts an unsigned call outside production when no secret is set", () => {
+    // Dev convenience only. The production half of this rule — an unset secret
+    // rejects rather than accepts — is pinned in
+    // `common/utils/webhook-verification.spec.ts`, alongside every other
+    // inbound webhook surface.
     const req: RawRequest = {
       headers: {},
       body: {},

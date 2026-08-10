@@ -2,9 +2,12 @@
  * Email channel — end-to-end tests.
  *
  * Email arrives via the generic /webhooks/:channel route (channel = EMAIL) and
- * is sent via the SendGrid v3 API. There is no webhook signature for email —
- * validateWebhook() always passes — so these tests focus on inbound parsing and
- * outbound delivery.
+ * is sent via the SendGrid v3 API. Email relays define no signature scheme of
+ * their own, so the inbound route is authenticated by a shared-secret HMAC
+ * (EMAIL_INBOUND_WEBHOOK_SECRET) that is unset here and therefore skipped
+ * outside production — the fail-closed half is covered in
+ * `src/common/utils/webhook-verification.spec.ts`. These tests focus on inbound
+ * parsing and outbound delivery.
  *
  * Coverage:
  *  - POST inbound parsing: subject + body combined into a normalized text message

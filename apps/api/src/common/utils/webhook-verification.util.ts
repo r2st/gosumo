@@ -1,3 +1,5 @@
+import * as crypto from 'crypto';
+
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
@@ -45,4 +47,86 @@ export function allowUnverifiedWebhook(
       `This is permitted outside production only.`,
   );
   return true;
+}
+
+/**
+ * HMAC-SHA256 verification for channels whose provider has no signature scheme
+ * of its own.
+ *
+ * WhatsApp, Instagram and Twilio each define how their webhooks are signed, and
+ * their adapters implement that scheme. Email relays and the hosted web-chat
+ * widget do not — whatever forwards a parsed email or a widget message to us is
+ * infrastructure we configure, so we get to pick. This is that scheme: the
+ * sender HMACs the exact request bytes with a shared secret and puts the hex
+ * digest in a header.
+ *
+ * Two details are load-bearing:
+ *
+ *   - It signs `rawBody`, not the parsed body. `JSON.stringify(req.body)` is not
+ *     the bytes the sender signed — key order and whitespace differ — so a
+ *     re-serialized check either never matches or gets quietly written to always
+ *     match.
+ *   - It compares with `timingSafeEqual`. A `===` on a digest exits at the first
+ *     wrong byte, and that timing difference is enough to recover the expected
+ *     value one byte at a time.
+ *
+ * A missing secret is a configuration problem, so it goes through
+ * `allowUnverifiedWebhook` and fails closed in production. A missing or wrong
+ * signature is an authentication failure and is always a rejection.
+ */
+export function verifySharedSecretSignature(options: {
+  logger: Logger;
+  isProduction: boolean;
+  /** The configured shared secret. Empty means "not configured". */
+  secret: string;
+  /** Header name carrying the hex digest, e.g. `x-gosumo-signature`. */
+  headerName: string;
+  headers: Record<string, string>;
+  /** Exact request bytes. Absent when the app was not built with rawBody. */
+  rawBody: Buffer | undefined;
+  /** Names the channel in log lines, e.g. `EMAIL`. */
+  channelLabel: string;
+}): boolean {
+  const { logger, isProduction, secret, headerName, headers, rawBody, channelLabel } =
+    options;
+
+  if (!secret) {
+    return allowUnverifiedWebhook(
+      logger,
+      isProduction,
+      `no inbound webhook secret is configured for ${channelLabel}`,
+    );
+  }
+
+  const provided = headers[headerName.toLowerCase()] ?? '';
+  if (!provided) {
+    logger.warn(`${channelLabel} webhook rejected: missing ${headerName} header`);
+    return false;
+  }
+
+  if (!rawBody || rawBody.length === 0) {
+    // Without the original bytes there is nothing to verify against. Treated as
+    // a configuration fault (the app must be created with `rawBody: true`)
+    // rather than a bad signature, so it is loud in dev and closed in prod.
+    return allowUnverifiedWebhook(
+      logger,
+      isProduction,
+      `${channelLabel} webhook arrived without a raw body to verify`,
+    );
+  }
+
+  const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+
+  const providedBuffer = Buffer.from(provided);
+  const expectedBuffer = Buffer.from(expected);
+  if (providedBuffer.length !== expectedBuffer.length) {
+    logger.warn(`${channelLabel} webhook rejected: signature length mismatch`);
+    return false;
+  }
+
+  const isValid = crypto.timingSafeEqual(providedBuffer, expectedBuffer);
+  if (!isValid) {
+    logger.warn(`${channelLabel} webhook rejected: signature mismatch`);
+  }
+  return isValid;
 }

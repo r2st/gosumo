@@ -25,7 +25,10 @@ describe("WebChatAdapter", () => {
     expect(caps.maxMessageLength).toBe(10000);
   });
 
-  it("validateWebhook always returns true", () => {
+  it("validateWebhook accepts an unsigned call outside production when no secret is set", () => {
+    // The WebSocket gateway never calls this; the HTTP path through
+    // `POST /webhooks/web_chat` does, and its production behaviour is pinned in
+    // `common/utils/webhook-verification.spec.ts`.
     const req: RawRequest = {
       headers: {},
       body: {},

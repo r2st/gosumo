@@ -85,6 +85,16 @@ export default registerAs('app', () => ({
     pageId: process.env['INSTAGRAM_PAGE_ID'],
   },
 
+  // Inbound webhook secrets for channels whose provider defines no signature
+  // scheme of its own. `POST /webhooks/:channel` is @Public(), so every channel
+  // adapter reachable through it needs *something* to authenticate the caller —
+  // without these, a forged inbound email or web-chat message is a plain HTTP
+  // POST away. Unset means the adapter fails closed in production.
+  channelWebhook: {
+    emailSecret: process.env['EMAIL_INBOUND_WEBHOOK_SECRET'],
+    webchatSecret: process.env['WEBCHAT_INBOUND_WEBHOOK_SECRET'],
+  },
+
   // Razorpay
   razorpay: {
     keyId: process.env['RAZORPAY_KEY_ID'],

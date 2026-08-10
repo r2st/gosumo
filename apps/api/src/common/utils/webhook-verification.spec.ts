@@ -20,6 +20,8 @@ import { RawRequest } from '@gosumo/shared';
 import { WhatsAppAdapter } from '../../modules/channel-adapter/adapters/whatsapp.adapter';
 import { InstagramAdapter } from '../../modules/channel-adapter/adapters/instagram.adapter';
 import { SmsAdapter } from '../../modules/channel-adapter/adapters/sms.adapter';
+import { EmailAdapter } from '../../modules/channel-adapter/adapters/email.adapter';
+import { WebChatAdapter } from '../../modules/channel-adapter/adapters/webchat.adapter';
 import { RealtyIngestionService } from '../../modules/realty-ingestion/realty-ingestion.service';
 import { RealtyIvrService } from '../../modules/realty-ingestion/realty-ivr.service';
 import { RealtyIngestionController } from '../../modules/realty-ingestion/realty-ingestion.controller';
@@ -27,7 +29,11 @@ import type { PortalEmailDto } from '../../modules/realty-ingestion/dto';
 import type { RealtyLeadsService } from '../../modules/realty-leads/realty-leads.service';
 import type { ChannelAdapterService } from '../../modules/channel-adapter/channel-adapter.service';
 import type { PrismaService } from '../services/prisma.service';
-import { allowUnverifiedWebhook, isProductionEnv } from './webhook-verification.util';
+import {
+  allowUnverifiedWebhook,
+  isProductionEnv,
+  verifySharedSecretSignature,
+} from './webhook-verification.util';
 
 /**
  * ConfigService stub. `env` drives the fail-closed switch; every other key
@@ -331,5 +337,185 @@ describe('portal-email webhook — missing ingest token', () => {
     const { controller: c, ingestion } = controller('development');
     await c.handlePortalEmail('', undefined as unknown as string, DTO);
     expect(ingestion.ingestPortalEmail).toHaveBeenCalledWith('unknown', DTO);
+  });
+});
+
+// ─────────────────────────────────────────────
+// Shared-secret HMAC — the scheme for channels whose provider has none
+// ─────────────────────────────────────────────
+
+/**
+ * Email and web chat are the two channels with no provider-defined signature.
+ * Both used to answer `validateWebhook` with a bare `return true` on the
+ * reasoning that their traffic arrives by another route — polling for email,
+ * the WebSocket gateway for web chat. `POST /webhooks/:channel` is `@Public()`
+ * and accepts every `ChannelType`, which made that reasoning false: both were
+ * reachable, unauthenticated, from the internet, with the target tenant chosen
+ * by an `x-business-id` header.
+ *
+ * These tests pin the scheme that replaced it, and — more importantly — pin
+ * that an unsigned call is refused in production.
+ */
+describe('verifySharedSecretSignature', () => {
+  const SECRET = 'shared-secret-value';
+  const BODY = Buffer.from(JSON.stringify({ from: 'a@b.test', body: 'hi' }));
+  const DIGEST = crypto.createHmac('sha256', SECRET).update(BODY).digest('hex');
+
+  let logger: Logger;
+
+  beforeEach(() => {
+    logger = { warn: jest.fn(), error: jest.fn(), log: jest.fn() } as unknown as Logger;
+  });
+
+  function verify(overrides: Partial<Parameters<typeof verifySharedSecretSignature>[0]> = {}) {
+    return verifySharedSecretSignature({
+      logger,
+      isProduction: true,
+      secret: SECRET,
+      headerName: 'x-gosumo-signature',
+      headers: { 'x-gosumo-signature': DIGEST },
+      rawBody: BODY,
+      channelLabel: 'EMAIL',
+      ...overrides,
+    });
+  }
+
+  it('accepts a correct digest', () => {
+    expect(verify()).toBe(true);
+  });
+
+  it('is case-insensitive about the header name', () => {
+    // Express preserves the case the client sent; adapters look up lower-case.
+    expect(verify({ headerName: 'X-GoSumo-Signature' })).toBe(true);
+  });
+
+  it('rejects a wrong digest of the right length', () => {
+    const wrong = 'f'.repeat(DIGEST.length);
+    expect(verify({ headers: { 'x-gosumo-signature': wrong } })).toBe(false);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('signature mismatch'));
+  });
+
+  it('rejects a digest of the wrong length without calling timingSafeEqual', () => {
+    // `crypto.timingSafeEqual` throws on unequal lengths, so the guard has to
+    // come first — otherwise a short signature is a 500, not a 401.
+    expect(verify({ headers: { 'x-gosumo-signature': 'abc' } })).toBe(false);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('length mismatch'));
+  });
+
+  it('rejects a missing signature header even in development', () => {
+    // A missing signature is an authentication failure, not a configuration
+    // one — there is no environment in which it is tolerated.
+    expect(verify({ headers: {}, isProduction: false })).toBe(false);
+  });
+
+  it('signs the raw bytes, not a re-serialized body', () => {
+    // Same object, different key order: `JSON.stringify` of the parsed body
+    // would produce a different digest, so a re-serializing implementation
+    // would fail here.
+    const reordered = Buffer.from(JSON.stringify({ body: 'hi', from: 'a@b.test' }));
+    expect(verify({ rawBody: reordered })).toBe(false);
+  });
+
+  describe('when the secret is not configured', () => {
+    it('accepts outside production, loudly', () => {
+      expect(verify({ secret: '', isProduction: false })).toBe(true);
+      expect(logger.warn).toHaveBeenCalled();
+    });
+
+    it('REFUSES in production rather than accepting everyone', () => {
+      expect(verify({ secret: '' })).toBe(false);
+      expect(logger.error).toHaveBeenCalled();
+    });
+  });
+
+  describe('when the raw body is missing', () => {
+    // `rawBody` is only populated because main.ts creates the app with
+    // `rawBody: true`. If that regresses there is nothing to verify against.
+    it('accepts outside production, loudly', () => {
+      expect(verify({ rawBody: undefined, isProduction: false })).toBe(true);
+      expect(logger.warn).toHaveBeenCalled();
+    });
+
+    it('REFUSES in production', () => {
+      expect(verify({ rawBody: undefined })).toBe(false);
+    });
+
+    it('treats an empty buffer the same as an absent one', () => {
+      expect(verify({ rawBody: Buffer.alloc(0) })).toBe(false);
+    });
+  });
+});
+
+describe('EmailAdapter.validateWebhook — reachable via POST /webhooks/email', () => {
+  const SECRET = 'email-inbound-secret';
+  const BODY = Buffer.from(JSON.stringify({ from: 'c@example.com', body: 'hello' }));
+  const DIGEST = crypto.createHmac('sha256', SECRET).update(BODY).digest('hex');
+
+  function adapter(env: string, secret = '') {
+    return new EmailAdapter(
+      makeConfig(env, secret ? { 'channelWebhook.emailSecret': secret } : {}),
+    );
+  }
+
+  const signed = (digest: string): RawRequest => ({
+    headers: { 'x-gosumo-signature': digest },
+    body: { from: 'c@example.com', body: 'hello' },
+    rawBody: BODY,
+  });
+
+  it('accepts a correctly signed relay callback', () => {
+    expect(adapter('production', SECRET).validateWebhook(signed(DIGEST))).toBe(true);
+  });
+
+  it('rejects a forged inbound email in production', () => {
+    expect(adapter('production', SECRET).validateWebhook(signed('0'.repeat(64)))).toBe(false);
+  });
+
+  it('rejects an unsigned inbound email even with a secret configured', () => {
+    expect(adapter('production', SECRET).validateWebhook(UNSIGNED_REQUEST)).toBe(false);
+  });
+
+  it('REFUSES an unsigned inbound email in production when no secret is configured', () => {
+    // The regression this guards: an unconditional `return true` here made
+    // `POST /webhooks/email` an unauthenticated write into any tenant's inbox.
+    expect(adapter('production').validateWebhook(UNSIGNED_REQUEST)).toBe(false);
+  });
+
+  it('stays permissive in development so local relays work', () => {
+    expect(adapter('development').validateWebhook(UNSIGNED_REQUEST)).toBe(true);
+  });
+});
+
+describe('WebChatAdapter.validateWebhook — reachable via POST /webhooks/web_chat', () => {
+  const SECRET = 'webchat-inbound-secret';
+  const BODY = Buffer.from(JSON.stringify({ sessionId: 's1', text: 'hi' }));
+  const DIGEST = crypto.createHmac('sha256', SECRET).update(BODY).digest('hex');
+
+  function adapter(env: string, secret = '') {
+    return new WebChatAdapter(
+      makeConfig(env, secret ? { 'channelWebhook.webchatSecret': secret } : {}),
+    );
+  }
+
+  const signed = (digest: string): RawRequest => ({
+    headers: { 'x-gosumo-signature': digest },
+    body: { sessionId: 's1', text: 'hi' },
+    rawBody: BODY,
+  });
+
+  it('accepts a correctly signed relay callback', () => {
+    expect(adapter('production', SECRET).validateWebhook(signed(DIGEST))).toBe(true);
+  });
+
+  it('rejects a forged web-chat message in production', () => {
+    expect(adapter('production', SECRET).validateWebhook(signed('0'.repeat(64)))).toBe(false);
+  });
+
+  it('REFUSES an unsigned web-chat message in production when no secret is configured', () => {
+    expect(adapter('production').validateWebhook(UNSIGNED_REQUEST)).toBe(false);
+  });
+
+  it('stays permissive in development', () => {
+    expect(adapter('development').validateWebhook(UNSIGNED_REQUEST)).toBe(true);
   });
 });

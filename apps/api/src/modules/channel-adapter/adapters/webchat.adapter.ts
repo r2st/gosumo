@@ -14,6 +14,10 @@ import {
 } from "@gosumo/shared";
 import { generateId } from "@gosumo/shared";
 import { BaseChannelAdapter } from "./base.adapter";
+import {
+  isProductionEnv,
+  verifySharedSecretSignature,
+} from "../../../common/utils/webhook-verification.util";
 
 /**
  * Pending outbound messages keyed by sessionId.
@@ -25,13 +29,39 @@ export const webchatResponseMap = new Map<string, Array<{ id: string; text: stri
 export class WebChatAdapter extends BaseChannelAdapter {
   readonly channelType = ChannelType.WEB_CHAT;
 
+  private readonly inboundSecret: string;
+  /** Fail-closed switch: an unverifiable webhook is rejected in production. */
+  private readonly isProduction: boolean;
+
   constructor(private readonly configService: ConfigService) {
     super("WebChatAdapter");
+    this.inboundSecret = this.configService.get<string>("channelWebhook.webchatSecret", "");
+    this.isProduction = isProductionEnv(this.configService);
   }
 
-  /** WebChat messages come via WebSocket, not external webhook — always valid. */
-  validateWebhook(_req: RawRequest): boolean {
-    return true;
+  /**
+   * Verify an inbound web-chat callback.
+   *
+   * The widget's normal path is the WebSocket gateway, which is where the
+   * "always valid" this method used to return came from. But `POST
+   * /webhooks/:channel` is `@Public()` and accepts every `ChannelType`, so
+   * `POST /webhooks/web_chat` reached this method unauthenticated — a forged
+   * customer message into any tenant's inbox, tenant chosen by header.
+   *
+   * The HTTP path is for relays we configure ourselves, so it is held to the
+   * same shared-secret HMAC as the email channel. The WebSocket path is
+   * unaffected: it never calls `validateWebhook`.
+   */
+  validateWebhook(req: RawRequest): boolean {
+    return verifySharedSecretSignature({
+      logger: this.logger,
+      isProduction: this.isProduction,
+      secret: this.inboundSecret,
+      headerName: "x-gosumo-signature",
+      headers: req.headers,
+      rawBody: req.rawBody,
+      channelLabel: "WEB_CHAT",
+    });
   }
 
   /**
