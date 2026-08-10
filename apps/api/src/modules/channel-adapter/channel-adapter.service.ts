@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { Prisma } from '@prisma/client';
 import {
   ChannelType,
   ChannelAdapter,
@@ -153,6 +154,28 @@ export class ChannelAdapterService {
       `[${traceId}] Parsed inbound ${channelType} message ${normalized.externalId} ` +
         `from ${normalized.sender.externalId} (type: ${normalized.content.type})`,
     );
+
+    // Step 2.5: Idempotency — channel providers (WhatsApp/Instagram Cloud API
+    // in particular) redeliver a webhook whenever our response is slow or
+    // non-200, so the same externalId can arrive more than once. Dedupe via
+    // the same `webhook_events` unique-constraint pattern the payment module
+    // uses, keyed on (source, external_id). Adapters that don't have a stable
+    // provider id (e.g. WebChat) generate a fresh one per call, so this is a
+    // no-op for them rather than a false-positive risk.
+    if (normalized.externalId) {
+      const isDuplicate = await this.isDuplicateWebhook(
+        channelType,
+        normalized.externalId,
+        req.body,
+        traceId,
+      );
+      if (isDuplicate) {
+        this.logger.log(
+          `[${traceId}] Duplicate ${channelType} webhook for external_id=${normalized.externalId} — skipping reprocessing`,
+        );
+        return normalized;
+      }
+    }
 
     // Step 3: Resolve channel_account, client, conversation, and store message
     let resolvedBusinessId = businessId;
@@ -323,6 +346,48 @@ export class ChannelAdapterService {
     return normalized;
   }
 
+  /**
+   * Record a channel webhook delivery in `webhook_events` and report whether
+   * it's a duplicate, via the same unique-constraint-on-conflict pattern the
+   * payment module uses for Razorpay/Stripe webhooks.
+   *
+   * Fails open: if the insert fails for a reason other than the (source,
+   * external_id) unique violation (e.g. a transient DB error), the message is
+   * treated as new rather than silently dropped — losing a customer message
+   * is worse than occasionally double-processing one.
+   */
+  private async isDuplicateWebhook(
+    channelType: ChannelType,
+    externalId: string,
+    body: unknown,
+    traceId: string,
+  ): Promise<boolean> {
+    try {
+      await this.prisma.webhook_events.create({
+        data: {
+          source: channelType,
+          event_type: 'message.received',
+          external_id: externalId,
+          payload: (body ?? {}) as Prisma.InputJsonValue,
+          signature_valid: true,
+          processed: true,
+          processed_at: new Date(),
+        },
+        select: { id: true },
+      });
+      return false;
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        return true;
+      }
+      this.logger.error(
+        `[${traceId}] Failed to record webhook_events for ${channelType}/${externalId}: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      );
+      return false;
+    }
+  }
+
   // ─────────────────────────────────────────────
   // Outbound message routing
   // ─────────────────────────────────────────────
@@ -388,7 +453,7 @@ export class ChannelAdapterService {
         channel: channelType,
         recipientExternalId: message.recipientExternalId,
         reason: result.error ?? 'Unknown error',
-        attempts: 1,
+        attempts: result.attempts ?? 1,
       };
 
       this.eventEmitter.emit('message.failed', event);
@@ -448,7 +513,7 @@ export class ChannelAdapterService {
         channel: channelType,
         recipientExternalId: template.recipientExternalId,
         reason: result.error ?? 'Unknown error',
-        attempts: 1,
+        attempts: result.attempts ?? 1,
       };
 
       this.eventEmitter.emit('message.failed', event);

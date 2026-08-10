@@ -256,6 +256,41 @@ describe('AiEngineService — processMessage pipeline', () => {
     await h.service.processMessage('b1', dto);
     expect(h.emit).toHaveBeenCalledWith('ai.intent.classified', expect.any(Object));
   });
+
+  it('degrades to an emergency escalation instead of throwing when context loading crashes', async () => {
+    const h = makeHarness();
+    const contextLoader = (h.service as unknown as { contextLoader: { load: jest.Mock } })
+      .contextLoader;
+    contextLoader.load.mockRejectedValueOnce(new Error('conversation lookup timed out'));
+
+    const result = await h.service.processMessage('b1', dto);
+
+    expect(result.outcome).toBe('ESCALATED');
+    expect(h.createReviewTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'ESCALATE',
+        urgency: 'HIGH',
+        escalationReason: expect.stringContaining('conversation lookup timed out'),
+      }),
+    );
+    expect(h.createDecision).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'ESCALATED', confidence_score: 0 }),
+    );
+    expect(h.emit).toHaveBeenCalledWith(
+      'ai.escalated',
+      expect.objectContaining({ reason: expect.stringContaining('conversation lookup timed out') }),
+    );
+  });
+
+  it('re-throws the original error if even the emergency escalation fails', async () => {
+    const h = makeHarness();
+    const contextLoader = (h.service as unknown as { contextLoader: { load: jest.Mock } })
+      .contextLoader;
+    contextLoader.load.mockRejectedValueOnce(new Error('db down'));
+    h.createReviewTask.mockRejectedValueOnce(new Error('hitl also down'));
+
+    await expect(h.service.processMessage('b1', dto)).rejects.toThrow('db down');
+  });
 });
 
 describe('AiEngineService — message.received realty gating', () => {

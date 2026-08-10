@@ -103,11 +103,36 @@ export class AiEngineService {
 
   /**
    * Process one inbound message end-to-end and return the resulting decision.
+   *
+   * Everything downstream of the LLM call already degrades to escalation on
+   * failure, but earlier stages (context loading, confidence scoring, the
+   * final decision write itself) do not — an unhandled exception there would
+   * otherwise propagate out of the `message.received` handler and leave the
+   * customer with no reply and no audit trail at all. This wrapper is the
+   * backstop that keeps the class-level "never throws to its caller" promise
+   * true for the whole pipeline, not just the generation step.
    */
   async processMessage(businessId: string, dto: ProcessMessageDto): Promise<AIDecisionDto> {
     const traceId = dto.correlationId ?? generateCorrelationId();
     const startMs = Date.now();
+    try {
+      return await this.runPipeline(businessId, dto, traceId, startMs);
+    } catch (err) {
+      this.logger.error(
+        `[${traceId}] Pipeline crashed before a decision could be produced — falling back to emergency escalation: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+        err instanceof Error ? err.stack : undefined,
+      );
+      return this.emergencyEscalate(businessId, dto, traceId, startMs, err);
+    }
+  }
 
+  private async runPipeline(
+    businessId: string,
+    dto: ProcessMessageDto,
+    traceId: string,
+    startMs: number,
+  ): Promise<AIDecisionDto> {
     // ── READ ──────────────────────────────────
     const context = await this.contextLoader.load(businessId, dto.conversationId, dto.messageId);
     const text = context.messageText;
@@ -401,6 +426,98 @@ export class AiEngineService {
       `[${traceId}] ESCALATED decision ${decision.id} → task ${task.id} (confidence ${scored.finalScore})`,
     );
     return this.toDto(decision, classification, scored, parsed, task.id);
+  }
+
+  /**
+   * Last-resort fallback for when `runPipeline` throws before it can reach a
+   * normal escalation (e.g. context loading or a decision write itself
+   * failed). Creates a generic, high-urgency HITL task and decision record
+   * with whatever we know for certain — businessId/conversationId/messageId
+   * from the caller — so the crash still produces an auditable hand-off
+   * instead of silently dropping the customer's message.
+   *
+   * If even this fails (e.g. the DB is fully down), the original error is
+   * re-thrown so it isn't swallowed — the caller's own catch (if any) still
+   * sees it, and nothing here pretends a decision was recorded when it wasn't.
+   */
+  private async emergencyEscalate(
+    businessId: string,
+    dto: ProcessMessageDto,
+    traceId: string,
+    startMs: number,
+    err: unknown,
+  ): Promise<AIDecisionDto> {
+    const message = err instanceof Error ? err.message : String(err);
+    const classification: IntentClassificationDto = {
+      intent: IntentType.GENERAL_INQUIRY,
+      secondaryIntent: null,
+      confidence: 0,
+      tier: 1,
+      entities: {},
+      reasoning: 'AI pipeline crashed before intent could be classified',
+    };
+    const scored: ScoredConfidence = {
+      dataAvailability: 0,
+      policyClarity: 0,
+      finalScore: 0,
+      mode: ConfidenceMode.ESCALATION,
+      overrides: [{ code: 'pipeline_error', reason: message, penalty: 0 }],
+      requiresEscalation: true,
+    };
+
+    try {
+      const task = await this.reviewQueue.createReviewTask({
+        businessId,
+        conversationId: dto.conversationId,
+        action: 'ESCALATE',
+        intent: classification.intent,
+        urgency: 'HIGH',
+        draftResponse: null,
+        suggestedActions: [],
+        confidence: 0,
+        reasoning: classification.reasoning,
+        escalationReason: `AI pipeline error: ${message}`,
+        correlationId: traceId,
+      });
+
+      const usage = this.usageOf(null);
+      const decision = await this.repository.createDecision({
+        business_id: businessId,
+        conversation_id: dto.conversationId,
+        message_id: dto.messageId,
+        task_id: task.id,
+        type: AiDecisionType.ESCALATE,
+        outcome: AiDecisionOutcome.ESCALATED,
+        proposed_action: this.proposedAction(classification.intent, null, 'ESCALATE'),
+        confidence_score: 0,
+        confidence_breakdown: this.breakdown(classification, scored),
+        model_id: usage.modelId,
+        prompt_tokens: usage.promptTokens,
+        completion_tokens: usage.completionTokens,
+        latency_ms: Date.now() - startMs,
+      });
+
+      this.eventEmitter.emit('ai.escalated', {
+        type: 'ai.escalated',
+        id: generateId(),
+        timestamp: new Date().toISOString(),
+        businessId,
+        correlationId: traceId,
+        conversationId: dto.conversationId,
+        reason: `AI pipeline error: ${message}`,
+      });
+
+      this.logger.log(
+        `[${traceId}] Emergency-escalated decision ${decision.id} → task ${task.id} after pipeline crash`,
+      );
+      return this.toDto(decision, classification, scored, null, task.id);
+    } catch (fallbackErr) {
+      this.logger.error(
+        `[${traceId}] Emergency escalation itself failed — message ${dto.messageId} has NO recorded ` +
+          `decision or human hand-off: ${fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)}`,
+      );
+      throw err;
+    }
   }
 
   // ─────────────────────────────────────────────

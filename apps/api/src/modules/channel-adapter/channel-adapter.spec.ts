@@ -19,6 +19,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { ChannelType, MessageContentType, MessageDirection, RawRequest, OutboundMessage } from '@gosumo/shared';
 
 import { WhatsAppAdapter, isStatusUpdateOnly } from './adapters/whatsapp.adapter';
@@ -38,6 +39,7 @@ function makeMockPrisma(): PrismaService {
     clients: { create: jest.fn() },
     conversations: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
     messages: { create: jest.fn() },
+    webhook_events: { create: jest.fn().mockResolvedValue({ id: 'evt_1' }) },
   } as unknown as PrismaService;
 }
 
@@ -633,6 +635,7 @@ describe('WhatsAppAdapter — sendMessage', () => {
     expect(result.success).toBe(false);
     // 3 attempts (maxAttempts = 3)
     expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(result.attempts).toBe(3);
   }, 10_000);
 });
 
@@ -704,9 +707,13 @@ describe('ChannelAdapterService — adapter registry', () => {
 describe('ChannelAdapterService — handleInboundWebhook', () => {
   let service: ChannelAdapterService;
   let emitSpy: jest.Mock;
+  let prismaMock: ReturnType<typeof makeMockPrisma> & {
+    webhook_events: { create: jest.Mock };
+  };
 
   beforeEach(async () => {
     emitSpy = jest.fn();
+    prismaMock = makeMockPrisma() as typeof prismaMock;
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChannelAdapterService,
@@ -714,7 +721,7 @@ describe('ChannelAdapterService — handleInboundWebhook', () => {
           provide: EventEmitter2,
           useValue: { emit: emitSpy },
         },
-        { provide: PrismaService, useValue: makeMockPrisma() },
+        { provide: PrismaService, useValue: prismaMock },
       ],
     }).compile();
 
@@ -786,6 +793,37 @@ describe('ChannelAdapterService — handleInboundWebhook', () => {
       'message.received',
       expect.objectContaining({ correlationId: 'gs-trace-xyz' }),
     );
+  });
+
+  it('skips reprocessing and does not emit message.received for a redelivered webhook', async () => {
+    const duplicateError = Object.assign(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: '5.22.0',
+      }),
+      { code: 'P2002' },
+    );
+    prismaMock.webhook_events.create.mockRejectedValueOnce(duplicateError);
+
+    const payload = makeTextWebhookPayload();
+    const req = buildSignedRequest(payload, APP_SECRET);
+
+    const msg = await service.handleInboundWebhook(ChannelType.WHATSAPP, req, 'business-123');
+
+    expect(msg.channel).toBe(ChannelType.WHATSAPP);
+    expect(emitSpy).not.toHaveBeenCalled();
+  });
+
+  it('still processes the message if the webhook_events dedup write fails for a non-duplicate reason', async () => {
+    prismaMock.webhook_events.create.mockRejectedValueOnce(new Error('connection reset'));
+
+    const payload = makeTextWebhookPayload();
+    const req = buildSignedRequest(payload, APP_SECRET);
+
+    const msg = await service.handleInboundWebhook(ChannelType.WHATSAPP, req, 'business-123');
+
+    expect(msg.channel).toBe(ChannelType.WHATSAPP);
+    expect(emitSpy).toHaveBeenCalledWith('message.received', expect.anything());
   });
 });
 
@@ -869,9 +907,33 @@ describe('ChannelAdapterService — sendMessage', () => {
     expect(result.success).toBe(false);
     expect(emitSpy).toHaveBeenCalledWith(
       'message.failed',
-      expect.objectContaining({ type: 'message.failed' }),
+      expect.objectContaining({ type: 'message.failed', attempts: 1 }),
     );
   });
+
+  it('reports the real retry count on message.failed after exhausting retries on a 5xx error', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: async () => ({}),
+      text: async () => 'Service unavailable',
+    } as unknown as Response);
+
+    const message: OutboundMessage = {
+      channelAccountId: PHONE_NUMBER_ID,
+      recipientExternalId: '919999900002',
+      content: { type: MessageContentType.TEXT, text: 'Test' },
+    };
+
+    const result = await service.sendMessage(ChannelType.WHATSAPP, message, 'business-xyz');
+
+    expect(result.success).toBe(false);
+    expect(result.attempts).toBe(3);
+    expect(emitSpy).toHaveBeenCalledWith(
+      'message.failed',
+      expect.objectContaining({ type: 'message.failed', attempts: 3 }),
+    );
+  }, 10_000);
 
   it('throws NotFoundException for unregistered channel', async () => {
     const message: OutboundMessage = {

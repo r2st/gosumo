@@ -119,12 +119,12 @@ export abstract class BaseChannelAdapter implements ChannelAdapter {
           if (attempt > 1) {
             this.logger.log(`${label} succeeded on attempt ${attempt}`);
           }
-          return result;
+          return { ...result, attempts: attempt };
         }
 
         // Non-retryable business error returned by the adapter
         this.logger.warn(`${label} failed (non-retryable): ${result.error ?? 'unknown'}`);
-        return result;
+        return { ...result, attempts: attempt };
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
         const isLastAttempt = attempt === this.maxAttempts;
@@ -146,6 +146,7 @@ export abstract class BaseChannelAdapter implements ChannelAdapter {
 
     return {
       success: false,
+      attempts: this.maxAttempts,
       error: lastError?.message ?? 'Unknown error after all retry attempts',
     };
   }

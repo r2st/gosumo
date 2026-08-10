@@ -251,6 +251,8 @@ export interface SendResult {
   externalMessageId?: string;
   error?: string;
   sentAt?: Date;
+  /** Number of send attempts made (including the initial try), for audit/observability. */
+  attempts?: number;
 }
 
 export interface TemplateMessage {
