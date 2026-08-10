@@ -406,10 +406,7 @@ export class RealtyExchangeService {
       config: lead.bltc.config,
     };
 
-    const candidates = await this.loadExchangeSupply(businessId, {
-      localities: lead.bltc.localities,
-      config: lead.bltc.config,
-    });
+    const candidates = await this.loadExchangeSupply(businessId);
     const matches = matchExchange(criteria, candidates, opts.limit ?? 5);
 
     let aiRationale: string | null = null;
@@ -425,9 +422,7 @@ export class RealtyExchangeService {
    */
   private async loadExchangeSupply(
     requesterBusinessId: string,
-    filters: { localities: string[]; config: string | null },
   ): Promise<ExchangeCandidate[]> {
-    const locality = filters.localities[0];
     const [resale, units] = await Promise.all([
       this.repository.findExchangeResaleSupply(requesterBusinessId, {
         // Locality/config are soft pre-filters; the scorer does the real ranking.
@@ -436,43 +431,46 @@ export class RealtyExchangeService {
       }),
       this.repository.findExchangeUnitSupply(requesterBusinessId),
     ]);
-    void locality;
 
-    const ownerIds = new Set<string>([
-      ...resale.map((r) => r.business_id),
-      ...units.map((u) => u.business_id),
+    // One reliability read per distinct owner, memoised across both supply lists —
+    // a member typically has several listings on the board at once.
+    const inflight = new Map<string, Promise<number>>();
+    const reliabilityOf = (ownerId: string): Promise<number> => {
+      const hit = inflight.get(ownerId);
+      if (hit) return hit;
+      const pending = this.repository
+        .findLatestReliabilityScore(ownerId, ownerId)
+        .then((self) => (self ? decimalToNumber(self.composite_score) : NEUTRAL_COMPOSITE));
+      inflight.set(ownerId, pending);
+      return pending;
+    };
+
+    return Promise.all([
+      ...resale.map(
+        async (r): Promise<ExchangeCandidate> => ({
+          listingId: r.id,
+          sourceType: 'RESALE',
+          ownerBusinessId: r.business_id,
+          projectName: null,
+          locality: r.locality,
+          config: r.config,
+          askingPricePaise: decimalToPaise(r.asking_price),
+          reliabilityScore: await reliabilityOf(r.business_id),
+        }),
+      ),
+      ...units.map(
+        async (u: ExchangeUnitCandidate): Promise<ExchangeCandidate> => ({
+          listingId: u.id,
+          sourceType: 'UNIT',
+          ownerBusinessId: u.business_id,
+          projectName: u.project.name,
+          locality: u.project.locality,
+          config: u.config,
+          askingPricePaise: decimalToPaise(u.all_in_price),
+          reliabilityScore: await reliabilityOf(u.business_id),
+        }),
+      ),
     ]);
-    const reliabilityByOwner = new Map<string, number>();
-    await Promise.all(
-      [...ownerIds].map(async (ownerId) => {
-        const self = await this.repository.findLatestReliabilityScore(ownerId, ownerId);
-        reliabilityByOwner.set(ownerId, self ? decimalToNumber(self.composite_score) : NEUTRAL_COMPOSITE);
-      }),
-    );
-
-    const resaleCandidates: ExchangeCandidate[] = resale.map((r) => ({
-      listingId: r.id,
-      sourceType: 'RESALE',
-      ownerBusinessId: r.business_id,
-      projectName: null,
-      locality: r.locality,
-      config: r.config,
-      askingPricePaise: decimalToPaise(r.asking_price),
-      reliabilityScore: reliabilityByOwner.get(r.business_id) ?? NEUTRAL_COMPOSITE,
-    }));
-
-    const unitCandidates: ExchangeCandidate[] = units.map((u: ExchangeUnitCandidate) => ({
-      listingId: u.id,
-      sourceType: 'UNIT',
-      ownerBusinessId: u.business_id,
-      projectName: u.project.name,
-      locality: u.project.locality,
-      config: u.config,
-      askingPricePaise: decimalToPaise(u.all_in_price),
-      reliabilityScore: reliabilityByOwner.get(u.business_id) ?? NEUTRAL_COMPOSITE,
-    }));
-
-    return [...resaleCandidates, ...unitCandidates];
   }
 
   /** Best-effort OpenRouter rationale. Degrades to null on any error. */

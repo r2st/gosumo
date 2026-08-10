@@ -84,6 +84,18 @@ describe('matchExchange', () => {
     expect(matchExchange(CRITERIA, many, 3)).toHaveLength(3);
   });
 
+  it('caps at five matches when no limit is given', () => {
+    const many = Array.from({ length: 8 }, (_, i) => candidate({ listingId: `l${i}` }));
+    expect(matchExchange(CRITERIA, many)).toHaveLength(5);
+  });
+
+  /** An empty BLTC scores everything neutrally rather than dropping the board. */
+  it('treats an entirely unspecified brief as no locality constraint', () => {
+    const matches = matchExchange({}, [candidate({ locality: 'Kharadi' })]);
+    expect(matches).toHaveLength(1);
+    expect(matches[0]!.reasons).not.toContain('Locality matches Kharadi');
+  });
+
   it('keeps units and resale listings comparable in one ranking', () => {
     const matches = matchExchange(CRITERIA, [
       candidate({ listingId: 'resale', sourceType: 'RESALE', reliabilityScore: 40 }),

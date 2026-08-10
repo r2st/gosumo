@@ -486,4 +486,550 @@ describe('RealtyExchangeService', () => {
       expect(repo.softDeleteResaleListing).toHaveBeenCalledWith(FROM, LISTING);
     });
   });
+
+  // ── Read paths ──
+
+  describe('reads', () => {
+    it('gets a syndication the tenant is party to', async () => {
+      repo.findSyndicationById.mockResolvedValue(makeSyndication());
+      const res = await service.getSyndication(TO, SYND);
+      expect(res.id).toBe(SYND);
+      expect(repo.findSyndicationById).toHaveBeenCalledWith(TO, SYND);
+    });
+
+    it('throws NotFound reading a syndication outside the tenant', async () => {
+      repo.findSyndicationById.mockResolvedValue(null);
+      await expect(service.getSyndication(OTHER, SYND)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('passes state and role filters straight through when listing', async () => {
+      repo.listSyndications.mockResolvedValue([makeSyndication()]);
+      const res = await service.listSyndications(FROM, {
+        state: SyndicationState.OFFERED,
+        role: 'from',
+      });
+      expect(repo.listSyndications).toHaveBeenCalledWith(FROM, {
+        state: SyndicationState.OFFERED,
+        role: 'from',
+      });
+      expect(res).toHaveLength(1);
+    });
+
+    it('lists syndications unfiltered', async () => {
+      repo.listSyndications.mockResolvedValue([]);
+      expect(await service.listSyndications(FROM, {})).toEqual([]);
+      expect(repo.listSyndications).toHaveBeenCalledWith(FROM, {
+        state: undefined,
+        role: undefined,
+      });
+    });
+
+    it('lists reliability scores held by the tenant', async () => {
+      repo.listReliabilityScores.mockResolvedValue([
+        {
+          id: 'sc',
+          business_id: FROM,
+          target_business_id: TO,
+          response_speed_score: new Prisma.Decimal(70),
+          showup_integrity_score: new Prisma.Decimal(80),
+          split_honoring_score: new Prisma.Decimal(90),
+          documentation_hygiene_score: new Prisma.Decimal(60),
+          composite_score: new Prisma.Decimal(77.5),
+          period_start: new Date('2026-08-01T00:00:00Z'),
+          period_end: new Date('2026-08-10T00:00:00Z'),
+          metadata: {},
+          created_at: new Date(),
+          updated_at: new Date(),
+        },
+      ] as never);
+
+      const res = await service.listReliabilityScores(FROM);
+      expect(res).toHaveLength(1);
+      expect(res[0]!.compositeScore).toBe(77.5);
+      expect(res[0]!.targetBusinessId).toBe(TO);
+    });
+
+    it('lists resale listings with status and locality filters', async () => {
+      repo.listResaleListings.mockResolvedValue([makeResale()]);
+      const res = await service.listResaleListings(FROM, {
+        status: ResaleListingStatus.ACTIVE,
+        locality: 'Baner',
+      });
+      expect(repo.listResaleListings).toHaveBeenCalledWith(FROM, {
+        status: ResaleListingStatus.ACTIVE,
+        locality: 'Baner',
+      });
+      expect(res[0]!.locality).toBe('Baner');
+    });
+
+    it('gets a single resale listing', async () => {
+      repo.findResaleListingById.mockResolvedValue(makeResale());
+      const res = await service.getResaleListing(FROM, LISTING);
+      expect(res.id).toBe(LISTING);
+    });
+
+    it('throws NotFound reading a resale listing the tenant does not own', async () => {
+      repo.findResaleListingById.mockResolvedValue(null);
+      await expect(service.getResaleListing(OTHER, LISTING)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+  });
+
+  // ── Mapping edge cases ──
+
+  describe('response mapping', () => {
+    /**
+     * A syndication only carries money once it CLOSEs; before that the Decimal
+     * legs are null in the DB and must surface as 0 paise, not NaN.
+     */
+    it('maps an unbooked syndication with null money legs to 0 paise', async () => {
+      repo.findSyndicationById.mockResolvedValue(
+        makeSyndication({ commission_pool: null, platform_fee: null, split_terms: null }),
+      );
+      const res = await service.getSyndication(FROM, SYND);
+      expect(res.commissionPoolPaise).toBe(0);
+      expect(res.platformFeePaise).toBe(0);
+      expect(res.splitTerms).toEqual({});
+    });
+
+    /**
+     * A reliability row written before a dimension had any evidence can carry a
+     * null sub-score; the response contract is numeric, so it must read as 0.
+     */
+    it('maps a reliability row with a null sub-score to 0', async () => {
+      repo.listReliabilityScores.mockResolvedValue([
+        {
+          id: 'sc',
+          business_id: FROM,
+          target_business_id: TO,
+          response_speed_score: null,
+          showup_integrity_score: new Prisma.Decimal(80),
+          split_honoring_score: new Prisma.Decimal(90),
+          documentation_hygiene_score: new Prisma.Decimal(60),
+          composite_score: new Prisma.Decimal(70),
+          period_start: new Date('2026-08-01T00:00:00Z'),
+          period_end: new Date('2026-08-10T00:00:00Z'),
+          metadata: {},
+          created_at: new Date(),
+          updated_at: new Date(),
+        },
+      ] as never);
+
+      const res = await service.listReliabilityScores(FROM);
+      expect(res[0]!.responseSpeedScore).toBe(0);
+      expect(res[0]!.showupIntegrityScore).toBe(80);
+    });
+
+    it('maps a resale listing with a null carpet area and project', async () => {
+      repo.findResaleListingById.mockResolvedValue(
+        makeResale({ carpet_sqft: null, project_id: null, verified_at: null }),
+      );
+      const res = await service.getResaleListing(FROM, LISTING);
+      expect(res.carpetSqft).toBeNull();
+      expect(res.projectId).toBeNull();
+      expect(res.verifiedAt).toBeNull();
+    });
+  });
+
+  // ── Fee band ──
+
+  describe('platform fee band', () => {
+    beforeEach(() => {
+      repo.findSyndicationById.mockResolvedValue(
+        makeSyndication({ state: SyndicationState.VISIT }),
+      );
+    });
+
+    it('lifts an under-band rate to the 5% floor', async () => {
+      const res = await service.closeSyndication(FROM, SYND, {
+        commissionPoolPaise: 100_000_000,
+        platformFeeRate: 0.001,
+      });
+      expect(res.platformFeePaise).toBe(5_000_000);
+    });
+
+    it('honours an explicit in-band rate untouched', async () => {
+      const res = await service.closeSyndication(FROM, SYND, {
+        commissionPoolPaise: 100_000_000,
+        platformFeeRate: 0.07,
+      });
+      expect(res.platformFeePaise).toBe(7_000_000);
+    });
+  });
+
+  // ── developer leg ──
+
+  it('carries an explicit developer id onto the syndication row', async () => {
+    const DEVELOPER = '00000000-0000-4000-a000-0000000000d0';
+    leads.getLead.mockResolvedValue(leadWith());
+    repo.createSyndication.mockResolvedValue(makeSyndication({ developer_id: DEVELOPER }));
+
+    const res = await service.createSyndication(FROM, {
+      leadId: LEAD,
+      toBusinessId: TO,
+      developerId: DEVELOPER,
+      splitTerms: { originatorPct: 40, counterpartyPct: 40, developerPct: 20 },
+    } as never);
+
+    expect(repo.createSyndication).toHaveBeenCalledWith(
+      expect.objectContaining({ developerId: DEVELOPER }),
+    );
+    expect(res.developerId).toBe(DEVELOPER);
+  });
+
+  // ── rating from the counterparty side ──
+
+  it('rates the originator when the counterparty is the rater', async () => {
+    repo.findSyndicationById.mockResolvedValue(
+      makeSyndication({ state: SyndicationState.CLOSED, metadata: null }),
+    );
+    // The recompute that follows is authorized by the rater appearing on the ledger.
+    repo.findSyndicationsInvolving.mockResolvedValue([makeSyndication()]);
+    repo.upsertReliabilityScore.mockImplementation(async (d) => ({
+      id: 's', business_id: d.businessId, target_business_id: d.targetBusinessId,
+      response_speed_score: new Prisma.Decimal(d.responseSpeedScore),
+      showup_integrity_score: new Prisma.Decimal(d.showupIntegrityScore),
+      split_honoring_score: new Prisma.Decimal(d.splitHonoringScore),
+      documentation_hygiene_score: new Prisma.Decimal(d.documentationHygieneScore),
+      composite_score: new Prisma.Decimal(d.compositeScore),
+      period_start: d.periodStart, period_end: d.periodEnd, metadata: {},
+      created_at: new Date(), updated_at: new Date(),
+    }));
+
+    // TO rates the deal → the rated party is FROM.
+    const res = await service.rateSyndication(SYND, TO, { splitHonored: false });
+
+    const patch = repo.updateSyndication.mock.calls[0]![2] as {
+      metadata: { ratings: Record<string, unknown> };
+    };
+    expect(patch.metadata.ratings).toHaveProperty(FROM);
+    expect(res.targetBusinessId).toBe(FROM);
+  });
+
+  it('merges a second rating into the existing record for the same party', async () => {
+    repo.findSyndicationById.mockResolvedValue(
+      makeSyndication({
+        state: SyndicationState.CLOSED,
+        metadata: { ratings: { [TO]: { responseMinutes: 12 } }, note: 'keep me' },
+      }),
+    );
+    repo.findSyndicationsInvolving.mockResolvedValue([makeSyndication()]);
+    repo.upsertReliabilityScore.mockImplementation(async (d) => ({
+      id: 's', business_id: d.businessId, target_business_id: d.targetBusinessId,
+      response_speed_score: new Prisma.Decimal(d.responseSpeedScore),
+      showup_integrity_score: new Prisma.Decimal(d.showupIntegrityScore),
+      split_honoring_score: new Prisma.Decimal(d.splitHonoringScore),
+      documentation_hygiene_score: new Prisma.Decimal(d.documentationHygieneScore),
+      composite_score: new Prisma.Decimal(d.compositeScore),
+      period_start: d.periodStart, period_end: d.periodEnd, metadata: {},
+      created_at: new Date(), updated_at: new Date(),
+    }));
+
+    await service.rateSyndication(SYND, FROM, { showedUp: true });
+
+    const patch = repo.updateSyndication.mock.calls[0]![2] as {
+      metadata: { ratings: Record<string, Record<string, unknown>>; note: string };
+    };
+    // The earlier field survives alongside the new one, and unrelated metadata
+    // keys are not clobbered by the merge.
+    expect(patch.metadata.ratings[TO]).toEqual({ responseMinutes: 12, showedUp: true });
+    expect(patch.metadata.note).toBe('keep me');
+  });
+
+  // ── buildSignals ──
+
+  describe('reliability signal building', () => {
+    beforeEach(() => {
+      repo.upsertReliabilityScore.mockImplementation(async (d) => ({
+        id: 's', business_id: d.businessId, target_business_id: d.targetBusinessId,
+        response_speed_score: new Prisma.Decimal(d.responseSpeedScore),
+        showup_integrity_score: new Prisma.Decimal(d.showupIntegrityScore),
+        split_honoring_score: new Prisma.Decimal(d.splitHonoringScore),
+        documentation_hygiene_score: new Prisma.Decimal(d.documentationHygieneScore),
+        composite_score: new Prisma.Decimal(d.compositeScore),
+        period_start: d.periodStart, period_end: d.periodEnd, metadata: {},
+        created_at: new Date(), updated_at: new Date(),
+      }));
+    });
+
+    function upserted() {
+      return repo.upsertReliabilityScore.mock.calls[0]![0];
+    }
+
+    it('counts a no-show against show-up integrity without crediting a honored visit', async () => {
+      repo.findSyndicationsInvolving.mockResolvedValue([
+        makeSyndication({
+          state: SyndicationState.CLOSED,
+          metadata: { ratings: { [TO]: { showedUp: false, splitHonored: false, documented: false } } },
+        }),
+      ]);
+
+      await service.calculateReliabilityScore(TO, TO);
+      expect(upserted().showupIntegrityScore).toBe(0);
+      // No split honored and no docs on the only closed deal.
+      expect(upserted().splitHonoringScore).toBe(0);
+      expect(upserted().documentationHygieneScore).toBe(0);
+    });
+
+    it('scores a spotless closed deal at the top of every dimension', async () => {
+      repo.findSyndicationsInvolving.mockResolvedValue([
+        makeSyndication({
+          state: SyndicationState.CLOSED,
+          metadata: {
+            ratings: { [TO]: { showedUp: true, splitHonored: true, documented: true, responseMinutes: 2 } },
+          },
+        }),
+      ]);
+
+      await service.calculateReliabilityScore(TO, TO);
+      expect(upserted().compositeScore).toBeGreaterThan(90);
+    });
+
+    it('ignores ledger rows that carry no rating for the member', async () => {
+      repo.findSyndicationsInvolving.mockResolvedValue([
+        makeSyndication({ state: SyndicationState.CLOSED, metadata: { ratings: { [OTHER]: { showedUp: true } } } }),
+        makeSyndication({ state: SyndicationState.DISPUTED, metadata: null }),
+      ]);
+
+      await service.calculateReliabilityScore(TO, TO);
+      // Two rows on the ledger, one disputed, none rated for TO.
+      expect(upserted().showupIntegrityScore).toBe(50); // neutral — no evidence
+    });
+
+    it('averages response minutes across rated deals', async () => {
+      repo.findSyndicationsInvolving.mockResolvedValue([
+        makeSyndication({ metadata: { ratings: { [TO]: { responseMinutes: 10 } } } }),
+        makeSyndication({ metadata: { ratings: { [TO]: { responseMinutes: 30 } } } }),
+        // A rating with no response signal at all must not drag the average.
+        makeSyndication({ metadata: { ratings: { [TO]: { documented: true } } } }),
+      ]);
+
+      await service.calculateReliabilityScore(TO, TO);
+      const first = upserted().responseSpeedScore;
+      expect(first).toBeGreaterThan(0);
+      expect(first).toBeLessThan(100);
+    });
+
+    /**
+     * A dispute is read off the ledger state, not off any rating — a member being
+     * disputed cannot suppress the penalty by simply never being rated on that row.
+     * Each dispute cancels a full deal's worth of split-honoring credit.
+     */
+    it('penalises split honoring for a dispute the member was never rated on', async () => {
+      const honoredClose = () =>
+        makeSyndication({
+          state: SyndicationState.CLOSED,
+          metadata: { ratings: { [TO]: { splitHonored: true } } },
+        });
+
+      repo.findSyndicationsInvolving.mockResolvedValue([
+        honoredClose(),
+        honoredClose(),
+        makeSyndication({ state: SyndicationState.DISPUTED, metadata: {} }),
+      ]);
+      await service.calculateReliabilityScore(TO, TO);
+      // 2 honored splits over 2 closes, less 1 dispute → 1/2.
+      expect(upserted().splitHonoringScore).toBe(50);
+
+      repo.upsertReliabilityScore.mockClear();
+      repo.findSyndicationsInvolving.mockResolvedValue([
+        honoredClose(),
+        honoredClose(),
+        makeSyndication({ state: SyndicationState.EXPIRED, metadata: {} }),
+      ]);
+      await service.calculateReliabilityScore(TO, TO);
+      // Same two closes, but the third row lapsed rather than blew up.
+      expect(upserted().splitHonoringScore).toBe(100);
+    });
+  });
+
+  // ── matching: supply assembly + AI rationale ──
+
+  describe('exchange supply assembly', () => {
+    function makeUnit(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 'u1',
+        business_id: OTHER,
+        project_id: 'p1',
+        config: '2BHK',
+        all_in_price: new Prisma.Decimal(11_000_000),
+        project: { id: 'p1', name: 'Sunrise Heights', locality: 'Baner' },
+        ...overrides,
+      };
+    }
+
+    it('folds EXCHANGE-visible units into the candidate pool with their project name', async () => {
+      leads.getLead.mockResolvedValue(leadWith());
+      repo.findExchangeResaleSupply.mockResolvedValue([]);
+      repo.findExchangeUnitSupply.mockResolvedValue([makeUnit()] as never);
+      repo.findLatestReliabilityScore.mockResolvedValue(null);
+
+      const res = await service.matchLeadToExchange(FROM, LEAD);
+
+      expect(res.matches).toHaveLength(1);
+      expect(res.matches[0]!.sourceType).toBe('UNIT');
+      expect(res.matches[0]!.projectName).toBe('Sunrise Heights');
+      expect(res.matches[0]!.locality).toBe('Baner');
+    });
+
+    /**
+     * A member usually has several listings on the board at once; the reliability
+     * lookup is memoised per owner so the fan-out stays one read per counterparty.
+     */
+    it('reads a counterparty reliability score once across all of its listings', async () => {
+      leads.getLead.mockResolvedValue(leadWith());
+      repo.findExchangeResaleSupply.mockResolvedValue([
+        makeResale({ id: 'r1', business_id: OTHER }),
+        makeResale({ id: 'r2', business_id: OTHER }),
+      ]);
+      repo.findExchangeUnitSupply.mockResolvedValue([makeUnit({ id: 'u1', business_id: OTHER })] as never);
+      repo.findLatestReliabilityScore.mockResolvedValue(null);
+
+      await service.matchLeadToExchange(FROM, LEAD);
+
+      expect(repo.findLatestReliabilityScore).toHaveBeenCalledTimes(1);
+      expect(repo.findLatestReliabilityScore).toHaveBeenCalledWith(OTHER, OTHER);
+    });
+
+    it('reads once per distinct owner when supply spans several members', async () => {
+      const THIRD = '00000000-0000-4000-a000-000000000004';
+      leads.getLead.mockResolvedValue(leadWith());
+      repo.findExchangeResaleSupply.mockResolvedValue([
+        makeResale({ id: 'r1', business_id: OTHER }),
+        makeResale({ id: 'r2', business_id: THIRD }),
+      ]);
+      repo.findExchangeUnitSupply.mockResolvedValue([]);
+      repo.findLatestReliabilityScore.mockResolvedValue(null);
+
+      await service.matchLeadToExchange(FROM, LEAD);
+      expect(repo.findLatestReliabilityScore).toHaveBeenCalledTimes(2);
+    });
+
+    it('honours an explicit result limit', async () => {
+      leads.getLead.mockResolvedValue(leadWith());
+      repo.findExchangeResaleSupply.mockResolvedValue([
+        makeResale({ id: 'r1', business_id: OTHER }),
+        makeResale({ id: 'r2', business_id: OTHER }),
+        makeResale({ id: 'r3', business_id: OTHER }),
+      ]);
+      repo.findExchangeUnitSupply.mockResolvedValue([]);
+      repo.findLatestReliabilityScore.mockResolvedValue(null);
+
+      const res = await service.matchLeadToExchange(FROM, LEAD, { limit: 2 });
+      expect(res.matches).toHaveLength(2);
+    });
+
+    it('skips the AI call when nothing matched', async () => {
+      leads.getLead.mockResolvedValue(leadWith());
+      repo.findExchangeResaleSupply.mockResolvedValue([]);
+      repo.findExchangeUnitSupply.mockResolvedValue([]);
+
+      const res = await service.matchLeadToExchange(FROM, LEAD, { aiRationale: true });
+      expect(res.matches).toHaveLength(0);
+      expect(res.aiRationale).toBeNull();
+      expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('attaches the model rationale when OpenRouter answers', async () => {
+      leads.getLead.mockResolvedValue(leadWith());
+      repo.findExchangeResaleSupply.mockResolvedValue([makeResale({ id: 'r1', business_id: OTHER })]);
+      repo.findExchangeUnitSupply.mockResolvedValue([]);
+      repo.findLatestReliabilityScore.mockResolvedValue(null);
+      llm.complete.mockResolvedValue({ text: 'Syndicate the Baner 2BHK first.' });
+
+      const res = await service.matchLeadToExchange(FROM, LEAD, { aiRationale: true });
+
+      expect(res.aiRationale).toBe('Syndicate the Baner 2BHK first.');
+      const prompt = llm.complete.mock.calls[0]![0] as { user: string; system: string };
+      expect(prompt.user).toContain('2BHK');
+      expect(prompt.user).toContain('Baner');
+    });
+
+    it('treats an empty model reply as no rationale', async () => {
+      leads.getLead.mockResolvedValue(leadWith());
+      repo.findExchangeResaleSupply.mockResolvedValue([makeResale({ id: 'r1', business_id: OTHER })]);
+      repo.findExchangeUnitSupply.mockResolvedValue([]);
+      repo.findLatestReliabilityScore.mockResolvedValue(null);
+      llm.complete.mockResolvedValue({ text: '' });
+
+      const res = await service.matchLeadToExchange(FROM, LEAD, { aiRationale: true });
+      expect(res.aiRationale).toBeNull();
+    });
+
+    it('describes an unspecified buyer brief without leaving blanks in the prompt', async () => {
+      leads.getLead.mockResolvedValue(
+        leadWith({
+          bltc: {
+            budgetMinPaise: null, budgetMaxPaise: null, localities: [],
+            timelineMonths: null, config: null, purpose: null, financing: null,
+          },
+        }),
+      );
+      repo.findExchangeResaleSupply.mockResolvedValue([makeResale({ id: 'r1', business_id: OTHER })]);
+      repo.findExchangeUnitSupply.mockResolvedValue([]);
+      repo.findLatestReliabilityScore.mockResolvedValue(null);
+      llm.complete.mockResolvedValue({ text: 'ok' });
+
+      await service.matchLeadToExchange(FROM, LEAD, { aiRationale: true });
+
+      const prompt = llm.complete.mock.calls[0]![0] as { user: string };
+      expect(prompt.user).toContain('any config');
+      expect(prompt.user).toContain('any locality');
+    });
+  });
+
+  // ── resale update patching ──
+
+  describe('updateResaleListing patching', () => {
+    it('applies only the fields the caller supplied', async () => {
+      repo.findResaleListingById.mockResolvedValue(makeResale());
+      repo.updateResaleListing.mockResolvedValue(makeResale());
+
+      await service.updateResaleListing(FROM, LISTING, {
+        locality: 'Wakad',
+        config: '3BHK',
+        carpetSqft: 1200,
+        askingPricePaise: 1_500_000_000,
+        sellerPhone: '+918888888888',
+        status: ResaleListingStatus.UNDER_OFFER,
+      } as never);
+
+      const patch = repo.updateResaleListing.mock.calls[0]![2] as {
+        locality: string; config: string; carpet_sqft: number;
+        asking_price: Prisma.Decimal; seller_phone: string; status: string;
+        verified_at?: Date;
+      };
+      expect(patch.locality).toBe('Wakad');
+      expect(patch.config).toBe('3BHK');
+      expect(patch.carpet_sqft).toBe(1200);
+      expect(patch.asking_price.toNumber()).toBe(15_000_000);
+      expect(patch.seller_phone).toBe('+918888888888');
+      expect(patch.status).toBe(ResaleListingStatus.UNDER_OFFER);
+      // Only a return to ACTIVE re-stamps the freshness marker.
+      expect(patch.verified_at).toBeUndefined();
+    });
+
+    it('sends an empty patch when the caller supplied nothing', async () => {
+      repo.findResaleListingById.mockResolvedValue(makeResale());
+      repo.updateResaleListing.mockResolvedValue(makeResale());
+
+      await service.updateResaleListing(FROM, LISTING, {} as never);
+      expect(repo.updateResaleListing.mock.calls[0]![2]).toEqual({});
+    });
+
+    it('stores an optional project id and carpet area on create', async () => {
+      repo.createResaleListing.mockResolvedValue(makeResale());
+      await service.createResaleListing(FROM, {
+        projectId: 'p1', locality: 'Baner', config: '2BHK',
+        carpetSqft: 950, askingPricePaise: 1_000_000_000, sellerPhone: '+919999999999',
+      } as never);
+
+      expect(repo.createResaleListing).toHaveBeenCalledWith(
+        expect.objectContaining({ projectId: 'p1', carpetSqft: 950 }),
+      );
+      const created = repo.createResaleListing.mock.calls[0]![0] as { askingPrice: Prisma.Decimal };
+      expect(created.askingPrice.toNumber()).toBe(10_000_000);
+    });
+  });
 });
