@@ -83,7 +83,7 @@ export class ChannelsService {
     let record;
     if (existing) {
       record = await this.prisma.channel_accounts.update({
-        where: { id: existing.id },
+        where: { id: existing.id, business_id: businessId },
         data: {
           name: displayName,
           credentials: encrypted,
@@ -128,7 +128,7 @@ export class ChannelsService {
     }
 
     await this.prisma.channel_accounts.update({
-      where: { id: channelId },
+      where: { id: channelId, business_id: businessId },
       data: { deleted_at: new Date(), is_active: false },
     });
 
@@ -230,6 +230,15 @@ export class ChannelsService {
     }
   }
 
+  /**
+   * Widget bootstrap for the embeddable web-chat script.
+   *
+   * Reachable unauthenticated, so `businessId` may be empty and the lookup then
+   * falls back to the widget id alone. That is safe only because the response
+   * carries no secrets — the widget id, the owning business id, and the public
+   * widget config, all of which are already in the page that embeds it. Do not
+   * add credential or conversation data to this shape.
+   */
   async getWebChatEmbed(businessId: string, channelId: string) {
     // When called from a @Public() endpoint, businessId may be empty.
     // Look up by channelId directly, optionally filtering by businessId.
@@ -264,9 +273,20 @@ export class ChannelsService {
     };
   }
 
-  async getChannelCredentials(channelAccountId: string): Promise<Record<string, unknown>> {
-    const record = await this.prisma.channel_accounts.findUnique({
-      where: { id: channelAccountId },
+  /**
+   * Decrypt a channel's provider credentials.
+   *
+   * This returns live secrets — access tokens, app secrets, Twilio auth tokens —
+   * so it takes the tenant explicitly and filters on it. Resolving by bare id
+   * would let any caller holding a channel id read another business's provider
+   * credentials in plaintext.
+   */
+  async getChannelCredentials(
+    businessId: string,
+    channelAccountId: string,
+  ): Promise<Record<string, unknown>> {
+    const record = await this.prisma.channel_accounts.findFirst({
+      where: { id: channelAccountId, business_id: businessId, deleted_at: null },
     });
 
     if (!record) {
@@ -276,6 +296,14 @@ export class ChannelsService {
     return decryptJson(record.credentials as string);
   }
 
+  /**
+   * Resolve the channel account an inbound webhook belongs to.
+   *
+   * Deliberately cross-tenant: the provider posts a channel type and its own
+   * external id and nothing else, so there is no tenant to scope by — the row
+   * this returns is what establishes one. Everything downstream uses the
+   * `business_id` read back from it.
+   */
   async findByExternalId(channel: ChannelType, externalId: string) {
     return this.prisma.channel_accounts.findFirst({
       where: {

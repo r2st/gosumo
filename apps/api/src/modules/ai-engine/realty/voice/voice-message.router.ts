@@ -88,7 +88,7 @@ export class VoiceMessageRouter {
     // Stamp the transcript on metadata (content stays append-only) so the
     // conversation thread can render it beneath the audio player.
     await this.prisma.messages.update({
-      where: { id: message.id },
+      where: { id: message.id, business_id: event.businessId },
       data: {
         metadata: {
           ...meta,

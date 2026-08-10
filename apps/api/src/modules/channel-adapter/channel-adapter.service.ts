@@ -218,12 +218,11 @@ export class ChannelAdapterService {
           ? normalizeIndianPhone(senderExternalId) ?? senderExternalId
           : undefined;
 
-        let channelContact = await this.prisma.channel_contacts.findUnique({
+        let channelContact = await this.prisma.channel_contacts.findFirst({
           where: {
-            channel_account_id_external_id: {
-              channel_account_id: channelAccount.id,
-              external_id: senderExternalId,
-            },
+            business_id: channelAccount.business_id,
+            channel_account_id: channelAccount.id,
+            external_id: senderExternalId,
           },
           include: { client: true },
         });
@@ -258,7 +257,7 @@ export class ChannelAdapterService {
         } else {
           // Update last_seen_at
           await this.prisma.channel_contacts.update({
-            where: { id: channelContact.id },
+            where: { id: channelContact.id, business_id: channelAccount.business_id },
             data: { last_seen_at: new Date() },
           });
 
@@ -268,7 +267,10 @@ export class ChannelAdapterService {
           // blank — never overwrite a phone an operator may have corrected.
           if (senderPhone && !channelContact.client?.phone) {
             await this.prisma.clients.update({
-              where: { id: channelContact.client_id },
+              where: {
+                id: channelContact.client_id,
+                business_id: channelAccount.business_id,
+              },
               data: { phone: senderPhone },
             });
             this.logger.log(
@@ -308,7 +310,7 @@ export class ChannelAdapterService {
           );
         } else {
           await this.prisma.conversations.update({
-            where: { id: conversation.id },
+            where: { id: conversation.id, business_id: channelAccount.business_id },
             data: { last_message_at: new Date() },
           });
         }

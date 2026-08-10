@@ -369,10 +369,24 @@ function parameterNames(fn: unknown): string[] {
     .filter(Boolean);
 }
 
+/** True for the parameter a repository method treats as its patch/payload. */
+function isDataParameter(name: string): boolean {
+  return /(data|dto|input|payload|updates|patch|record|entry)$/i.test(name);
+}
+
+/**
+ * How the harness fills the data/patch parameter.
+ *
+ * `full` supplies a wide object so a `create` finds whatever field it reaches
+ * for; `empty` supplies `{}` to drive the other side of every
+ * `if (data.x !== undefined)` guard.
+ */
+type DataMode = 'full' | 'empty';
+
 /** Picks a plausible value for a parameter based on its name. */
-function valueForParameter(name: string): unknown {
+function valueForParameter(name: string, dataMode: DataMode = 'full'): unknown {
   if (/^_?(business|tenant)_?id$/i.test(name)) return BUSINESS_ID;
-  if (/(data|dto|input|payload|updates|patch|record|entry)$/i.test(name)) return dataObject();
+  if (isDataParameter(name)) return dataMode === 'empty' ? {} : dataObject();
   if (/(filters?|options?|opts|query|params|criteria|where)$/i.test(name)) return {};
   if (/(ids|list)$/i.test(name)) return [RECORD_ID];
   if (/(limit|offset|page|size|count|days|hours|minutes|score|index|n)$/i.test(name)) return 20;
@@ -390,12 +404,16 @@ interface MethodRun {
   driven: boolean;
 }
 
-async function runMethod(repo: DiscoveredRepository, method: string): Promise<MethodRun> {
+async function runMethod(
+  repo: DiscoveredRepository,
+  method: string,
+  dataMode: DataMode = 'full',
+): Promise<MethodRun> {
   const { prisma, calls } = makeRecordingPrisma();
   const instance = new repo.cls(prisma);
 
   const fn = (repo.cls.prototype as Record<string, unknown>)[method];
-  const args = parameterNames(fn).map(valueForParameter);
+  const args = parameterNames(fn).map((p) => valueForParameter(p, dataMode));
 
   let error: Error | undefined;
   try {
@@ -576,6 +594,62 @@ describe('Every repository query on a tenant table is tenant-scoped', () => {
     for (const match of tenantValues) {
       expect(match).toContain(BUSINESS_ID);
     }
+  });
+});
+
+// ─────────────────────────────────────────────
+// Partial updates
+// ─────────────────────────────────────────────
+
+/**
+ * A partial update must touch only the fields it was given.
+ *
+ * Most update methods here are hand-written field-by-field
+ * (`if (data.name !== undefined) updateData.name = data.name`), and the failure
+ * mode is a line that reaches for `data.x ?? null` instead: the column is then
+ * nulled out on every PATCH that omits `x`, silently destroying data the caller
+ * never mentioned. That is invisible in a test that always sends a full body,
+ * which is exactly how these methods are usually exercised.
+ *
+ * So each method is driven twice — once with a wide patch, once with `{}` — and
+ * the empty run is checked for columns being written to `null` that the full
+ * run set to a value.
+ */
+describe('Partial updates only write the fields they were given', () => {
+  const WRITE_ONLY = METHOD_CASES.filter(([, repo, method]) => {
+    const fn = (repo.cls.prototype as Record<string, unknown>)[method];
+    return parameterNames(fn).some(isDataParameter);
+  });
+
+  it('finds the update methods to check', () => {
+    // A drop here means the check below quietly stopped covering anything.
+    expect(WRITE_ONLY.length).toBeGreaterThan(40);
+  });
+
+  it.each(WRITE_ONLY)('%s does not null out an omitted column', async (_label, repo, method) => {
+    const full = await runMethod(repo, method, 'full');
+    const empty = await runMethod(repo, method, 'empty');
+
+    const valuedUnderFullPatch = new Set<string>();
+    for (const call of full.calls.filter((c) => WRITE_OPS.has(c.op))) {
+      const data = (call.args.data ?? {}) as Record<string, unknown>;
+      for (const [k, v] of Object.entries(data)) {
+        if (v !== null && v !== undefined) valuedUnderFullPatch.add(`${call.model}.${k}`);
+      }
+    }
+
+    const nulled: string[] = [];
+    for (const call of empty.calls.filter((c) => WRITE_OPS.has(c.op))) {
+      const data = (call.args.data ?? {}) as Record<string, unknown>;
+      for (const [k, v] of Object.entries(data)) {
+        if (v === null && valuedUnderFullPatch.has(`${call.model}.${k}`)) {
+          nulled.push(`${call.model}.${k}`);
+        }
+      }
+    }
+
+    // A column here is one the caller can set but cannot leave alone.
+    expect(nulled).toEqual([]);
   });
 });
 

@@ -247,7 +247,7 @@ export class OrderService {
               );
             }
             await this.prisma.catalog_variants.update({
-              where: { id: item.variantId },
+              where: { id: item.variantId, business_id: businessId },
               data: { stock_quantity: { decrement: item.quantity } },
             });
           }
@@ -258,7 +258,7 @@ export class OrderService {
             );
           }
           await this.prisma.catalog_items.update({
-            where: { id: item.itemId },
+            where: { id: item.itemId, business_id: businessId },
             data: { stock_quantity: { decrement: item.quantity } },
           });
         }

@@ -170,7 +170,7 @@ export class WebChatGateway implements OnGatewayConnection, OnGatewayDisconnect 
 
       // Update conversation last_message_at
       await this.prisma.conversations.update({
-        where: { id: ctx.conversationId },
+        where: { id: ctx.conversationId, business_id: ctx.businessId },
         data: { last_message_at: new Date(), updated_at: new Date() },
       });
 

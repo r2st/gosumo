@@ -156,7 +156,7 @@ export class MessageTemplateService {
   async deleteTemplate(businessId: string, templateId: string): Promise<void> {
     await this.getTemplate(businessId, templateId);
     await this.prisma.notification_templates.update({
-      where: { id: templateId },
+      where: { id: templateId, business_id: businessId },
       data: { deleted_at: new Date(), is_active: false },
     });
   }
