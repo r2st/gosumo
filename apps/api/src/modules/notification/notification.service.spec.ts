@@ -9,6 +9,7 @@ import { NotificationService } from './notification.service';
 import { TemplateRenderer } from './template-renderer';
 import { NotificationRateLimiter } from './notification.rate-limiter';
 import { SendOutcome } from './senders/channel-sender.interface';
+import { BATCH_CHUNK_SIZE, NOTIFICATION_JOBS } from './notification.constants';
 
 const BUSINESS = '00000000-0000-4000-8000-000000000001';
 const CLIENT = '00000000-0000-4000-8000-000000000002';
@@ -115,7 +116,15 @@ class FakeRepo {
     return { ...row };
   });
 
-  list = jest.fn(async () => ({ data: [], total: 0, page: 1, limit: 20, totalPages: 0 }));
+  list = jest.fn(
+    async (_businessId: string, _filters: Record<string, unknown>) => ({
+      data: [] as any[],
+      total: 0,
+      page: 1,
+      limit: 20,
+      totalPages: 0,
+    }),
+  );
 
   aggregateStats = jest.fn(async () => ({
     byStatus: [
@@ -790,5 +799,1091 @@ describe('NotificationService stats', () => {
     // delivered+read = 5 of 10
     expect(stats.deliveryRate).toBeCloseTo(0.5);
     expect(stats.failureRate).toBeCloseTo(0.2);
+  });
+});
+
+// ─────────────────────────────────────────────
+// dispatchBatch()
+// ─────────────────────────────────────────────
+
+describe('NotificationService.dispatchBatch', () => {
+  it('rejects an empty recipient list', async () => {
+    const { service } = makeService();
+    await expect(
+      service.dispatchBatch(BUSINESS, {
+        channel: NotificationTemplateChannel.SMS,
+        recipients: [],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects a batch with neither templateName nor body', async () => {
+    const { service } = makeService();
+    await expect(
+      service.dispatchBatch(BUSINESS, {
+        channel: NotificationTemplateChannel.SMS,
+        recipients: [{ recipient: '+919876543210' }],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('defaults to MARKETING, merges shared data under per-recipient data', async () => {
+    const { service, repo } = makeService();
+
+    const result = await service.dispatchBatch(BUSINESS, {
+      channel: NotificationTemplateChannel.SMS,
+      body: { text: 'Hi {{ name }}, {{ offer }}' },
+      data: { offer: '20% off', name: 'there' },
+      recipients: [
+        { recipient: '+919000000001', data: { name: 'Asha' } },
+        { recipient: '+919000000002' },
+      ],
+    });
+
+    expect(result).toMatchObject({ total: 2, queued: 2, skipped: 0 });
+    const rows = [...repo.notifications.values()];
+    expect(rows).toHaveLength(2);
+    // Every row shares the batch id and inherits the MARKETING default.
+    expect(new Set(rows.map((r) => r.batch_id)).size).toBe(1);
+    expect(rows[0].batch_id).toBe(result.batchId);
+    expect(rows.every((r) => r.category === NotificationCategory.MARKETING)).toBe(true);
+    // Per-recipient data wins over the shared data.
+    expect(rows[0].content.text).toBe('Hi Asha, 20% off');
+    expect(rows[1].content.text).toBe('Hi there, 20% off');
+    expect(rows[0].campaign_id).toBeNull();
+  });
+
+  it('resolves a template by name and threads category, campaignId and clientId', async () => {
+    const { service, repo } = makeService();
+    repo.seedClient();
+    await service.createTemplate(BUSINESS, {
+      channel: NotificationTemplateChannel.SMS,
+      name: 'promo',
+      content: { text: 'Deal for {{ name }}' },
+    });
+
+    const result = await service.dispatchBatch(BUSINESS, {
+      channel: NotificationTemplateChannel.SMS,
+      category: NotificationCategory.TRANSACTIONAL,
+      templateName: 'promo',
+      campaignId: 'campaign-1',
+      recipients: [{ clientId: CLIENT, data: { name: 'Asha' } }],
+    });
+
+    expect(result.queued).toBe(1);
+    const row = [...repo.notifications.values()][0];
+    expect(row.category).toBe(NotificationCategory.TRANSACTIONAL);
+    expect(row.campaign_id).toBe('campaign-1');
+    expect(row.client_id).toBe(CLIENT);
+    expect(row.recipient).toBe('+919876543210');
+    expect(row.content.text).toBe('Deal for Asha');
+  });
+
+  it('counts recipients with no resolvable address as skipped, not queued', async () => {
+    const { service, queue } = makeService();
+
+    const result = await service.dispatchBatch(BUSINESS, {
+      channel: NotificationTemplateChannel.SMS,
+      body: { text: 'hi' },
+      recipients: [{ recipient: '+919000000001' }, {}, {}],
+    });
+
+    expect(result).toMatchObject({ total: 3, queued: 1, skipped: 2 });
+    // One BATCH job for the single queued recipient; skipped rows are never enqueued.
+    expect(queue.add).toHaveBeenCalledTimes(1);
+  });
+
+  it('enqueues in BATCH_CHUNK_SIZE chunks with a scheduled delay', async () => {
+    const { service, queue } = makeService();
+    const scheduledAt = new Date(Date.now() + 3_600_000);
+    const recipients = Array.from({ length: BATCH_CHUNK_SIZE + 1 }, (_, i) => ({
+      recipient: `+9190000${String(i).padStart(5, '0')}`,
+    }));
+
+    const result = await service.dispatchBatch(BUSINESS, {
+      channel: NotificationTemplateChannel.SMS,
+      body: { text: 'hi' },
+      scheduledAt: scheduledAt.toISOString(),
+      recipients,
+    });
+
+    expect(result.queued).toBe(BATCH_CHUNK_SIZE + 1);
+    const batchJobs = queue.add.mock.calls.filter((c) => c[0] === NOTIFICATION_JOBS.BATCH);
+    expect(batchJobs).toHaveLength(2);
+    expect(batchJobs[0][1].notificationIds).toHaveLength(BATCH_CHUNK_SIZE);
+    expect(batchJobs[1][1].notificationIds).toHaveLength(1);
+    expect(batchJobs[0][2].delay).toBeGreaterThan(0);
+  });
+});
+
+// ─────────────────────────────────────────────
+// processBatch()
+// ─────────────────────────────────────────────
+
+describe('NotificationService.processBatch', () => {
+  it('keeps going when one item throws an Error', async () => {
+    const { service, repo, send } = makeService();
+    const ok1 = repo.seedNotification();
+    const bad = repo.seedNotification();
+    const ok2 = repo.seedNotification();
+    repo.findById.mockImplementationOnce(async () => {
+      throw new Error('db down');
+    });
+
+    await service.processBatch(BUSINESS, [bad.id, ok1.id, ok2.id]);
+
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(repo.notifications.get(ok1.id).status).toBe(NotificationStatus.SENT);
+    expect(repo.notifications.get(ok2.id).status).toBe(NotificationStatus.SENT);
+  });
+
+  it('keeps going when one item throws a non-Error value', async () => {
+    const { service, repo, send } = makeService();
+    const ok = repo.seedNotification();
+    repo.findById.mockImplementationOnce(async () => {
+      throw 'boom';
+    });
+
+    await expect(service.processBatch(BUSINESS, ['missing', ok.id])).resolves.toBeUndefined();
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─────────────────────────────────────────────
+// Scheduling & quiet hours
+// ─────────────────────────────────────────────
+
+describe('NotificationService scheduling', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('delays the dispatch job until scheduledAt', async () => {
+    const { service, queue, repo } = makeService();
+    const scheduledAt = new Date(Date.now() + 600_000);
+
+    await service.dispatch(BUSINESS, {
+      channel: NotificationTemplateChannel.WHATSAPP,
+      recipient: '+919876543210',
+      body: { text: 'hi' },
+      scheduledAt: scheduledAt.toISOString(),
+    });
+
+    const job = queue.add.mock.calls.find((c) => c[0] === NOTIFICATION_JOBS.DISPATCH);
+    expect(job[2].delay).toBeGreaterThan(0);
+    expect(job[2].delay).toBeLessThanOrEqual(600_000);
+    expect([...repo.notifications.values()][0].scheduled_at).toEqual(scheduledAt);
+  });
+
+  it('defers a MARKETING notification landing inside quiet hours', async () => {
+    // 18:00 UTC = 23:30 IST, inside a 22:00–07:00 IST quiet window.
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-10T18:00:00.000Z'));
+    const { service, repo } = makeService();
+    repo.seedClient();
+    repo.preferences.push({
+      id: 'pref-quiet',
+      business_id: BUSINESS,
+      client_id: CLIENT,
+      channel: NotificationTemplateChannel.SMS,
+      category: null,
+      is_enabled: true,
+      quiet_hours_start: 22 * 60,
+      quiet_hours_end: 7 * 60,
+    });
+
+    await service.dispatch(BUSINESS, {
+      clientId: CLIENT,
+      channel: NotificationTemplateChannel.SMS,
+      category: NotificationCategory.MARKETING,
+      body: { text: 'sale' },
+    });
+
+    const row = [...repo.notifications.values()][0];
+    // 23:30 IST → deferred to 07:00 IST, i.e. 7.5 hours out.
+    expect(row.scheduled_at.getTime() - Date.now()).toBe(450 * 60_000);
+  });
+
+  it('keeps a later explicit scheduledAt in preference to the quiet-hours end', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-10T18:00:00.000Z'));
+    const { service, repo } = makeService();
+    repo.seedClient();
+    repo.preferences.push({
+      id: 'pref-quiet-2',
+      business_id: BUSINESS,
+      client_id: CLIENT,
+      channel: NotificationTemplateChannel.SMS,
+      category: null,
+      is_enabled: true,
+      quiet_hours_start: 22 * 60,
+      quiet_hours_end: 7 * 60,
+    });
+    const later = new Date(Date.now() + 24 * 60 * 60_000);
+
+    await service.dispatch(BUSINESS, {
+      clientId: CLIENT,
+      channel: NotificationTemplateChannel.SMS,
+      category: NotificationCategory.MARKETING,
+      body: { text: 'sale' },
+      scheduledAt: later.toISOString(),
+    });
+
+    expect([...repo.notifications.values()][0].scheduled_at).toEqual(later);
+  });
+
+  it('throws NotFound when the dispatch names a client that does not exist', async () => {
+    const { service } = makeService();
+    await expect(
+      service.dispatch(BUSINESS, {
+        clientId: CLIENT,
+        channel: NotificationTemplateChannel.SMS,
+        body: { text: 'hi' },
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('throws BadRequest when neither a template nor a body is supplied', async () => {
+    const { service } = makeService();
+    await expect(
+      service.dispatch(BUSINESS, {
+        channel: NotificationTemplateChannel.WHATSAPP,
+        recipient: '+919876543210',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+// ─────────────────────────────────────────────
+// processDispatch() — remaining branches
+// ─────────────────────────────────────────────
+
+describe('NotificationService.processDispatch edge cases', () => {
+  it('returns quietly when the notification no longer exists', async () => {
+    const { service, send } = makeService();
+    await expect(service.processDispatch(BUSINESS, 'gone')).resolves.toBeUndefined();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('falls back to a 1s re-queue delay when the limiter reports no retryAfterMs', async () => {
+    const limiter = {
+      tryConsume: jest.fn(() => ({ allowed: false, retryAfterMs: 0 })),
+    } as unknown as NotificationRateLimiter;
+    const { service, repo, queue, send } = makeService({ limiter });
+    const row = repo.seedNotification();
+
+    await service.processDispatch(BUSINESS, row.id);
+
+    expect(send).not.toHaveBeenCalled();
+    const job = queue.add.mock.calls.find((c) => c[0] === NOTIFICATION_JOBS.DISPATCH);
+    expect(job[2].delay).toBe(1000);
+  });
+
+  it('stores a null provider id when the sender does not return one', async () => {
+    const { service, repo } = makeService({ outcome: { success: true } });
+    const row = repo.seedNotification();
+
+    await service.processDispatch(BUSINESS, row.id);
+
+    const stored = repo.notifications.get(row.id);
+    expect(stored.status).toBe(NotificationStatus.SENT);
+    expect(stored.provider_message_id).toBeNull();
+  });
+
+  it('records "Unknown error" when a retryable failure carries no message', async () => {
+    const { service, repo } = makeService({ outcome: { success: false } });
+    const row = repo.seedNotification();
+
+    await service.processDispatch(BUSINESS, row.id);
+
+    const stored = repo.notifications.get(row.id);
+    expect(stored.status).toBe(NotificationStatus.QUEUED);
+    expect(stored.failure_reason).toBe('Unknown error');
+  });
+
+  it('records "Unknown error" when a permanent failure carries no message', async () => {
+    const { service, repo, emitter } = makeService({
+      outcome: { success: false, retryable: false },
+    });
+    const row = repo.seedNotification();
+
+    await service.processDispatch(BUSINESS, row.id);
+
+    const stored = repo.notifications.get(row.id);
+    expect(stored.status).toBe(NotificationStatus.FAILED);
+    expect(stored.failure_reason).toBe('Unknown error');
+    expect(emitted(emitter, 'notification.failed')[0][1].reason).toBe('Unknown error');
+  });
+
+  it('emits sent/failed events with an undefined clientId for client-less rows', async () => {
+    const { service, repo, emitter } = makeService();
+    const row = repo.seedNotification({ client_id: null });
+
+    await service.processDispatch(BUSINESS, row.id);
+
+    const event = emitted(emitter, 'notification.sent')[0][1];
+    expect(event.clientId).toBeUndefined();
+    expect(event.providerMessageId).toBe('p1');
+  });
+});
+
+// ─────────────────────────────────────────────
+// updateDeliveryStatus() — remaining branches
+// ─────────────────────────────────────────────
+
+describe('NotificationService.updateDeliveryStatus branches', () => {
+  it('falls back to the providerMessageId carried in the body', async () => {
+    const { service, repo } = makeService();
+    repo.seedNotification({ provider_message_id: 'wamid-9' });
+
+    const dto = await service.updateDeliveryStatus(BUSINESS, 'not-an-id', {
+      status: NotificationStatus.DELIVERED,
+      providerMessageId: 'wamid-9',
+    });
+
+    expect(dto.status).toBe(NotificationStatus.DELIVERED);
+    expect(dto.deliveredAt).not.toBeNull();
+  });
+
+  it('records a READ receipt without emitting delivered or failed', async () => {
+    const { service, repo, emitter } = makeService();
+    const row = repo.seedNotification();
+
+    const dto = await service.updateDeliveryStatus(BUSINESS, row.id, {
+      status: NotificationStatus.READ,
+      providerMessageId: 'wamid-10',
+    });
+
+    expect(dto.readAt).not.toBeNull();
+    expect(dto.providerMessageId).toBe('wamid-10');
+    expect(emitted(emitter, 'notification.delivered')).toHaveLength(0);
+    expect(emitted(emitter, 'notification.failed')).toHaveLength(0);
+  });
+
+  it('applies a FAILED receipt with the provider-supplied reason', async () => {
+    const { service, repo, emitter } = makeService();
+    const row = repo.seedNotification();
+
+    const dto = await service.updateDeliveryStatus(BUSINESS, row.id, {
+      status: NotificationStatus.FAILED,
+      failureReason: 'Number not on WhatsApp',
+    });
+
+    expect(dto.failureReason).toBe('Number not on WhatsApp');
+    expect(dto.failedAt).not.toBeNull();
+    expect(emitted(emitter, 'notification.failed')).toHaveLength(1);
+  });
+
+  it('defaults the failure reason when the provider does not give one', async () => {
+    const { service, repo } = makeService();
+    const row = repo.seedNotification();
+
+    const dto = await service.updateDeliveryStatus(BUSINESS, row.id, {
+      status: NotificationStatus.FAILED,
+    });
+
+    expect(dto.failureReason).toBe('Reported failed by provider');
+  });
+});
+
+// ─────────────────────────────────────────────
+// retryNotification()
+// ─────────────────────────────────────────────
+
+describe('NotificationService.retryNotification', () => {
+  it('throws NotFound for an unknown notification', async () => {
+    const { service } = makeService();
+    await expect(service.retryNotification(BUSINESS, 'nope')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('refuses to retry a notification in a non-FAILED terminal state', async () => {
+    const { service, repo } = makeService();
+    const row = repo.seedNotification({ status: NotificationStatus.SENT });
+
+    await expect(service.retryNotification(BUSINESS, row.id)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  });
+
+  it('re-queues a FAILED notification and clears its failure reason', async () => {
+    const { service, repo, queue } = makeService();
+    const row = repo.seedNotification({
+      status: NotificationStatus.FAILED,
+      failure_reason: 'timeout',
+    });
+
+    const dto = await service.retryNotification(BUSINESS, row.id);
+
+    expect(dto.status).toBe(NotificationStatus.QUEUED);
+    expect(dto.failureReason).toBeNull();
+    expect(queue.add).toHaveBeenCalledWith(
+      NOTIFICATION_JOBS.DISPATCH,
+      { businessId: BUSINESS, notificationId: row.id },
+      { attempts: 1, delay: 0 },
+    );
+  });
+});
+
+// ─────────────────────────────────────────────
+// History & stats — remaining branches
+// ─────────────────────────────────────────────
+
+describe('NotificationService history', () => {
+  it('converts the from/to query window into Dates', async () => {
+    const { service, repo } = makeService();
+
+    await service.listNotifications(BUSINESS, {
+      from: '2026-01-01T00:00:00.000Z',
+      to: '2026-02-01T00:00:00.000Z',
+      page: 2,
+      limit: 5,
+    });
+
+    expect(repo.list).toHaveBeenCalledWith(BUSINESS, {
+      status: undefined,
+      channel: undefined,
+      category: undefined,
+      clientId: undefined,
+      eventType: undefined,
+      from: new Date('2026-01-01T00:00:00.000Z'),
+      to: new Date('2026-02-01T00:00:00.000Z'),
+      page: 2,
+      limit: 5,
+    });
+  });
+
+  it('leaves the window undefined when no dates are given', async () => {
+    const { service, repo } = makeService();
+    await service.listNotifications(BUSINESS, {});
+    expect(repo.list.mock.calls[0]?.[1]).toMatchObject({ from: undefined, to: undefined });
+  });
+
+  it('throws NotFound for an unknown notification id', async () => {
+    const { service } = makeService();
+    await expect(service.getNotification(BUSINESS, 'nope')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('maps a notification with null content and data to empty objects', async () => {
+    const { service, repo } = makeService();
+    const row = repo.seedNotification({ content: null, data: null });
+
+    const dto = await service.getNotification(BUSINESS, row.id);
+
+    expect(dto.content).toEqual({});
+    expect(dto.data).toEqual({});
+  });
+
+  it('passes the stats window through and reports zero rates for no data', async () => {
+    const { service, repo } = makeService();
+    repo.aggregateStats.mockResolvedValue({ byStatus: [], byChannel: [] });
+
+    const stats = await service.getStats(BUSINESS, '2026-01-01', '2026-02-01');
+
+    expect(repo.aggregateStats).toHaveBeenCalledWith(
+      BUSINESS,
+      new Date('2026-01-01'),
+      new Date('2026-02-01'),
+    );
+    expect(stats.total).toBe(0);
+    expect(stats.deliveryRate).toBe(0);
+    expect(stats.failureRate).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────
+// Templates — remaining branches
+// ─────────────────────────────────────────────
+
+describe('NotificationService templates (optional fields)', () => {
+  it('honours explicitly supplied variables and every optional column', async () => {
+    const { service, repo } = makeService();
+
+    const dto = await service.createTemplate(BUSINESS, {
+      channel: NotificationTemplateChannel.EMAIL,
+      name: 'welcome',
+      channelAccountId: 'acct-1',
+      externalName: 'welcome_v2',
+      content: { subject: 'Hi {{ name }}', text: 'Welcome {{ name }}' },
+      variables: ['name', 'extra'],
+      category: 'UTILITY',
+      language: 'hi',
+    });
+
+    expect(dto.variables).toEqual(['name', 'extra']);
+    expect(dto.channelAccountId).toBe('acct-1');
+    expect(dto.externalName).toBe('welcome_v2');
+    expect(dto.language).toBe('hi');
+    expect(repo.createTemplate.mock.calls[0]?.[0].category).toBe('UTILITY');
+  });
+
+  it('re-derives variables when the content changes without explicit variables', async () => {
+    const { service } = makeService();
+    const created = await service.createTemplate(BUSINESS, {
+      channel: NotificationTemplateChannel.SMS,
+      name: 'tpl',
+      content: { text: 'Hi {{ name }}' },
+    });
+
+    const updated = await service.updateTemplate(BUSINESS, created.id, {
+      content: { text: 'Hi {{ firstName }} on {{ date }}' },
+    });
+
+    expect(updated.variables.sort()).toEqual(['date', 'firstName']);
+  });
+
+  it('prefers explicit variables over derivation when content also changes', async () => {
+    const { service } = makeService();
+    const created = await service.createTemplate(BUSINESS, {
+      channel: NotificationTemplateChannel.SMS,
+      name: 'tpl',
+      content: { text: 'Hi {{ name }}' },
+    });
+
+    const updated = await service.updateTemplate(BUSINESS, created.id, {
+      content: { text: 'Hi {{ firstName }}' },
+      variables: ['pinned'],
+    });
+
+    expect(updated.variables).toEqual(['pinned']);
+  });
+
+  it('updates variables alone without touching the content', async () => {
+    const { service, repo } = makeService();
+    const created = await service.createTemplate(BUSINESS, {
+      channel: NotificationTemplateChannel.SMS,
+      name: 'tpl',
+      content: { text: 'Hi {{ name }}' },
+    });
+
+    const updated = await service.updateTemplate(BUSINESS, created.id, {
+      variables: ['name', 'city'],
+    });
+
+    expect(updated.variables).toEqual(['name', 'city']);
+    expect(repo.updateTemplate.mock.calls[0]?.[2].content).toBeUndefined();
+  });
+
+  it('updates externalName, isActive and language independently of content', async () => {
+    const { service } = makeService();
+    const created = await service.createTemplate(BUSINESS, {
+      channel: NotificationTemplateChannel.SMS,
+      name: 'tpl',
+      content: { text: 'Hi' },
+    });
+
+    const updated = await service.updateTemplate(BUSINESS, created.id, {
+      externalName: 'tpl_v3',
+      isActive: false,
+      language: 'ta',
+    });
+
+    expect(updated.externalName).toBe('tpl_v3');
+    expect(updated.isActive).toBe(false);
+    expect(updated.language).toBe('ta');
+  });
+
+  it('throws NotFound for an unknown template id', async () => {
+    const { service } = makeService();
+    await expect(service.getTemplate(BUSINESS, 'nope')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('refuses to dispatch by name using an inactive template', async () => {
+    const { service } = makeService();
+    const created = await service.createTemplate(BUSINESS, {
+      channel: NotificationTemplateChannel.SMS,
+      name: 'retired',
+      content: { text: 'hi' },
+    });
+    await service.updateTemplate(BUSINESS, created.id, { isActive: false });
+
+    await expect(
+      service.dispatch(BUSINESS, {
+        channel: NotificationTemplateChannel.SMS,
+        recipient: '+919876543210',
+        templateName: 'retired',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('maps a template row with null content and variables to empty defaults', async () => {
+    const { service, repo } = makeService();
+    repo.templates.set('tpl-null', {
+      id: 'tpl-null',
+      business_id: BUSINESS,
+      channel_account_id: null,
+      channel: NotificationTemplateChannel.SMS,
+      name: 'bare',
+      external_name: null,
+      content: null,
+      variables: null,
+      is_approved: false,
+      approval_status: null,
+      category: null,
+      language: 'en',
+      is_active: true,
+      created_at: new Date(),
+      updated_at: new Date(),
+      deleted_at: null,
+    });
+
+    const [dto] = await service.listTemplates(BUSINESS);
+
+    expect(dto?.content).toEqual({});
+    expect(dto?.variables).toEqual([]);
+  });
+
+  it('soft-deletes a template', async () => {
+    const { service, repo } = makeService();
+    const created = await service.createTemplate(BUSINESS, {
+      channel: NotificationTemplateChannel.SMS,
+      name: 'tpl',
+      content: { text: 'hi' },
+    });
+
+    await service.deleteTemplate(BUSINESS, created.id);
+
+    expect(repo.templates.get(created.id).deleted_at).toBeInstanceOf(Date);
+  });
+});
+
+// ─────────────────────────────────────────────
+// Preferences & triggers — remaining branches
+// ─────────────────────────────────────────────
+
+describe('NotificationService preferences (branches)', () => {
+  it('throws NotFound when the preference names an unknown client', async () => {
+    const { service } = makeService();
+    await expect(
+      service.setPreference(BUSINESS, {
+        clientId: CLIENT,
+        channel: NotificationTemplateChannel.SMS,
+        isEnabled: false,
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('stores a per-category preference with a quiet-hours window', async () => {
+    const { service, repo } = makeService();
+    repo.seedClient();
+
+    const dto = await service.setPreference(BUSINESS, {
+      clientId: CLIENT,
+      channel: NotificationTemplateChannel.SMS,
+      category: NotificationCategory.MARKETING,
+      isEnabled: true,
+      quietHoursStart: 1320,
+      quietHoursEnd: 420,
+    });
+
+    expect(dto.category).toBe(NotificationCategory.MARKETING);
+    expect(dto.quietHoursStart).toBe(1320);
+    expect(dto.quietHoursEnd).toBe(420);
+
+    const listed = await service.getPreferences(BUSINESS, CLIENT);
+    expect(listed).toHaveLength(1);
+  });
+});
+
+describe('NotificationService triggers (branches)', () => {
+  const seedTrigger = async (service: NotificationService, repo: any) => {
+    const template = await service.createTemplate(BUSINESS, {
+      channel: NotificationTemplateChannel.SMS,
+      name: 'trig-tpl',
+      content: { text: 'hi' },
+    });
+    const trigger = await service.createTrigger(BUSINESS, {
+      eventType: 'order.created',
+      channel: NotificationTemplateChannel.SMS,
+      templateId: template.id,
+    });
+    return { template, trigger };
+  };
+
+  it('throws NotFound when updating an unknown trigger', async () => {
+    const { service } = makeService();
+    await expect(
+      service.updateTrigger(BUSINESS, 'nope', { isActive: false }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('validates a replacement templateId and writes every supplied field', async () => {
+    const { service, repo } = makeService();
+    const { trigger } = await seedTrigger(service, repo);
+    const replacement = await service.createTemplate(BUSINESS, {
+      channel: NotificationTemplateChannel.SMS,
+      name: 'trig-tpl-2',
+      content: { text: 'hi again' },
+    });
+
+    const updated = await service.updateTrigger(BUSINESS, trigger.id, {
+      templateId: replacement.id,
+      category: NotificationCategory.REMINDER,
+      isActive: false,
+      delayMinutes: 15,
+      conditions: [{ path: 'total', op: 'gt', value: 100 }],
+    });
+
+    expect(updated.templateId).toBe(replacement.id);
+    expect(updated.category).toBe(NotificationCategory.REMINDER);
+    expect(updated.isActive).toBe(false);
+    expect(updated.delayMinutes).toBe(15);
+    expect(updated.conditions).toHaveLength(1);
+  });
+
+  it('throws NotFound when deleting an unknown trigger', async () => {
+    const { service } = makeService();
+    await expect(service.deleteTrigger(BUSINESS, 'nope')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('soft-deletes a trigger and maps null conditions to an empty list', async () => {
+    const { service, repo } = makeService();
+    const { trigger } = await seedTrigger(service, repo);
+    repo.triggers.get(trigger.id).conditions = null;
+
+    const [dto] = await service.listTriggers(BUSINESS);
+    expect(dto?.conditions).toEqual([]);
+
+    await service.deleteTrigger(BUSINESS, trigger.id);
+    expect(repo.triggers.get(trigger.id).deleted_at).toBeInstanceOf(Date);
+  });
+});
+
+// ─────────────────────────────────────────────
+// handleEventTrigger() — remaining branches
+// ─────────────────────────────────────────────
+
+describe('NotificationService.handleEventTrigger branches', () => {
+  it('ignores an event with no configured trigger and no built-in default', async () => {
+    const { service, repo } = makeService();
+    await service.handleEventTrigger('unknown.event', { businessId: BUSINESS });
+    expect(repo.createNotification).not.toHaveBeenCalled();
+  });
+
+  it('dispatches a configured trigger with an approved template and a delay', async () => {
+    const { service, repo } = makeService();
+    repo.seedClient();
+    const template = await service.createTemplate(BUSINESS, {
+      channel: NotificationTemplateChannel.SMS,
+      name: 'order_tpl',
+      content: { text: 'Order {{ orderId }} received' },
+    });
+    await service.createTrigger(BUSINESS, {
+      eventType: 'order.created',
+      channel: NotificationTemplateChannel.SMS,
+      templateId: template.id,
+      delayMinutes: 30,
+    });
+
+    await service.handleEventTrigger('order.created', {
+      businessId: BUSINESS,
+      clientId: CLIENT,
+      orderId: 'order-1',
+    });
+
+    const row = [...repo.notifications.values()][0];
+    expect(row.template_id).toBe(template.id);
+    expect(row.content.text).toBe('Order order-1 received');
+    expect(row.dedupe_key).toBe('order.created:order-1:SMS');
+    expect(row.scheduled_at.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('falls back to the built-in body when a trigger has no template at all', async () => {
+    const { service, repo } = makeService();
+    await service.createTrigger(BUSINESS, {
+      eventType: 'order.created',
+      channel: NotificationTemplateChannel.SMS,
+    });
+
+    await service.handleEventTrigger('order.created', {
+      businessId: BUSINESS,
+      orderId: 'order-2',
+      recipient: 'ignored',
+    });
+
+    // No client and no recipient override → recorded as SKIPPED, still rendered.
+    const row = [...repo.notifications.values()][0];
+    expect(row.content.text).toMatch(/order created/);
+    expect(row.template_id).toBeNull();
+  });
+
+  it('treats null trigger conditions as "always match"', async () => {
+    const { service, repo } = makeService();
+    repo.seedClient();
+    const trigger = await service.createTrigger(BUSINESS, {
+      eventType: 'order.created',
+      channel: NotificationTemplateChannel.SMS,
+    });
+    repo.triggers.get(trigger.id).conditions = null;
+
+    await service.handleEventTrigger('order.created', {
+      businessId: BUSINESS,
+      clientId: CLIENT,
+      orderId: 'order-3',
+    });
+
+    expect(repo.createNotification).toHaveBeenCalled();
+  });
+
+  it('swallows a non-Error thrown while dispatching a trigger', async () => {
+    const { service, repo } = makeService();
+    repo.seedClient();
+    await service.createTrigger(BUSINESS, {
+      eventType: 'order.created',
+      channel: NotificationTemplateChannel.SMS,
+    });
+    repo.createNotification.mockImplementationOnce(async () => {
+      throw 'kaboom';
+    });
+
+    await expect(
+      service.handleEventTrigger('order.created', {
+        businessId: BUSINESS,
+        clientId: CLIENT,
+        orderId: 'order-4',
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it.each([
+    [{ orderId: 'o-1' }, 'o-1'],
+    [{ paymentId: 'pay-1' }, 'pay-1'],
+    [{ id: 'ent-1' }, 'ent-1'],
+  ])('derives the dedupe key from %o', async (payload, expectedEntity) => {
+    const { service, repo } = makeService();
+    repo.seedClient();
+    await service.createTrigger(BUSINESS, {
+      eventType: 'order.created',
+      channel: NotificationTemplateChannel.SMS,
+    });
+
+    await service.handleEventTrigger('order.created', {
+      businessId: BUSINESS,
+      clientId: CLIENT,
+      ...payload,
+    });
+
+    const row = [...repo.notifications.values()][0];
+    expect(row.dedupe_key).toBe(`order.created:${expectedEntity}:SMS`);
+  });
+
+  it('falls back to a generated id when the payload carries no entity id', async () => {
+    const { service, repo } = makeService();
+    repo.seedClient();
+    await service.createTrigger(BUSINESS, {
+      eventType: 'order.created',
+      channel: NotificationTemplateChannel.SMS,
+    });
+
+    await service.handleEventTrigger('order.created', {
+      businessId: BUSINESS,
+      clientId: CLIENT,
+    });
+
+    const row = [...repo.notifications.values()][0];
+    expect(row.dedupe_key).toMatch(/^order\.created:.+:SMS$/);
+  });
+});
+
+// ─────────────────────────────────────────────
+// Recipient resolution & preference resolution
+// ─────────────────────────────────────────────
+
+describe('NotificationService recipient resolution', () => {
+  const dispatchTo = async (
+    channel: NotificationTemplateChannel,
+    clientOverrides: Record<string, unknown> | null,
+  ) => {
+    const { service, repo } = makeService();
+    if (clientOverrides) repo.seedClient(clientOverrides);
+    const result = await service.dispatch(BUSINESS, {
+      ...(clientOverrides ? { clientId: CLIENT } : {}),
+      channel,
+      body: { text: 'hi' },
+    });
+    return { result, repo };
+  };
+
+  it('skips when there is neither an override nor a client', async () => {
+    const { result } = await dispatchTo(NotificationTemplateChannel.SMS, null);
+    expect(result.skipped).toBe(true);
+  });
+
+  it('reads the email address for the EMAIL channel', async () => {
+    const { result } = await dispatchTo(NotificationTemplateChannel.EMAIL, {
+      email: 'asha@example.com',
+    });
+    expect(result.skipped).toBe(false);
+    expect(result.notification.recipient).toBe('asha@example.com');
+  });
+
+  it('skips when the client has no email for the EMAIL channel', async () => {
+    const { result } = await dispatchTo(NotificationTemplateChannel.EMAIL, {
+      email: null,
+    });
+    expect(result.skipped).toBe(true);
+  });
+
+  it.each([['pushToken'], ['deviceToken']])(
+    'reads the PUSH token from profile.%s',
+    async (key) => {
+      const { result } = await dispatchTo(NotificationTemplateChannel.PUSH, {
+        profile: { [key]: 'tok-123' },
+      });
+      expect(result.skipped).toBe(false);
+      expect(result.notification.recipient).toBe('tok-123');
+    },
+  );
+
+  it('skips PUSH when the stored token is not a string', async () => {
+    const { result } = await dispatchTo(NotificationTemplateChannel.PUSH, {
+      profile: { pushToken: 42 },
+    });
+    expect(result.skipped).toBe(true);
+  });
+
+  it('skips PUSH when the client has no profile at all', async () => {
+    const { result } = await dispatchTo(NotificationTemplateChannel.PUSH, {
+      profile: null,
+    });
+    expect(result.skipped).toBe(true);
+  });
+
+  it('skips an unrecognised channel', async () => {
+    const { service, repo } = makeService();
+    repo.seedClient();
+    const result = await service.dispatch(BUSINESS, {
+      clientId: CLIENT,
+      channel: 'TELEGRAM' as NotificationTemplateChannel,
+      body: { text: 'hi' },
+    });
+    expect(result.skipped).toBe(true);
+  });
+
+  it('records a skipped notification with no client id', async () => {
+    const { service, repo, emitter } = makeService();
+
+    const result = await service.dispatch(BUSINESS, {
+      channel: NotificationTemplateChannel.SMS,
+      body: { text: 'hi' },
+    });
+
+    expect(result.skipped).toBe(true);
+    expect(result.notification.clientId).toBeNull();
+    expect(repo.notifications.size).toBe(1);
+    expect(emitted(emitter, 'notification.skipped')[0][1].clientId).toBeUndefined();
+  });
+});
+
+describe('NotificationService preference resolution', () => {
+  it('treats a client with null opt_outs as opted in', async () => {
+    const { service, repo } = makeService();
+    repo.seedClient({ opt_outs: null });
+
+    const result = await service.dispatch(BUSINESS, {
+      clientId: CLIENT,
+      channel: NotificationTemplateChannel.SMS,
+      category: NotificationCategory.MARKETING,
+      body: { text: 'sale' },
+    });
+
+    expect(result.skipped).toBe(false);
+  });
+
+  it('honours a channel-wide opt-out for MARKETING when no per-category row exists', async () => {
+    const { service, repo } = makeService();
+    repo.seedClient();
+    repo.preferences.push({
+      id: 'p-wide',
+      business_id: BUSINESS,
+      client_id: CLIENT,
+      channel: NotificationTemplateChannel.SMS,
+      category: null,
+      is_enabled: false,
+      quiet_hours_start: null,
+      quiet_hours_end: null,
+    });
+
+    const result = await service.dispatch(BUSINESS, {
+      clientId: CLIENT,
+      channel: NotificationTemplateChannel.SMS,
+      category: NotificationCategory.MARKETING,
+      body: { text: 'sale' },
+    });
+
+    expect(result.skipped).toBe(true);
+    expect(result.skipReason).toMatch(/Opted out of SMS/);
+  });
+
+  it('inherits quiet hours from the channel-wide row when it is enabled', async () => {
+    const { service, repo } = makeService();
+    repo.seedClient();
+    repo.preferences.push({
+      id: 'p-wide-on',
+      business_id: BUSINESS,
+      client_id: CLIENT,
+      channel: NotificationTemplateChannel.SMS,
+      category: null,
+      is_enabled: true,
+      quiet_hours_start: null,
+      quiet_hours_end: null,
+    });
+
+    const result = await service.dispatch(BUSINESS, {
+      clientId: CLIENT,
+      channel: NotificationTemplateChannel.SMS,
+      category: NotificationCategory.TRANSACTIONAL,
+      body: { text: 'receipt' },
+    });
+
+    expect(result.skipped).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────
+// Outbound mapping
+// ─────────────────────────────────────────────
+
+describe('NotificationService outbound mapping', () => {
+  it('defaults every missing content field when handing off to the sender', async () => {
+    const { service, repo, send } = makeService();
+    const row = repo.seedNotification({ content: null, data: null });
+
+    await service.processDispatch(BUSINESS, row.id);
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        notificationId: row.id,
+        text: '',
+        html: null,
+        externalTemplateName: null,
+        data: {},
+      }),
+    );
+  });
+
+  it('passes through subject, html and the external template name', async () => {
+    const { service, repo, send } = makeService();
+    const row = repo.seedNotification({
+      subject: 'Receipt',
+      content: { text: 'body', html: '<p>body</p>', externalName: 'receipt_v1' },
+      data: { orderId: 'o-1' },
+    });
+
+    await service.processDispatch(BUSINESS, row.id);
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subject: 'Receipt',
+        html: '<p>body</p>',
+        externalTemplateName: 'receipt_v1',
+        data: { orderId: 'o-1' },
+      }),
+    );
   });
 });
