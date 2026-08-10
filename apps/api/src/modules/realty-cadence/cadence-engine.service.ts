@@ -110,10 +110,11 @@ export class CadenceEngineService {
     reason: string,
   ): Promise<number> {
     const active = await this.repository.findActiveEnrollmentsForLead(businessId, leadId);
+    const stepCache = new Map<string, Promise<StepWithTemplate[]>>();
     let stopped = 0;
     for (const enrollment of active) {
       if (signal !== CadenceStopOn.OPTOUT) {
-        const steps = await this.repository.listStepsByCadence(businessId, enrollment.cadence_id);
+        const steps = await this.loadSteps(businessId, enrollment.cadence_id, stepCache);
         const currentStep = steps[enrollment.current_step];
         const stopOn = currentStep?.stop_on ?? [];
         if (!stopOn.includes(signal)) continue;
@@ -162,9 +163,13 @@ export class CadenceEngineService {
     const due = await this.repository.findDueEnrollments(now, businessId);
     const result: ProcessResult = { processed: 0, sent: 0, skipped: 0, stopped: 0, completed: 0 };
 
+    // A tick fans out over every due enrolment across every tenant, but the
+    // step list only varies per cadence — share one lookup per cadence.
+    const stepCache = new Map<string, Promise<StepWithTemplate[]>>();
+
     for (const enrollment of due) {
       result.processed++;
-      const outcome = await this.runStep(enrollment.business_id, enrollment, now);
+      const outcome = await this.runStep(enrollment.business_id, enrollment, now, stepCache);
       result[outcome]++;
     }
     if (result.processed > 0) {
@@ -181,8 +186,9 @@ export class CadenceEngineService {
     businessId: string,
     enrollment: realty_cadence_enrollments,
     now: Date,
+    stepCache?: Map<string, Promise<StepWithTemplate[]>>,
   ): Promise<'sent' | 'skipped' | 'stopped' | 'completed'> {
-    const steps = await this.repository.listStepsByCadence(businessId, enrollment.cadence_id);
+    const steps = await this.loadSteps(businessId, enrollment.cadence_id, stepCache);
     const step = steps[enrollment.current_step];
     if (!step) {
       await this.finish(businessId, enrollment, 'COMPLETED');
@@ -235,6 +241,32 @@ export class CadenceEngineService {
     });
     await this.repository.updateEnrollment(businessId, enrollment.id, { lastStepSentAt: now });
     return this.advance(businessId, enrollment, steps, now, 'sent');
+  }
+
+  /**
+   * Load a cadence's steps, optionally through a caller-supplied memo.
+   *
+   * Every enrolment on the same cadence needs the identical (template-joined)
+   * step list, so a loop over enrolments would otherwise re-issue the same
+   * query once per row. The memo is always caller-scoped — one tick, one
+   * stop-signal sweep — so an edited cadence is picked up on the next call
+   * rather than being cached across invocations.
+   */
+  private async loadSteps(
+    businessId: string,
+    cadenceId: string,
+    cache?: Map<string, Promise<StepWithTemplate[]>>,
+  ): Promise<StepWithTemplate[]> {
+    if (!cache) {
+      return this.repository.listStepsByCadence(businessId, cadenceId);
+    }
+    const key = `${businessId}:${cadenceId}`;
+    let pending = cache.get(key);
+    if (!pending) {
+      pending = this.repository.listStepsByCadence(businessId, cadenceId);
+      cache.set(key, pending);
+    }
+    return pending;
   }
 
   private checkCompliance(step: StepWithTemplate, lead: LeadResponseDto, now: Date): ComplianceDecision {

@@ -296,6 +296,30 @@ describe('CadenceEngineService', () => {
       expect(result.skipped).toBe(1);
       expect(eventEmitter.emit).not.toHaveBeenCalledWith('realty.cadence.step_sent', expect.anything());
     });
+
+    it('reads each cadence’s steps once per tick, not once per enrolment', async () => {
+      const OTHER_CADENCE = '00000000-0000-4000-a000-000000000021';
+      repository.findDueEnrollments.mockResolvedValue([
+        makeEnrollment({ id: 'enr-1', lead_id: 'lead-1' }),
+        makeEnrollment({ id: 'enr-2', lead_id: 'lead-2' }),
+        makeEnrollment({ id: 'enr-3', lead_id: 'lead-3' }),
+        makeEnrollment({ id: 'enr-4', lead_id: 'lead-4', cadence_id: OTHER_CADENCE }),
+      ] as never);
+      repository.listStepsByCadence.mockResolvedValue([
+        makeStep({ step_order: 0, day_offset: 1 }),
+        makeStep({ step_order: 1, day_offset: 3 }),
+      ] as never);
+      leadsService.getLead.mockResolvedValue(makeLead());
+      repository.updateEnrollment.mockResolvedValue(makeEnrollment() as never);
+
+      const result = await engine.processDueEnrollments(NOW, BUSINESS_ID);
+
+      expect(result.processed).toBe(4);
+      // Two distinct cadences → two queries, not four.
+      expect(repository.listStepsByCadence).toHaveBeenCalledTimes(2);
+      expect(repository.listStepsByCadence).toHaveBeenCalledWith(BUSINESS_ID, CADENCE_ID);
+      expect(repository.listStepsByCadence).toHaveBeenCalledWith(BUSINESS_ID, OTHER_CADENCE);
+    });
   });
 
   // ── Event listeners ──
