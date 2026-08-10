@@ -46,7 +46,11 @@ export class RealtySheetsController {
   @Get('callback')
   @ApiOperation({ summary: 'Google OAuth redirect callback (browser)' })
   @ApiQuery({ name: 'code', required: true })
-  @ApiQuery({ name: 'state', required: true, description: 'businessId' })
+  @ApiQuery({
+    name: 'state',
+    required: true,
+    description: 'Signed state token minted by GET /connect',
+  })
   @ApiResponse({ status: 302, description: 'Redirects back to the dashboard settings page' })
   async callback(
     @Query('code') code: string,
@@ -56,7 +60,10 @@ export class RealtySheetsController {
     if (!code || !state) {
       throw new BadRequestException('Missing code or state');
     }
-    await this.sheets.completeOAuth(state, code);
+    // `state` is attacker-supplied on a @Public() route — it names the tenant
+    // the credentials get written against, so it is verified, never trusted.
+    const businessId = this.sheets.resolveOAuthState(state);
+    await this.sheets.completeOAuth(businessId, code);
     const dashboardUrl = this.config.get<string>(
       'DASHBOARD_URL',
       'https://gosumo.aiknol.com',

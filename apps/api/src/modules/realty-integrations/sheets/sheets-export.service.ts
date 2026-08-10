@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { RealtyIntegrationProvider } from '@prisma/client';
 import { generateId, generateCorrelationId } from '@gosumo/shared';
@@ -16,6 +17,10 @@ import {
   GoogleSheetsCredentials,
 } from './google-sheets.client';
 import { buildLeadsSheet, buildInventorySheet } from './sheets-row-mapper';
+import {
+  signOAuthState,
+  verifyOAuthState,
+} from '../../../common/utils/oauth-state.util';
 import { SHEET_TABS } from '../realty-integrations.constants';
 import type {
   RealtySheetsExportedEvent,
@@ -60,20 +65,49 @@ export class SheetsExportService {
     private readonly leadsService: RealtyLeadsService,
     private readonly inventoryService: RealtyInventoryService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly config: ConfigService,
     @Inject(GOOGLE_SHEETS_CLIENT)
     private readonly sheets: IGoogleSheetsClient,
   ) {}
 
   // ── OAuth connect / disconnect ───────────────
 
-  /** Build the Google consent URL; `state` carries the businessId back. */
+  /**
+   * Key the OAuth state HMAC is signed with. `JWT_SECRET` is already a required
+   * env var, so this adds no new deployment surface — and a deployment without
+   * it fails the connect flow loudly rather than minting forgeable states.
+   */
+  private stateSecret(): string {
+    return this.config.get<string>('jwt.secret', '');
+  }
+
+  /**
+   * Build the Google consent URL. `state` carries the businessId back, signed —
+   * see {@link signOAuthState} for why it must not be the bare id.
+   */
   getAuthUrl(businessId: string): string {
-    return this.sheets.getAuthUrl(businessId);
+    return this.sheets.getAuthUrl(signOAuthState(businessId, this.stateSecret()));
+  }
+
+  /**
+   * Resolve the tenant a returned `state` belongs to, or reject it.
+   *
+   * The callback is `@Public()`, so this is the only thing standing between an
+   * anonymous request and a credential write against an arbitrary tenant.
+   */
+  resolveOAuthState(state: string): string {
+    const businessId = verifyOAuthState(state, this.stateSecret());
+    if (!businessId) {
+      this.logger.warn('Rejected Google Sheets OAuth callback: invalid or expired state');
+      throw new BadRequestException('Invalid or expired OAuth state');
+    }
+    return businessId;
   }
 
   /**
    * Complete the OAuth handshake: exchange the code, persist tokens on the
-   * connection, and mark it CONNECTED. Called by the settings-UI callback.
+   * connection, and mark it CONNECTED. `businessId` must have come from
+   * {@link resolveOAuthState}, never straight off the query string.
    */
   async completeOAuth(businessId: string, code: string): Promise<SheetsConnectionStatus> {
     const creds = await this.sheets.exchangeCode(code);

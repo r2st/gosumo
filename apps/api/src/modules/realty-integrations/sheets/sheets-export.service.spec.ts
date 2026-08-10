@@ -7,6 +7,8 @@
  */
 
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { ConfigService } from '@nestjs/config';
+import { signOAuthState } from '../../../common/utils/oauth-state.util';
 import { BadRequestException } from '@nestjs/common';
 import { RealtyIntegrationProvider } from '@prisma/client';
 import type { realty_integration_connections } from '@prisma/client';
@@ -19,6 +21,8 @@ import type { IGoogleSheetsClient } from './google-sheets.client';
 import { SHEET_TABS } from '../realty-integrations.constants';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
+/** Stands in for JWT_SECRET, which the OAuth state HMAC is keyed with. */
+const STATE_SECRET = 'test-jwt-secret-for-oauth-state';
 
 function makeConnection(
   overrides: Partial<realty_integration_connections> = {},
@@ -73,7 +77,49 @@ describe('SheetsExportService', () => {
     };
     emitter = { emit: jest.fn() } as unknown as jest.Mocked<EventEmitter2>;
 
-    service = new SheetsExportService(repo, leads, inventory, emitter, sheets);
+    const config = {
+      get: (_key: string, fallback?: string) => STATE_SECRET ?? fallback ?? '',
+    } as unknown as ConfigService;
+
+    service = new SheetsExportService(
+      repo,
+      leads,
+      inventory,
+      emitter,
+      config,
+      sheets,
+    );
+  });
+
+  describe('OAuth state', () => {
+    it('sends a signed state to Google, not the bare businessId', () => {
+      sheets.getAuthUrl.mockReturnValue('https://accounts.google.com/o/oauth2/auth');
+
+      service.getAuthUrl(BUSINESS_ID);
+
+      const [state] = sheets.getAuthUrl.mock.calls[0]!;
+      expect(state).not.toBe(BUSINESS_ID);
+      expect(state).not.toContain(BUSINESS_ID);
+      expect(service.resolveOAuthState(state as string)).toBe(BUSINESS_ID);
+    });
+
+    it('refuses a callback that names a tenant with an unsigned state', () => {
+      // The pre-fix behaviour: anyone knowing a businessId could bind their own
+      // Google account to that tenant and receive its exported leads.
+      expect(() => service.resolveOAuthState(BUSINESS_ID)).toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('refuses a state signed with the wrong key', () => {
+      const foreign = signOAuthState(BUSINESS_ID, 'not-our-secret');
+
+      expect(() => service.resolveOAuthState(foreign)).toThrow(BadRequestException);
+    });
+
+    it('refuses an empty state', () => {
+      expect(() => service.resolveOAuthState('')).toThrow(BadRequestException);
+    });
   });
 
   describe('completeOAuth', () => {
