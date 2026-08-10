@@ -144,10 +144,16 @@ export class RealtyExchangeController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Recompute a member's composite reliability score" })
   @ApiParam({ name: 'targetBusinessId', description: 'Member business UUID to score' })
+  @ApiResponse({ status: 200, description: 'Recomputed reliability breakdown' })
+  @ApiResponse({
+    status: 403,
+    description: 'Caller is neither the target nor a member it has transacted with',
+  })
   async recomputeReliability(
+    @TenantId() tenantId: string,
     @Param('targetBusinessId', UuidValidationPipe) targetBusinessId: string,
   ) {
-    return this.exchange.calculateReliabilityScore(targetBusinessId);
+    return this.exchange.calculateReliabilityScore(targetBusinessId, tenantId);
   }
 
   // ── Resale listings ──

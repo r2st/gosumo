@@ -324,7 +324,9 @@ export class RealtyExchangeService {
       metadata: this.mergeMetadata(syndication, { ratings: existing }),
     });
 
-    return this.calculateReliabilityScore(ratedBusinessId);
+    // The rater is by construction a counterparty of the rated party — the
+    // syndication was just loaded in the rater's own tenant scope.
+    return this.calculateReliabilityScore(ratedBusinessId, ratingBusinessId);
   }
 
   // ── Reliability ──────────────────────────────
@@ -333,11 +335,32 @@ export class RealtyExchangeService {
    * Recompute a member's composite reliability from every deal they were party
    * to, and upsert it as the member's canonical self-row (business_id ==
    * target_business_id) for the current period. Returns the fresh breakdown.
+   *
+   * `requestedByBusinessId` is the caller's tenant and is authorization, not
+   * decoration: this reads every syndication the target was party to and writes
+   * the target's own canonical row, so an unscoped call would let any member
+   * recompute — and read back — an arbitrary business's deal record. A caller
+   * may only recompute itself or a member it has actually transacted with.
    */
   async calculateReliabilityScore(
     targetBusinessId: string,
+    requestedByBusinessId: string,
   ): Promise<ReliabilityScoreResponseDto> {
     const rows = await this.repository.findSyndicationsInvolving(targetBusinessId);
+
+    if (requestedByBusinessId !== targetBusinessId) {
+      const isCounterparty = rows.some(
+        (r) =>
+          r.business_id === requestedByBusinessId ||
+          r.to_business_id === requestedByBusinessId,
+      );
+      if (!isCounterparty) {
+        throw new ForbiddenException(
+          'You may only recompute reliability for yourself or a member you have transacted with',
+        );
+      }
+    }
+
     const signals = this.buildSignals(targetBusinessId, rows);
     const breakdown = computeReliabilityScore(signals);
 

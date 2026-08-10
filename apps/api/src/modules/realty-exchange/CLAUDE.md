@@ -15,7 +15,7 @@ acceptSyndication / recordVisit / closeSyndication / expireSyndication / dispute
 rateSyndication(id, ratingBusinessId, ratings)  // post-deal rating → recomputes counterparty score
 // Matching + reliability
 matchLeadToExchange(businessId, leadId, opts)   // network supply ranked by fit × reliability
-calculateReliabilityScore(targetBusinessId)     // composite; upserts the member's self-row
+calculateReliabilityScore(targetBusinessId, requestedByBusinessId)  // composite; upserts the member's self-row
 listReliabilityScores(businessId)
 // Resale supply CRUD
 createResaleListing / listResaleListings / getResaleListing / updateResaleListing / deleteResaleListing
@@ -62,6 +62,13 @@ liquid, and they are the only such reads here:
 `seller_phone` on a resale listing is PRIVATE and never leaves the owner; the
 exchange matcher never carries it. The DB backs this with a second permissive
 SELECT policy that only exposes ACTIVE, non-deleted resale rows network-wide.
+
+**Reliability recompute is authorization-gated.** Because the aggregation reads
+every syndication the target was party to and writes the target's own canonical
+row, `calculateReliabilityScore` requires the caller's tenant and refuses (`403`)
+unless the caller is the target itself or appears on either side of at least one
+syndication involving it. The controller passes `@TenantId()`; never call it with
+the target id in both positions to bypass the check.
 
 ## Events
 

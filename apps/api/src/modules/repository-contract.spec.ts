@@ -420,6 +420,14 @@ type DataMode = 'full' | 'empty';
 function valueForParameter(name: string, dataMode: DataMode = 'full'): unknown {
   if (/^_?(business|tenant)_?id$/i.test(name)) return BUSINESS_ID;
   if (isDataParameter(name)) return dataMode === 'empty' ? {} : dataObject();
+  // Bulk-write collections. A plural payload parameter has to arrive as an
+  // array: a repository that maps over it blows up on a scalar, which reads as
+  // a repository bug rather than a harness one. `empty` drives the
+  // short-circuit side of the usual `if (rows.length === 0) return` guard.
+  if (/(steps|rows|items|entries|records|payloads)$/i.test(name)) {
+    return dataMode === 'empty' ? [] : [dataObject()];
+  }
+  if (/(tags|labels|localities|amenities)$/i.test(name)) return ['alpha'];
   if (/range$/i.test(name)) return { from: new Date(0), to: new Date(1) };
   if (/(filters?|options?|opts|query|params|criteria|where)$/i.test(name)) return {};
   if (/(ids|list)$/i.test(name)) return [RECORD_ID];

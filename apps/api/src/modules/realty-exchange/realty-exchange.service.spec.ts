@@ -329,9 +329,78 @@ describe('RealtyExchangeService', () => {
       created_at: new Date(), updated_at: new Date(),
     }));
 
-    const res = await service.calculateReliabilityScore(TO);
+    const res = await service.calculateReliabilityScore(TO, TO);
     expect(res.compositeScore).toBe(50);
     expect(repo.findSyndicationsInvolving).toHaveBeenCalledWith(TO);
+  });
+
+  describe('calculateReliabilityScore authorization', () => {
+    beforeEach(() => {
+      repo.upsertReliabilityScore.mockImplementation(async (d) => ({
+        id: 's', business_id: d.businessId, target_business_id: d.targetBusinessId,
+        response_speed_score: new Prisma.Decimal(d.responseSpeedScore),
+        showup_integrity_score: new Prisma.Decimal(d.showupIntegrityScore),
+        split_honoring_score: new Prisma.Decimal(d.splitHonoringScore),
+        documentation_hygiene_score: new Prisma.Decimal(d.documentationHygieneScore),
+        composite_score: new Prisma.Decimal(d.compositeScore),
+        period_start: d.periodStart, period_end: d.periodEnd, metadata: {},
+        created_at: new Date(), updated_at: new Date(),
+      }));
+    });
+
+    /**
+     * The recompute reads every syndication the target was party to and writes
+     * the target's own canonical row. Without a caller check, any member could
+     * recompute — and read back — an arbitrary business's deal record.
+     */
+    it('refuses a caller that has never transacted with the target', async () => {
+      const STRANGER = '00000000-0000-4000-a000-0000000000ff';
+      repo.findSyndicationsInvolving.mockResolvedValue([]);
+
+      await expect(
+        service.calculateReliabilityScore(TO, STRANGER),
+      ).rejects.toThrow(ForbiddenException);
+      expect(repo.upsertReliabilityScore).not.toHaveBeenCalled();
+    });
+
+    it('refuses a caller absent from the target ledger even when deals exist', async () => {
+      const STRANGER = '00000000-0000-4000-a000-0000000000ff';
+      repo.findSyndicationsInvolving.mockResolvedValue([
+        makeSyndication({ business_id: FROM, to_business_id: TO }),
+      ]);
+
+      await expect(
+        service.calculateReliabilityScore(TO, STRANGER),
+      ).rejects.toThrow(/only recompute reliability for yourself/);
+      expect(repo.upsertReliabilityScore).not.toHaveBeenCalled();
+    });
+
+    it('allows a counterparty on the originating side of a deal', async () => {
+      repo.findSyndicationsInvolving.mockResolvedValue([
+        makeSyndication({ business_id: FROM, to_business_id: TO }),
+      ]);
+
+      await expect(
+        service.calculateReliabilityScore(TO, FROM),
+      ).resolves.toBeDefined();
+      expect(repo.upsertReliabilityScore).toHaveBeenCalled();
+    });
+
+    it('allows a counterparty on the receiving side of a deal', async () => {
+      repo.findSyndicationsInvolving.mockResolvedValue([
+        makeSyndication({ business_id: TO, to_business_id: FROM }),
+      ]);
+
+      await expect(
+        service.calculateReliabilityScore(TO, FROM),
+      ).resolves.toBeDefined();
+    });
+
+    it('always allows a member to recompute its own score', async () => {
+      repo.findSyndicationsInvolving.mockResolvedValue([]);
+
+      await expect(service.calculateReliabilityScore(TO, TO)).resolves.toBeDefined();
+    });
   });
 
   // ── matchLeadToExchange ──
