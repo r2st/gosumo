@@ -272,13 +272,6 @@ export const ESCALATION_HOLDING_MESSAGE =
   "I want to make sure this is handled properly — connecting you with someone from our team right away.";
 
 // ─────────────────────────────────────────────
-// BullMQ
-// ─────────────────────────────────────────────
-
-export const AI_PROCESSING_QUEUE = 'ai-processing';
-export const AI_PROCESS_JOB = 'ai-process';
-
-// ─────────────────────────────────────────────
 // Qdrant collections
 // ─────────────────────────────────────────────
 

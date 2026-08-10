@@ -4,6 +4,10 @@ import * as crypto from 'crypto';
 import type { LeadIngestCandidate, LeadIngestResult } from '@gosumo/shared';
 import { LeadSource, RealtyPortal } from '@gosumo/shared';
 import { RealtyLeadsService } from '../realty-leads/realty-leads.service';
+import {
+  allowUnverifiedWebhook,
+  isProductionEnv,
+} from '../../common/utils/webhook-verification.util';
 import { parseMetaLeadgen } from './meta-leadgen.parser';
 import { parsePortalEmail } from './portal-email.parser';
 import { parseCtwaReferral } from './ctwa.util';
@@ -30,11 +34,14 @@ import {
 @Injectable()
 export class RealtyIngestionService {
   private readonly logger = new Logger(RealtyIngestionService.name);
+  private readonly isProduction: boolean;
 
   constructor(
     private readonly leadsService: RealtyLeadsService,
     private readonly configService: ConfigService,
-  ) {}
+  ) {
+    this.isProduction = isProductionEnv(this.configService);
+  }
 
   // ════════════════════════════════════════════
   // Meta Leadgen (Facebook / Instagram Lead Ads)
@@ -44,9 +51,14 @@ export class RealtyIngestionService {
   verifyMetaSignature(rawBody: Buffer | undefined, signatureHeader: string | undefined): boolean {
     const appSecret = this.configService.get<string>('whatsapp.appSecret', '');
     if (!appSecret) {
-      // No secret configured (dev) — cannot verify; allow but warn loudly.
-      this.logger.warn('Meta app secret not configured — skipping signature verification');
-      return true;
+      // No secret configured — cannot verify. Skipped (loudly) outside
+      // production; rejected in production, where an unverified lead webhook is
+      // an open write path into a tenant's pipeline.
+      return allowUnverifiedWebhook(
+        this.logger,
+        this.isProduction,
+        'WHATSAPP_APP_SECRET is not set',
+      );
     }
     if (!rawBody || !signatureHeader) return false;
 

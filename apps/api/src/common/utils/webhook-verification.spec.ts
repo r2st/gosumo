@@ -7,18 +7,26 @@
  * var turns every webhook endpoint into an unauthenticated write path where
  * anyone who knows the URL can forge customer messages into a tenant's inbox.
  *
- * These tests pin the fail-closed behaviour per adapter and for the shared
- * helper both adapters delegate to.
+ * These tests pin the fail-closed behaviour for every inbound webhook surface —
+ * the three channel adapters and the three realty-ingestion endpoints (IVR,
+ * Meta Leadgen, portal email) — plus the shared helper they all delegate to.
  */
 
-import { Logger } from '@nestjs/common';
+import { Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { RawRequest } from '@gosumo/shared';
 
-import { WhatsAppAdapter } from './whatsapp.adapter';
-import { InstagramAdapter } from './instagram.adapter';
-import { SmsAdapter } from './sms.adapter';
+import { WhatsAppAdapter } from '../../modules/channel-adapter/adapters/whatsapp.adapter';
+import { InstagramAdapter } from '../../modules/channel-adapter/adapters/instagram.adapter';
+import { SmsAdapter } from '../../modules/channel-adapter/adapters/sms.adapter';
+import { RealtyIngestionService } from '../../modules/realty-ingestion/realty-ingestion.service';
+import { RealtyIvrService } from '../../modules/realty-ingestion/realty-ivr.service';
+import { RealtyIngestionController } from '../../modules/realty-ingestion/realty-ingestion.controller';
+import type { PortalEmailDto } from '../../modules/realty-ingestion/dto';
+import type { RealtyLeadsService } from '../../modules/realty-leads/realty-leads.service';
+import type { ChannelAdapterService } from '../../modules/channel-adapter/channel-adapter.service';
+import type { PrismaService } from '../services/prisma.service';
 import { allowUnverifiedWebhook, isProductionEnv } from './webhook-verification.util';
 
 /**
@@ -198,5 +206,130 @@ describe('SmsAdapter — signature verification', () => {
       body: undefined as unknown as Record<string, string>,
     };
     expect(() => smsAdapter('production').validateWebhook(req)).not.toThrow();
+  });
+});
+
+// ─────────────────────────────────────────────
+// realty-ingestion webhooks
+// ─────────────────────────────────────────────
+
+/**
+ * The realty lead webhooks are a second, separately-written family of public
+ * endpoints. They each had their own "no secret configured → return true"
+ * branch, so a missing env var accepted forged leads into a broker's pipeline
+ * in production exactly the way the adapters used to accept forged messages.
+ * They now share the helper; these tests hold that line.
+ */
+describe('realty-ingestion webhook verification — missing secret', () => {
+  const BODY = Buffer.from(JSON.stringify({ entry: [] }));
+
+  function ivrService(env: string, secret = ''): RealtyIvrService {
+    return new RealtyIvrService(
+      {} as RealtyLeadsService,
+      {} as ChannelAdapterService,
+      {} as PrismaService,
+      makeConfig(env, secret ? { 'realty.ivrWebhookSecret': secret } : {}),
+    );
+  }
+
+  function ingestionService(env: string, secret = ''): RealtyIngestionService {
+    return new RealtyIngestionService(
+      {} as RealtyLeadsService,
+      makeConfig(env, secret ? { 'whatsapp.appSecret': secret } : {}),
+    );
+  }
+
+  it('IVR accepts an unverifiable webhook in development', () => {
+    expect(ivrService('development').verifyIvrSignature(BODY, 'anything')).toBe(true);
+  });
+
+  it('IVR REJECTS an unverifiable webhook in production', () => {
+    expect(ivrService('production').verifyIvrSignature(BODY, 'anything')).toBe(false);
+  });
+
+  it('IVR still verifies normally once the secret is configured', () => {
+    const secret = 'ivr-secret';
+    const hex = crypto.createHmac('sha256', secret).update(BODY).digest('hex');
+    const service = ivrService('production', secret);
+    expect(service.verifyIvrSignature(BODY, hex)).toBe(true);
+    expect(service.verifyIvrSignature(BODY, `sha256=${hex}`)).toBe(true);
+    expect(service.verifyIvrSignature(BODY, hex.replace(/^./, 'f'))).toBe(false);
+  });
+
+  it('Meta Leadgen accepts an unverifiable webhook in development', () => {
+    expect(ingestionService('development').verifyMetaSignature(BODY, 'sha256=x')).toBe(true);
+  });
+
+  it('Meta Leadgen REJECTS an unverifiable webhook in production', () => {
+    expect(ingestionService('production').verifyMetaSignature(BODY, 'sha256=x')).toBe(false);
+  });
+
+  it('Meta Leadgen still verifies normally once the app secret is configured', () => {
+    const secret = 'meta-secret';
+    const expected =
+      'sha256=' + crypto.createHmac('sha256', secret).update(BODY).digest('hex');
+    const service = ingestionService('production', secret);
+    expect(service.verifyMetaSignature(BODY, expected)).toBe(true);
+    expect(service.verifyMetaSignature(BODY, expected.replace(/.$/, '0'))).toBe(false);
+    // A configured secret makes the signature checkable, so an absent header or
+    // body is a rejection rather than the "cannot verify" escape hatch.
+    expect(service.verifyMetaSignature(BODY, undefined)).toBe(false);
+    expect(service.verifyMetaSignature(undefined, expected)).toBe(false);
+  });
+});
+
+describe('portal-email webhook — missing ingest token', () => {
+  const DTO = { from: 'noreply@99acres.com', subject: 'New enquiry', body: '' } as PortalEmailDto;
+
+  function controller(env: string, token = '') {
+    const ingestion = {
+      ingestPortalEmail: jest.fn().mockResolvedValue({ ingested: 1 }),
+    } as unknown as RealtyIngestionService;
+    const config = makeConfig(env, token ? { 'realty.portalIngestToken': token } : {});
+    return {
+      ingestion,
+      controller: new RealtyIngestionController(
+        ingestion,
+        {} as RealtyIvrService,
+        config,
+      ),
+    };
+  }
+
+  it('accepts an untokened post in development', async () => {
+    const { controller: c, ingestion } = controller('development');
+    await expect(c.handlePortalEmail('', 'biz_1', DTO)).resolves.toEqual({ status: 'ok' });
+    expect(ingestion.ingestPortalEmail).toHaveBeenCalled();
+  });
+
+  it('REJECTS an untokened post in production rather than accepting everyone', async () => {
+    const { controller: c, ingestion } = controller('production');
+    await expect(c.handlePortalEmail('', 'biz_1', DTO)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+    expect(ingestion.ingestPortalEmail).not.toHaveBeenCalled();
+  });
+
+  it('rejects a wrong token and accepts the configured one', async () => {
+    const { controller: c, ingestion } = controller('production', 'right-token');
+    await expect(c.handlePortalEmail('wrong-token', 'biz_1', DTO)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+    await expect(c.handlePortalEmail('right-token', 'biz_1', DTO)).resolves.toEqual({
+      status: 'ok',
+    });
+    expect(ingestion.ingestPortalEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it('swallows a downstream failure and still acks', async () => {
+    const { controller: c, ingestion } = controller('development');
+    (ingestion.ingestPortalEmail as jest.Mock).mockRejectedValueOnce(new Error('db down'));
+    await expect(c.handlePortalEmail('', 'biz_1', DTO)).resolves.toEqual({ status: 'ok' });
+  });
+
+  it('falls back to an "unknown" tenant when the gateway header is absent', async () => {
+    const { controller: c, ingestion } = controller('development');
+    await c.handlePortalEmail('', undefined as unknown as string, DTO);
+    expect(ingestion.ingestPortalEmail).toHaveBeenCalledWith('unknown', DTO);
   });
 });

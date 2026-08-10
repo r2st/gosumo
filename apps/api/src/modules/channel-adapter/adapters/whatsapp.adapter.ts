@@ -15,7 +15,7 @@ import {
 } from '@gosumo/shared';
 import { generateId } from '@gosumo/shared';
 import { BaseChannelAdapter } from './base.adapter';
-import { allowUnverifiedWebhook, isProductionEnv } from './webhook-verification.util';
+import { allowUnverifiedWebhook, isProductionEnv } from '../../../common/utils/webhook-verification.util';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Meta Cloud API payload types

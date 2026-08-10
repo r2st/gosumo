@@ -11,6 +11,10 @@ import type { OutboundMessage } from '@gosumo/shared';
 import { RealtyLeadsService } from '../realty-leads/realty-leads.service';
 import { ChannelAdapterService } from '../channel-adapter/channel-adapter.service';
 import { PrismaService } from '../../common/services/prisma.service';
+import {
+  allowUnverifiedWebhook,
+  isProductionEnv,
+} from '../../common/utils/webhook-verification.util';
 import { IvrDedupTracker } from './ivr/ivr-dedup.util';
 import type { NormalizedIvrCall } from './ivr/ivr-callback.parser';
 import type { IvrCallbackResult } from './dto';
@@ -34,13 +38,16 @@ const DEFAULT_GREETING =
 export class RealtyIvrService {
   private readonly logger = new Logger(RealtyIvrService.name);
   private readonly dedup = new IvrDedupTracker();
+  private readonly isProduction: boolean;
 
   constructor(
     private readonly leadsService: RealtyLeadsService,
     private readonly channelAdapter: ChannelAdapterService,
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
-  ) {}
+  ) {
+    this.isProduction = isProductionEnv(this.configService);
+  }
 
   // ─────────────────────────────────────────────
   // Signature verification (root rule #3)
@@ -48,15 +55,21 @@ export class RealtyIvrService {
 
   /**
    * Verify the HMAC-SHA256 signature an IVR provider posts in `x-ivr-signature`
-   * against `IVR_WEBHOOK_SECRET`. Tolerates an optional `sha256=` prefix. When
-   * no secret is configured (dev) verification is skipped with a loud warning,
-   * mirroring the Meta webhook.
+   * against `IVR_WEBHOOK_SECRET`. Tolerates an optional `sha256=` prefix.
+   *
+   * A missing secret is a configuration failure, not a signature failure, so it
+   * follows the shared fail-closed rule: skipped (loudly) outside production,
+   * rejected in production — one unset env var must not turn this endpoint into
+   * an unauthenticated lead-injection path.
    */
   verifyIvrSignature(rawBody: Buffer | undefined, signatureHeader: string | undefined): boolean {
     const secret = this.configService.get<string>('realty.ivrWebhookSecret', '');
     if (!secret) {
-      this.logger.warn('IVR_WEBHOOK_SECRET not configured — skipping IVR signature verification');
-      return true;
+      return allowUnverifiedWebhook(
+        this.logger,
+        this.isProduction,
+        'IVR_WEBHOOK_SECRET is not set',
+      );
     }
     if (!rawBody || !signatureHeader) return false;
 

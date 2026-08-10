@@ -20,6 +20,10 @@ import { RealtyIvrService } from './realty-ivr.service';
 import { parseIvrCallback } from './ivr/ivr-callback.parser';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { Public } from '../../common/decorators/public.decorator';
+import {
+  allowUnverifiedWebhook,
+  isProductionEnv,
+} from '../../common/utils/webhook-verification.util';
 import { CsvImportDto, PortalEmailDto, CtwaContextDto } from './dto';
 
 /**
@@ -153,8 +157,16 @@ export class RealtyIngestionController {
       if (token !== expected) {
         throw new UnauthorizedException('Invalid portal ingest token');
       }
-    } else {
-      this.logger.warn('Portal ingest token not configured — accepting without verification');
+    } else if (
+      !allowUnverifiedWebhook(
+        this.logger,
+        isProductionEnv(this.configService),
+        'REALTY_PORTAL_INGEST_TOKEN is not set',
+      )
+    ) {
+      // Production with no token configured: the endpoint cannot authenticate
+      // anyone, so it authenticates no one rather than everyone.
+      throw new UnauthorizedException('Portal ingest is not configured');
     }
     try {
       await this.ingestionService.ingestPortalEmail(businessId ?? 'unknown', dto);
