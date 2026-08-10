@@ -24,6 +24,11 @@ import {
 } from './payment/dto';
 import { CreateCategoryDto, CreateVariantDto } from './catalog/dto';
 import { UpdateContactDto } from './contact/dto';
+import { CreateOrderDto } from './order/dto';
+import { SnoozeConversationDto, AssignConversationDto } from './conversation/dto';
+import { CreateLeadDto } from './realty-leads/dto';
+import { DispatchNotificationDto } from './notification/dto';
+import { CreateBookingDto } from './booking/dto';
 
 /** The exact pipe configuration from main.ts. */
 function productionPipe(): ValidationPipe {
@@ -239,5 +244,214 @@ describe('DTOs constrain identifiers and string lengths', () => {
       pricePaise: 49900,
       stockQuantity: -1,
     });
+  });
+});
+
+// ─────────────────────────────────────────────
+// Nested arrays — validation must recurse
+// ─────────────────────────────────────────────
+
+describe('Nested line-item validation recurses into the array', () => {
+  const base = { clientId: CLIENT_ID, paymentMethod: 'COD' };
+
+  it('accepts a well-formed order', async () => {
+    const dto = await validate<CreateOrderDto>(CreateOrderDto, {
+      ...base,
+      items: [{ itemId: ORDER_ID, quantity: 2 }],
+    });
+    expect(dto.items).toHaveLength(1);
+    expect(dto.items[0]).toBeInstanceOf(Object);
+    expect(dto.items[0]?.quantity).toBe(2);
+  });
+
+  it('rejects an empty item list', async () => {
+    // An order with no lines would total zero and still reach the gateway.
+    await expectRejected(CreateOrderDto, { ...base, items: [] });
+  });
+
+  it('rejects a bad nested item even when the outer shape is valid', async () => {
+    const messages = await expectRejected(CreateOrderDto, {
+      ...base,
+      items: [{ itemId: 'not-a-uuid', quantity: 1 }],
+    });
+    expect(messages.join(' ')).toMatch(/itemId/);
+  });
+
+  it('rejects a zero or negative nested quantity', async () => {
+    await expectRejected(CreateOrderDto, { ...base, items: [{ itemId: ORDER_ID, quantity: 0 }] });
+    await expectRejected(CreateOrderDto, { ...base, items: [{ itemId: ORDER_ID, quantity: -3 }] });
+  });
+
+  it('rejects a fractional nested quantity', async () => {
+    await expectRejected(CreateOrderDto, { ...base, items: [{ itemId: ORDER_ID, quantity: 1.5 }] });
+  });
+
+  it('rejects an unknown key inside a nested item', async () => {
+    await expectRejected(CreateOrderDto, {
+      ...base,
+      items: [{ itemId: ORDER_ID, quantity: 1, unitPrice: 1 }],
+    });
+  });
+
+  it('rejects a non-array items value', async () => {
+    await expectRejected(CreateOrderDto, { ...base, items: { itemId: ORDER_ID, quantity: 1 } });
+  });
+});
+
+// ─────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────
+
+describe('Enum fields reject values outside the enum', () => {
+  it('rejects an unknown payment method', async () => {
+    const messages = await expectRejected(CreateOrderDto, {
+      clientId: CLIENT_ID,
+      items: [{ itemId: ORDER_ID, quantity: 1 }],
+      paymentMethod: 'FREE',
+    });
+    expect(messages.join(' ')).toMatch(/paymentMethod/);
+  });
+
+  it('rejects a lowercase variant of a valid enum member', async () => {
+    // Enum comparison is exact; a case-insensitive match would let
+    // unintended values through.
+    await expectRejected(CreateOrderDto, {
+      clientId: CLIENT_ID,
+      items: [{ itemId: ORDER_ID, quantity: 1 }],
+      paymentMethod: 'cod',
+    });
+  });
+
+  it('rejects a missing required enum', async () => {
+    await expectRejected(DispatchNotificationDto, { clientId: CLIENT_ID });
+  });
+
+  it('rejects an unknown notification channel', async () => {
+    await expectRejected(DispatchNotificationDto, {
+      clientId: CLIENT_ID,
+      channel: 'CARRIER_PIGEON',
+    });
+  });
+
+  it('rejects an unknown lead source', async () => {
+    await expectRejected(CreateLeadDto, {
+      whatsappPhone: '+919876543210',
+      source: 'TELEPATHY',
+    });
+  });
+});
+
+// ─────────────────────────────────────────────
+// Dates
+// ─────────────────────────────────────────────
+
+describe('Date fields require a parseable ISO-8601 instant', () => {
+  it('accepts an ISO-8601 UTC instant', async () => {
+    const dto = await validate<SnoozeConversationDto>(SnoozeConversationDto, {
+      snoozeUntil: '2026-09-01T10:30:00.000Z',
+    });
+    expect(dto.snoozeUntil).toBe('2026-09-01T10:30:00.000Z');
+  });
+
+  it('rejects a free-text date', async () => {
+    // "tomorrow" would become an Invalid Date and schedule a wake that never
+    // fires, silently stranding the conversation.
+    await expectRejected(SnoozeConversationDto, { snoozeUntil: 'tomorrow' });
+  });
+
+  it('lets an impossible calendar date through, which JS rolls forward', async () => {
+    // Documenting a real gap rather than asserting a fix: @IsDateString()
+    // checks ISO-8601 *format*, not calendar validity, so 31 February is
+    // accepted and `new Date()` rolls it to 3 March. Callers that build a
+    // Date from this field get a silently different day. Closing it would
+    // need a custom calendar-aware validator applied across every date
+    // field; pinned here so the behaviour is at least known and a future
+    // fix has a test to flip.
+    const dto = await validate<SnoozeConversationDto>(SnoozeConversationDto, {
+      snoozeUntil: '2026-02-31T00:00:00Z',
+    });
+    expect(dto.snoozeUntil).toBe('2026-02-31T00:00:00Z');
+    expect(new Date(dto.snoozeUntil).getUTCMonth()).toBe(2); // March, not February
+  });
+
+  it('rejects a numeric epoch in a date-string field', async () => {
+    await expectRejected(SnoozeConversationDto, { snoozeUntil: 1788200000000 });
+  });
+
+  it('rejects a booking start that is not a date', async () => {
+    await expectRejected(CreateBookingDto, {
+      clientId: CLIENT_ID,
+      startAt: 'next tuesday',
+      durationMinutes: 30,
+    });
+  });
+});
+
+// ─────────────────────────────────────────────
+// Numeric bounds on scheduling input
+// ─────────────────────────────────────────────
+
+describe('Booking duration stays within its declared bounds', () => {
+  const base = { clientId: CLIENT_ID, startAt: '2026-09-01T10:30:00.000Z' };
+
+  it('accepts a duration inside the range', async () => {
+    const dto = await validate<CreateBookingDto>(CreateBookingDto, {
+      ...base,
+      durationMinutes: 30,
+    });
+    expect(dto.durationMinutes).toBe(30);
+  });
+
+  it('rejects a duration below the 5-minute floor', async () => {
+    await expectRejected(CreateBookingDto, { ...base, durationMinutes: 1 });
+  });
+
+  it('rejects a duration beyond a single day', async () => {
+    await expectRejected(CreateBookingDto, { ...base, durationMinutes: 1441 });
+  });
+
+  it('rejects a fractional duration', async () => {
+    await expectRejected(CreateBookingDto, { ...base, durationMinutes: 30.5 });
+  });
+
+  it('accepts the exact boundary values', async () => {
+    await expect(validate(CreateBookingDto, { ...base, durationMinutes: 5 })).resolves.toBeDefined();
+    await expect(
+      validate(CreateBookingDto, { ...base, durationMinutes: 1440 }),
+    ).resolves.toBeDefined();
+  });
+});
+
+// ─────────────────────────────────────────────
+// Identity fields on the realty lead path
+// ─────────────────────────────────────────────
+
+describe('Lead identity fields', () => {
+  const valid = { whatsappPhone: '+919876543210', source: 'WHATSAPP' };
+
+  it('rejects an empty phone — it is the lead identity', async () => {
+    await expectRejected(CreateLeadDto, { ...valid, whatsappPhone: '' });
+  });
+
+  it('rejects a phone past the column width', async () => {
+    await expectRejected(CreateLeadDto, { ...valid, whatsappPhone: '+9198765432101234567890' });
+  });
+
+  it('rejects a malformed email', async () => {
+    await expectRejected(CreateLeadDto, { ...valid, email: 'priya@@example' });
+  });
+
+  it('rejects a non-UUID assigned agent', async () => {
+    await expectRejected(CreateLeadDto, { ...valid, assignedAgentId: 'agent-7' });
+  });
+
+  it('rejects an injected businessId on a lead', async () => {
+    await expectRejected(CreateLeadDto, { ...valid, businessId: CLIENT_ID });
+  });
+});
+
+describe('Conversation assignment', () => {
+  it('rejects a non-UUID assignee', async () => {
+    await expectRejected(AssignConversationDto, { assigneeId: 'me' });
   });
 });
