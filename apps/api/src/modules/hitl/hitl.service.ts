@@ -59,7 +59,7 @@ const SLA_DEFAULTS: Record<string, number> = {
 // Internal note shape stored in task metadata
 // ─────────────────────────────────────────────
 
-interface InternalNote {
+export interface InternalNote {
   id: string;
   text: string;
   authorId: string;

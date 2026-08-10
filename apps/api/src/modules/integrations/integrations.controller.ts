@@ -55,7 +55,7 @@ export class IntegrationsController {
   async saveCredentials(
     @TenantId() tenantId: string,
     @Param('provider') provider: string,
-    @Body() body: Record<string, any>,
+    @Body() body: Record<string, unknown>,
   ) {
     this.logger.log(`Saving ${provider} credentials for tenant ${tenantId}`);
     return {

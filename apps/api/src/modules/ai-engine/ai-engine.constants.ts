@@ -54,6 +54,14 @@ export const LLM_TIMEOUT_MS = 8_000;
 /** Number of inbound exchanges with an unchanged intent that triggers a loop. */
 export const LOOP_DETECTION_THRESHOLD = 3;
 
+/**
+ * Fallback confidence-routing thresholds (percent) when a tenant has not set
+ * their own in `businesses.ai_settings`. Mirrors the band definition in
+ * CLAUDE.md: >= 90 auto-executes, 70-89 drafts for review.
+ */
+export const DEFAULT_AUTO_EXECUTE_THRESHOLD = 90;
+export const DEFAULT_DRAFT_REVIEW_THRESHOLD = 70;
+
 // ─────────────────────────────────────────────
 // Model routing — pick an OpenRouter free-tier model by intent
 //

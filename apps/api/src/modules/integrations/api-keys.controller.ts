@@ -9,6 +9,30 @@ import { PrismaService } from '../../common/services/prisma.service';
 import { randomBytes, createHash } from 'crypto';
 import { CreateApiKeyDto } from './dto/create-api-key.dto';
 
+/** Shape of the raw `api_keys` rows this controller selects. */
+interface ApiKeyRow {
+  id: string;
+  name: string;
+  prefix: string;
+  created_at: Date;
+  last_used_at: Date | null;
+  expires_at: Date | null;
+}
+
+/**
+ * The `api_keys` table is created lazily on first write, so an
+ * undefined-table error (SQLSTATE 42P01) is an expected control-flow signal
+ * rather than a failure. Prisma surfaces raw-query errors as opaque objects,
+ * hence the structural check.
+ */
+function isPgError(err: unknown, code: string): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { code?: unknown }).code === code
+  );
+}
+
 @ApiTags('api-keys')
 @Controller('api-keys')
 export class ApiKeysController {
@@ -20,7 +44,7 @@ export class ApiKeysController {
   async list(@TenantId() tenantId: string, @Query('limit') limit?: string) {
     // Check if api_keys table exists, otherwise return empty
     try {
-      const keys = await this.prisma.$queryRawUnsafe<any[]>(
+      const keys = await this.prisma.$queryRawUnsafe<ApiKeyRow[]>(
         `SELECT id, name, prefix, created_at, last_used_at, expires_at
          FROM api_keys WHERE business_id = $1
          ORDER BY created_at DESC LIMIT $2`,
@@ -28,7 +52,7 @@ export class ApiKeysController {
         parseInt(limit ?? '100', 10),
       );
       return {
-        data: keys.map((k: any) => ({
+        data: keys.map((k) => ({
           id: k.id,
           name: k.name,
           prefix: k.prefix,
@@ -64,9 +88,9 @@ export class ApiKeysController {
          VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6::timestamptz)`,
         tenantId, dto.name, prefix, hash, user.sub, expiresAt,
       );
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Table may not exist — create it
-      if (e.code === '42P01') {
+      if (isPgError(e, '42P01')) {
         await this.prisma.$executeRawUnsafe(`
           CREATE TABLE IF NOT EXISTS api_keys (
             id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

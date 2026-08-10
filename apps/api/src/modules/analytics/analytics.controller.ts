@@ -57,7 +57,7 @@ export class AnalyticsController {
   @Get('dashboard')
   @ApiOperation({ summary: 'Dashboard summary for today (cached 5 minutes)' })
   @ApiResponse({ status: 200, description: 'Dashboard summary metrics' })
-  async getDashboard(@TenantId() tenantId: string): Promise<any> {
+  async getDashboard(@TenantId() tenantId: string) {
     const s = await this.analyticsService.getDashboardSummary(tenantId);
     const now = new Date();
     const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -112,7 +112,7 @@ export class AnalyticsController {
   async getConversations(
     @TenantId() tenantId: string,
     @Query() query: AnalyticsRangeQueryDto,
-  ): Promise<any> {
+  ) {
     const m = await this.analyticsService.getConversationMetrics(tenantId, query);
     return {
       summary: {
@@ -120,14 +120,14 @@ export class AnalyticsController {
         avgResolutionTimeMs: 0,
         avgFirstResponseTimeMs: 0,
       },
-      timeSeries: m.volumeSeries.map((p: any) => ({
+      timeSeries: m.volumeSeries.map((p) => ({
         date: p.date,
         created: p.value,
         resolved: 0,
         escalated: 0,
         avgResolutionTimeMs: 0,
       })),
-      channelBreakdown: m.byChannel.map((c: any) => ({
+      channelBreakdown: m.byChannel.map((c) => ({
         channel: c.channel,
         count: c.count,
         avgResolutionTimeMs: 0,
@@ -156,7 +156,7 @@ export class AnalyticsController {
   async getRevenue(
     @TenantId() tenantId: string,
     @Query() query: AnalyticsRangeQueryDto,
-  ): Promise<any> {
+  ) {
     const m = await this.analyticsService.getRevenueMetrics(tenantId, query);
     return {
       summary: {
@@ -166,7 +166,7 @@ export class AnalyticsController {
         totalRefunds: m.refundsPaise,
         netRevenue: m.netRevenuePaise,
       },
-      timeSeries: m.revenueSeries.map((p: any, i: number) => ({
+      timeSeries: m.revenueSeries.map((p, i) => ({
         date: p.date,
         revenue: p.value,
         orders: m.orderCountSeries?.[i]?.value ?? 0,
@@ -310,7 +310,7 @@ export class AnalyticsController {
   async getClients(
     @TenantId() tenantId: string,
     @Query() query: AnalyticsRangeQueryDto,
-  ): Promise<any> {
+  ) {
     const [acq, ret] = await Promise.all([
       this.analyticsService.getClientAcquisitionMetrics(tenantId, query),
       this.analyticsService.getClientRetentionMetrics(tenantId, query),
@@ -323,7 +323,7 @@ export class AnalyticsController {
         avgLtv: 0,
         churnRiskHigh: ret.atRiskClients,
       },
-      acquisitionTimeSeries: (acq.acquisitionSeries || []).map((p: any) => ({
+      acquisitionTimeSeries: (acq.acquisitionSeries || []).map((p) => ({
         date: p.date,
         newClients: p.value,
       })),
@@ -334,7 +334,7 @@ export class AnalyticsController {
       },
       sentimentDistribution: {},
       topTags: [],
-      channelPreferences: (acq.byChannel || []).reduce((acc: any, c: any) => {
+      channelPreferences: (acq.byChannel || []).reduce<Record<string, number>>((acc, c) => {
         acc[c.channel] = c.count;
         return acc;
       }, {}),
@@ -347,7 +347,7 @@ export class AnalyticsController {
   async getAutonomyAggregated(
     @TenantId() tenantId: string,
     @Query() query: AnalyticsRangeQueryDto,
-  ): Promise<any> {
+  ) {
     const [autonomy, confidence, escalations] = await Promise.all([
       this.analyticsService.getAutonomyMetrics(tenantId, query),
       this.analyticsService.getConfidenceDistribution(tenantId, query),
@@ -359,7 +359,7 @@ export class AnalyticsController {
         trend: 0,
         totalDecisions: autonomy.totalDecisions,
       },
-      timeSeries: (autonomy.autonomySeries || []).map((p: any) => ({
+      timeSeries: (autonomy.autonomySeries || []).map((p) => ({
         date: p.date,
         autonomyRate: p.value,
         autoExecuted: 0,
@@ -367,11 +367,11 @@ export class AnalyticsController {
         escalated: 0,
       })),
       intentBreakdown: [],
-      confidenceDistribution: (confidence.histogram || []).map((b: any) => ({
+      confidenceDistribution: (confidence.histogram || []).map((b) => ({
         bucket: b.lower + "-" + b.upper,
         count: b.count,
       })),
-      topEscalationReasons: (escalations || []).map((e: any) => ({
+      topEscalationReasons: (escalations || []).map((e) => ({
         reason: e.reason,
         count: e.count,
       })),

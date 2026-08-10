@@ -109,7 +109,9 @@ export class EmailAdapter extends BaseChannelAdapter {
           email: this.fromEmail,
           name: this.fromName,
         },
-        subject: (message as any).subject || "Message from GoSumo",
+        subject:
+          (message as OutboundMessage & { subject?: string }).subject ||
+          "Message from GoSumo",
         content: [
           { type: "text/plain", value: textContent },
           { type: "text/html", value: htmlContent },

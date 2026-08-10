@@ -1,5 +1,6 @@
 import { Controller, Get, Patch, Body, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { Prisma } from '@prisma/client';
 import { TenantService } from './tenant.service';
 import { SubscriptionService } from './services/subscription.service';
 import { PrismaService } from '../../common/services/prisma.service';
@@ -37,9 +38,9 @@ export class BusinessController {
   @ApiResponse({ status: 200 })
   async getSettings(@TenantId() businessId: string) {
     const biz = await this.prisma.businesses.findUniqueOrThrow({ where: { id: businessId } });
-    const aiSettings = (biz.ai_settings ?? {}) as Record<string, any>;
-    const profile = (biz.profile ?? {}) as Record<string, any>;
-    const settings = profile.settings ?? {};
+    const aiSettings = (biz.ai_settings ?? {}) as Record<string, unknown>;
+    const profile = (biz.profile ?? {}) as Record<string, unknown>;
+    const settings = (profile['settings'] ?? {}) as Record<string, unknown>;
     return {
       aiAutoReplyEnabled: aiSettings.autoReplyEnabled ?? settings.aiAutoReplyEnabled ?? true,
       aiAutonomyLevel: aiSettings.autonomyLevel ?? settings.aiAutonomyLevel ?? 'BALANCED',
@@ -56,12 +57,12 @@ export class BusinessController {
   @ApiResponse({ status: 200 })
   async updateSettings(@TenantId() businessId: string, @Body() dto: UpdateBusinessSettingsDto) {
     const biz = await this.prisma.businesses.findUniqueOrThrow({ where: { id: businessId } });
-    const profile = (biz.profile ?? {}) as Record<string, any>;
-    const settings = profile.settings ?? {};
+    const profile = (biz.profile ?? {}) as Record<string, unknown>;
+    const settings = (profile['settings'] ?? {}) as Record<string, unknown>;
     const merged = { ...settings, ...dto };
     await this.prisma.businesses.update({
       where: { id: businessId },
-      data: { profile: { ...profile, settings: merged } as any },
+      data: { profile: { ...profile, settings: merged } as Prisma.InputJsonValue },
     });
     return merged;
   }

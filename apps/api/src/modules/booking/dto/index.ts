@@ -483,3 +483,13 @@ export interface RecurringBookingResultDto {
   /** Occurrences that could not be created because the slot was taken. */
   skipped: Array<{ startAt: string; reason: string }>;
 }
+
+/** A staff member offered as a booking assignee. */
+export interface StaffMemberDto {
+  id: string;
+  /** Display name; falls back to the email local-part for invited members. */
+  name: string;
+  email: string;
+  role: string;
+  avatarUrl: string | null;
+}

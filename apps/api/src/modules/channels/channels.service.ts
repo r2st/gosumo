@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { ChannelType } from "@gosumo/shared";
 import { generateId } from "@gosumo/shared";
 import { PrismaService } from "../../common/services/prisma.service";
+import { Prisma } from "@prisma/client";
 import {
   encryptJson,
   decryptJson,
@@ -10,7 +11,7 @@ import {
 } from "../../common/utils/encryption.util";
 import { ConnectChannelDto } from "./dto";
 
-interface ChannelResponse {
+export interface ChannelResponse {
   id: string;
   businessId: string;
   type: ChannelType;
@@ -89,8 +90,8 @@ export class ChannelsService {
           credentials: encrypted,
           webhook_url: webhookUrl,
           is_active: true,
-          capabilities: capabilities as any,
-          metadata: metadata as any,
+          capabilities: capabilities as unknown as Prisma.InputJsonValue,
+          metadata: metadata as Prisma.InputJsonValue,
           external_account: body.wabaId || body.pageId || null,
           deleted_at: null,
         },
@@ -108,8 +109,8 @@ export class ChannelsService {
           webhook_url: webhookUrl,
           is_active: true,
           is_verified: false,
-          capabilities: capabilities as any,
-          metadata: metadata as any,
+          capabilities: capabilities as unknown as Prisma.InputJsonValue,
+          metadata: metadata as Prisma.InputJsonValue,
         },
       });
       this.logger.log(`Created channel account ${record.id} for ${channelType}`);

@@ -59,6 +59,8 @@ import {
   LLM_MAX_TOKENS,
   LOOP_DETECTION_THRESHOLD,
   ESCALATION_HOLDING_MESSAGE,
+  DEFAULT_AUTO_EXECUTE_THRESHOLD,
+  DEFAULT_DRAFT_REVIEW_THRESHOLD,
 } from './ai-engine.constants';
 
 /**
@@ -672,12 +674,22 @@ export class AiEngineService {
 
   // ─── Confidence thresholds ───
 
-  async getConfidenceThresholds(businessId: string) {
+  async getConfidenceThresholds(
+    businessId: string,
+  ): Promise<{ autoExecute: number; draftReview: number }> {
     try {
       const biz = await this.prisma.businesses.findUniqueOrThrow({ where: { id: businessId } });
-      const s = (biz.ai_settings ?? {}) as Record<string, any>;
-      return { autoExecute: s.autoExecuteThreshold ?? 90, draftReview: s.reviewThreshold ?? 70 };
-    } catch { return { autoExecute: 90, draftReview: 70 }; }
+      const s = (biz.ai_settings ?? {}) as Record<string, unknown>;
+      return {
+        autoExecute: numberOr(s['autoExecuteThreshold'], DEFAULT_AUTO_EXECUTE_THRESHOLD),
+        draftReview: numberOr(s['reviewThreshold'], DEFAULT_DRAFT_REVIEW_THRESHOLD),
+      };
+    } catch {
+      return {
+        autoExecute: DEFAULT_AUTO_EXECUTE_THRESHOLD,
+        draftReview: DEFAULT_DRAFT_REVIEW_THRESHOLD,
+      };
+    }
   }
 
   /**
@@ -693,12 +705,14 @@ export class AiEngineService {
   async updateConfidenceThresholds(
     businessId: string,
     body: { autoExecute?: number; draftReview?: number },
-  ) {
+  ): Promise<{ autoExecute: number; draftReview: number }> {
     const biz = await this.prisma.businesses.findUniqueOrThrow({ where: { id: businessId } });
-    const s = { ...((biz.ai_settings ?? {}) as Record<string, any>) };
+    const s = { ...((biz.ai_settings ?? {}) as Record<string, unknown>) };
 
-    const autoExecute = body.autoExecute ?? s.autoExecuteThreshold ?? 90;
-    const draftReview = body.draftReview ?? s.reviewThreshold ?? 70;
+    const autoExecute =
+      body.autoExecute ?? numberOr(s['autoExecuteThreshold'], DEFAULT_AUTO_EXECUTE_THRESHOLD);
+    const draftReview =
+      body.draftReview ?? numberOr(s['reviewThreshold'], DEFAULT_DRAFT_REVIEW_THRESHOLD);
 
     if (autoExecute < draftReview) {
       throw new BadRequestException(
@@ -707,10 +721,13 @@ export class AiEngineService {
       );
     }
 
-    s.autoExecuteThreshold = autoExecute;
-    s.reviewThreshold = draftReview;
+    s['autoExecuteThreshold'] = autoExecute;
+    s['reviewThreshold'] = draftReview;
 
-    await this.prisma.businesses.update({ where: { id: businessId }, data: { ai_settings: s as any } });
+    await this.prisma.businesses.update({
+      where: { id: businessId },
+      data: { ai_settings: s as Prisma.InputJsonValue },
+    });
     return { autoExecute, draftReview };
   }
 
@@ -1012,4 +1029,16 @@ export class AiEngineService {
       executedAt: decision.executed_at,
     };
   }
+}
+
+/**
+ * Read a stored confidence threshold out of the tenant's `ai_settings` JSON.
+ *
+ * The column is untyped JSON, so a value written by an older build (or by hand)
+ * may be a string, null, or missing entirely. Anything that is not a number
+ * falls back to the default rather than silently flowing into the routing
+ * comparison as `NaN` or a string.
+ */
+function numberOr(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }

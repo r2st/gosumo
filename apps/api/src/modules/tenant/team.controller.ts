@@ -23,10 +23,16 @@ export class TeamController {
   @ApiOperation({ summary: 'List team members' })
   async listTeam(@TenantId() tenantId: string, @Query('limit') limit?: string) {
     const members = await this.tenantService.getMembers(tenantId);
-    const mapped = (members ?? []).map((m: any) => ({
-      id: m.id, name: m.name ?? m.email?.split('@')[0] ?? 'Team member',
-      email: m.email, role: m.role, status: m.status ?? 'ACTIVE',
-      avatarUrl: m.avatar_url ?? null, lastActiveAt: m.last_active_at ?? null, createdAt: m.created_at,
+    const mapped = (members ?? []).map((m) => ({
+      id: m.id,
+      // An invited member has no display name until they accept.
+      name: m.name || m.email?.split('@')[0] || 'Team member',
+      email: m.email,
+      role: m.role,
+      status: m.status,
+      avatarUrl: m.avatar_url ?? null,
+      lastActiveAt: m.last_login_at ?? null,
+      createdAt: m.created_at,
     }));
     return { data: mapped, pagination: { total: mapped.length, limit: parseInt(limit ?? '100', 10), page: 1, totalPages: 1 } };
   }
@@ -83,7 +89,7 @@ export class TeamController {
       where: { id: memberId, business_id: tenantId },
       data: { role: dto.role },
     });
-    return { id: updated.id, role: updated.role, status: (updated as any).status ?? 'ACTIVE' };
+    return { id: updated.id, role: updated.role, status: updated.status };
   }
 
   @Delete(':id')

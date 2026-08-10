@@ -68,6 +68,7 @@ import {
   CalendarConnectionDto,
   WeeklyHourDto,
   RecurringBookingResultDto,
+  StaffMemberDto,
 } from './dto';
 
 interface WeeklyHour {
@@ -1362,14 +1363,31 @@ export class BookingService {
    * The payment event carries a `bookingId` (set when the link was created).
    */
 
-  async getStaffMembers(businessId: string): Promise<{ staff: any[] }> {
+  /**
+   * Staff roster for the booking assignment picker.
+   *
+   * Best-effort: a failed read degrades to an empty roster rather than breaking
+   * the bookings page, which is usable without staff assignment.
+   */
+  async getStaffMembers(businessId: string): Promise<{ staff: StaffMemberDto[] }> {
     try {
-      const members = await this.prisma.team_members.findMany({ where: { business_id: businessId } });
-      return { staff: (members ?? []).map((m: any) => ({
-        id: m.id, name: m.name ?? m.email?.split('@')[0] ?? 'Staff',
-        email: m.email, role: m.role, avatarUrl: m.avatar_url ?? null,
-      })) };
-    } catch { return { staff: [] }; }
+      const members = await this.prisma.team_members.findMany({
+        where: { business_id: businessId },
+        select: { id: true, name: true, email: true, role: true, avatar_url: true },
+      });
+      return {
+        staff: (members ?? []).map((m) => ({
+          id: m.id,
+          // A member invited by email may have no display name yet.
+          name: m.name || m.email?.split('@')[0] || 'Staff',
+          email: m.email,
+          role: m.role,
+          avatarUrl: m.avatar_url ?? null,
+        })),
+      };
+    } catch {
+      return { staff: [] };
+    }
   }
 
   @OnEvent('payment.success')

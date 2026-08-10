@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { HitlService } from './hitl.service';
+import type { InternalNote } from './hitl.service';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import {
   CurrentUser,
@@ -224,7 +225,7 @@ export class HitlController {
     @Param('conversationId', UuidValidationPipe) conversationId: string,
     @Body() dto: PostInternalNoteDto,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<any> {
+  ): Promise<InternalNote> {
     return this.hitlService.postInternalNote(
       tenantId,
       conversationId,
@@ -241,7 +242,7 @@ export class HitlController {
   async getInternalNotes(
     @TenantId() tenantId: string,
     @Param('conversationId', UuidValidationPipe) conversationId: string,
-  ): Promise<any> {
+  ): Promise<InternalNote[]> {
     return this.hitlService.getInternalNotes(tenantId, conversationId);
   }
 }

@@ -48,7 +48,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Register a new business and owner account' })
   @ApiResponse({ status: 201, description: 'Account created', type: AuthTokensDto })
   @ApiResponse({ status: 409, description: 'Email already in use' })
-  async register(@Body() dto: RegisterDto, @Req() req: Request): Promise<any> {
+  async register(@Body() dto: RegisterDto, @Req() req: Request) {
     const tokens = await this.authService.register(dto, this.sessionMeta(req));
     const payload = JSON.parse(Buffer.from(tokens.accessToken.split('.')[1]!.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
     return {
@@ -72,7 +72,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Login with email and password' })
   @ApiResponse({ status: 200, description: 'Login successful', type: AuthTokensDto })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
-  async login(@Body() dto: LoginDto, @Req() req: Request): Promise<any> {
+  async login(@Body() dto: LoginDto, @Req() req: Request) {
     const tokens = await this.authService.login(dto, this.sessionMeta(req));
     // Decode user info from the access token to include in response
     const payload = JSON.parse(Buffer.from(tokens.accessToken.split('.')[1]!.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());

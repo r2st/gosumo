@@ -28,6 +28,9 @@ import {
   ListBookingsQueryDto,
 } from './dto';
 
+/** Upper bound on bookings pulled for one calendar-view render. */
+const CALENDAR_PAGE_SIZE = 200;
+
 /**
  * BookingController — REST endpoints for appointment scheduling.
  *
@@ -169,9 +172,9 @@ export class BookingController {
     @TenantId() tenantId: string,
     @Query() query: ListBookingsQueryDto,
   ) {
-    const result = await this.bookingService.listBookings(tenantId, query);
-    const { data, ...rest } = result as any;
-    return { data, pagination: { total: rest.total ?? 0, limit: rest.limit ?? 10, page: rest.page ?? 1, totalPages: rest.totalPages ?? 0 } };
+    const { data, total, limit, page, totalPages } =
+      await this.bookingService.listBookings(tenantId, query);
+    return { data, pagination: { total, limit, page, totalPages } };
   }
 
 
@@ -186,21 +189,20 @@ export class BookingController {
     @Query('to') to?: string,
     @Query('staffMemberId') staffMemberId?: string,
   ) {
-    const query: any = { page: 1, limit: 200 };
+    const query: ListBookingsQueryDto = { page: 1, limit: CALENDAR_PAGE_SIZE };
     if (from) query.from = from;
     if (to) query.to = to;
     if (staffMemberId) query.staffId = staffMemberId;
-    const result = await this.bookingService.listBookings(tenantId, query);
-    const bookings = (result as any).data ?? [];
+    const { data } = await this.bookingService.listBookings(tenantId, query);
     return {
-      events: bookings.map((b: any) => ({
+      events: data.map((b) => ({
         id: b.id,
         title: b.notes || 'Appointment',
-        start: b.startAt ?? b.start_at,
-        end: b.endAt ?? b.end_at,
+        start: b.startAt,
+        end: b.endAt,
         status: b.status,
-        clientId: b.clientId ?? b.client_id,
-        staffId: b.staffId ?? b.staff_id,
+        clientId: b.clientId,
+        staffId: b.staffId,
       })),
     };
   }

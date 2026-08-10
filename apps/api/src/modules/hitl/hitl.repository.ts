@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
 import { TaskStatus, TaskType, TaskPriority } from '@gosumo/shared';
 import type { tasks } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 // ─────────────────────────────────────────────
 // Data interfaces
@@ -94,12 +95,12 @@ export class HitlRepository {
         priority: data.priority,
         title: data.title,
         description: data.description ?? null,
-        ai_draft: data.aiDraft ?? null as any,
+        ai_draft: (data.aiDraft ?? Prisma.JsonNull) as Prisma.InputJsonValue,
         due_at: data.dueAt ?? null,
         sla_minutes: data.slaMinutes ?? null,
         escalated_from: data.escalatedFrom ?? null,
         escalation_level: data.escalationLevel ?? 0,
-        metadata: (data.metadata ?? {}) as any,
+        metadata: (data.metadata ?? {}) as Prisma.InputJsonValue,
       },
       include: this.taskIncludes,
     });

@@ -12,6 +12,15 @@ import { ChannelType } from "@gosumo/shared";
 import { Public } from "../../common/decorators/public.decorator";
 import { TenantId } from "../../common/decorators/tenant-id.decorator";
 import { ChannelsService } from "./channels.service";
+import type { ChannelResponse } from "./channels.service";
+
+/** Cursor-shaped envelope returned by the channel list endpoint. */
+interface ChannelListResponse {
+  data: ChannelResponse[];
+  total: number;
+  hasMore: boolean;
+  cursor: string | null;
+}
 import { ConnectChannelDto } from "./dto";
 
 @Controller("channels")
@@ -21,7 +30,7 @@ export class ChannelsController {
   constructor(private readonly channelsService: ChannelsService) {}
 
   @Get()
-  async listChannels(@TenantId() businessId: string): Promise<any> {
+  async listChannels(@TenantId() businessId: string): Promise<ChannelListResponse> {
     return this.channelsService.listChannels(businessId);
   }
 
@@ -30,7 +39,7 @@ export class ChannelsController {
     @TenantId() businessId: string,
     @Param("channelType") channelTypeParam: string,
     @Body() body: ConnectChannelDto,
-  ): Promise<any> {
+  ): Promise<ChannelResponse> {
     const channelType = channelTypeParam.toUpperCase().replace(/-/g, "_") as ChannelType;
 
     if (!Object.values(ChannelType).includes(channelType)) {
