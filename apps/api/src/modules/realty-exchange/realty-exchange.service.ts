@@ -202,7 +202,7 @@ export class RealtyExchangeService {
   async acceptSyndication(businessId: string, syndicationId: string): Promise<SyndicationResponseDto> {
     const syndication = await this.mustFindSyndication(businessId, syndicationId);
     this.assertState(syndication, [SyndicationState.OFFERED]);
-    const updated = await this.repository.updateSyndication(syndicationId, {
+    const updated = await this.repository.updateSyndication(businessId, syndicationId, {
       state: SyndicationState.ACCEPTED,
     });
     this.emit<RealtySyndicationAcceptedEvent>('realty.syndication.accepted', {
@@ -219,7 +219,7 @@ export class RealtyExchangeService {
   async recordVisit(businessId: string, syndicationId: string): Promise<SyndicationResponseDto> {
     const syndication = await this.mustFindSyndication(businessId, syndicationId);
     this.assertState(syndication, [SyndicationState.ACCEPTED]);
-    const updated = await this.repository.updateSyndication(syndicationId, {
+    const updated = await this.repository.updateSyndication(businessId, syndicationId, {
       state: SyndicationState.VISIT,
     });
     return this.mapSyndication(updated);
@@ -242,7 +242,7 @@ export class RealtyExchangeService {
     const poolDecimal = paiseToDecimal(dto.commissionPoolPaise);
     const feeDecimal = poolDecimal.mul(rate);
 
-    const updated = await this.repository.updateSyndication(syndicationId, {
+    const updated = await this.repository.updateSyndication(businessId, syndicationId, {
       state: SyndicationState.CLOSED,
       commission_pool: poolDecimal,
       platform_fee: feeDecimal,
@@ -271,7 +271,7 @@ export class RealtyExchangeService {
       SyndicationState.ACCEPTED,
       SyndicationState.VISIT,
     ]);
-    const updated = await this.repository.updateSyndication(syndicationId, {
+    const updated = await this.repository.updateSyndication(businessId, syndicationId, {
       state: SyndicationState.EXPIRED,
     });
     return this.mapSyndication(updated);
@@ -290,7 +290,7 @@ export class RealtyExchangeService {
       SyndicationState.VISIT,
       SyndicationState.CLOSED,
     ]);
-    const updated = await this.repository.updateSyndication(syndicationId, {
+    const updated = await this.repository.updateSyndication(businessId, syndicationId, {
       state: SyndicationState.DISPUTED,
       settlement_state: SettlementState.REVERSED,
       metadata: this.mergeMetadata(syndication, { disputeReason: reason }),
@@ -320,7 +320,7 @@ export class RealtyExchangeService {
 
     const existing = this.readRatings(syndication);
     existing[ratedBusinessId] = { ...(existing[ratedBusinessId] ?? {}), ...ratings };
-    await this.repository.updateSyndication(syndicationId, {
+    await this.repository.updateSyndication(ratingBusinessId, syndicationId, {
       metadata: this.mergeMetadata(syndication, { ratings: existing }),
     });
 
@@ -531,12 +531,14 @@ export class RealtyExchangeService {
       // Re-verify freshness whenever a seller reconfirms the listing is ACTIVE.
       if (dto.status === ResaleListingStatus.ACTIVE) data.verified_at = new Date();
     }
-    return this.mapResale(await this.repository.updateResaleListing(listingId, data));
+    return this.mapResale(
+      await this.repository.updateResaleListing(businessId, listingId, data),
+    );
   }
 
   async deleteResaleListing(businessId: string, listingId: string): Promise<void> {
     await this.mustFindResale(businessId, listingId);
-    await this.repository.softDeleteResaleListing(listingId);
+    await this.repository.softDeleteResaleListing(businessId, listingId);
   }
 
   // ── Helpers ──────────────────────────────────

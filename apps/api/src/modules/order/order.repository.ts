@@ -230,7 +230,7 @@ export class OrderRepository {
     }
 
     return this.prisma.orders.update({
-      where: { id: orderId },
+      where: { id: orderId, business_id: businessId },
       data: updateData,
       include: {
         client: true,

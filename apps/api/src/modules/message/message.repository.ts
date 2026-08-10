@@ -172,9 +172,13 @@ export class MessageRepository {
    * Find a message by its external_id for deduplication.
    * Returns the first match or null.
    */
-  async findByExternalId(externalId: string): Promise<messages | null> {
+  async findByExternalId(
+    businessId: string,
+    externalId: string,
+  ): Promise<messages | null> {
     return this.prisma.messages.findFirst({
       where: {
+        business_id: businessId,
         external_id: externalId,
       },
     });
@@ -183,9 +187,14 @@ export class MessageRepository {
   /**
    * Get the last N messages in a conversation, ordered by created_at DESC.
    */
-  async getLastN(conversationId: string, n: number): Promise<messages[]> {
+  async getLastN(
+    businessId: string,
+    conversationId: string,
+    n: number,
+  ): Promise<messages[]> {
     return this.prisma.messages.findMany({
       where: {
+        business_id: businessId,
         conversation_id: conversationId,
       },
       orderBy: { created_at: 'desc' },
@@ -331,11 +340,12 @@ export class MessageRepository {
 
   /** Overwrite the reactions array on a message. */
   async setReactions(
+    businessId: string,
     messageId: string,
     reactions: MessageReaction[],
   ): Promise<messages> {
     return this.prisma.messages.update({
-      where: { id: messageId },
+      where: { id: messageId, business_id: businessId },
       data: { reactions: reactions as unknown as Prisma.InputJsonValue },
     });
   }

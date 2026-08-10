@@ -190,7 +190,11 @@ describe('CartService', () => {
         quantity: 3,
       });
 
-      expect(repository.updateItemQuantity).toHaveBeenCalledWith(CART_ITEM_ID, 4);
+      expect(repository.updateItemQuantity).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        CART_ITEM_ID,
+        4,
+      );
       expect(repository.createItem).not.toHaveBeenCalled();
     });
 
@@ -218,7 +222,11 @@ describe('CartService', () => {
         quantity: 5,
       });
 
-      expect(repository.updateItemQuantity).toHaveBeenCalledWith(CART_ITEM_ID, 5);
+      expect(repository.updateItemQuantity).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        CART_ITEM_ID,
+        5,
+      );
     });
 
     it('throws NotFound for an unknown line', async () => {
@@ -241,7 +249,7 @@ describe('CartService', () => {
 
       await service.removeItem(BUSINESS_ID, CLIENT_ID, CART_ITEM_ID);
 
-      expect(repository.removeItem).toHaveBeenCalledWith(CART_ITEM_ID);
+      expect(repository.removeItem).toHaveBeenCalledWith(BUSINESS_ID, CART_ITEM_ID);
     });
   });
 
@@ -273,6 +281,7 @@ describe('CartService', () => {
       });
 
       expect(repository.setCoupon).toHaveBeenCalledWith(
+        BUSINESS_ID,
         CART_ID,
         expect.objectContaining({ code: 'DIWALI20', couponId: COUPON_ID }),
       );
@@ -312,7 +321,11 @@ describe('CartService', () => {
           items: [expect.objectContaining({ itemId: ITEM_ID, quantity: 2 })],
         }),
       );
-      expect(repository.markConverted).toHaveBeenCalledWith(CART_ID, 'order-id');
+      expect(repository.markConverted).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        CART_ID,
+        'order-id',
+      );
       expect(result.orderNumber).toBe('ORD-2026-00001');
     });
 

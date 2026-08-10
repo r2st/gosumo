@@ -551,6 +551,7 @@ describe('ConversationService', () => {
         CHANNEL_ACCOUNT_ID,
       );
       expect(repository.updateLastMessageAt).toHaveBeenCalledWith(
+        BUSINESS_ID,
         CONVERSATION_ID,
         expect.any(Date),
       );

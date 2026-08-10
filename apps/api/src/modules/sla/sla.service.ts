@@ -201,7 +201,7 @@ export class SlaService {
       const now = new Date();
       const breached = now.getTime() > tracker.due_at.getTime();
       const wasAlreadyBreached = tracker.breached;
-      const updated = await this.repository.markMet(tracker.id, now, breached);
+      const updated = await this.repository.markMet(businessId, tracker.id, now, breached);
 
       if (breached && !wasAlreadyBreached) {
         await this.onBreachDetected(businessId, updated);
@@ -223,7 +223,7 @@ export class SlaService {
     const overdue = await this.repository.findOverdueUnmetTrackers(businessId, now, SWEEP_BATCH_SIZE);
 
     for (const tracker of overdue) {
-      const updated = await this.repository.markBreachedOnly(tracker.id, now);
+      const updated = await this.repository.markBreachedOnly(businessId, tracker.id, now);
       await this.onBreachDetected(businessId, updated);
     }
 
@@ -273,7 +273,7 @@ export class SlaService {
       this.eventEmitter.emit('sla.escalated', event);
     }
 
-    await this.repository.markEscalated(breach.id, new Date());
+    await this.repository.markEscalated(businessId, breach.id, new Date());
   }
 
   // ───────────────────────────────────────────────────────────────────

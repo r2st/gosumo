@@ -888,7 +888,7 @@ export class BookingService {
     if (!connection) {
       throw new NotFoundException('No Google Calendar connection found');
     }
-    await this.repository.deleteConnection(connection.id);
+    await this.repository.deleteConnection(businessId, connection.id);
     this.logger.log(`Google Calendar disconnected for business ${businessId}`);
   }
 
@@ -946,7 +946,7 @@ export class BookingService {
       }
     }
 
-    await this.repository.updateConnection(connection.id, {
+    await this.repository.updateConnection(businessId, connection.id, {
       last_synced_at: new Date(),
       last_sync_error: null,
     });
@@ -1210,7 +1210,7 @@ export class BookingService {
     const refreshed = await this.googleCalendar.refreshAccessToken(
       connection.refresh_token,
     );
-    await this.repository.updateConnection(connection.id, {
+    await this.repository.updateConnection(connection.business_id, connection.id, {
       access_token: refreshed.accessToken,
       refresh_token: refreshed.refreshToken,
       token_expires_at: refreshed.expiresAt,
@@ -1226,7 +1226,7 @@ export class BookingService {
   ): Promise<void> {
     const message = err instanceof Error ? err.message : String(err);
     await this.repository
-      .updateConnection(connection.id, { last_sync_error: message })
+      .updateConnection(businessId, connection.id, { last_sync_error: message })
       .catch(() => undefined);
 
     const event: TaskCreatedEvent = {

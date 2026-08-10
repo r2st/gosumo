@@ -186,7 +186,7 @@ export class SheetsExportService {
         >,
         externalRef: ensured.spreadsheetId,
       });
-      await this.repository.recordSync(conn.id, null);
+      await this.repository.recordSync(businessId, conn.id, null);
 
       this.emit<RealtySheetsExportedEvent>('realty.sheets.exported', {
         ...this.base(businessId),
@@ -209,7 +209,7 @@ export class SheetsExportService {
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      await this.repository.recordSync(conn.id, message);
+      await this.repository.recordSync(businessId, conn.id, message);
       this.logger.error(`Sheets export failed for ${businessId}: ${message}`);
       throw err;
     }

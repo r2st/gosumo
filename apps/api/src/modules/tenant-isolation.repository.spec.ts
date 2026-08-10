@@ -1,5 +1,5 @@
 /**
- * Cross-module tenant-isolation tests for repository writes.
+ * Cross-module tenant-isolation tests for repository queries.
  *
  * Root rule (CLAUDE.md #1): every WHERE clause on a tenant table must include
  * `businessId`. Historically many repository mutators accepted a `businessId`
@@ -12,18 +12,38 @@
  * is the layer the rule is written about. PrismaService is mocked; the
  * assertion is on the query shape, not on a database result.
  *
+ * `repository-contract.spec.ts` is the exhaustive sweep — it drives every
+ * method on every repository and fails on any unscoped query. This file is the
+ * targeted counterpart: it names each closed hole, pins the exact predicate,
+ * and asserts the tenant is the one *passed in* rather than a captured
+ * constant — a distinction the sweep cannot make for a method it drives with a
+ * single tenant id.
+ *
  * Adding a new tenant-scoped mutator? Add it to CASES below.
  */
 
 import { Test, TestingModule } from '@nestjs/testing';
 
 import { PrismaService } from './../common/services/prisma.service';
+import { AddressRepository } from './order/address.repository';
+import { AiEngineRepository } from './ai-engine/ai-engine.repository';
+import { AuthRepository } from './auth/auth.repository';
+import { BookingRepository } from './booking/booking.repository';
 import { CannedResponseRepository } from './canned-response/canned-response.repository';
+import { CartRepository } from './order/cart.repository';
 import { CatalogRepository } from './catalog/catalog.repository';
+import { ClientIntelligenceRepository } from './client-intelligence/client-intelligence.repository';
 import { ContactRepository } from './contact/contact.repository';
 import { ConversationRepository } from './conversation/conversation.repository';
 import { CouponRepository } from './order/coupon.repository';
+import { HitlRepository } from './hitl/hitl.repository';
 import { MessageRepository } from './message/message.repository';
+import { NotificationRepository } from './notification/notification.repository';
+import { OrderRepository } from './order/order.repository';
+import { PaymentRepository } from './payment/payment.repository';
+import { RealtyDlqRepository } from './realty-hardening/realty-dlq.repository';
+import { RealtyExchangeRepository } from './realty-exchange/realty-exchange.repository';
+import { RealtyIntegrationsRepository } from './realty-integrations/realty-integrations.repository';
 import { RealtyInventoryRepository } from './realty-inventory/realty-inventory.repository';
 import { RealtyLeadsRepository } from './realty-leads/realty-leads.repository';
 import { SlaRepository } from './sla/sla.repository';
@@ -179,6 +199,221 @@ const CASES: Case[] = [
     repo: CatalogRepository,
     run: (r: CatalogRepository, b, id) => r.softDeleteVariant(b, id),
   },
+
+  // ── Closed in round 3 ──────────────────────────────────────────────
+  //
+  // Each of these previously wrote by primary key alone. Most were preceded by
+  // a scoped `findFirst`, which made them safe in the shape they happened to be
+  // in; the rest never received a `businessId` at all. Both classes are pinned
+  // here so a future edit cannot quietly reopen the gap.
+
+  {
+    name: 'AddressRepository.update',
+    repo: AddressRepository,
+    run: (r: AddressRepository, b, id) => r.update(b, id, { city: 'Pune' }),
+  },
+  {
+    name: 'AddressRepository.softDelete',
+    repo: AddressRepository,
+    run: (r: AddressRepository, b, id) => r.softDelete(b, id),
+  },
+  {
+    name: 'AuthRepository.updateTeamMember',
+    repo: AuthRepository,
+    run: (r: AuthRepository, b, id) => r.updateTeamMember(b, id, { name: 'x' }),
+  },
+  {
+    name: 'AuthRepository.updateLastLogin',
+    repo: AuthRepository,
+    run: (r: AuthRepository, b, id) => r.updateLastLogin(b, id),
+  },
+  {
+    name: 'AuthRepository.linkGoogleAccount',
+    repo: AuthRepository,
+    run: (r: AuthRepository, b, id) => r.linkGoogleAccount(b, id, 'google-1', null),
+  },
+  {
+    name: 'BookingRepository.updateBooking',
+    repo: BookingRepository,
+    run: (r: BookingRepository, b, id) => r.updateBooking(b, id, { notes: 'x' }),
+  },
+  {
+    name: 'BookingRepository.deleteBlock',
+    repo: BookingRepository,
+    run: (r: BookingRepository, b, id) => r.deleteBlock(b, id),
+  },
+  {
+    name: 'BookingRepository.updateConnection',
+    repo: BookingRepository,
+    run: (r: BookingRepository, b, id) => r.updateConnection(b, id, { sync_enabled: false }),
+  },
+  {
+    name: 'BookingRepository.deleteConnection',
+    repo: BookingRepository,
+    run: (r: BookingRepository, b, id) => r.deleteConnection(b, id),
+  },
+  {
+    name: 'CartRepository.updateItemQuantity',
+    repo: CartRepository,
+    run: (r: CartRepository, b, id) => r.updateItemQuantity(b, id, 2),
+  },
+  {
+    name: 'CartRepository.removeItem',
+    repo: CartRepository,
+    run: (r: CartRepository, b, id) => r.removeItem(b, id),
+  },
+  {
+    name: 'CartRepository.clearItems',
+    repo: CartRepository,
+    run: (r: CartRepository, b, id) => r.clearItems(b, id),
+  },
+  {
+    name: 'CartRepository.clearCoupon',
+    repo: CartRepository,
+    run: (r: CartRepository, b, id) => r.clearCoupon(b, id),
+  },
+  {
+    name: 'CartRepository.markConverted',
+    repo: CartRepository,
+    run: (r: CartRepository, b, id) => r.markConverted(b, id, RECORD_ID),
+  },
+  {
+    name: 'CartRepository.touch',
+    repo: CartRepository,
+    run: (r: CartRepository, b, id) => r.touch(b, id),
+  },
+  {
+    name: 'CatalogRepository.updateItem',
+    repo: CatalogRepository,
+    run: (r: CatalogRepository, b, id) => r.updateItem(b, id, { name: 'x' }),
+  },
+  {
+    name: 'CatalogRepository.updateItemStock',
+    repo: CatalogRepository,
+    run: (r: CatalogRepository, b, id) => r.updateItemStock(b, id, -1),
+  },
+  {
+    name: 'CatalogRepository.updateVariantStock',
+    repo: CatalogRepository,
+    run: (r: CatalogRepository, b, id) => r.updateVariantStock(b, id, -1),
+  },
+  {
+    name: 'ClientIntelligenceRepository.updateClientProfile',
+    repo: ClientIntelligenceRepository,
+    run: (r: ClientIntelligenceRepository, b, id) => r.updateClientProfile(b, id, { name: 'x' }),
+  },
+  {
+    name: 'ClientIntelligenceRepository.updateIntelligenceScores',
+    repo: ClientIntelligenceRepository,
+    run: (r: ClientIntelligenceRepository, b, id) =>
+      r.updateIntelligenceScores(b, id, { ltvScore: 10 }),
+  },
+  {
+    name: 'ConversationRepository.update',
+    repo: ConversationRepository,
+    run: (r: ConversationRepository, b, id) => r.update(b, id, { subject: 'x' }),
+  },
+  {
+    name: 'ConversationRepository.updateLastMessageAt',
+    repo: ConversationRepository,
+    run: (r: ConversationRepository, b, id) => r.updateLastMessageAt(b, id, new Date(0)),
+  },
+  {
+    name: 'ConversationRepository.incrementHumanMessageCount',
+    repo: ConversationRepository,
+    run: (r: ConversationRepository, b, id) => r.incrementHumanMessageCount(b, id),
+  },
+  {
+    name: 'CouponRepository.incrementUsage',
+    repo: CouponRepository,
+    run: (r: CouponRepository, b, id) => r.incrementUsage(b, id),
+  },
+  {
+    name: 'HitlRepository.updateTask',
+    repo: HitlRepository,
+    run: (r: HitlRepository, b, id) => r.updateTask(b, id, { priority: 'HIGH' as never }),
+  },
+  {
+    name: 'MessageRepository.setReactions',
+    repo: MessageRepository,
+    run: (r: MessageRepository, b, id) => r.setReactions(b, id, []),
+  },
+  {
+    name: 'OrderRepository.updateOrderStatus',
+    repo: OrderRepository,
+    run: (r: OrderRepository, b, id) => r.updateOrderStatus(b, id, 'CONFIRMED' as never),
+  },
+  {
+    name: 'PaymentRepository.updatePaymentStatus',
+    repo: PaymentRepository,
+    run: (r: PaymentRepository, b, id) => r.updatePaymentStatus(b, id, { status: 'PAID' }),
+  },
+  {
+    name: 'PaymentRepository.updateRefundStatus',
+    repo: PaymentRepository,
+    run: (r: PaymentRepository, b, id) => r.updateRefundStatus(b, id, { status: 'PROCESSED' }),
+  },
+  {
+    name: 'PaymentRepository.updateInvoiceStatus',
+    repo: PaymentRepository,
+    run: (r: PaymentRepository, b, id) => r.updateInvoiceStatus(b, id, { status: 'PAID' }),
+  },
+  {
+    name: 'RealtyDlqRepository.update',
+    repo: RealtyDlqRepository,
+    run: (r: RealtyDlqRepository, b, id) => r.update(b, id, { attempts: 2 }),
+  },
+  {
+    name: 'RealtyExchangeRepository.updateResaleListing',
+    repo: RealtyExchangeRepository,
+    run: (r: RealtyExchangeRepository, b, id) => r.updateResaleListing(b, id, { locality: 'x' }),
+  },
+  {
+    name: 'RealtyExchangeRepository.softDeleteResaleListing',
+    repo: RealtyExchangeRepository,
+    run: (r: RealtyExchangeRepository, b, id) => r.softDeleteResaleListing(b, id),
+  },
+  {
+    name: 'RealtyIntegrationsRepository.recordSync',
+    repo: RealtyIntegrationsRepository,
+    run: (r: RealtyIntegrationsRepository, b, id) => r.recordSync(b, id, null),
+  },
+  {
+    name: 'SlaRepository.markMet',
+    repo: SlaRepository,
+    run: (r: SlaRepository, b, id) => r.markMet(b, id, new Date(0), false),
+  },
+  {
+    name: 'SlaRepository.markBreachedOnly',
+    repo: SlaRepository,
+    run: (r: SlaRepository, b, id) => r.markBreachedOnly(b, id, new Date(0)),
+  },
+  {
+    name: 'SlaRepository.markEscalated',
+    repo: SlaRepository,
+    run: (r: SlaRepository, b, id) => r.markEscalated(b, id, new Date(0)),
+  },
+];
+
+/**
+ * Syndications are two-party by construction: the originator writes through
+ * `business_id`, the counterparty through `to_business_id`. A predicate pinned
+ * to `business_id` alone would lock the counterparty out of the transitions it
+ * legitimately drives, so these are asserted separately from the CASES sweep —
+ * the requirement is that the write names the caller on *one* of the two sides,
+ * never that it names no side at all.
+ */
+const TWO_PARTY_CASES: Case[] = [
+  {
+    name: 'RealtyExchangeRepository.updateSyndication',
+    repo: RealtyExchangeRepository,
+    run: (r: RealtyExchangeRepository, b, id) => r.updateSyndication(b, id, { state: 'CLOSED' as never }),
+  },
+  {
+    name: 'RealtyExchangeRepository.softDeleteSyndication',
+    repo: RealtyExchangeRepository,
+    run: (r: RealtyExchangeRepository, b, id) => r.softDeleteSyndication(b, id),
+  },
 ];
 
 describe('Repository tenant isolation — mutations carry a business_id predicate', () => {
@@ -217,6 +452,135 @@ describe('Repository tenant isolation — mutations carry a business_id predicat
         ['update', 'updateMany', 'delete', 'deleteMany'].includes(c.op),
       );
       for (const call of writes) {
+        const where = call.args['where'] as Record<string, unknown>;
+        expect(where['business_id']).toBe(OTHER_BUSINESS_ID);
+      }
+    },
+  );
+});
+
+describe('Repository tenant isolation — two-party exchange writes', () => {
+  it.each(TWO_PARTY_CASES.map((c) => [c.name, c] as const))(
+    '%s names the caller on one side of the deal',
+    async (_name, testCase) => {
+      const { prisma, calls } = makeRecordingPrisma();
+      const repo = await buildRepo(testCase.repo, prisma);
+
+      await testCase.run(repo as never, BUSINESS_ID, RECORD_ID);
+
+      const writes = calls.filter((c) => c.op === 'update' || c.op === 'updateMany');
+      expect(writes.length).toBeGreaterThan(0);
+
+      for (const call of writes) {
+        const where = call.args['where'] as Record<string, unknown>;
+        const or = where['OR'] as Array<Record<string, unknown>> | undefined;
+        expect(or).toBeDefined();
+        // Exactly the originator column and the counterparty column, both
+        // pinned to the caller — not an open predicate that any business
+        // satisfies.
+        expect(or).toEqual([
+          { business_id: BUSINESS_ID },
+          { to_business_id: BUSINESS_ID },
+        ]);
+      }
+    },
+  );
+
+  it.each(TWO_PARTY_CASES.map((c) => [c.name, c] as const))(
+    '%s cannot be driven by a business that is party to neither side',
+    async (_name, testCase) => {
+      const { prisma, calls } = makeRecordingPrisma();
+      const repo = await buildRepo(testCase.repo, prisma);
+
+      await testCase.run(repo as never, OTHER_BUSINESS_ID, RECORD_ID);
+
+      for (const call of calls.filter((c) => c.op === 'update' || c.op === 'updateMany')) {
+        const where = call.args['where'] as Record<string, unknown>;
+        // Whatever the caller passed is what both sides are tested against, so
+        // an outsider matches no row rather than matching every row.
+        expect(where['OR']).toEqual([
+          { business_id: OTHER_BUSINESS_ID },
+          { to_business_id: OTHER_BUSINESS_ID },
+        ]);
+        expect(JSON.stringify(where)).not.toContain(BUSINESS_ID);
+      }
+    },
+  );
+});
+
+/**
+ * Reads whose signature gained a `businessId` in round 3.
+ *
+ * These were the sharper half of the gap: a write by bare primary key needs an
+ * attacker to know an id, but an unscoped read on `external_id` or
+ * `conversation_id` hands back another business's rows for an identifier the
+ * other business chose. Each is asserted to put the tenant in the query itself
+ * rather than filtering the result afterwards.
+ */
+describe('Repository tenant isolation — reads closed in round 3', () => {
+  const READ_CASES: Case[] = [
+    {
+      name: 'AuthRepository.findTeamMemberById',
+      repo: AuthRepository,
+      run: (r: AuthRepository, b, id) => r.findTeamMemberById(b, id),
+    },
+    {
+      name: 'MessageRepository.findByExternalId',
+      repo: MessageRepository,
+      run: (r: MessageRepository, b) => r.findByExternalId(b, 'wamid.external'),
+    },
+    {
+      name: 'MessageRepository.getLastN',
+      repo: MessageRepository,
+      run: (r: MessageRepository, b, id) => r.getLastN(b, id, 10),
+    },
+    {
+      name: 'CartRepository.findItemByProduct',
+      repo: CartRepository,
+      run: (r: CartRepository, b, id) => r.findItemByProduct(b, id, RECORD_ID, null),
+    },
+    {
+      name: 'AiEngineRepository.getLastMessages',
+      repo: AiEngineRepository,
+      run: (r: AiEngineRepository, b, id) => r.getLastMessages(b, id, 10),
+    },
+    {
+      name: 'AiEngineRepository.getRecentIntents',
+      repo: AiEngineRepository,
+      run: (r: AiEngineRepository, b, id) => r.getRecentIntents(b, id, 10),
+    },
+    {
+      name: 'NotificationRepository.listActiveTriggersForEvent',
+      repo: NotificationRepository,
+      run: (r: NotificationRepository, b) => r.listActiveTriggersForEvent(b, 'order.created'),
+    },
+  ];
+
+  it.each(READ_CASES.map((c) => [c.name, c] as const))(
+    '%s filters on business_id in the query, not after it',
+    async (_name, testCase) => {
+      const { prisma, calls } = makeRecordingPrisma();
+      const repo = await buildRepo(testCase.repo, prisma);
+
+      await testCase.run(repo as never, BUSINESS_ID, RECORD_ID);
+
+      const reads = calls.filter((c) => c.op === 'findFirst' || c.op === 'findMany');
+      expect(reads.length).toBeGreaterThan(0);
+      for (const call of reads) {
+        expect(call.args['where']).toMatchObject({ business_id: BUSINESS_ID });
+      }
+    },
+  );
+
+  it.each(READ_CASES.map((c) => [c.name, c] as const))(
+    '%s reads the business it was handed, never a remembered one',
+    async (_name, testCase) => {
+      const { prisma, calls } = makeRecordingPrisma();
+      const repo = await buildRepo(testCase.repo, prisma);
+
+      await testCase.run(repo as never, OTHER_BUSINESS_ID, RECORD_ID);
+
+      for (const call of calls.filter((c) => c.op === 'findFirst' || c.op === 'findMany')) {
         const where = call.args['where'] as Record<string, unknown>;
         expect(where['business_id']).toBe(OTHER_BUSINESS_ID);
       }

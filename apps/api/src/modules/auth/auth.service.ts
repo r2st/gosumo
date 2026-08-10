@@ -114,9 +114,11 @@ export class AuthService {
 
     await this.clearFailedAttempts(email);
 
-    this.authRepository.updateLastLogin(teamMember.id).catch((err: Error) => {
-      this.logger.warn(`Failed to update last login for ${teamMember.id}: ${err.message}`);
-    });
+    this.authRepository
+      .updateLastLogin(teamMember.business_id, teamMember.id)
+      .catch((err: Error) => {
+        this.logger.warn(`Failed to update last login for ${teamMember.id}: ${err.message}`);
+      });
 
     this.logger.log(`Login: ${email}`);
 
@@ -136,6 +138,7 @@ export class AuthService {
       const byEmail = await this.authRepository.findTeamMemberByEmail(profile.email);
       if (byEmail) {
         teamMember = await this.authRepository.linkGoogleAccount(
+          byEmail.business_id,
           byEmail.id,
           profile.googleId,
           profile.avatarUrl,
@@ -163,9 +166,11 @@ export class AuthService {
       throw new UnauthorizedException('Account has been suspended');
     }
 
-    this.authRepository.updateLastLogin(teamMember.id).catch((err: Error) => {
-      this.logger.warn(`Failed to update last login for ${teamMember.id}: ${err.message}`);
-    });
+    this.authRepository
+      .updateLastLogin(teamMember.business_id, teamMember.id)
+      .catch((err: Error) => {
+        this.logger.warn(`Failed to update last login for ${teamMember.id}: ${err.message}`);
+      });
 
     return this.issueTokensForNewSession(teamMember, meta);
   }
@@ -199,7 +204,10 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token has been revoked');
     }
 
-    const teamMember = await this.authRepository.findTeamMemberById(payload.sub);
+    const teamMember = await this.authRepository.findTeamMemberById(
+      payload.businessId,
+      payload.sub,
+    );
     if (!teamMember) {
       throw new UnauthorizedException('User account not found');
     }
@@ -241,7 +249,10 @@ export class AuthService {
   // Profile
   // ─────────────────────────────────────────────
 
-  async getProfile(userId: string): Promise<{
+  async getProfile(
+    businessId: string,
+    userId: string,
+  ): Promise<{
     id: string;
     email: string;
     name: string;
@@ -255,7 +266,7 @@ export class AuthService {
     lastLoginAt: Date | null;
     loginCount: number;
   }> {
-    const teamMember = await this.authRepository.findTeamMemberById(userId);
+    const teamMember = await this.authRepository.findTeamMemberById(businessId, userId);
     if (!teamMember) {
       throw new NotFoundException('User not found');
     }
@@ -280,8 +291,12 @@ export class AuthService {
   // Change password
   // ─────────────────────────────────────────────
 
-  async changePassword(userId: string, dto: ChangePasswordDto): Promise<void> {
-    const teamMember = await this.authRepository.findTeamMemberById(userId);
+  async changePassword(
+    businessId: string,
+    userId: string,
+    dto: ChangePasswordDto,
+  ): Promise<void> {
+    const teamMember = await this.authRepository.findTeamMemberById(businessId, userId);
     if (!teamMember) {
       throw new NotFoundException('User not found');
     }
@@ -295,7 +310,9 @@ export class AuthService {
     }
 
     const newHash = await this.hashPassword(dto.newPassword);
-    await this.authRepository.updateTeamMember(userId, { password_hash: newHash });
+    await this.authRepository.updateTeamMember(businessId, userId, {
+      password_hash: newHash,
+    });
 
     // Force re-login everywhere after a password change.
     await this.sessionService.revokeAllSessions(userId);
@@ -321,9 +338,11 @@ export class AuthService {
 
     const token = crypto.randomBytes(32).toString('hex');
     const tokenHash = this.hashToken(token);
+    // Store the tenant alongside the user so the redemption path can scope its
+    // lookup and its write. A bare user id would force an unscoped read.
     await this.redis.set(
       passwordResetKey(tokenHash),
-      teamMember.id,
+      `${teamMember.business_id}:${teamMember.id}`,
       'EX',
       PASSWORD_RESET_TTL_SECONDS,
     );
@@ -338,19 +357,35 @@ export class AuthService {
     const tokenHash = this.hashToken(dto.token);
     const key = passwordResetKey(tokenHash);
 
-    const userId = await this.redis.get(key);
-    if (!userId) {
+    const stored = await this.redis.get(key);
+    if (!stored) {
       throw new BadRequestException('Invalid or expired reset token');
     }
 
-    const teamMember = await this.authRepository.findTeamMemberById(userId);
+    // `businessId:userId`. A value in any other shape predates the tenant-scoped
+    // format and is refused rather than redeemed without a tenant.
+    const separator = stored.indexOf(':');
+    if (separator <= 0) {
+      await this.redis.del(key);
+      throw new BadRequestException('Invalid or expired reset token');
+    }
+    const businessId = stored.slice(0, separator);
+    const userId = stored.slice(separator + 1);
+    if (!userId) {
+      await this.redis.del(key);
+      throw new BadRequestException('Invalid or expired reset token');
+    }
+
+    const teamMember = await this.authRepository.findTeamMemberById(businessId, userId);
     if (!teamMember) {
       await this.redis.del(key);
       throw new BadRequestException('Invalid or expired reset token');
     }
 
     const newHash = await this.hashPassword(dto.newPassword);
-    await this.authRepository.updateTeamMember(userId, { password_hash: newHash });
+    await this.authRepository.updateTeamMember(businessId, userId, {
+      password_hash: newHash,
+    });
 
     // Single-use token + revoke every session so old credentials are dead.
     await this.redis.del(key);

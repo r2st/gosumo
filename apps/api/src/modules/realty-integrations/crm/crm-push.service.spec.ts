@@ -155,7 +155,7 @@ describe('CrmPushService', () => {
 
       await service.pushLead(BUSINESS_ID, LEAD_ID, 'created');
 
-      expect(repo.recordSync).toHaveBeenCalledWith('conn-SELLDO', 'boom', 0);
+      expect(repo.recordSync).toHaveBeenCalledWith(BUSINESS_ID, 'conn-SELLDO', 'boom', 0);
       expect(emitter.emit).toHaveBeenCalledWith(
         'realty.crm.push_failed',
         expect.objectContaining({ error: 'boom' }),

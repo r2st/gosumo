@@ -37,13 +37,20 @@ export class AuthRepository {
   }
 
   /**
-   * Find a team member by ID.
-   * Used for profile retrieval and token refresh.
+   * Find a team member by ID within a business.
+   * Used for profile retrieval and token refresh — both of which already know
+   * the tenant, either from the verified JWT or from the reset-token record.
+   * Scoping here means a user id that has been moved to another business (or
+   * simply guessed) cannot be read through a token minted for a different one.
    */
-  async findTeamMemberById(id: string): Promise<TeamMemberWithBusiness | null> {
+  async findTeamMemberById(
+    businessId: string,
+    id: string,
+  ): Promise<TeamMemberWithBusiness | null> {
     return this.prisma.team_members.findFirst({
       where: {
         id,
+        business_id: businessId,
         deleted_at: null,
       },
       include: {
@@ -115,12 +122,13 @@ export class AuthRepository {
    * password later signs in with Google using the same email.
    */
   async linkGoogleAccount(
+    businessId: string,
     id: string,
     googleId: string,
     avatarUrl: string | null,
   ): Promise<TeamMemberWithBusiness> {
     return this.prisma.team_members.update({
-      where: { id },
+      where: { id, business_id: businessId },
       data: {
         google_id: googleId,
         auth_provider: AuthProvider.GOOGLE,
@@ -181,11 +189,12 @@ export class AuthRepository {
    * Partial update of a team member record.
    */
   async updateTeamMember(
+    businessId: string,
     id: string,
     data: Prisma.team_membersUpdateInput,
   ): Promise<team_members> {
     return this.prisma.team_members.update({
-      where: { id },
+      where: { id, business_id: businessId },
       data,
     });
   }
@@ -193,9 +202,9 @@ export class AuthRepository {
   /**
    * Update last login timestamp and increment login count.
    */
-  async updateLastLogin(id: string): Promise<void> {
+  async updateLastLogin(businessId: string, id: string): Promise<void> {
     await this.prisma.team_members.update({
-      where: { id },
+      where: { id, business_id: businessId },
       data: {
         last_login_at: new Date(),
         login_count: { increment: 1 },

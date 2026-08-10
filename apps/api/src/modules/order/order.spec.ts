@@ -460,7 +460,7 @@ describe('OrderService', () => {
         CLIENT_ID,
         100000,
       );
-      expect(couponService.redeem).toHaveBeenCalledWith(COUPON_ID);
+      expect(couponService.redeem).toHaveBeenCalledWith(BUSINESS_ID, COUPON_ID);
 
       const createCall = repository.createOrder.mock.calls[0]?.[0];
       expect(createCall?.discountAmount).toBe(200); // 20000 paise = 200 INR

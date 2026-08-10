@@ -338,7 +338,7 @@ export class OrderService {
 
     // Step 7: Record coupon redemption now that the order exists
     if (appliedCouponId) {
-      await this.couponService.redeem(appliedCouponId);
+      await this.couponService.redeem(businessId, appliedCouponId);
     }
 
     // Step 6: Emit order.created event

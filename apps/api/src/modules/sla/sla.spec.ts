@@ -253,10 +253,19 @@ describe('SlaService', () => {
 
       await service.handleMessageSent(event);
 
-      expect(repo.markMet).toHaveBeenCalledWith(TRACKER_ID, expect.any(Date), true);
+      expect(repo.markMet).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        TRACKER_ID,
+        expect.any(Date),
+        true,
+      );
       expect(emitter.emit).toHaveBeenCalledWith('sla.breached', expect.objectContaining({ type: 'sla.breached' }));
       expect(emitter.emit).toHaveBeenCalledWith('sla.escalated', expect.objectContaining({ action: 'NOTIFY' }));
-      expect(repo.markEscalated).toHaveBeenCalledWith(TRACKER_ID, expect.any(Date));
+      expect(repo.markEscalated).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        TRACKER_ID,
+        expect.any(Date),
+      );
       jest.useRealTimers();
     });
 
@@ -267,7 +276,12 @@ describe('SlaService', () => {
 
       await service.handleMessageSent(event);
 
-      expect(repo.markMet).toHaveBeenCalledWith(TRACKER_ID, expect.any(Date), false);
+      expect(repo.markMet).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        TRACKER_ID,
+        expect.any(Date),
+        false,
+      );
       expect(emitter.emit).not.toHaveBeenCalled();
       jest.useRealTimers();
     });

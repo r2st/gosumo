@@ -243,7 +243,7 @@ export class CouponService {
    * Record a successful redemption — increments the global usage counter.
    * Per-client tracking is derived from orders carrying the discount code.
    */
-  async redeem(couponId: string): Promise<void> {
-    await this.repository.incrementUsage(couponId);
+  async redeem(businessId: string, couponId: string): Promise<void> {
+    await this.repository.incrementUsage(businessId, couponId);
   }
 }

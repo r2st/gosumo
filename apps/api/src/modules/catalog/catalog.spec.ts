@@ -775,7 +775,7 @@ describe('CatalogService', () => {
 
       const result = await service.updateStock(BUSINESS_ID, ITEM_ID, { delta: -5 });
 
-      expect(repository.updateItemStock).toHaveBeenCalledWith(ITEM_ID, -5);
+      expect(repository.updateItemStock).toHaveBeenCalledWith(BUSINESS_ID, ITEM_ID, -5);
       expect(result.stockQuantity).toBe(45);
       expect(result.trackInventory).toBe(true);
       expect(result.isOutOfStock).toBe(false);
@@ -834,7 +834,11 @@ describe('CatalogService', () => {
         variantId: VARIANT_ID,
       });
 
-      expect(repository.updateVariantStock).toHaveBeenCalledWith(VARIANT_ID, -5);
+      expect(repository.updateVariantStock).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        VARIANT_ID,
+        -5,
+      );
       expect(result.variantId).toBe(VARIANT_ID);
       expect(result.stockQuantity).toBe(15);
     });
@@ -924,7 +928,7 @@ describe('CatalogService', () => {
 
       await service.handleOrderCreated(makeOrderEvent([{ itemId: ITEM_ID, quantity: 2 }]) as never);
 
-      expect(repository.updateItemStock).toHaveBeenCalledWith(ITEM_ID, -2);
+      expect(repository.updateItemStock).toHaveBeenCalledWith(BUSINESS_ID, ITEM_ID, -2);
     });
 
     it('skips items that do not track inventory', async () => {
@@ -971,7 +975,7 @@ describe('CatalogService', () => {
         lineItems: [{ itemId: ITEM_ID, quantity: 2 }],
       } as never);
 
-      expect(repository.updateItemStock).toHaveBeenCalledWith(ITEM_ID, 2);
+      expect(repository.updateItemStock).toHaveBeenCalledWith(BUSINESS_ID, ITEM_ID, 2);
     });
   });
 

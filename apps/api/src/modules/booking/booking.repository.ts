@@ -276,7 +276,7 @@ export class BookingRepository {
       throw new Error(`Booking ${bookingId} not found for business ${businessId}`);
     }
     return this.prisma.bookings.update({
-      where: { id: bookingId },
+      where: { id: bookingId, business_id: businessId },
       data,
       include: { client: true },
     });
@@ -350,7 +350,7 @@ export class BookingRepository {
 
     if (existing) {
       return this.prisma.booking_availability.update({
-        where: { id: existing.id },
+        where: { id: existing.id, business_id: businessId },
         data: payload,
       });
     }
@@ -393,7 +393,7 @@ export class BookingRepository {
       throw new Error(`Blocked slot ${blockId} not found for business ${businessId}`);
     }
     await this.prisma.booking_blocked_slots.update({
-      where: { id: blockId },
+      where: { id: blockId, business_id: businessId },
       data: { deleted_at: new Date() },
     });
   }
@@ -464,7 +464,7 @@ export class BookingRepository {
     };
     if (existing) {
       return this.prisma.booking_calendar_connections.update({
-        where: { id: existing.id },
+        where: { id: existing.id, business_id: businessId },
         data: payload,
       });
     }
@@ -479,18 +479,19 @@ export class BookingRepository {
   }
 
   async updateConnection(
+    businessId: string,
     connectionId: string,
     data: Prisma.booking_calendar_connectionsUpdateInput,
   ): Promise<booking_calendar_connections> {
     return this.prisma.booking_calendar_connections.update({
-      where: { id: connectionId },
+      where: { id: connectionId, business_id: businessId },
       data,
     });
   }
 
-  async deleteConnection(connectionId: string): Promise<void> {
+  async deleteConnection(businessId: string, connectionId: string): Promise<void> {
     await this.prisma.booking_calendar_connections.update({
-      where: { id: connectionId },
+      where: { id: connectionId, business_id: businessId },
       data: { deleted_at: new Date(), sync_enabled: false },
     });
   }

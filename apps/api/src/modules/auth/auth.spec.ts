@@ -286,7 +286,10 @@ describe('AuthService', () => {
     it('should return user profile with business info', async () => {
       mockAuthRepository.findTeamMemberById.mockResolvedValue(mockTeamMember);
 
-      const profile = await service.getProfile(mockTeamMember.id);
+      const profile = await service.getProfile(
+        mockTeamMember.business_id,
+        mockTeamMember.id,
+      );
 
       expect(profile).toEqual({
         id: mockTeamMember.id,
@@ -308,7 +311,7 @@ describe('AuthService', () => {
       mockAuthRepository.findTeamMemberById.mockResolvedValue(null);
 
       await expect(
-        service.getProfile('non-existent-id'),
+        service.getProfile(mockTeamMember.business_id, 'non-existent-id'),
       ).rejects.toThrow(NotFoundException);
     });
   });
@@ -318,7 +321,7 @@ describe('AuthService', () => {
       mockAuthRepository.findTeamMemberById.mockResolvedValue(mockTeamMember);
       mockAuthRepository.updatePassword.mockResolvedValue(undefined);
 
-      await service.changePassword(mockTeamMember.id, {
+      await service.changePassword(mockTeamMember.business_id, mockTeamMember.id, {
         currentPassword: 'Test1234!',
         newPassword: 'NewPass567!',
       });
@@ -330,7 +333,7 @@ describe('AuthService', () => {
       mockAuthRepository.findTeamMemberById.mockResolvedValue(mockTeamMember);
 
       await expect(
-        service.changePassword(mockTeamMember.id, {
+        service.changePassword(mockTeamMember.business_id, mockTeamMember.id, {
           currentPassword: 'WrongOld1!',
           newPassword: 'NewPass567!',
         }),
@@ -341,7 +344,7 @@ describe('AuthService', () => {
       mockAuthRepository.findTeamMemberById.mockResolvedValue(null);
 
       await expect(
-        service.changePassword('non-existent', {
+        service.changePassword(mockTeamMember.business_id, 'non-existent', {
           currentPassword: 'Test1234!',
           newPassword: 'NewPass567!',
         }),
@@ -525,6 +528,7 @@ describe('AuthService — Google OAuth', () => {
 
     expect(result).toHaveProperty('accessToken');
     expect(mockAuthRepository.linkGoogleAccount).toHaveBeenCalledWith(
+      mockTeamMember.business_id,
       mockTeamMember.id,
       'google-123',
       'https://example.com/avatar.jpg',

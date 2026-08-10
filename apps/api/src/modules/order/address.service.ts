@@ -137,7 +137,7 @@ export class AddressService {
       await this.repository.unsetDefaults(businessId, address.client_id);
     }
 
-    const updated = await this.repository.update(addressId, {
+    const updated = await this.repository.update(businessId, addressId, {
       recipientName: dto.recipientName,
       line1: dto.line1,
       line2: dto.line2,
@@ -156,7 +156,7 @@ export class AddressService {
     if (!address) {
       throw new NotFoundException(`Address not found: ${addressId}`);
     }
-    await this.repository.softDelete(addressId);
+    await this.repository.softDelete(businessId, addressId);
     this.logger.log(`Address ${addressId} soft-deleted`);
   }
 

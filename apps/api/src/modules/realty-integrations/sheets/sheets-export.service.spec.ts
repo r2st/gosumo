@@ -142,7 +142,7 @@ describe('SheetsExportService', () => {
       );
       const writtenTabs = sheets.writeSheet.mock.calls.map((c) => c[2]);
       expect(writtenTabs).toEqual([SHEET_TABS.LEADS, SHEET_TABS.INVENTORY]);
-      expect(repo.recordSync).toHaveBeenCalledWith('conn-1', null);
+      expect(repo.recordSync).toHaveBeenCalledWith(BUSINESS_ID, 'conn-1', null);
       expect(emitter.emit).toHaveBeenCalledWith(
         'realty.sheets.exported',
         expect.objectContaining({ leadsExported: 1, unitsExported: 1, scheduled: false }),
@@ -163,7 +163,7 @@ describe('SheetsExportService', () => {
       repo.recordSync.mockResolvedValue(makeConnection());
 
       await expect(service.exportForBusiness(BUSINESS_ID)).rejects.toThrow('google 403');
-      expect(repo.recordSync).toHaveBeenCalledWith('conn-1', 'google 403');
+      expect(repo.recordSync).toHaveBeenCalledWith(BUSINESS_ID, 'conn-1', 'google 403');
     });
   });
 

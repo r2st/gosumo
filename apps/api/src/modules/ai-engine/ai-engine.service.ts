@@ -138,7 +138,7 @@ export class AiEngineService {
     const text = context.messageText;
 
     const recentIntents = await this.repository
-      .getRecentIntents(dto.conversationId, LOOP_DETECTION_THRESHOLD * 2)
+      .getRecentIntents(businessId, dto.conversationId, LOOP_DETECTION_THRESHOLD * 2)
       .catch(() => [] as string[]);
     const actionsExecuted = await this.hasRecentAction(context);
 

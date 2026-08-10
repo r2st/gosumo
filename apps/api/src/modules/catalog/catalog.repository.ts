@@ -346,7 +346,7 @@ export class CatalogRepository {
     if (data.metadata !== undefined) updateData['metadata'] = data.metadata;
 
     return this.prisma.catalog_items.update({
-      where: { id: itemId },
+      where: { id: itemId, business_id: businessId },
       data: updateData,
       include: {
         category: true,
@@ -483,11 +483,12 @@ export class CatalogRepository {
    * Returns the updated item.
    */
   async updateItemStock(
+    businessId: string,
     itemId: string,
     delta: number,
   ): Promise<catalog_items> {
     return this.prisma.catalog_items.update({
-      where: { id: itemId },
+      where: { id: itemId, business_id: businessId },
       data: {
         stock_quantity: { increment: delta },
       },
@@ -581,11 +582,12 @@ export class CatalogRepository {
    * Atomically increment or decrement stock_quantity on a variant.
    */
   async updateVariantStock(
+    businessId: string,
     variantId: string,
     delta: number,
   ): Promise<catalog_variants> {
     return this.prisma.catalog_variants.update({
-      where: { id: variantId },
+      where: { id: variantId, business_id: businessId },
       data: {
         stock_quantity: { increment: delta },
       },

@@ -77,6 +77,7 @@ export class AddressRepository {
   }
 
   async update(
+    businessId: string,
     addressId: string,
     data: UpdateAddressData,
   ): Promise<shipping_addresses> {
@@ -92,14 +93,17 @@ export class AddressRepository {
     if (data.isDefault !== undefined) updateData.is_default = data.isDefault;
 
     return this.prisma.shipping_addresses.update({
-      where: { id: addressId },
+      where: { id: addressId, business_id: businessId },
       data: updateData,
     });
   }
 
-  async softDelete(addressId: string): Promise<shipping_addresses> {
+  async softDelete(
+    businessId: string,
+    addressId: string,
+  ): Promise<shipping_addresses> {
     return this.prisma.shipping_addresses.update({
-      where: { id: addressId },
+      where: { id: addressId, business_id: businessId },
       data: { deleted_at: new Date() },
     });
   }

@@ -172,9 +172,9 @@ export class CouponRepository {
   /**
    * Atomically increment the global redemption counter for a coupon.
    */
-  async incrementUsage(couponId: string): Promise<void> {
+  async incrementUsage(businessId: string, couponId: string): Promise<void> {
     await this.prisma.coupons.update({
-      where: { id: couponId },
+      where: { id: couponId, business_id: businessId },
       data: { usage_count: { increment: 1 } },
     });
   }

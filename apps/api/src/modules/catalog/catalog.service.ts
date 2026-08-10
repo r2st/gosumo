@@ -623,10 +623,14 @@ export class CatalogService {
       if (!variant) {
         throw new NotFoundException(`Variant ${dto.variantId} not found for item ${itemId}`);
       }
-      const updated = await this.repository.updateVariantStock(dto.variantId, dto.delta);
+      const updated = await this.repository.updateVariantStock(
+        businessId,
+        dto.variantId,
+        dto.delta,
+      );
       newStock = updated.stock_quantity ?? 0;
     } else {
-      const updated = await this.repository.updateItemStock(itemId, dto.delta);
+      const updated = await this.repository.updateItemStock(businessId, itemId, dto.delta);
       newStock = updated.stock_quantity ?? 0;
     }
 
@@ -761,9 +765,9 @@ export class CatalogService {
     if (!item || !item.track_inventory) return;
 
     if (variantId) {
-      await this.repository.updateVariantStock(variantId, -quantity);
+      await this.repository.updateVariantStock(businessId, variantId, -quantity);
     } else {
-      await this.repository.updateItemStock(itemId, -quantity);
+      await this.repository.updateItemStock(businessId, itemId, -quantity);
     }
 
     // Check stock levels after decrement
@@ -810,9 +814,9 @@ export class CatalogService {
     if (!item || !item.track_inventory) return;
 
     if (variantId) {
-      await this.repository.updateVariantStock(variantId, quantity);
+      await this.repository.updateVariantStock(businessId, variantId, quantity);
     } else {
-      await this.repository.updateItemStock(itemId, quantity);
+      await this.repository.updateItemStock(businessId, itemId, quantity);
     }
   }
 

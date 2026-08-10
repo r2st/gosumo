@@ -158,7 +158,7 @@ export class ClientIntelligenceRepository {
     if (existingContact) {
       // Update last_seen_at
       await this.prisma.channel_contacts.update({
-        where: { id: existingContact.id },
+        where: { id: existingContact.id, business_id: businessId },
         data: { last_seen_at: new Date() },
       });
 
@@ -287,7 +287,7 @@ export class ClientIntelligenceRepository {
     }
 
     const result = await this.prisma.clients.update({
-      where: { id: clientId },
+      where: { id: clientId, business_id: businessId },
       data: updateData,
       include: this.clientIncludes,
     });
@@ -501,7 +501,7 @@ export class ClientIntelligenceRepository {
     if (scores.engagementScore !== undefined) updateData['engagement_score'] = scores.engagementScore;
 
     const result = await this.prisma.clients.update({
-      where: { id: clientId },
+      where: { id: clientId, business_id: businessId },
       data: updateData,
       include: this.clientIncludes,
     });

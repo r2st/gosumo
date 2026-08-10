@@ -68,12 +68,18 @@ export class CartRepository {
    * Find an existing cart line for the same item + variant combination.
    */
   async findItemByProduct(
+    businessId: string,
     cartId: string,
     itemId: string,
     variantId: string | null,
   ): Promise<cart_items | null> {
     return this.prisma.cart_items.findFirst({
-      where: { cart_id: cartId, item_id: itemId, variant_id: variantId },
+      where: {
+        business_id: businessId,
+        cart_id: cartId,
+        item_id: itemId,
+        variant_id: variantId,
+      },
     });
   }
 
@@ -102,29 +108,35 @@ export class CartRepository {
   }
 
   async updateItemQuantity(
+    businessId: string,
     cartItemId: string,
     quantity: number,
   ): Promise<cart_items> {
     return this.prisma.cart_items.update({
-      where: { id: cartItemId },
+      where: { id: cartItemId, business_id: businessId },
       data: { quantity },
     });
   }
 
-  async removeItem(cartItemId: string): Promise<void> {
-    await this.prisma.cart_items.delete({ where: { id: cartItemId } });
+  async removeItem(businessId: string, cartItemId: string): Promise<void> {
+    await this.prisma.cart_items.delete({
+      where: { id: cartItemId, business_id: businessId },
+    });
   }
 
-  async clearItems(cartId: string): Promise<void> {
-    await this.prisma.cart_items.deleteMany({ where: { cart_id: cartId } });
+  async clearItems(businessId: string, cartId: string): Promise<void> {
+    await this.prisma.cart_items.deleteMany({
+      where: { cart_id: cartId, business_id: businessId },
+    });
   }
 
   async setCoupon(
+    businessId: string,
     cartId: string,
     coupon: { couponId: string; code: string; type: DiscountType; value: number },
   ): Promise<void> {
     await this.prisma.carts.update({
-      where: { id: cartId },
+      where: { id: cartId, business_id: businessId },
       data: {
         coupon_id: coupon.couponId,
         discount_code: coupon.code,
@@ -134,9 +146,9 @@ export class CartRepository {
     });
   }
 
-  async clearCoupon(cartId: string): Promise<void> {
+  async clearCoupon(businessId: string, cartId: string): Promise<void> {
     await this.prisma.carts.update({
-      where: { id: cartId },
+      where: { id: cartId, business_id: businessId },
       data: {
         coupon_id: null,
         discount_code: null,
@@ -149,9 +161,13 @@ export class CartRepository {
   /**
    * Mark a cart as converted to an order. Touches updated_at via @updatedAt.
    */
-  async markConverted(cartId: string, orderId: string): Promise<void> {
+  async markConverted(
+    businessId: string,
+    cartId: string,
+    orderId: string,
+  ): Promise<void> {
     await this.prisma.carts.update({
-      where: { id: cartId },
+      where: { id: cartId, business_id: businessId },
       data: {
         status: PrismaCartStatus.CONVERTED,
         converted_order_id: orderId,
@@ -164,9 +180,9 @@ export class CartRepository {
    * Touch a cart's updated_at — used after item mutations so the cart's
    * timestamp reflects the latest activity.
    */
-  async touch(cartId: string): Promise<void> {
+  async touch(businessId: string, cartId: string): Promise<void> {
     await this.prisma.carts.update({
-      where: { id: cartId },
+      where: { id: cartId, business_id: businessId },
       data: { updated_at: new Date() },
     });
   }

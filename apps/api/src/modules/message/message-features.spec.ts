@@ -212,7 +212,7 @@ describe('MessageService — features', () => {
         senderId: SENDER_ID,
       });
 
-      const passed = repository.setReactions.mock.calls[0][1];
+      const passed = repository.setReactions.mock.calls[0][2];
       expect(passed).toHaveLength(1);
       expect(passed[0].emoji).toBe('❤️');
     });
@@ -230,7 +230,7 @@ describe('MessageService — features', () => {
 
       await service.removeReaction(BUSINESS_ID, MESSAGE_ID, SENDER_ID);
 
-      const passed = repository.setReactions.mock.calls[0][1];
+      const passed = repository.setReactions.mock.calls[0][2];
       expect(passed).toHaveLength(1);
       expect(passed[0].senderId).toBe('other');
     });
@@ -303,10 +303,11 @@ describe('MessageService — features', () => {
       );
     });
 
-    it('ignores a message belonging to another business', async () => {
-      repository.findByExternalId.mockResolvedValue(
-        makeMessage({ business_id: 'other-biz' }),
-      );
+    it('resolves the external id within the event business, not globally', async () => {
+      // The tenant lives in the lookup itself: another business's message with
+      // the same provider id is simply not visible here, so there is no window
+      // in which a foreign row could be reached and then filtered.
+      repository.findByExternalId.mockResolvedValue(null);
 
       const event: MessageSentEvent = {
         type: 'message.sent',
@@ -324,6 +325,8 @@ describe('MessageService — features', () => {
       };
 
       await service.handleMessageSent(event);
+
+      expect(repository.findByExternalId).toHaveBeenCalledWith(BUSINESS_ID, 'wamid.1');
       expect(repository.updateStatus).not.toHaveBeenCalled();
     });
   });

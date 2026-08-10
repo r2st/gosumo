@@ -159,7 +159,12 @@ export class CrmPushService {
       if (!adapter) continue;
       const result = await adapter.push(this.readConfig(conn), crmLead, reason);
       results.push(result);
-      await this.repository.recordSync(conn.id, result.ok ? null : result.error ?? 'push failed', result.ok ? 1 : 0);
+      await this.repository.recordSync(
+        businessId,
+        conn.id,
+        result.ok ? null : result.error ?? 'push failed',
+        result.ok ? 1 : 0,
+      );
 
       if (result.ok) {
         this.emit<RealtyCrmPushedEvent>('realty.crm.pushed', {

@@ -181,11 +181,12 @@ export class AiEngineRepository {
    * loop detector. Reads the immutable decision log.
    */
   async getRecentIntents(
+    businessId: string,
     conversationId: string,
     limit: number,
   ): Promise<string[]> {
     const rows = await this.prisma.ai_decisions.findMany({
-      where: { conversation_id: conversationId },
+      where: { business_id: businessId, conversation_id: conversationId },
       orderBy: { decided_at: 'desc' },
       take: limit,
       select: { proposed_action: true },
@@ -283,11 +284,13 @@ export class AiEngineRepository {
    * Scoped by conversation_id (which is already tenant-scoped).
    */
   async getLastMessages(
+    businessId: string,
     conversationId: string,
     limit: number,
   ): Promise<messages[]> {
     return this.prisma.messages.findMany({
       where: {
+        business_id: businessId,
         conversation_id: conversationId,
       },
       orderBy: { created_at: 'desc' },

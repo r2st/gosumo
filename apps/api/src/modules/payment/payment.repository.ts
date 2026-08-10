@@ -262,7 +262,7 @@ export class PaymentRepository {
     }
 
     return this.prisma.payments.update({
-      where: { id: paymentId },
+      where: { id: paymentId, business_id: businessId },
       data: updateData,
     });
   }
@@ -480,7 +480,7 @@ export class PaymentRepository {
     }
 
     return this.prisma.refunds.update({
-      where: { id: refundId },
+      where: { id: refundId, business_id: businessId },
       data: updateData,
     });
   }
@@ -765,7 +765,7 @@ export class PaymentRepository {
     }
 
     return this.prisma.invoices.update({
-      where: { id: invoiceId },
+      where: { id: invoiceId, business_id: businessId },
       data: updateData,
     });
   }

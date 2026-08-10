@@ -878,6 +878,7 @@ describe('BookingService', () => {
       expect(result.synced).toBe(1);
       expect(googleCalendar.createEvent).toHaveBeenCalled();
       expect(repository.updateConnection).toHaveBeenCalledWith(
+        BUSINESS_ID,
         'conn-1',
         expect.objectContaining({ last_synced_at: expect.any(Date) }),
       );
@@ -938,7 +939,7 @@ describe('BookingService', () => {
       repository.findConnection.mockResolvedValue(mockConnection() as never);
       repository.deleteConnection.mockResolvedValue(undefined);
       await service.disconnectGoogleCalendar(BUSINESS_ID);
-      expect(repository.deleteConnection).toHaveBeenCalledWith('conn-1');
+      expect(repository.deleteConnection).toHaveBeenCalledWith(BUSINESS_ID, 'conn-1');
     });
   });
 

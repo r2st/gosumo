@@ -18,10 +18,11 @@
  *     passing.
  *
  * Every emitted query against a tenant table is then checked: reads and writes
- * must carry a `business_id` predicate, and creates must set one. A method
- * that legitimately queries across tenants — a payment-gateway callback
- * resolving an opaque provider id before any tenant is known — has to be named
- * in CROSS_TENANT_LOOKUPS, with the reason.
+ * must carry a `business_id` predicate, and creates must set one. A method that
+ * legitimately queries across tenants has to be named in one of the three
+ * exemption sets below — CROSS_TENANT_LOOKUPS (opaque external identifier),
+ * PRE_AUTHENTICATION_LOOKUPS (no tenant exists yet), GLOBAL_SWEEPS (scheduled,
+ * returns only the discriminator) — each with the reason written out.
  */
 
 import * as fs from 'fs';
@@ -95,7 +96,58 @@ const CROSS_TENANT_LOOKUPS = new Set<string>([
   'PaymentRepository.findRefundByGatewayId',
   'PaymentRepository.findInvoiceByPaymentId',
   'PaymentRepository.markWebhookProcessed',
+  // Razorpay payment-link callback for an EOI: the link id is the gateway's,
+  // and the row is what identifies the tenant.
+  'RealtyIntegrationsRepository.findAnyEoiByPaymentLink',
 ]);
+
+/**
+ * Login-path lookups, which run *before* any tenant is known.
+ *
+ * A sign-in form supplies an email or a Google subject id and nothing else —
+ * there is no JWT yet, so there is no `businessId` to scope by. The row these
+ * resolve is precisely what establishes the tenant; every query afterwards uses
+ * the `business_id` read back from it.
+ *
+ * Unlike CROSS_TENANT_LOOKUPS the identifier here is guessable, so the safety
+ * property is different and worth stating: resolving the row proves nothing on
+ * its own. `login` still verifies a password hash and `handleGoogleLogin` still
+ * verifies a Google-issued profile before any token is minted, and both return
+ * the same failure whether the row was missing or the credential was wrong.
+ */
+const PRE_AUTHENTICATION_LOOKUPS = new Set<string>([
+  'AuthRepository.findTeamMemberByEmail',
+  'AuthRepository.findTeamMemberByGoogleId',
+]);
+
+/**
+ * Scheduled sweeps that deliberately span every tenant.
+ *
+ * These are driven by cron/ops entry points with no request tenant at all: they
+ * enumerate work across the install and then re-enter the normal scoped path
+ * once per business. The rule they must satisfy is that they return only the
+ * tenant discriminator (or a bare count) — never tenant *content* — so nothing
+ * crosses a boundary even though the query does.
+ */
+const GLOBAL_SWEEPS = new Set<string>([
+  // Retention cron: returns the distinct business_id list, then purges per
+  // business through the scoped path.
+  'ComplianceRepository.listBusinessIdsWithLeads',
+  // Soak-readiness gauge on GET realty/ops/health — a count, no rows.
+  'RealtyDlqRepository.countPendingGlobal',
+  // Nightly Sheets export: iterates connections and calls exportForBusiness()
+  // with each row's own business_id.
+  'RealtyIntegrationsRepository.listConnectedByProvider',
+]);
+
+/** Every documented reason a query may legitimately omit the tenant predicate. */
+function isExemptFromTenantScoping(label: string): boolean {
+  return (
+    CROSS_TENANT_LOOKUPS.has(label) ||
+    PRE_AUTHENTICATION_LOOKUPS.has(label) ||
+    GLOBAL_SWEEPS.has(label)
+  );
+}
 
 /**
  * Methods that create the business itself, so the tenant id in their queries is
@@ -109,94 +161,24 @@ const BUSINESS_CREATING = new Set<string>([
 
 
 /**
- * Pre-existing unscoped queries, recorded so this file can run green while the
- * gap it found is closed incrementally.
+ * Repository methods that still query a tenant table with no `business_id` in
+ * the predicate.
  *
- * This is a ratchet, not an amnesty. The lists are asserted to be *exactly*
- * the set of violations (see `theBaselineIsExact`), so a new unscoped query
- * fails the build, and closing one here fails until it is removed from the
- * list. The intended direction is only down.
+ * Round 3 closed every entry that was here: the read-then-write pairs now fold
+ * the tenant into the write's own `where`, and the methods that never received
+ * a `businessId` had one threaded through from their call sites. What remains
+ * legitimately cross-tenant moved into the three exemption sets above, each
+ * with the property that makes it safe.
  *
- * The entries fall into two classes, which differ sharply in risk:
- *
- *  1. Read-then-write. The method does a `findFirst` scoped by `business_id`,
- *     throws if it misses, then writes by primary key —
- *     `BookingRepository.updateBooking` is the clearest example. Safe as
- *     written, but the safety lives in a separate statement from the write, so
- *     an edit that reorders or short-circuits the guard silently removes it.
- *     Folding `business_id` into the write's own `where` costs nothing.
- *
- *  2. No tenant available. The method never receives a `businessId` at all —
- *     `SlaRepository.markMet(id, ...)`, `MessageRepository.getLastN(conversationId, n)`.
- *     These delegate isolation entirely to their callers. Any caller that
- *     passes an identifier it did not itself scope reads or writes across
- *     tenants. Closing these means changing the signature, so each needs its
- *     call sites checked.
+ * Both lists are asserted to be *exactly* the set of violations (see
+ * `theBaselineIsExact`), so they are now a floor, not a debt register: adding
+ * an unscoped query fails the build, and there is nothing left to remove. Keep
+ * them empty. If a genuinely tenant-free query is needed, it belongs in an
+ * exemption set with a written reason, not here.
  */
-const UNSCOPED_READ_BASELINE = new Set<string>([
-  'AiEngineRepository.getLastMessages',
-  'AiEngineRepository.getRecentIntents',
-  'AuthRepository.findTeamMemberByEmail',
-  'AuthRepository.findTeamMemberByGoogleId',
-  'AuthRepository.findTeamMemberById',
-  'CartRepository.findItemByProduct',
-  'ComplianceRepository.listBusinessIdsWithLeads',
-  'MessageRepository.findByExternalId',
-  'MessageRepository.getLastN',
-  'NotificationRepository.listActiveTriggersForEvent',
-  'RealtyDlqRepository.countPendingGlobal',
-  'RealtyExchangeRepository.findSyndicationsInvolving',
-  'RealtyIntegrationsRepository.findAnyEoiByPaymentLink',
-  'RealtyIntegrationsRepository.listConnectedByProvider',
-]);
+const UNSCOPED_READ_BASELINE = new Set<string>([]);
 
-const UNSCOPED_WRITE_BASELINE = new Set<string>([
-  'AddressRepository.softDelete',
-  'AddressRepository.update',
-  'AuthRepository.linkGoogleAccount',
-  'AuthRepository.updateLastLogin',
-  'AuthRepository.updateTeamMember',
-  'BookingRepository.deleteBlock',
-  'BookingRepository.deleteConnection',
-  'BookingRepository.updateBooking',
-  'BookingRepository.updateConnection',
-  'BookingRepository.upsertAvailability',
-  'BookingRepository.upsertConnection',
-  'CartRepository.clearCoupon',
-  'CartRepository.clearItems',
-  'CartRepository.markConverted',
-  'CartRepository.removeItem',
-  'CartRepository.setCoupon',
-  'CartRepository.touch',
-  'CartRepository.updateItemQuantity',
-  'CatalogRepository.updateItem',
-  'CatalogRepository.updateItemStock',
-  'CatalogRepository.updateVariantStock',
-  'ClientIntelligenceRepository.findOrCreateClient',
-  'ClientIntelligenceRepository.updateClientProfile',
-  'ClientIntelligenceRepository.updateIntelligenceScores',
-  'ConversationRepository.incrementHumanMessageCount',
-  'ConversationRepository.update',
-  'ConversationRepository.updateLastMessageAt',
-  'CouponRepository.incrementUsage',
-  'HitlRepository.updateTask',
-  'MessageRepository.setReactions',
-  'NotificationRepository.upsertPreference',
-  'OrderRepository.updateOrderStatus',
-  'PaymentRepository.updateInvoiceStatus',
-  'PaymentRepository.updatePaymentStatus',
-  'PaymentRepository.updateRefundStatus',
-  'RealtyDlqRepository.update',
-  'RealtyExchangeRepository.softDeleteResaleListing',
-  'RealtyExchangeRepository.softDeleteSyndication',
-  'RealtyExchangeRepository.updateResaleListing',
-  'RealtyExchangeRepository.updateSyndication',
-  'RealtyIntegrationsRepository.recordSync',
-  'RealtyIntegrationsRepository.upsertConnection',
-  'SlaRepository.markBreachedOnly',
-  'SlaRepository.markEscalated',
-  'SlaRepository.markMet',
-]);
+const UNSCOPED_WRITE_BASELINE = new Set<string>([]);
 
 // ─────────────────────────────────────────────
 // Recording Prisma double
@@ -508,9 +490,9 @@ describe('Every repository query on a tenant table is tenant-scoped', () => {
       .filter((c) => !whereCarriesTenant(c.args.where))
       .map((c) => `${c.model}.${c.op}`);
 
-    if (unscoped.length > 0 && CROSS_TENANT_LOOKUPS.has(label)) {
-      // Documented above: resolves an opaque external identifier before any
-      // tenant is known.
+    if (unscoped.length > 0 && isExemptFromTenantScoping(label)) {
+      // Documented above: an opaque external identifier, a pre-authentication
+      // identity lookup, or a scheduled cross-tenant sweep.
       return;
     }
 
@@ -533,7 +515,7 @@ describe('Every repository query on a tenant table is tenant-scoped', () => {
       .filter((c) => !whereCarriesTenant(c.args.where))
       .map((c) => `${c.model}.${c.op}`);
 
-    if (unscoped.length > 0 && CROSS_TENANT_LOOKUPS.has(label)) return;
+    if (unscoped.length > 0 && isExemptFromTenantScoping(label)) return;
 
     if (UNSCOPED_WRITE_BASELINE.has(label)) {
       expect(unscoped.length).toBeGreaterThan(0);
@@ -608,7 +590,7 @@ describe('The unscoped-query baseline is exact', () => {
     const writes: string[] = [];
 
     for (const [label, repo, method] of METHOD_CASES) {
-      if (CROSS_TENANT_LOOKUPS.has(label)) continue;
+      if (isExemptFromTenantScoping(label)) continue;
       const { calls } = await runMethod(repo, method);
 
       const tenantCalls = calls.filter((c) => TENANT_MODELS.has(c.model));
@@ -635,10 +617,11 @@ describe('The unscoped-query baseline is exact', () => {
     expect(writes).toEqual([...UNSCOPED_WRITE_BASELINE].sort());
   });
 
-  it('is shrinking, not growing', () => {
-    // A plain visibility check on the size of the debt. Lower these numbers
-    // when entries are removed; they must never be raised.
-    expect(UNSCOPED_READ_BASELINE.size).toBeLessThanOrEqual(14);
-    expect(UNSCOPED_WRITE_BASELINE.size).toBeLessThanOrEqual(45);
+  it('has nothing left in it', () => {
+    // The debt is paid. These are zero and must stay zero — a query that
+    // genuinely cannot carry a tenant goes in an exemption set with a reason,
+    // not back onto a baseline.
+    expect(UNSCOPED_READ_BASELINE.size).toBe(0);
+    expect(UNSCOPED_WRITE_BASELINE.size).toBe(0);
   });
 });

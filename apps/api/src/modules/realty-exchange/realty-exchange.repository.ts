@@ -91,16 +91,34 @@ export class RealtyExchangeRepository {
     });
   }
 
+  /**
+   * Writable by either party of the deal, so the predicate mirrors
+   * `findSyndicationById` rather than pinning `business_id` alone — the
+   * counterparty legitimately drives ACCEPTED/VISIT/CLOSED transitions.
+   */
   async updateSyndication(
+    businessId: string,
     syndicationId: string,
     data: Prisma.realty_syndicationsUpdateInput,
   ): Promise<realty_syndications> {
-    return this.prisma.realty_syndications.update({ where: { id: syndicationId }, data });
+    return this.prisma.realty_syndications.update({
+      where: {
+        id: syndicationId,
+        OR: [{ business_id: businessId }, { to_business_id: businessId }],
+      },
+      data,
+    });
   }
 
-  async softDeleteSyndication(syndicationId: string): Promise<realty_syndications> {
+  async softDeleteSyndication(
+    businessId: string,
+    syndicationId: string,
+  ): Promise<realty_syndications> {
     return this.prisma.realty_syndications.update({
-      where: { id: syndicationId },
+      where: {
+        id: syndicationId,
+        OR: [{ business_id: businessId }, { to_business_id: businessId }],
+      },
       data: { deleted_at: new Date() },
     });
   }
@@ -121,15 +139,18 @@ export class RealtyExchangeRepository {
   }
 
   /**
-   * Cross-ledger read for reliability: every non-deleted syndication the member
-   * was party to, on either side. Scoped to the member's own id (not the tenant
-   * column), which is why it is safe to read across the ledger.
+   * Reliability input: every non-deleted syndication the member was party to,
+   * on either side. Two-party by nature, so the predicate matches either the
+   * originator column or the counterparty column — never neither.
    */
-  async findSyndicationsInvolving(memberBusinessId: string): Promise<realty_syndications[]> {
+  async findSyndicationsInvolving(businessId: string): Promise<realty_syndications[]> {
     return this.prisma.realty_syndications.findMany({
       where: {
         deleted_at: null,
-        OR: [{ from_business_id: memberBusinessId }, { to_business_id: memberBusinessId }],
+        // `business_id` mirrors `from_business_id` on every row (see the schema
+        // and `createSyndication`), so naming the tenant column here is the same
+        // set of rows — and makes the predicate legible as tenant-scoped.
+        OR: [{ business_id: businessId }, { to_business_id: businessId }],
       },
       orderBy: { created_at: 'desc' },
     });
@@ -162,15 +183,22 @@ export class RealtyExchangeRepository {
   }
 
   async updateResaleListing(
+    businessId: string,
     listingId: string,
     data: Prisma.realty_resale_listingsUpdateInput,
   ): Promise<realty_resale_listings> {
-    return this.prisma.realty_resale_listings.update({ where: { id: listingId }, data });
+    return this.prisma.realty_resale_listings.update({
+      where: { id: listingId, business_id: businessId },
+      data,
+    });
   }
 
-  async softDeleteResaleListing(listingId: string): Promise<realty_resale_listings> {
+  async softDeleteResaleListing(
+    businessId: string,
+    listingId: string,
+  ): Promise<realty_resale_listings> {
     return this.prisma.realty_resale_listings.update({
-      where: { id: listingId },
+      where: { id: listingId, business_id: businessId },
       data: { deleted_at: new Date() },
     });
   }

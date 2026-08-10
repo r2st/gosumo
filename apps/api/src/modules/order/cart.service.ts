@@ -85,6 +85,7 @@ export class CartService {
     const product = await this.resolveProduct(businessId, dto.itemId, variantId);
 
     const existingLine = await this.repository.findItemByProduct(
+      businessId,
       cart.id,
       dto.itemId,
       variantId,
@@ -92,6 +93,7 @@ export class CartService {
 
     if (existingLine) {
       await this.repository.updateItemQuantity(
+        businessId,
         existingLine.id,
         existingLine.quantity + dto.quantity,
       );
@@ -107,7 +109,7 @@ export class CartService {
       });
     }
 
-    await this.repository.touch(cart.id);
+    await this.repository.touch(businessId, cart.id);
     return this.getReloadedCart(businessId, cart.id);
   }
 
@@ -122,8 +124,8 @@ export class CartService {
     if (!line) {
       throw new NotFoundException(`Cart item not found: ${cartItemId}`);
     }
-    await this.repository.updateItemQuantity(cartItemId, dto.quantity);
-    await this.repository.touch(cart.id);
+    await this.repository.updateItemQuantity(businessId, cartItemId, dto.quantity);
+    await this.repository.touch(businessId, cart.id);
     return this.getReloadedCart(businessId, cart.id);
   }
 
@@ -137,16 +139,16 @@ export class CartService {
     if (!line) {
       throw new NotFoundException(`Cart item not found: ${cartItemId}`);
     }
-    await this.repository.removeItem(cartItemId);
-    await this.repository.touch(cart.id);
+    await this.repository.removeItem(businessId, cartItemId);
+    await this.repository.touch(businessId, cart.id);
     return this.getReloadedCart(businessId, cart.id);
   }
 
   async clearCart(businessId: string, clientId: string): Promise<CartDto> {
     const cart = await this.getOrCreateActiveCart(businessId, clientId);
-    await this.repository.clearItems(cart.id);
-    await this.repository.clearCoupon(cart.id);
-    await this.repository.touch(cart.id);
+    await this.repository.clearItems(businessId, cart.id);
+    await this.repository.clearCoupon(businessId, cart.id);
+    await this.repository.touch(businessId, cart.id);
     return this.getReloadedCart(businessId, cart.id);
   }
 
@@ -178,7 +180,7 @@ export class CartService {
       subtotalPaise,
     );
 
-    await this.repository.setCoupon(cart.id, {
+    await this.repository.setCoupon(businessId, cart.id, {
       couponId: discount.couponId,
       code: discount.code,
       type: discount.type,
@@ -190,7 +192,7 @@ export class CartService {
 
   async removeCoupon(businessId: string, clientId: string): Promise<CartDto> {
     const cart = await this.getOrCreateActiveCart(businessId, clientId);
-    await this.repository.clearCoupon(cart.id);
+    await this.repository.clearCoupon(businessId, cart.id);
     return this.getReloadedCart(businessId, cart.id);
   }
 
@@ -229,7 +231,7 @@ export class CartService {
       conversationId: dto.conversationId,
     });
 
-    await this.repository.markConverted(cart.id, order.id);
+    await this.repository.markConverted(businessId, cart.id, order.id);
 
     this.logger.log(
       `Cart ${cart.id} checked out → order ${order.orderNumber} for client ${clientId}`,

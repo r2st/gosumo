@@ -89,7 +89,9 @@ export class RealtyDlqRepository {
     id: string,
     data: Prisma.realty_dead_lettersUpdateInput,
   ): Promise<realty_dead_letters> {
-    // business_id is already verified by the caller (findById) before update.
-    return this.prisma.realty_dead_letters.update({ where: { id }, data });
+    return this.prisma.realty_dead_letters.update({
+      where: { id, business_id: businessId },
+      data,
+    });
   }
 }

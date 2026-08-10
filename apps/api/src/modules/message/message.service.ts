@@ -76,7 +76,7 @@ export class MessageService {
     dto: StoreInboundMessageDto,
   ): Promise<messages> {
     // Deduplication by external_id
-    const existing = await this.repository.findByExternalId(dto.externalId);
+    const existing = await this.repository.findByExternalId(businessId, dto.externalId);
     if (existing) {
       this.logger.debug(
         `Duplicate inbound message detected (external_id=${dto.externalId}), returning existing`,
@@ -223,7 +223,7 @@ export class MessageService {
       return [];
     }
 
-    return this.repository.getLastN(conversationId, n);
+    return this.repository.getLastN(businessId, conversationId, n);
   }
 
   /**
@@ -337,7 +337,7 @@ export class MessageService {
       senderId: dto.senderId,
       at: new Date().toISOString(),
     });
-    return this.repository.setReactions(messageId, next);
+    return this.repository.setReactions(businessId, messageId, next);
   }
 
   /** Remove a sender's reaction from a message. */
@@ -350,7 +350,7 @@ export class MessageService {
     const next = this.readReactions(message).filter(
       (r) => r.senderId !== senderId,
     );
-    return this.repository.setReactions(messageId, next);
+    return this.repository.setReactions(businessId, messageId, next);
   }
 
   // ─────────────────────────────────────────────
@@ -394,9 +394,10 @@ export class MessageService {
     if (!event.externalMessageId) return;
     try {
       const message = await this.repository.findByExternalId(
+        event.businessId,
         event.externalMessageId,
       );
-      if (!message || message.business_id !== event.businessId) return;
+      if (!message) return;
       await this.repository.updateStatus(
         event.businessId,
         message.id,

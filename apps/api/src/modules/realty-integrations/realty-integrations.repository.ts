@@ -88,7 +88,7 @@ export class RealtyIntegrationsRepository {
     const existing = await this.findConnection(businessId, provider);
     if (existing) {
       return this.prisma.realty_integration_connections.update({
-        where: { id: existing.id },
+        where: { id: existing.id, business_id: businessId },
         data: {
           ...(data.status !== undefined ? { status: data.status } : {}),
           ...(data.config !== undefined
@@ -116,12 +116,13 @@ export class RealtyIntegrationsRepository {
   }
 
   async recordSync(
+    businessId: string,
     connectionId: string,
     lastError: string | null,
     incrementPushed = 0,
   ): Promise<realty_integration_connections> {
     return this.prisma.realty_integration_connections.update({
-      where: { id: connectionId },
+      where: { id: connectionId, business_id: businessId },
       data: {
         last_sync_at: new Date(),
         last_error: lastError,

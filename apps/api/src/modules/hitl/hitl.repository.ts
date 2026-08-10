@@ -239,7 +239,7 @@ export class HitlRepository {
     }
 
     return this.prisma.tasks.update({
-      where: { id: taskId },
+      where: { id: taskId, business_id: businessId },
       data: updateData,
       include: this.taskIncludes,
     });

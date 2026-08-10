@@ -822,7 +822,11 @@ export class ConversationService {
         channel: event.channel,
       });
 
-      await this.repository.updateLastMessageAt(conversation.id, new Date());
+      await this.repository.updateLastMessageAt(
+        event.businessId,
+        conversation.id,
+        new Date(),
+      );
 
       // A resolved or snoozed conversation auto-reopens when the client
       // messages again — a reply during a snooze window means the human
@@ -865,7 +869,10 @@ export class ConversationService {
     if (event.direction !== 'OUTBOUND') return;
     if (event.senderType !== 'HUMAN_AGENT') return;
     try {
-      await this.repository.incrementHumanMessageCount(event.conversationId);
+      await this.repository.incrementHumanMessageCount(
+        event.businessId,
+        event.conversationId,
+      );
     } catch (error) {
       this.logger.debug(
         `Could not increment human_message_count for ${event.conversationId}: ${this.errMsg(error)}`,

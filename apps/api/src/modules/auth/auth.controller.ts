@@ -215,7 +215,7 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'User profile' })
   @ApiResponse({ status: 401, description: 'Not authenticated' })
   async getProfile(@CurrentUser() user: AuthenticatedUser) {
-    return this.authService.getProfile(user.sub);
+    return this.authService.getProfile(user.businessId, user.sub);
   }
 
   @Post('change-password')
@@ -228,7 +228,7 @@ export class AuthController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: ChangePasswordDto,
   ): Promise<{ message: string }> {
-    await this.authService.changePassword(user.sub, dto);
+    await this.authService.changePassword(user.businessId, user.sub, dto);
     return { message: 'Password changed successfully' };
   }
 

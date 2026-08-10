@@ -335,7 +335,7 @@ export class NotificationRepository {
 
     if (existing) {
       return this.prisma.notification_preferences.update({
-        where: { id: existing.id },
+        where: { id: existing.id, business_id: data.businessId },
         data: {
           is_enabled: data.isEnabled,
           quiet_hours_start: data.quietHoursStart ?? null,
@@ -403,10 +403,16 @@ export class NotificationRepository {
 
   /** All active triggers for a given event across every business — used by the listener. */
   async listActiveTriggersForEvent(
+    businessId: string,
     eventType: string,
   ): Promise<notification_triggers[]> {
     return this.prisma.notification_triggers.findMany({
-      where: { event_type: eventType, is_active: true, deleted_at: null },
+      where: {
+        business_id: businessId,
+        event_type: eventType,
+        is_active: true,
+        deleted_at: null,
+      },
     });
   }
 

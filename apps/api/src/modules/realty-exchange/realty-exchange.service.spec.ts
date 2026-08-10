@@ -134,7 +134,9 @@ describe('RealtyExchangeService', () => {
 
     service = module.get(RealtyExchangeService);
     // Default: update echoes the row merged with the patch (Decimals preserved).
-    repo.updateSyndication.mockImplementation(async (_id, data) => makeSyndication((data ?? {}) as Record<string, unknown>));
+    repo.updateSyndication.mockImplementation(async (_businessId, _id, data) =>
+      makeSyndication((data ?? {}) as Record<string, unknown>),
+    );
   });
 
   // ── createSyndication ──
@@ -228,7 +230,7 @@ describe('RealtyExchangeService', () => {
       // ₹5,00,000 pool = 50_000_000 paise → 6% fee = 3_000_000 paise
       const res = await service.closeSyndication(FROM, SYND, { commissionPoolPaise: 50_000_000 });
 
-      const patch = repo.updateSyndication.mock.calls[0]![1] as {
+      const patch = repo.updateSyndication.mock.calls[0]![2] as {
         state: string;
         commission_pool: Prisma.Decimal;
         platform_fee: Prisma.Decimal;
@@ -262,7 +264,7 @@ describe('RealtyExchangeService', () => {
   it('disputes a syndication, reverses settlement, and emits disputed', async () => {
     repo.findSyndicationById.mockResolvedValue(makeSyndication({ state: SyndicationState.CLOSED }));
     const res = await service.disputeSyndication(TO, SYND, 'partner withheld my half');
-    const patch = repo.updateSyndication.mock.calls[0]![1] as { state: string; settlement_state: string; metadata: { disputeReason: string } };
+    const patch = repo.updateSyndication.mock.calls[0]![2] as { state: string; settlement_state: string; metadata: { disputeReason: string } };
     expect(patch.state).toBe(SyndicationState.DISPUTED);
     expect(patch.settlement_state).toBe(SettlementState.REVERSED);
     expect(patch.metadata.disputeReason).toBe('partner withheld my half');
@@ -298,7 +300,7 @@ describe('RealtyExchangeService', () => {
       // FROM rates the deal → the rated party is TO.
       const res = await service.rateSyndication(SYND, FROM, { showedUp: true, splitHonored: true });
 
-      const metaPatch = repo.updateSyndication.mock.calls[0]![1] as { metadata: { ratings: Record<string, unknown> } };
+      const metaPatch = repo.updateSyndication.mock.calls[0]![2] as { metadata: { ratings: Record<string, unknown> } };
       expect(metaPatch.metadata.ratings).toHaveProperty(TO);
       expect(res.targetBusinessId).toBe(TO);
       expect(repo.upsertReliabilityScore).toHaveBeenCalledWith(expect.objectContaining({ businessId: TO, targetBusinessId: TO }));
@@ -399,7 +401,7 @@ describe('RealtyExchangeService', () => {
       repo.findResaleListingById.mockResolvedValue(makeResale({ status: ResaleListingStatus.UNDER_OFFER }));
       repo.updateResaleListing.mockResolvedValue(makeResale());
       await service.updateResaleListing(FROM, LISTING, { status: ResaleListingStatus.ACTIVE } as never);
-      const patch = repo.updateResaleListing.mock.calls[0]![1] as { verified_at?: Date };
+      const patch = repo.updateResaleListing.mock.calls[0]![2] as { verified_at?: Date };
       expect(patch.verified_at).toBeInstanceOf(Date);
     });
 
@@ -412,7 +414,7 @@ describe('RealtyExchangeService', () => {
       repo.findResaleListingById.mockResolvedValue(makeResale());
       repo.softDeleteResaleListing.mockResolvedValue(makeResale({ deleted_at: new Date() }));
       await service.deleteResaleListing(FROM, LISTING);
-      expect(repo.softDeleteResaleListing).toHaveBeenCalledWith(LISTING);
+      expect(repo.softDeleteResaleListing).toHaveBeenCalledWith(FROM, LISTING);
     });
   });
 });

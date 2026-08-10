@@ -138,7 +138,7 @@ describe('MessageService', () => {
       const result = await service.storeInboundMessage(BUSINESS_ID, dto);
 
       expect(result).toEqual(created);
-      expect(repository.findByExternalId).toHaveBeenCalledWith(EXTERNAL_ID);
+      expect(repository.findByExternalId).toHaveBeenCalledWith(BUSINESS_ID, EXTERNAL_ID);
       expect(repository.create).toHaveBeenCalledWith(
         expect.objectContaining({
           business_id: BUSINESS_ID,
@@ -511,7 +511,7 @@ describe('MessageService', () => {
         CONVERSATION_ID,
         { limit: 1 },
       );
-      expect(repository.getLastN).toHaveBeenCalledWith(CONVERSATION_ID, 5);
+      expect(repository.getLastN).toHaveBeenCalledWith(BUSINESS_ID, CONVERSATION_ID, 5);
     });
 
     it('should return empty array when conversation has no messages for this business', async () => {

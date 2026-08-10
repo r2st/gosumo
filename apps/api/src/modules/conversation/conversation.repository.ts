@@ -220,7 +220,7 @@ export class ConversationRepository {
       updateData.metadata = data.metadata as Prisma.InputJsonValue;
 
     return this.prisma.conversations.update({
-      where: { id: conversationId },
+      where: { id: conversationId, business_id: businessId },
       data: updateData,
       include: CONVERSATION_INCLUDE,
     });
@@ -308,11 +308,12 @@ export class ConversationRepository {
    * Update last_message_at timestamp and increment message_count.
    */
   async updateLastMessageAt(
+    businessId: string,
     conversationId: string,
     timestamp: Date,
   ): Promise<conversations> {
     return this.prisma.conversations.update({
-      where: { id: conversationId },
+      where: { id: conversationId, business_id: businessId },
       data: {
         last_message_at: timestamp,
         message_count: { increment: 1 },
@@ -324,10 +325,11 @@ export class ConversationRepository {
    * Increment the human_message_count counter (used for SLA / handoff metrics).
    */
   async incrementHumanMessageCount(
+    businessId: string,
     conversationId: string,
   ): Promise<conversations> {
     return this.prisma.conversations.update({
-      where: { id: conversationId },
+      where: { id: conversationId, business_id: businessId },
       data: { human_message_count: { increment: 1 } },
     });
   }

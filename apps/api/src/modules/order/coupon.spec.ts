@@ -263,8 +263,8 @@ describe('CouponService', () => {
   describe('redeem', () => {
     it('increments usage count', async () => {
       repository.incrementUsage.mockResolvedValue();
-      await service.redeem(COUPON_ID);
-      expect(repository.incrementUsage).toHaveBeenCalledWith(COUPON_ID);
+      await service.redeem(BUSINESS_ID, COUPON_ID);
+      expect(repository.incrementUsage).toHaveBeenCalledWith(BUSINESS_ID, COUPON_ID);
     });
   });
 

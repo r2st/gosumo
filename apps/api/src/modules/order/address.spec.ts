@@ -179,7 +179,7 @@ describe('AddressService', () => {
 
       await service.deleteAddress(BUSINESS_ID, ADDRESS_ID);
 
-      expect(repository.softDelete).toHaveBeenCalledWith(ADDRESS_ID);
+      expect(repository.softDelete).toHaveBeenCalledWith(BUSINESS_ID, ADDRESS_ID);
     });
 
     it('throws NotFound when deleting a missing address', async () => {

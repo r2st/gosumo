@@ -198,9 +198,14 @@ export class SlaRepository {
   }
 
   /** Mark a tracker as met (target reached, on-time or late) at `metAt`. */
-  async markMet(id: string, metAt: Date, breached: boolean): Promise<sla_breaches> {
+  async markMet(
+    businessId: string,
+    id: string,
+    metAt: Date,
+    breached: boolean,
+  ): Promise<sla_breaches> {
     return this.prisma.sla_breaches.update({
-      where: { id },
+      where: { id, business_id: businessId },
       data: {
         met_at: metAt,
         breached,
@@ -210,16 +215,24 @@ export class SlaRepository {
   }
 
   /** Flip a tracker to breached without marking it met — the sweep path. */
-  async markBreachedOnly(id: string, breachedAt: Date): Promise<sla_breaches> {
+  async markBreachedOnly(
+    businessId: string,
+    id: string,
+    breachedAt: Date,
+  ): Promise<sla_breaches> {
     return this.prisma.sla_breaches.update({
-      where: { id },
+      where: { id, business_id: businessId },
       data: { breached: true, breached_at: breachedAt },
     });
   }
 
-  async markEscalated(id: string, escalatedAt: Date): Promise<sla_breaches> {
+  async markEscalated(
+    businessId: string,
+    id: string,
+    escalatedAt: Date,
+  ): Promise<sla_breaches> {
     return this.prisma.sla_breaches.update({
-      where: { id },
+      where: { id, business_id: businessId },
       data: { escalated: true, escalated_at: escalatedAt },
     });
   }
