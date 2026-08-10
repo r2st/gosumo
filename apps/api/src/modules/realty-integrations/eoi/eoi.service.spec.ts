@@ -254,5 +254,329 @@ describe('EoiService', () => {
       expect(res.status).toBe(RealtyEoiStatus.PAID);
       expect(razorpay.fetchPaymentLinkStatus).not.toHaveBeenCalled();
     });
+
+    it('refuses to reconcile an EOI that was never approved', async () => {
+      // A PENDING_APPROVAL request has no link to poll; without this guard the
+      // gateway call would run with an undefined link id.
+      repo.findEoi.mockResolvedValue(makeEoi({ payment_link_id: null }));
+
+      await expect(service.reconcileEoi(BUSINESS_ID, EOI_ID)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(razorpay.fetchPaymentLinkStatus).not.toHaveBeenCalled();
+    });
+
+    it('leaves the EOI alone when the gateway still reports it unpaid', async () => {
+      repo.findEoi.mockResolvedValue(
+        makeEoi({ status: RealtyEoiStatus.LINK_SENT, payment_link_id: 'plink_1' }),
+      );
+      razorpay.fetchPaymentLinkStatus.mockResolvedValue({
+        id: 'plink_1',
+        status: 'created',
+        amountPaidPaise: 0,
+      } as never);
+
+      const res = await service.reconcileEoi(BUSINESS_ID, EOI_ID);
+
+      expect(res.status).toBe(RealtyEoiStatus.LINK_SENT);
+      expect(repo.updateEoi).not.toHaveBeenCalled();
+      expect(leads.transitionStage).not.toHaveBeenCalled();
+    });
+
+    it('404s for an EOI belonging to another tenant', async () => {
+      // `findEoi` is tenant-scoped, so a cross-tenant id simply returns null.
+      // The caller must see a plain not-found, never a 500.
+      repo.findEoi.mockResolvedValue(null);
+
+      await expect(service.reconcileEoi(BUSINESS_ID, EOI_ID)).rejects.toThrow(/not found/);
+    });
+  });
+
+  /**
+   * The webhook is `@Public()` and money-bearing, so its correlation logic is
+   * the part worth driving hardest. Razorpay does not tell us which tenant a
+   * payment belongs to — we tell *it*, via the `notes` we attach at link
+   * creation, and read them back here. Every way that can go wrong (absent
+   * notes, another product's link, an unknown link id, a replayed delivery) has
+   * to land somewhere safe.
+   */
+  describe('handleRazorpayWebhook correlation', () => {
+    const webhook = (payload: unknown): string =>
+      JSON.stringify({ event: 'payment_link.paid', payload });
+
+    beforeEach(() => {
+      razorpay.verifyWebhookSignature.mockReturnValue(true);
+    });
+
+    it('scopes the lookup to the tenant named in the link notes', async () => {
+      repo.findEoiByPaymentLink.mockResolvedValue(
+        makeEoi({ status: RealtyEoiStatus.LINK_SENT, payment_link_id: 'plink_1' }),
+      );
+      repo.updateEoi.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.PAID }));
+
+      await service.handleRazorpayWebhook(
+        webhook({
+          payment_link: { entity: { id: 'plink_1', status: 'paid' } },
+          payment: { entity: { id: 'pay_1', notes: { kind: 'realty_eoi', businessId: BUSINESS_ID } } },
+        }),
+        'sig',
+      );
+
+      // The tenant-scoped read is preferred whenever the notes carry a tenant.
+      expect(repo.findEoiByPaymentLink).toHaveBeenCalledWith(BUSINESS_ID, 'plink_1');
+      expect(repo.findAnyEoiByPaymentLink).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the unscoped lookup only when the notes carry no tenant', async () => {
+      // Razorpay strips notes on some link types. The link id is an opaque
+      // gateway-issued identifier, so an unscoped lookup on it is safe — and
+      // the tenant used for the write comes from the *row*, never the payload.
+      repo.findAnyEoiByPaymentLink.mockResolvedValue(
+        makeEoi({ status: RealtyEoiStatus.LINK_SENT, payment_link_id: 'plink_1' }),
+      );
+      repo.updateEoi.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.PAID }));
+
+      await service.handleRazorpayWebhook(
+        webhook({
+          payment_link: { entity: { id: 'plink_1', status: 'paid' } },
+          payment: { entity: { id: 'pay_1', notes: {} } },
+        }),
+        'sig',
+      );
+
+      expect(repo.findAnyEoiByPaymentLink).toHaveBeenCalledWith('plink_1');
+      expect(repo.updateEoi).toHaveBeenCalledWith(BUSINESS_ID, EOI_ID, expect.anything());
+    });
+
+    it('writes against the tenant on the stored row, not the one in the payload', async () => {
+      // The decisive anti-IDOR property: an attacker who forged a businessId in
+      // notes could at most cause a lookup that finds nothing, because the
+      // update is keyed on `eoi.business_id`.
+      const OTHER = '00000000-0000-4000-a000-0000000000ff';
+      repo.findAnyEoiByPaymentLink.mockResolvedValue(
+        makeEoi({ status: RealtyEoiStatus.LINK_SENT, business_id: BUSINESS_ID }),
+      );
+      repo.updateEoi.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.PAID }));
+
+      await service.handleRazorpayWebhook(
+        webhook({
+          payment_link: { entity: { id: 'plink_1', status: 'paid' } },
+          payment: { entity: { id: 'pay_1', notes: {} } },
+        }),
+        'sig',
+      );
+
+      expect(repo.updateEoi).toHaveBeenCalledWith(BUSINESS_ID, EOI_ID, expect.anything());
+      expect(repo.updateEoi).not.toHaveBeenCalledWith(OTHER, expect.anything(), expect.anything());
+    });
+
+    it('ignores a payment link belonging to another product', async () => {
+      // The same Razorpay account serves order payments; a `kind` mismatch
+      // means this delivery is not ours to settle.
+      const res = await service.handleRazorpayWebhook(
+        webhook({
+          payment_link: { entity: { id: 'plink_1', status: 'paid' } },
+          payment: { entity: { id: 'pay_1', notes: { kind: 'order_payment' } } },
+        }),
+        'sig',
+      );
+
+      expect(res).toEqual({ handled: false });
+      expect(repo.findEoiByPaymentLink).not.toHaveBeenCalled();
+      expect(repo.findAnyEoiByPaymentLink).not.toHaveBeenCalled();
+    });
+
+    it('ignores a delivery with no payment_link entity', async () => {
+      const res = await service.handleRazorpayWebhook(
+        webhook({ payment: { entity: { id: 'pay_1', notes: {} } } }),
+        'sig',
+      );
+
+      expect(res).toEqual({ handled: false });
+      expect(repo.updateEoi).not.toHaveBeenCalled();
+    });
+
+    it('ignores a delivery with no payment entity at all', async () => {
+      repo.findAnyEoiByPaymentLink.mockResolvedValue(
+        makeEoi({ status: RealtyEoiStatus.LINK_SENT }),
+      );
+      repo.updateEoi.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.PAID }));
+
+      const res = await service.handleRazorpayWebhook(
+        webhook({ payment_link: { entity: { id: 'plink_1', status: 'paid' } } }),
+        'sig',
+      );
+
+      // Still settled — the link is what identifies the EOI. There is simply
+      // no gateway payment id to record.
+      expect(res).toEqual({ handled: true });
+      expect(repo.updateEoi).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        EOI_ID,
+        expect.objectContaining({ gatewayPaymentId: null }),
+      );
+    });
+
+    it('reports unhandled when no EOI matches the link', async () => {
+      repo.findAnyEoiByPaymentLink.mockResolvedValue(null);
+
+      const res = await service.handleRazorpayWebhook(
+        webhook({
+          payment_link: { entity: { id: 'plink_unknown', status: 'paid' } },
+          payment: { entity: { id: 'pay_1', notes: {} } },
+        }),
+        'sig',
+      );
+
+      expect(res).toEqual({ handled: false });
+      expect(repo.updateEoi).not.toHaveBeenCalled();
+    });
+
+    it('is idempotent across a replayed delivery', async () => {
+      // Razorpay retries until it sees a 2xx, so the same paid event arrives
+      // more than once in normal operation. The second must not re-emit
+      // `realty.eoi.paid` or re-advance the lead.
+      repo.findEoiByPaymentLink.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.PAID }));
+
+      const res = await service.handleRazorpayWebhook(
+        webhook({
+          payment_link: { entity: { id: 'plink_1', status: 'paid' } },
+          payment: { entity: { id: 'pay_1', notes: { businessId: BUSINESS_ID } } },
+        }),
+        'sig',
+      );
+
+      expect(res).toEqual({ handled: true });
+      expect(repo.updateEoi).not.toHaveBeenCalled();
+      expect(leads.transitionStage).not.toHaveBeenCalled();
+      expect(emitter.emit).not.toHaveBeenCalledWith('realty.eoi.paid', expect.anything());
+    });
+
+    it('accepts a Buffer raw body', async () => {
+      // Express hands the raw body through as a Buffer; the signature is
+      // verified over those bytes, so the parse must accept them too.
+      repo.findEoiByPaymentLink.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.PAID }));
+
+      const res = await service.handleRazorpayWebhook(
+        Buffer.from(
+          webhook({
+            payment_link: { entity: { id: 'plink_1', status: 'paid' } },
+            payment: { entity: { id: 'pay_1', notes: { businessId: BUSINESS_ID } } },
+          }),
+          'utf8',
+        ),
+        'sig',
+      );
+
+      expect(res).toEqual({ handled: true });
+    });
+
+    it('verifies the signature before parsing the body', async () => {
+      // Root rule #3. A parse-first implementation would throw a SyntaxError on
+      // garbage from an unauthenticated caller instead of a clean 400.
+      razorpay.verifyWebhookSignature.mockReturnValue(false);
+
+      await expect(service.handleRazorpayWebhook('not json at all', 'bad')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+  });
+
+  describe('EOI settlement resilience', () => {
+    it('still records the payment when the lead stage transition fails', async () => {
+      // Money has moved. A lead in the wrong stage is a reporting problem; an
+      // EOI stuck at LINK_SENT is a double-charge waiting to happen.
+      razorpay.verifyWebhookSignature.mockReturnValue(true);
+      repo.findEoiByPaymentLink.mockResolvedValue(
+        makeEoi({ status: RealtyEoiStatus.LINK_SENT, payment_link_id: 'plink_1' }),
+      );
+      repo.updateEoi.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.PAID }));
+      leads.transitionStage.mockRejectedValue(new Error('illegal stage transition'));
+
+      const res = await service.handleRazorpayWebhook(
+        JSON.stringify({
+          event: 'payment_link.paid',
+          payload: {
+            payment_link: { entity: { id: 'plink_1', status: 'paid' } },
+            payment: { entity: { id: 'pay_1', notes: { businessId: BUSINESS_ID } } },
+          },
+        }),
+        'sig',
+      );
+
+      expect(res).toEqual({ handled: true });
+      expect(repo.updateEoi).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        EOI_ID,
+        expect.objectContaining({ status: RealtyEoiStatus.PAID }),
+      );
+      expect(emitter.emit).toHaveBeenCalledWith('realty.eoi.paid', expect.anything());
+    });
+  });
+
+  describe('reads and guards', () => {
+    it('getEoi maps a stored row to the API shape, converting rupees to paise', async () => {
+      repo.findEoi.mockResolvedValue(makeEoi({ amount: new Prisma.Decimal('25000.50') }));
+
+      // Root rule #4: the API boundary speaks integer paise.
+      await expect(service.getEoi(BUSINESS_ID, EOI_ID)).resolves.toMatchObject({
+        id: EOI_ID,
+        businessId: BUSINESS_ID,
+        amountPaise: 2500050,
+      });
+    });
+
+    it('getEoi 404s rather than leaking that a row exists under another tenant', async () => {
+      repo.findEoi.mockResolvedValue(null);
+      await expect(service.getEoi(BUSINESS_ID, EOI_ID)).rejects.toThrow(/not found/);
+    });
+
+    it('listEoi passes filters through and maps every row', async () => {
+      repo.listEoi.mockResolvedValue([makeEoi(), makeEoi({ id: 'other' })]);
+
+      const rows = await service.listEoi(BUSINESS_ID, { status: RealtyEoiStatus.PAID });
+
+      expect(repo.listEoi).toHaveBeenCalledWith(BUSINESS_ID, { status: RealtyEoiStatus.PAID });
+      expect(rows.map((r) => r.id)).toEqual([EOI_ID, 'other']);
+    });
+
+    it('listEoi defaults to no filters', async () => {
+      repo.listEoi.mockResolvedValue([]);
+      await service.listEoi(BUSINESS_ID);
+      expect(repo.listEoi).toHaveBeenCalledWith(BUSINESS_ID, {});
+    });
+
+    it('refuses to reject anything that is not PENDING_APPROVAL', async () => {
+      repo.findEoi.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.PAID }));
+
+      await expect(
+        service.rejectEoi(BUSINESS_ID, EOI_ID, 'user-1', 'duplicate'),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(repo.updateEoi).not.toHaveBeenCalled();
+    });
+
+    it('approveEoi describes the link with the phone when the lead has no name', async () => {
+      leads.getLead.mockResolvedValue({
+        id: LEAD_ID,
+        name: null,
+        email: null,
+        whatsappPhone: '+919876543210',
+      } as never);
+      repo.findEoi.mockResolvedValue(makeEoi());
+      razorpay.createPaymentLink.mockResolvedValue({
+        id: 'plink_1',
+        shortUrl: 'https://rzp.io/i/abc',
+      } as never);
+      repo.updateEoi.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.LINK_SENT }));
+
+      await service.approveEoi(BUSINESS_ID, EOI_ID, 'user-1');
+
+      const arg = razorpay.createPaymentLink.mock.calls[0]![0];
+      // The description reaches the payer's SMS, so it cannot read "null".
+      expect(arg.description).toContain('+919876543210');
+      expect(arg.customer).toMatchObject({ name: undefined, email: undefined });
+      // The notes are what make the webhook above tenant-safe.
+      expect(arg.notes).toMatchObject({ businessId: BUSINESS_ID, eoiId: EOI_ID, kind: 'realty_eoi' });
+    });
   });
 });
