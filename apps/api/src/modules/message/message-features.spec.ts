@@ -13,6 +13,7 @@ import {
   MessageSentEvent,
   MessageFailedEvent,
 } from '@gosumo/shared';
+import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { MessageService } from './message.service';
 import { MessageRepository } from './message.repository';
 import { StoreInboundMessageDto, StoreOutboundMessageDto } from './dto';
@@ -358,6 +359,382 @@ describe('MessageService — features', () => {
         MESSAGE_ID,
         MessageStatus.FAILED,
         expect.objectContaining({ failureReason: 'recipient blocked' }),
+      );
+    });
+  });
+
+  // ─── delivery-status handler resilience ──────
+
+  /**
+   * Both handlers sit on the event bus, so a throw escapes into the emitter and
+   * takes down whatever else is listening on the same event. They swallow by
+   * design — a status stamp that misses is recoverable, a crashed bus is not.
+   */
+  describe('delivery-status handler resilience', () => {
+    function sentEvent(overrides: Partial<MessageSentEvent> = {}): MessageSentEvent {
+      return {
+        type: 'message.sent',
+        id: 'evt',
+        timestamp: new Date().toISOString(),
+        businessId: BUSINESS_ID,
+        correlationId: 'corr',
+        messageId: 'gs-id',
+        conversationId: CONVERSATION_ID,
+        channelAccountId: CHANNEL_ACCOUNT_ID,
+        channel: ChannelType.WHATSAPP,
+        externalMessageId: 'wamid.1',
+        recipientExternalId: '919876543210',
+        latencyMs: 120,
+        ...overrides,
+      } as MessageSentEvent;
+    }
+
+    function failedEvent(overrides: Partial<MessageFailedEvent> = {}): MessageFailedEvent {
+      return {
+        type: 'message.failed',
+        id: 'evt',
+        timestamp: new Date().toISOString(),
+        businessId: BUSINESS_ID,
+        correlationId: 'corr',
+        messageId: MESSAGE_ID,
+        conversationId: CONVERSATION_ID,
+        channelAccountId: CHANNEL_ACCOUNT_ID,
+        channel: ChannelType.WHATSAPP,
+        recipientExternalId: '919876543210',
+        reason: 'recipient blocked',
+        attempts: 3,
+        ...overrides,
+      } as MessageFailedEvent;
+    }
+
+    /** Some providers ack without an id; there is nothing to match on. */
+    it('ignores a sent event carrying no provider message id', async () => {
+      await service.handleMessageSent(sentEvent({ externalMessageId: undefined }));
+      expect(repository.findByExternalId).not.toHaveBeenCalled();
+      expect(repository.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('swallows a repository failure on message.sent', async () => {
+      repository.findByExternalId.mockRejectedValue(new Error('db down'));
+      await expect(service.handleMessageSent(sentEvent())).resolves.toBeUndefined();
+    });
+
+    it('ignores a failed event for a message this tenant cannot see', async () => {
+      repository.findById.mockResolvedValue(null);
+      await service.handleMessageFailed(failedEvent());
+      expect(repository.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('swallows a repository failure on message.failed', async () => {
+      repository.findById.mockRejectedValue(new Error('db down'));
+      await expect(service.handleMessageFailed(failedEvent())).resolves.toBeUndefined();
+    });
+
+    /** A rejected non-Error (a string, a Prisma reject) must still log cleanly. */
+    it('survives a thrown non-Error value', async () => {
+      repository.findById.mockRejectedValue('connection reset');
+      await expect(service.handleMessageFailed(failedEvent())).resolves.toBeUndefined();
+    });
+  });
+
+  // ─── metadata assembly ───────────────────────
+
+  describe('metadata assembly on store', () => {
+    function inbound(overrides: Partial<StoreInboundMessageDto> = {}): StoreInboundMessageDto {
+      const dto = new StoreInboundMessageDto();
+      dto.conversationId = CONVERSATION_ID;
+      dto.channelAccountId = CHANNEL_ACCOUNT_ID;
+      dto.channel = ChannelType.WHATSAPP;
+      dto.externalId = 'wamid.meta';
+      dto.senderType = 'CLIENT';
+      dto.content = { type: 'TEXT', text: 'Hello' };
+      dto.textContent = 'Hello';
+      return Object.assign(dto, overrides);
+    }
+
+    beforeEach(() => {
+      repository.findByExternalId.mockResolvedValue(null);
+      repository.create.mockResolvedValue(makeMessage());
+    });
+
+    function storedMetadata(): unknown {
+      return repository.create.mock.calls[0]![0].metadata;
+    }
+
+    /** No metadata and no reply pointer must leave the column untouched. */
+    it('omits metadata entirely when there is nothing to store', async () => {
+      await service.storeInboundMessage(BUSINESS_ID, inbound());
+      expect(storedMetadata()).toBeUndefined();
+    });
+
+    it('stores caller metadata as-is', async () => {
+      await service.storeInboundMessage(
+        BUSINESS_ID,
+        inbound({ metadata: { source: 'webhook' } }),
+      );
+      expect(storedMetadata()).toEqual({ source: 'webhook' });
+    });
+
+    it('records a reply pointer with no other metadata', async () => {
+      await service.storeInboundMessage(
+        BUSINESS_ID,
+        inbound({ replyToMessageId: 'msg-parent' }),
+      );
+      expect(storedMetadata()).toEqual({ reply_to_message_id: 'msg-parent' });
+    });
+
+    it('merges the reply pointer into caller metadata', async () => {
+      await service.storeInboundMessage(
+        BUSINESS_ID,
+        inbound({ metadata: { source: 'webhook' }, replyToMessageId: 'msg-parent' }),
+      );
+      expect(storedMetadata()).toEqual({
+        source: 'webhook',
+        reply_to_message_id: 'msg-parent',
+      });
+    });
+  });
+
+  // ─── media persistence ───────────────────────
+
+  describe('media persistence on store', () => {
+    function inboundWith(content: Record<string, unknown>): StoreInboundMessageDto {
+      const dto = new StoreInboundMessageDto();
+      dto.conversationId = CONVERSATION_ID;
+      dto.channelAccountId = CHANNEL_ACCOUNT_ID;
+      dto.channel = ChannelType.WHATSAPP;
+      dto.externalId = 'wamid.media';
+      dto.senderType = 'CLIENT';
+      dto.content = content;
+      return dto;
+    }
+
+    beforeEach(() => {
+      repository.findByExternalId.mockResolvedValue(null);
+      repository.create.mockResolvedValue(makeMessage());
+      repository.createFileUpload.mockResolvedValue({ id: 'file-1' });
+    });
+
+    it('writes no upload row for a text message', async () => {
+      await service.storeInboundMessage(BUSINESS_ID, inboundWith({ type: 'TEXT', text: 'hi' }));
+      expect(repository.createFileUpload).not.toHaveBeenCalled();
+    });
+
+    it('writes no upload row for content with no type at all', async () => {
+      await service.storeInboundMessage(BUSINESS_ID, inboundWith({ text: 'hi' }));
+      expect(repository.createFileUpload).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Media arrives at the webhook before it has been re-uploaded to GoSumo
+     * storage. Until the storage key exists there is nothing to reference, so
+     * the message stores and the upload row waits.
+     */
+    it('defers the upload row until the media has a storage key', async () => {
+      await service.storeInboundMessage(
+        BUSINESS_ID,
+        inboundWith({ type: 'IMAGE', url: 'https://cdn.example/x.jpg' }),
+      );
+      expect(repository.createFileUpload).not.toHaveBeenCalled();
+    });
+
+    it('accepts a snake_case storage key from the provider payload', async () => {
+      await service.storeInboundMessage(
+        BUSINESS_ID,
+        inboundWith({ type: 'IMAGE', storage_key: 'biz/img.jpg' }),
+      );
+      expect(repository.createFileUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ storage_key: 'biz/img.jpg' }),
+      );
+    });
+
+    it('fills sane defaults for a bare media payload', async () => {
+      await service.storeInboundMessage(
+        BUSINESS_ID,
+        inboundWith({ type: 'AUDIO', storageKey: 'biz/note.ogg' }),
+      );
+
+      expect(repository.createFileUpload).toHaveBeenCalledWith({
+        business_id: BUSINESS_ID,
+        message_id: MESSAGE_ID,
+        type: FileUploadType.AUDIO,
+        filename: `audio-${MESSAGE_ID}`,
+        mime_type: 'application/octet-stream',
+        size_bytes: 0,
+        storage_key: 'biz/note.ogg',
+        cdn_url: undefined,
+        width: undefined,
+        height: undefined,
+      });
+    });
+
+    it('carries a fully-described media payload through unchanged', async () => {
+      await service.storeInboundMessage(
+        BUSINESS_ID,
+        inboundWith({
+          type: 'IMAGE',
+          storageKey: 'biz/photo.jpg',
+          filename: 'photo.jpg',
+          mimeType: 'image/jpeg',
+          sizeBytes: 20_480,
+          url: 'https://cdn.example/photo.jpg',
+          width: 1024,
+          height: 768,
+        }),
+      );
+
+      expect(repository.createFileUpload).toHaveBeenCalledWith({
+        business_id: BUSINESS_ID,
+        message_id: MESSAGE_ID,
+        type: FileUploadType.IMAGE,
+        filename: 'photo.jpg',
+        mime_type: 'image/jpeg',
+        size_bytes: 20_480,
+        storage_key: 'biz/photo.jpg',
+        cdn_url: 'https://cdn.example/photo.jpg',
+        width: 1024,
+        height: 768,
+      });
+    });
+
+    /** A sticker is stored as an IMAGE upload — there is no sticker file type. */
+    it('files a sticker under the image upload type', async () => {
+      await service.storeInboundMessage(
+        BUSINESS_ID,
+        inboundWith({ type: 'STICKER', storageKey: 'biz/s.webp' }),
+      );
+      expect(repository.createFileUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ type: FileUploadType.IMAGE }),
+      );
+    });
+
+    /**
+     * The message is the record of what the customer said; a failed side-table
+     * write must not lose it. The upload row is recoverable, the message is not.
+     */
+    it('still stores the message when the upload row fails to write', async () => {
+      repository.createFileUpload.mockRejectedValue(new Error('s3 metadata write failed'));
+
+      const stored = await service.storeInboundMessage(
+        BUSINESS_ID,
+        inboundWith({ type: 'DOCUMENT', storageKey: 'biz/doc.pdf' }),
+      );
+
+      expect(stored).toBeDefined();
+      expect(eventEmitter.emit).toHaveBeenCalledWith('message.stored', expect.anything());
+    });
+
+    it('persists media on the outbound path too', async () => {
+      const dto = new StoreOutboundMessageDto();
+      dto.conversationId = CONVERSATION_ID;
+      dto.channelAccountId = CHANNEL_ACCOUNT_ID;
+      dto.channel = ChannelType.WHATSAPP;
+      dto.senderType = 'AI';
+      dto.content = { type: 'VIDEO', storageKey: 'biz/clip.mp4' };
+
+      await service.storeOutboundMessage(BUSINESS_ID, dto);
+
+      expect(repository.createFileUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ type: FileUploadType.VIDEO, storage_key: 'biz/clip.mp4' }),
+      );
+    });
+  });
+
+  // ─── media listing ───────────────────────────
+
+  describe('getMessageMedia', () => {
+    it('lists the uploads attached to a visible message', async () => {
+      repository.findById.mockResolvedValue(makeMessage());
+      repository.findFileUploadsByMessage.mockResolvedValue([{ id: 'file-1' }]);
+
+      expect(await service.getMessageMedia(BUSINESS_ID, MESSAGE_ID)).toEqual([
+        { id: 'file-1' },
+      ]);
+      expect(repository.findFileUploadsByMessage).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        MESSAGE_ID,
+      );
+    });
+
+    /** The tenant check has to happen before the uploads are read, not after. */
+    it('refuses to list uploads for a message outside the tenant', async () => {
+      repository.findById.mockResolvedValue(null);
+
+      await expect(service.getMessageMedia(BUSINESS_ID, MESSAGE_ID)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(repository.findFileUploadsByMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── cursor decoding ─────────────────────────
+
+  /**
+   * The cursor is client-supplied base64. A structurally valid but incomplete
+   * payload must be rejected as loudly as garbage — a cursor missing `id` would
+   * otherwise produce a keyset predicate with an undefined tiebreaker.
+   */
+  describe('pagination cursor decoding', () => {
+    function cursorFor(payload: unknown): string {
+      return Buffer.from(JSON.stringify(payload)).toString('base64');
+    }
+
+    it.each([
+      ['a missing id', { createdAt: '2026-06-20T10:00:00Z' }],
+      ['a missing timestamp', { id: MESSAGE_ID }],
+      ['an empty object', {}],
+    ])('rejects a cursor with %s', async (_label, payload) => {
+      await expect(
+        service.getConversationMessages(BUSINESS_ID, CONVERSATION_ID, {
+          cursor: cursorFor(payload),
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('accepts a complete cursor and passes it to the repository', async () => {
+      repository.findByConversation.mockResolvedValue([]);
+
+      await service.getConversationMessages(BUSINESS_ID, CONVERSATION_ID, {
+        cursor: cursorFor({ createdAt: '2026-06-20T10:00:00Z', id: MESSAGE_ID }),
+        limit: 5,
+      });
+
+      expect(repository.findByConversation).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        CONVERSATION_ID,
+        { limit: 5, cursor: { createdAt: '2026-06-20T10:00:00Z', id: MESSAGE_ID } },
+      );
+    });
+  });
+
+  // ─── reactions column tolerance ──────────────
+
+  /**
+   * `reactions` is a JSON column, so a legacy or hand-edited row can hold
+   * something that is not an array. Reading it must degrade to empty rather
+   * than hand a non-iterable to the caller.
+   */
+  describe('reactions column tolerance', () => {
+    it.each([
+      ['a JSON object', { thumbsUp: 1 }],
+      ['a JSON null', null],
+      ['a bare string', 'thumbsup'],
+    ])('reads %s as no reactions', async (_label, raw) => {
+      repository.findById.mockResolvedValue(makeMessage({ reactions: raw }));
+      repository.setReactions.mockImplementation(
+        async (_b: string, _id: string, reactions: unknown) =>
+          makeMessage({ reactions }),
+      );
+
+      await service.addReaction(BUSINESS_ID, MESSAGE_ID, {
+        emoji: '👍',
+        senderId: SENDER_ID,
+      });
+
+      expect(repository.setReactions).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        MESSAGE_ID,
+        [expect.objectContaining({ emoji: '👍' })],
       );
     });
   });
