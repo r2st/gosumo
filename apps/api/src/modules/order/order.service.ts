@@ -152,23 +152,29 @@ export class OrderService {
     let subtotalPaise = 0;
     let totalTaxPaise = 0;
 
+    // Fetch every referenced catalog item in one query rather than one per
+    // line. Order creation is a hot path and carts routinely hold several
+    // items, so the per-item lookup meant N sequential round trips before any
+    // order row was written. Duplicate itemIds collapse to a single fetch.
+    const requestedItemIds = [...new Set(dto.items.map((i) => i.itemId))];
+    const catalogItems = await this.prisma.catalog_items.findMany({
+      where: {
+        id: { in: requestedItemIds },
+        business_id: businessId,
+        is_active: true,
+        deleted_at: null,
+      },
+      include: {
+        // Only active variants — the per-item query filtered the same way, and
+        // the in-memory lookup below relies on an inactive variant being
+        // absent so it still raises "variant not found".
+        variants: { where: { is_active: true, deleted_at: null } },
+      },
+    });
+    const catalogItemsById = new Map(catalogItems.map((c) => [c.id, c]));
+
     for (const item of dto.items) {
-      // Look up the catalog item to snapshot its price
-      const catalogItem = await this.prisma.catalog_items.findFirst({
-        where: {
-          id: item.itemId,
-          business_id: businessId,
-          is_active: true,
-          deleted_at: null,
-        },
-        include: {
-          variants: {
-            where: item.variantId
-              ? { id: item.variantId, is_active: true, deleted_at: null }
-              : undefined,
-          },
-        },
-      });
+      const catalogItem = catalogItemsById.get(item.itemId);
 
       if (!catalogItem) {
         throw new BadRequestException(

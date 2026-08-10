@@ -124,6 +124,7 @@ function createMockCatalogItem(overrides: Record<string, unknown> = {}) {
 interface PrismaMock {
   catalog_items: {
     findFirst: jest.Mock;
+    findMany: jest.Mock;
     update: jest.Mock;
     updateMany: jest.Mock;
   };
@@ -162,6 +163,7 @@ describe('OrderService', () => {
     prisma = {
       catalog_items: {
         findFirst: jest.fn(),
+        findMany: jest.fn(),
         update: jest.fn(),
         updateMany: jest.fn(),
       },
@@ -203,7 +205,7 @@ describe('OrderService', () => {
   describe('createOrder', () => {
     it('should snapshot prices from catalog and create order with correct totals', async () => {
       const catalogItem = createMockCatalogItem();
-      prisma.catalog_items.findFirst.mockResolvedValue(catalogItem);
+      prisma.catalog_items.findMany.mockResolvedValue([catalogItem]);
       prisma.catalog_items.update.mockResolvedValue(catalogItem);
       repository.getNextOrderNumber.mockResolvedValue('ORD-2026-00001');
 
@@ -233,11 +235,85 @@ describe('OrderService', () => {
       expect(result.businessId).toBe(BUSINESS_ID);
     });
 
+    it('fetches every line item in a single catalog query, not one per line', async () => {
+      // Guards the N+1 that order creation used to do: a findFirst per line
+      // meant a 10-item cart made 10 sequential round trips before any order
+      // row was written.
+      const SECOND_ITEM_ID = '00000000-0000-4000-a000-0000000000aa';
+      const first = createMockCatalogItem();
+      const second = createMockCatalogItem({ id: SECOND_ITEM_ID, track_inventory: false });
+      prisma.catalog_items.findMany.mockResolvedValue([first, second]);
+      prisma.catalog_items.update.mockResolvedValue(first);
+      repository.getNextOrderNumber.mockResolvedValue('ORD-2026-00002');
+      repository.createOrder.mockResolvedValue(createMockOrder() as never);
+
+      await service.createOrder(BUSINESS_ID, {
+        clientId: CLIENT_ID,
+        items: [
+          { itemId: ITEM_ID, quantity: 1 },
+          { itemId: SECOND_ITEM_ID, quantity: 3 },
+        ],
+        paymentMethod: PaymentMethod.COD,
+      });
+
+      expect(prisma.catalog_items.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.catalog_items.findFirst).not.toHaveBeenCalled();
+
+      const where = prisma.catalog_items.findMany.mock.calls[0]?.[0]?.where;
+      expect(where.id.in).toEqual(expect.arrayContaining([ITEM_ID, SECOND_ITEM_ID]));
+      // Still tenant-scoped and still excludes inactive/deleted rows.
+      expect(where).toMatchObject({
+        business_id: BUSINESS_ID,
+        is_active: true,
+        deleted_at: null,
+      });
+    });
+
+    it('deduplicates repeated item ids into one fetched id', async () => {
+      const catalogItem = createMockCatalogItem({ track_inventory: false });
+      prisma.catalog_items.findMany.mockResolvedValue([catalogItem]);
+      repository.getNextOrderNumber.mockResolvedValue('ORD-2026-00003');
+      repository.createOrder.mockResolvedValue(createMockOrder() as never);
+
+      await service.createOrder(BUSINESS_ID, {
+        clientId: CLIENT_ID,
+        items: [
+          { itemId: ITEM_ID, quantity: 1 },
+          { itemId: ITEM_ID, quantity: 2 },
+        ],
+        paymentMethod: PaymentMethod.COD,
+      });
+
+      const where = prisma.catalog_items.findMany.mock.calls[0]?.[0]?.where;
+      expect(where.id.in).toEqual([ITEM_ID]);
+
+      // Both lines are still priced — dedup is only about the fetch.
+      const createCall = repository.createOrder.mock.calls[0]?.[0];
+      expect(createCall?.lineItems).toHaveLength(2);
+    });
+
+    it('still rejects when one of several items is missing from the batch', async () => {
+      const catalogItem = createMockCatalogItem({ track_inventory: false });
+      // Only the first item comes back; the second is inactive or foreign.
+      prisma.catalog_items.findMany.mockResolvedValue([catalogItem]);
+
+      await expect(
+        service.createOrder(BUSINESS_ID, {
+          clientId: CLIENT_ID,
+          items: [
+            { itemId: ITEM_ID, quantity: 1 },
+            { itemId: '00000000-0000-4000-a000-0000000000bb', quantity: 1 },
+          ],
+          paymentMethod: PaymentMethod.COD,
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('should generate unique order number in ORD-YYYY-NNNNN format', async () => {
       repository.getNextOrderNumber.mockResolvedValue('ORD-2026-00042');
 
       const catalogItem = createMockCatalogItem({ track_inventory: false });
-      prisma.catalog_items.findFirst.mockResolvedValue(catalogItem);
+      prisma.catalog_items.findMany.mockResolvedValue([catalogItem]);
 
       const mockOrder = createMockOrder({ order_number: 'ORD-2026-00042' });
       repository.createOrder.mockResolvedValue(mockOrder as never);
@@ -253,7 +329,7 @@ describe('OrderService', () => {
 
     it('should set COD orders to CONFIRMED immediately', async () => {
       const catalogItem = createMockCatalogItem({ track_inventory: false });
-      prisma.catalog_items.findFirst.mockResolvedValue(catalogItem);
+      prisma.catalog_items.findMany.mockResolvedValue([catalogItem]);
       repository.getNextOrderNumber.mockResolvedValue('ORD-2026-00001');
 
       const mockOrder = createMockOrder({ status: OrderStatus.CONFIRMED });
@@ -271,7 +347,7 @@ describe('OrderService', () => {
 
     it('should set ONLINE payment orders to DRAFT status', async () => {
       const catalogItem = createMockCatalogItem({ track_inventory: false });
-      prisma.catalog_items.findFirst.mockResolvedValue(catalogItem);
+      prisma.catalog_items.findMany.mockResolvedValue([catalogItem]);
       repository.getNextOrderNumber.mockResolvedValue('ORD-2026-00001');
 
       const mockOrder = createMockOrder({ status: OrderStatus.DRAFT });
@@ -289,7 +365,7 @@ describe('OrderService', () => {
 
     it('should emit order.created event on success', async () => {
       const catalogItem = createMockCatalogItem({ track_inventory: false });
-      prisma.catalog_items.findFirst.mockResolvedValue(catalogItem);
+      prisma.catalog_items.findMany.mockResolvedValue([catalogItem]);
       repository.getNextOrderNumber.mockResolvedValue('ORD-2026-00001');
       repository.createOrder.mockResolvedValue(createMockOrder() as never);
 
@@ -311,7 +387,7 @@ describe('OrderService', () => {
     });
 
     it('should throw BadRequestException if catalog item not found', async () => {
-      prisma.catalog_items.findFirst.mockResolvedValue(null);
+      prisma.catalog_items.findMany.mockResolvedValue([]);
 
       await expect(
         service.createOrder(BUSINESS_ID, {
@@ -324,7 +400,7 @@ describe('OrderService', () => {
 
     it('should throw BadRequestException if insufficient stock', async () => {
       const catalogItem = createMockCatalogItem({ stock_quantity: 1 });
-      prisma.catalog_items.findFirst.mockResolvedValue(catalogItem);
+      prisma.catalog_items.findMany.mockResolvedValue([catalogItem]);
 
       await expect(
         service.createOrder(BUSINESS_ID, {
@@ -340,7 +416,7 @@ describe('OrderService', () => {
         stock_quantity: 100,
         track_inventory: true,
       });
-      prisma.catalog_items.findFirst.mockResolvedValue(catalogItem);
+      prisma.catalog_items.findMany.mockResolvedValue([catalogItem]);
       prisma.catalog_items.update.mockResolvedValue(catalogItem);
       repository.getNextOrderNumber.mockResolvedValue('ORD-2026-00001');
       repository.createOrder.mockResolvedValue(createMockOrder() as never);
@@ -359,7 +435,7 @@ describe('OrderService', () => {
 
     it('should apply a coupon discount and redeem it', async () => {
       const catalogItem = createMockCatalogItem({ track_inventory: false });
-      prisma.catalog_items.findFirst.mockResolvedValue(catalogItem);
+      prisma.catalog_items.findMany.mockResolvedValue([catalogItem]);
       repository.getNextOrderNumber.mockResolvedValue('ORD-2026-00001');
       repository.createOrder.mockResolvedValue(createMockOrder() as never);
 
@@ -395,7 +471,7 @@ describe('OrderService', () => {
 
     it('should add a shipping fee from the chosen shipping option', async () => {
       const catalogItem = createMockCatalogItem({ track_inventory: false });
-      prisma.catalog_items.findFirst.mockResolvedValue(catalogItem);
+      prisma.catalog_items.findMany.mockResolvedValue([catalogItem]);
       prisma.shipping_options.findFirst.mockResolvedValue({
         id: SHIPPING_OPTION_ID,
         business_id: BUSINESS_ID,
@@ -422,7 +498,7 @@ describe('OrderService', () => {
 
     it('should waive shipping fee above the free-shipping threshold', async () => {
       const catalogItem = createMockCatalogItem({ track_inventory: false });
-      prisma.catalog_items.findFirst.mockResolvedValue(catalogItem);
+      prisma.catalog_items.findMany.mockResolvedValue([catalogItem]);
       prisma.shipping_options.findFirst.mockResolvedValue({
         id: SHIPPING_OPTION_ID,
         business_id: BUSINESS_ID,
