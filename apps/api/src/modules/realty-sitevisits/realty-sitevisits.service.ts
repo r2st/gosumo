@@ -28,6 +28,7 @@ import type {
 import { RealtyVisitsRepository } from './realty-sitevisits.repository';
 import { RealtyLeadsService } from '../realty-leads/realty-leads.service';
 import { BookingService } from '../booking/booking.service';
+import { TenantService } from '../tenant/tenant.service';
 import {
   REALTY_VISITS_QUEUE,
   REALTY_VISIT_JOBS,
@@ -92,6 +93,7 @@ export class RealtyVisitsService {
     private readonly eventEmitter: EventEmitter2,
     private readonly leadsService: RealtyLeadsService,
     private readonly bookingService: BookingService,
+    private readonly tenantService: TenantService,
     @InjectQueue(REALTY_VISITS_QUEUE) private readonly queue: Queue,
   ) {}
 
@@ -108,6 +110,12 @@ export class RealtyVisitsService {
     const scheduledAt = this.parseFutureInstant(dto.scheduledAt, 'scheduledAt');
     const duration = dto.durationMinutes ?? DEFAULT_VISIT_DURATION_MINUTES;
     const timezone = dto.timezone ?? IST_TIMEZONE;
+
+    // Body-supplied agent id: scope it before it is written, and before it
+    // reaches the calendar push below as `staffId`.
+    if (dto.assignedAgentId) {
+      await this.tenantService.assertTeamMember(businessId, dto.assignedAgentId);
+    }
 
     const visit = await this.repository.create({
       businessId,

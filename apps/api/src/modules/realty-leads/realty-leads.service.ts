@@ -29,6 +29,7 @@ import type {
   RealtyLeadIngestedEvent,
   MessageReceivedEvent,
 } from '@gosumo/shared';
+import { TenantService } from '../tenant/tenant.service';
 import { RealtyLeadsRepository } from './realty-leads.repository';
 import type { UpdateLeadData } from './realty-leads.repository';
 import {
@@ -116,7 +117,20 @@ export class RealtyLeadsService {
   constructor(
     private readonly repository: RealtyLeadsRepository,
     private readonly eventEmitter: EventEmitter2,
+    private readonly tenantService: TenantService,
   ) {}
+
+  /**
+   * Reject an `assignedAgentId` that is not this tenant's team member.
+   *
+   * The lead row is scoped by `@TenantId()`, but the agent id rides in on the
+   * request body and is not. `realty_leads.assigned_agent_id` carries no
+   * foreign key at all, so any UUID would otherwise be written verbatim.
+   */
+  private async assertAgent(businessId: string, agentId?: string | null): Promise<void> {
+    if (!agentId) return; // Unassigning (null) and omitting are both fine.
+    await this.tenantService.assertTeamMember(businessId, agentId);
+  }
 
   // ─────────────────────────────────────────────
   // CAPTURE
@@ -130,6 +144,8 @@ export class RealtyLeadsService {
         `A lead with phone ${dto.whatsappPhone} already exists (${existing.id})`,
       );
     }
+
+    await this.assertAgent(businessId, dto.assignedAgentId);
 
     const lead = await this.repository.create({
       businessId,
@@ -289,6 +305,7 @@ export class RealtyLeadsService {
     dto: UpdateLeadDto,
   ): Promise<LeadResponseDto> {
     await this.mustFind(businessId, leadId);
+    await this.assertAgent(businessId, dto.assignedAgentId);
     const data: UpdateLeadData = { lastActivityAt: new Date() };
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.email !== undefined) data.email = dto.email;
@@ -519,6 +536,7 @@ export class RealtyLeadsService {
     agentId: string,
   ): Promise<LeadResponseDto> {
     await this.mustFind(businessId, leadId);
+    await this.assertAgent(businessId, agentId);
     const updated = await this.repository.update(businessId, leadId, {
       assignedAgentId: agentId,
       lastActivityAt: new Date(),

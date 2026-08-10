@@ -24,6 +24,7 @@ import {
 } from '@gosumo/shared';
 import type { AIResponseGeneratedEvent } from '@gosumo/shared';
 import { HitlService } from './hitl.service';
+import { TenantService } from '../tenant/tenant.service';
 import { HitlRepository } from './hitl.repository';
 
 const BUSINESS_ID = '11111111-1111-1111-1111-111111111111';
@@ -124,6 +125,7 @@ describe('HitlService — branches', () => {
     getAvgResolutionTime: jest.Mock;
   };
   let eventEmitter: { emit: jest.Mock };
+  let tenantService: { assertTeamMember: jest.Mock };
 
   /** The single `task.resolved` payload emitted during a call. */
   function resolvedEvent(): Record<string, unknown> {
@@ -146,12 +148,16 @@ describe('HitlService — branches', () => {
       getAvgResolutionTime: jest.fn().mockResolvedValue(0),
     };
     eventEmitter = { emit: jest.fn() };
+    tenantService = { assertTeamMember: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         HitlService,
         { provide: HitlRepository, useValue: repository },
         { provide: EventEmitter2, useValue: eventEmitter },
+        // Assignment guard: by default every assignee is a member of this
+        // tenant, so the existing cases exercise the happy path unchanged.
+        { provide: TenantService, useValue: tenantService },
       ],
     }).compile();
 

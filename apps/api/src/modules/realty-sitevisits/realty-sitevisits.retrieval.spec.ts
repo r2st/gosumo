@@ -8,6 +8,7 @@ import { RealtyVisitsService } from './realty-sitevisits.service';
 import { RealtyVisitsRepository } from './realty-sitevisits.repository';
 import { RealtyLeadsService } from '../realty-leads/realty-leads.service';
 import { BookingService } from '../booking/booking.service';
+import { TenantService } from '../tenant/tenant.service';
 import { REALTY_VISITS_QUEUE } from './realty-sitevisits.constants';
 
 /**
@@ -95,6 +96,12 @@ describe('RealtyVisitsService — retrieval, stats and degradation', () => {
             pushRealtyVisitToCalendar: jest.fn().mockResolvedValue(null),
             removeRealtyVisitFromCalendar: jest.fn().mockResolvedValue(undefined),
           },
+        },
+        // Assignment guard: every assignee is a member of this tenant by
+        // default, so the existing cases run unchanged.
+        {
+          provide: TenantService,
+          useValue: { assertTeamMember: jest.fn().mockResolvedValue(undefined) },
         },
         { provide: getQueueToken(REALTY_VISITS_QUEUE), useValue: queue },
       ],

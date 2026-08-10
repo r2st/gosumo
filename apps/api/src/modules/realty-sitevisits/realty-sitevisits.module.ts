@@ -8,6 +8,7 @@ import { RealtyVisitsProcessor } from './realty-sitevisits.processor';
 import { RealtyLeadsModule } from '../realty-leads/realty-leads.module';
 import { BookingModule } from '../booking/booking.module';
 import { RealtyHardeningModule } from '../realty-hardening/realty-hardening.module';
+import { TenantModule } from '../tenant/tenant.module';
 import { REALTY_VISITS_QUEUE } from './realty-sitevisits.constants';
 
 /**
@@ -24,6 +25,8 @@ import { REALTY_VISITS_QUEUE } from './realty-sitevisits.constants';
     RealtyLeadsModule,
     BookingModule,
     RealtyHardeningModule,
+    // Tenant-scoped team-member read for the `assignedAgentId` guard.
+    TenantModule,
   ],
   controllers: [RealtyVisitsController],
   providers: [

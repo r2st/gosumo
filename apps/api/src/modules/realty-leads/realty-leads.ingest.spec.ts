@@ -31,6 +31,7 @@ import { LeadSource } from '@gosumo/shared';
 
 import { RealtyLeadsService } from './realty-leads.service';
 import { RealtyLeadsRepository } from './realty-leads.repository';
+import { TenantService } from '../tenant/tenant.service';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
 const LEAD_ID = '00000000-0000-4000-a000-000000000010';
@@ -108,6 +109,12 @@ describe('RealtyLeadsService — ingest and partial update', () => {
         RealtyLeadsService,
         { provide: RealtyLeadsRepository, useValue: mockRepository },
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
+        // Assignment guard: every assignee is a member of this tenant by
+        // default, so the existing cases run unchanged.
+        {
+          provide: TenantService,
+          useValue: { assertTeamMember: jest.fn().mockResolvedValue(undefined) },
+        },
       ],
     }).compile();
 

@@ -25,6 +25,7 @@ import type {
   AIResponseGeneratedEvent,
   SuggestedAction,
 } from '@gosumo/shared';
+import { TenantService } from '../tenant/tenant.service';
 import { HitlRepository, PaginatedTasks } from './hitl.repository';
 import {
   CreateTaskDto,
@@ -99,6 +100,7 @@ export class HitlService {
   constructor(
     private readonly repository: HitlRepository,
     private readonly eventEmitter: EventEmitter2,
+    private readonly tenantService: TenantService,
   ) {}
 
   // ─────────────────────────────────────────────
@@ -220,6 +222,12 @@ export class HitlService {
         `Cannot assign task in status ${status}. Task must be PENDING or IN_PROGRESS.`,
       );
     }
+
+    // `taskId` is tenant-scoped by the lookup above, but `assigneeId` arrives in
+    // the body and is not. The `tasks.assigned_to` foreign key is satisfied by
+    // any real `team_members` row, so without this the caller could assign
+    // their task to another business's operator.
+    await this.tenantService.assertTeamMember(businessId, dto.assigneeId);
 
     const updated = await this.repository.updateTask(businessId, taskId, {
       status: TaskStatus.IN_PROGRESS,

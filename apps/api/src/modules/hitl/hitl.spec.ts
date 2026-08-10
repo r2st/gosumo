@@ -28,6 +28,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { TaskStatus, TaskType, TaskPriority, ConfidenceMode, IntentType } from '@gosumo/shared';
 import { HitlService } from './hitl.service';
+import { TenantService } from '../tenant/tenant.service';
 import { HitlRepository } from './hitl.repository';
 
 // ─────────────────────────────────────────────
@@ -99,16 +100,21 @@ describe('HitlService', () => {
   let service: HitlService;
   let repository: ReturnType<typeof createMockRepository>;
   let eventEmitter: { emit: jest.Mock };
+  let tenantService: { assertTeamMember: jest.Mock };
 
   beforeEach(async () => {
     repository = createMockRepository();
     eventEmitter = { emit: jest.fn() };
+    tenantService = { assertTeamMember: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         HitlService,
         { provide: HitlRepository, useValue: repository },
         { provide: EventEmitter2, useValue: eventEmitter },
+        // Assignment guard: by default every assignee is a member of this
+        // tenant, so the existing cases exercise the happy path unchanged.
+        { provide: TenantService, useValue: tenantService },
       ],
     }).compile();
 

@@ -502,6 +502,34 @@ export class TenantService {
   }
 
   /**
+   * Assert that `memberId` names a live team member of `businessId`.
+   *
+   * The tenant guard for *assignee* fields. `@TenantId()` scopes the row being
+   * written, but a caller-supplied member id inside the body is a second,
+   * unscoped reference: without this check a business can write another
+   * business's `team_members.id` into its own `tasks.assigned_to` or
+   * `realty_leads.assigned_agent_id`. The `tasks.assigned_to` foreign key is
+   * satisfied by *any* real member row, so the database does not catch it.
+   *
+   * Nothing is returned — callers only need the assertion, and returning the
+   * row would invite it being used as a tenant-scoped member read, which
+   * `getMembers` already provides.
+   *
+   * @throws BadRequestException when the member does not exist in this tenant.
+   */
+  async assertTeamMember(businessId: string, memberId: string): Promise<void> {
+    const member = await this.repository.findTeamMemberById(businessId, memberId);
+    if (!member) {
+      // Deliberately does not distinguish "no such member" from "member of
+      // another business" — the difference would confirm the existence of an
+      // id outside the caller's tenant.
+      throw new BadRequestException(
+        `Team member ${memberId} does not belong to this business`,
+      );
+    }
+  }
+
+  /**
    * Invite a new team member. Creates with INVITED status and generates
    * a unique invite token (UUID).
    *
