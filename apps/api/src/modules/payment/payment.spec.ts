@@ -1275,4 +1275,653 @@ describe('PaymentService', () => {
       expect(summary.results).toHaveLength(1);
     });
   });
+
+  // ─────────────────────────────────────────────
+  // BRANCH COVERAGE — webhook routing, fallbacks, mappers
+  // ─────────────────────────────────────────────
+
+  describe('Razorpay webhook routing', () => {
+    const rzpPayload = (event: string, payload: Record<string, unknown>) =>
+      JSON.stringify({ entity: 'event', account_id: 'acc', event, payload });
+
+    beforeEach(() => {
+      razorpay.verifyWebhookSignature.mockReturnValue(true);
+      repository.recordWebhookEvent.mockResolvedValue({ id: 'wh_1' });
+      repository.markWebhookProcessed.mockResolvedValue(undefined as never);
+    });
+
+    it('accepts a raw Buffer body', async () => {
+      repository.findPaymentByLinkId.mockResolvedValue(null as never);
+      const buf = Buffer.from(
+        rzpPayload('payment_link.paid', { payment_link: { entity: { id: 'plink_x' } } }),
+        'utf8',
+      );
+
+      await service.handleRazorpayWebhook(buf, 'sig');
+
+      expect(repository.markWebhookProcessed).toHaveBeenCalledWith('wh_1');
+    });
+
+    it.each(['payment.authorized', 'payment.captured'])(
+      'routes %s to the capture handler',
+      async (event) => {
+        repository.findPaymentByGatewayId.mockResolvedValue(
+          createMockPayment({ status: 'PENDING' }) as never,
+        );
+        repository.updatePaymentStatus.mockResolvedValue(
+          createMockPayment({ status: 'SUCCESS' }) as never,
+        );
+
+        await service.handleRazorpayWebhook(
+          rzpPayload(event, { payment: { entity: { id: 'pay_1', method: 'card' } } }),
+          'sig',
+        );
+
+        expect(eventEmitter.emit).toHaveBeenCalledWith(
+          'payment.success',
+          expect.objectContaining({ gatewayPaymentId: 'pay_1' }),
+        );
+      },
+    );
+
+    it('ignores an unhandled event type but still marks it processed', async () => {
+      await service.handleRazorpayWebhook(rzpPayload('order.paid', {}), 'sig');
+
+      expect(repository.markWebhookProcessed).toHaveBeenCalledWith('wh_1');
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
+    });
+
+    it('rethrows after logging a non-Error thrown by a handler', async () => {
+      repository.findPaymentByLinkId.mockImplementation(() => {
+        throw 'gateway exploded';
+      });
+
+      await expect(
+        service.handleRazorpayWebhook(
+          rzpPayload('payment_link.paid', { payment_link: { entity: { id: 'plink_x' } } }),
+          'sig',
+        ),
+      ).rejects.toBe('gateway exploded');
+      expect(repository.markWebhookProcessed).not.toHaveBeenCalled();
+    });
+
+    it('derives the idempotency key from a payment_link when there is no payment entity', async () => {
+      repository.findPaymentByLinkId.mockResolvedValue(null as never);
+
+      await service.handleRazorpayWebhook(
+        rzpPayload('payment_link.paid', { payment_link: { entity: { id: 'plink_k' } } }),
+        'sig',
+      );
+
+      expect(repository.recordWebhookEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ externalId: 'payment_link.paid_plink_k' }),
+      );
+    });
+
+    it('derives the idempotency key from a refund entity', async () => {
+      repository.findRefundByGatewayId.mockResolvedValue(null as never);
+
+      await service.handleRazorpayWebhook(
+        rzpPayload('refund.processed', { refund: { entity: { id: 'rfnd_k' } } }),
+        'sig',
+      );
+
+      expect(repository.recordWebhookEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ externalId: 'refund.processed_rfnd_k' }),
+      );
+    });
+
+    it('falls back to "unknown" when the payload carries no entity at all', async () => {
+      await service.handleRazorpayWebhook(rzpPayload('order.paid', {}), 'sig');
+
+      expect(repository.recordWebhookEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ externalId: 'order.paid_unknown' }),
+      );
+    });
+  });
+
+  describe('Razorpay webhook handlers (missing / unmatched entities)', () => {
+    const rzpPayload = (event: string, payload: Record<string, unknown>) =>
+      JSON.stringify({ entity: 'event', account_id: 'acc', event, payload });
+
+    beforeEach(() => {
+      razorpay.verifyWebhookSignature.mockReturnValue(true);
+      repository.recordWebhookEvent.mockResolvedValue({ id: 'wh_1' });
+      repository.markWebhookProcessed.mockResolvedValue(undefined as never);
+    });
+
+    it('ignores payment_link.paid with no payment_link entity', async () => {
+      await service.handleRazorpayWebhook(rzpPayload('payment_link.paid', {}), 'sig');
+      expect(repository.findPaymentByLinkId).not.toHaveBeenCalled();
+    });
+
+    it('ignores payment_link.paid when no local payment matches the link', async () => {
+      repository.findPaymentByLinkId.mockResolvedValue(null as never);
+
+      await service.handleRazorpayWebhook(
+        rzpPayload('payment_link.paid', { payment_link: { entity: { id: 'plink_x' } } }),
+        'sig',
+      );
+
+      expect(repository.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it('records nulls when payment_link.paid carries no payment entity', async () => {
+      repository.findPaymentByLinkId.mockResolvedValue(
+        createMockPayment({ order_id: null }) as never,
+      );
+      repository.updatePaymentStatus.mockResolvedValue(createMockPayment() as never);
+
+      await service.handleRazorpayWebhook(
+        rzpPayload('payment_link.paid', { payment_link: { entity: { id: 'plink_x' } } }),
+        'sig',
+      );
+
+      expect(repository.updatePaymentStatus).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        PAYMENT_ID,
+        expect.objectContaining({ method: null, gatewayPaymentId: null }),
+      );
+      const event = eventEmitter.emit.mock.calls.find((c) => c[0] === 'payment.success');
+      expect(event?.[1]).toMatchObject({ orderId: undefined, gatewayPaymentId: '' });
+    });
+
+    it('ignores payment.captured with no payment entity', async () => {
+      await service.handleRazorpayWebhook(rzpPayload('payment.captured', {}), 'sig');
+      expect(repository.findPaymentByGatewayId).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the gateway order id when the payment id does not match', async () => {
+      repository.findPaymentByGatewayId.mockResolvedValue(null as never);
+      repository.findPaymentByGatewayOrderId.mockResolvedValue(
+        createMockPayment({ status: 'PENDING', order_id: null }) as never,
+      );
+      repository.updatePaymentStatus.mockResolvedValue(createMockPayment() as never);
+
+      await service.handleRazorpayWebhook(
+        rzpPayload('payment.captured', {
+          payment: { entity: { id: 'pay_1', order_id: 'order_rzp_1' } },
+        }),
+        'sig',
+      );
+
+      expect(repository.findPaymentByGatewayOrderId).toHaveBeenCalledWith('order_rzp_1');
+      expect(repository.updatePaymentStatus).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        PAYMENT_ID,
+        expect.objectContaining({ method: null }),
+      );
+    });
+
+    it('ignores payment.captured when nothing matches', async () => {
+      repository.findPaymentByGatewayId.mockResolvedValue(null as never);
+
+      await service.handleRazorpayWebhook(
+        rzpPayload('payment.captured', { payment: { entity: { id: 'pay_1' } } }),
+        'sig',
+      );
+
+      expect(repository.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it('skips a redelivered payment.captured for an already-SUCCESS payment', async () => {
+      repository.findPaymentByGatewayId.mockResolvedValue(
+        createMockPayment({ status: 'SUCCESS' }) as never,
+      );
+
+      await service.handleRazorpayWebhook(
+        rzpPayload('payment.captured', { payment: { entity: { id: 'pay_1' } } }),
+        'sig',
+      );
+
+      expect(repository.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it('ignores payment.failed with no payment entity', async () => {
+      await service.handleRazorpayWebhook(rzpPayload('payment.failed', {}), 'sig');
+      expect(repository.findPaymentByGatewayId).not.toHaveBeenCalled();
+    });
+
+    it('ignores payment.failed when nothing matches', async () => {
+      repository.findPaymentByGatewayId.mockResolvedValue(null as never);
+
+      await service.handleRazorpayWebhook(
+        rzpPayload('payment.failed', { payment: { entity: { id: 'pay_1' } } }),
+        'sig',
+      );
+
+      expect(repository.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [{ error_description: 'card declined' }, 'card declined'],
+      [{ error_code: 'BAD_REQUEST_ERROR' }, 'BAD_REQUEST_ERROR'],
+      [{}, 'Payment failed'],
+    ])('derives the failure reason from %o', async (errorFields, expected) => {
+      repository.findPaymentByGatewayId.mockResolvedValue(null as never);
+      repository.findPaymentByGatewayOrderId.mockResolvedValue(
+        createMockPayment({ order_id: null }) as never,
+      );
+      repository.updatePaymentStatus.mockResolvedValue(createMockPayment() as never);
+
+      await service.handleRazorpayWebhook(
+        rzpPayload('payment.failed', {
+          payment: { entity: { id: 'pay_1', order_id: 'order_1', ...errorFields } },
+        }),
+        'sig',
+      );
+
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'payment.failed',
+        expect.objectContaining({ reason: expected, orderId: undefined }),
+      );
+    });
+
+    it('ignores refund.processed with no refund entity', async () => {
+      await service.handleRazorpayWebhook(rzpPayload('refund.processed', {}), 'sig');
+      expect(repository.findRefundByGatewayId).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Stripe webhook routing', () => {
+    const stripePayload = (type: string, object: Record<string, unknown>) =>
+      JSON.stringify({ id: 'evt_1', type, data: { object } });
+
+    beforeEach(() => {
+      stripe.verifyWebhookSignature.mockReturnValue(true);
+      repository.recordWebhookEvent.mockResolvedValue({ id: 'wh_1' });
+      repository.markWebhookProcessed.mockResolvedValue(undefined as never);
+    });
+
+    it('accepts a raw Buffer body', async () => {
+      repository.findPaymentByLinkId.mockResolvedValue(null as never);
+      const buf = Buffer.from(
+        stripePayload('checkout.session.completed', { id: 'cs_1' }),
+        'utf8',
+      );
+
+      await service.handleStripeWebhook(buf, 'sig');
+
+      expect(repository.markWebhookProcessed).toHaveBeenCalledWith('wh_1');
+    });
+
+    it.each(['charge.refunded', 'refund.updated'])(
+      'logs %s without touching any payment',
+      async (type) => {
+        await service.handleStripeWebhook(stripePayload(type, { id: 'ch_1' }), 'sig');
+
+        expect(repository.updatePaymentStatus).not.toHaveBeenCalled();
+        expect(repository.markWebhookProcessed).toHaveBeenCalledWith('wh_1');
+      },
+    );
+
+    it('ignores an unhandled Stripe event type', async () => {
+      await service.handleStripeWebhook(stripePayload('customer.created', {}), 'sig');
+      expect(repository.markWebhookProcessed).toHaveBeenCalledWith('wh_1');
+    });
+
+    it('rethrows after logging a non-Error thrown by a handler', async () => {
+      repository.findPaymentByLinkId.mockImplementation(() => {
+        throw 'stripe exploded';
+      });
+
+      await expect(
+        service.handleStripeWebhook(
+          stripePayload('checkout.session.completed', { id: 'cs_1' }),
+          'sig',
+        ),
+      ).rejects.toBe('stripe exploded');
+    });
+
+    it('ignores checkout.session.completed when no payment matches the session', async () => {
+      repository.findPaymentByLinkId.mockResolvedValue(null as never);
+
+      await service.handleStripeWebhook(
+        stripePayload('checkout.session.completed', { id: 'cs_1' }),
+        'sig',
+      );
+
+      expect(repository.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it('skips a redelivered checkout.session.completed for an already-SUCCESS payment', async () => {
+      repository.findPaymentByLinkId.mockResolvedValue(
+        createMockPayment({ status: 'SUCCESS' }) as never,
+      );
+
+      await service.handleStripeWebhook(
+        stripePayload('checkout.session.completed', { id: 'cs_1' }),
+        'sig',
+      );
+
+      expect(repository.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it('records nulls when the session has no payment_intent or method types', async () => {
+      repository.findPaymentByLinkId.mockResolvedValue(
+        createMockPayment({ status: 'PENDING', order_id: null, gateway: 'STRIPE' }) as never,
+      );
+      repository.updatePaymentStatus.mockResolvedValue(createMockPayment() as never);
+
+      await service.handleStripeWebhook(
+        stripePayload('checkout.session.completed', { id: 'cs_1' }),
+        'sig',
+      );
+
+      expect(repository.updatePaymentStatus).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        PAYMENT_ID,
+        expect.objectContaining({ method: null, gatewayPaymentId: null }),
+      );
+      const event = eventEmitter.emit.mock.calls.find((c) => c[0] === 'payment.success');
+      expect(event?.[1]).toMatchObject({ orderId: undefined, gatewayPaymentId: '' });
+    });
+
+    it('ignores checkout.session.expired when no payment matches', async () => {
+      repository.findPaymentByLinkId.mockResolvedValue(null as never);
+
+      await service.handleStripeWebhook(
+        stripePayload('checkout.session.expired', { id: 'cs_1' }),
+        'sig',
+      );
+
+      expect(repository.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it.each(['SUCCESS', 'EXPIRED'])(
+      'leaves a %s payment alone on checkout.session.expired',
+      async (status) => {
+        repository.findPaymentByLinkId.mockResolvedValue(
+          createMockPayment({ status }) as never,
+        );
+
+        await service.handleStripeWebhook(
+          stripePayload('checkout.session.expired', { id: 'cs_1' }),
+          'sig',
+        );
+
+        expect(repository.updatePaymentStatus).not.toHaveBeenCalled();
+      },
+    );
+
+    it('marks a pending payment EXPIRED on checkout.session.expired', async () => {
+      repository.findPaymentByLinkId.mockResolvedValue(
+        createMockPayment({ status: 'PENDING' }) as never,
+      );
+      repository.updatePaymentStatus.mockResolvedValue(createMockPayment() as never);
+
+      await service.handleStripeWebhook(
+        stripePayload('checkout.session.expired', { id: 'cs_1' }),
+        'sig',
+      );
+
+      expect(repository.updatePaymentStatus).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        PAYMENT_ID,
+        expect.objectContaining({ status: PaymentStatus.EXPIRED }),
+      );
+    });
+
+    it('ignores payment_intent.payment_failed when no payment matches', async () => {
+      repository.findPaymentByGatewayId.mockResolvedValue(null as never);
+
+      await service.handleStripeWebhook(
+        stripePayload('payment_intent.payment_failed', { id: 'pi_1' }),
+        'sig',
+      );
+
+      expect(repository.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [{ last_payment_error: { message: 'card_declined message' } }, 'card_declined message'],
+      [{ last_payment_error: { code: 'card_declined' } }, 'card_declined'],
+      [{}, 'Payment failed'],
+    ])('derives the Stripe failure reason from %o', async (errorFields, expected) => {
+      repository.findPaymentByGatewayId.mockResolvedValue(
+        createMockPayment({ order_id: null, gateway: 'STRIPE' }) as never,
+      );
+      repository.updatePaymentStatus.mockResolvedValue(createMockPayment() as never);
+
+      await service.handleStripeWebhook(
+        stripePayload('payment_intent.payment_failed', { id: 'pi_1', ...errorFields }),
+        'sig',
+      );
+
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'payment.failed',
+        expect.objectContaining({ reason: expected, orderId: undefined }),
+      );
+    });
+  });
+
+  describe('reconcilePayment (remaining gateway outcomes)', () => {
+    it.each(['cancelled', 'expired'])(
+      'marks a Razorpay payment EXPIRED when the link is %s',
+      async (status) => {
+        repository.getPayment.mockResolvedValue(
+          createMockPayment({ status: 'PENDING', gateway: 'RAZORPAY' }) as never,
+        );
+        razorpay.fetchPaymentLinkStatus.mockResolvedValue({
+          id: 'plink_test123',
+          status,
+          amountPaidPaise: 0,
+        } as never);
+        repository.updatePaymentStatus.mockResolvedValue(
+          createMockPayment({ status: 'EXPIRED' }) as never,
+        );
+
+        const result = await service.reconcilePayment(BUSINESS_ID, PAYMENT_ID);
+
+        expect(result.currentStatus).toBe(PaymentStatus.EXPIRED);
+      },
+    );
+
+    it('marks a Stripe payment SUCCESS when the session reports paid', async () => {
+      repository.getPayment.mockResolvedValue(
+        createMockPayment({ status: 'PENDING', gateway: 'STRIPE', order_id: null }) as never,
+      );
+      stripe.fetchSessionStatus.mockResolvedValue({
+        id: 'cs_1',
+        status: 'complete',
+        paymentStatus: 'paid',
+        paymentIntentId: 'pi_recon',
+      } as never);
+      repository.updatePaymentStatus.mockResolvedValue(
+        createMockPayment({ status: 'SUCCESS' }) as never,
+      );
+
+      const result = await service.reconcilePayment(BUSINESS_ID, PAYMENT_ID);
+
+      expect(result.currentStatus).toBe(PaymentStatus.SUCCESS);
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'payment.success',
+        expect.objectContaining({ gatewayPaymentId: 'pi_recon', orderId: undefined }),
+      );
+    });
+
+    it('records an empty gateway id when the paid link reports no payment id', async () => {
+      repository.getPayment.mockResolvedValue(
+        createMockPayment({ status: 'PENDING', gateway: 'RAZORPAY' }) as never,
+      );
+      razorpay.fetchPaymentLinkStatus.mockResolvedValue({
+        id: 'plink_test123',
+        status: 'paid',
+        amountPaidPaise: 50000,
+      } as never);
+      repository.updatePaymentStatus.mockResolvedValue(createMockPayment() as never);
+
+      await service.reconcilePayment(BUSINESS_ID, PAYMENT_ID);
+
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'payment.success',
+        expect.objectContaining({ gatewayPaymentId: '' }),
+      );
+    });
+
+    it('swallows a non-Error thrown by the gateway and leaves the status unchanged', async () => {
+      repository.getPayment.mockResolvedValue(
+        createMockPayment({ status: 'PENDING', gateway: 'RAZORPAY' }) as never,
+      );
+      razorpay.fetchPaymentLinkStatus.mockImplementation(() => {
+        throw 'gateway down';
+      });
+
+      const result = await service.reconcilePayment(BUSINESS_ID, PAYMENT_ID);
+
+      expect(result.changed).toBe(false);
+      expect(result.currentStatus).toBe(PaymentStatus.PENDING);
+    });
+  });
+
+  describe('remaining service branches', () => {
+    it('throws NotFoundException when fetching an unknown payment link', async () => {
+      repository.getPayment.mockResolvedValue(null as never);
+
+      await expect(service.getPaymentLink(BUSINESS_ID, PAYMENT_ID)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it('threads the orderId into the Stripe checkout metadata', async () => {
+      stripe.createCheckoutSession.mockResolvedValue({
+        id: 'cs_meta',
+        url: 'https://checkout.stripe.com/cs_meta',
+      } as never);
+      repository.createPayment.mockResolvedValue(
+        createMockPayment({ gateway: 'STRIPE' }) as never,
+      );
+
+      await service.createPaymentLink(BUSINESS_ID, {
+        clientId: CLIENT_ID,
+        orderId: ORDER_ID,
+        amountPaise: 5000,
+        currency: 'USD',
+        description: 'Order',
+      } as CreatePaymentLinkDto);
+
+      expect(stripe.createCheckoutSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ orderId: ORDER_ID }),
+        }),
+      );
+    });
+
+    it('wraps a non-Error gateway refund failure in a BadRequestException', async () => {
+      repository.getPayment.mockResolvedValue(
+        createMockPayment({
+          status: 'SUCCESS',
+          gateway: 'RAZORPAY',
+          gateway_payment_id: 'pay_1',
+        }) as never,
+      );
+      repository.sumCompletedRefundsForPayment.mockResolvedValue(0);
+      razorpay.createRefund.mockImplementation(() => {
+        throw 'refund exploded';
+      });
+
+      await expect(
+        service.initiateRefund(BUSINESS_ID, {
+          transactionId: PAYMENT_ID,
+          amountPaise: 10000,
+          reason: 'Customer request',
+        } as InitiateRefundDto),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('omits the orderId from the refund record when the payment has none', async () => {
+      repository.getPayment.mockResolvedValue(
+        createMockPayment({
+          status: 'SUCCESS',
+          gateway: 'RAZORPAY',
+          gateway_payment_id: 'pay_1',
+          order_id: null,
+        }) as never,
+      );
+      repository.sumCompletedRefundsForPayment.mockResolvedValue(0);
+      razorpay.createRefund.mockResolvedValue({ id: 'rfnd_1' } as never);
+      repository.createRefund.mockResolvedValue(
+        createMockRefund({ order_id: null }) as never,
+      );
+
+      await service.initiateRefund(BUSINESS_ID, {
+        transactionId: PAYMENT_ID,
+        amountPaise: 10000,
+        reason: 'Customer request',
+      } as InitiateRefundDto);
+
+      expect(repository.createRefund).toHaveBeenCalledWith(
+        expect.objectContaining({ orderId: undefined }),
+      );
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'payment.refund.initiated',
+        expect.objectContaining({ orderId: undefined }),
+      );
+    });
+
+    it('swallows a non-Error thrown while auto-creating a payment link', async () => {
+      repository.createPayment.mockImplementation(() => {
+        throw 'boom';
+      });
+
+      await expect(
+        service.handleOrderCreated({
+          id: 'evt',
+          type: 'order.created',
+          timestamp: new Date().toISOString(),
+          businessId: BUSINESS_ID,
+          correlationId: 'corr',
+          orderId: ORDER_ID,
+          orderNumber: 'ORD-1',
+          clientId: CLIENT_ID,
+          totalPaise: 50000,
+        } as OrderCreatedEvent),
+      ).resolves.toBeUndefined();
+    });
+
+    it('maps null timestamps on a payment to null DTO fields', async () => {
+      repository.getPayment.mockResolvedValue(
+        createMockPayment({ payment_link_expires_at: null }) as never,
+      );
+
+      const dto = await service.getPaymentLink(BUSINESS_ID, PAYMENT_ID);
+
+      expect(dto.expiresAt).toBeNull();
+    });
+
+    it('maps every null lifecycle timestamp on a COD transaction', async () => {
+      repository.createPayment.mockResolvedValue(
+        createMockPayment({
+          status: 'SUCCESS',
+          method: 'COD',
+          gateway: 'MANUAL',
+          payment_link_expires_at: null,
+          initiated_at: null,
+          captured_at: null,
+          failed_at: null,
+        }) as never,
+      );
+      repository.updatePaymentStatus.mockResolvedValue(
+        createMockPayment({
+          status: 'SUCCESS',
+          payment_link_expires_at: null,
+          initiated_at: null,
+          captured_at: null,
+          failed_at: null,
+        }) as never,
+      );
+
+      const dto = await service.confirmCODPayment(BUSINESS_ID, {
+        orderId: ORDER_ID,
+        clientId: CLIENT_ID,
+        amountPaise: 50000,
+      } as ConfirmCODDto);
+
+      expect(dto.expiresAt).toBeNull();
+      expect(dto.initiatedAt).toBeNull();
+      expect(dto.capturedAt).toBeNull();
+      expect(dto.failedAt).toBeNull();
+    });
+  });
+
 });
