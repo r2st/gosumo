@@ -122,6 +122,8 @@ interface PrismaMock {
   catalog_variants: { update: jest.Mock; updateMany: jest.Mock };
   shipments: { create: jest.Mock };
   shipping_options: { findFirst: jest.Mock };
+  /** Stock reservation and restoration are issued as one batched transaction. */
+  $transaction: jest.Mock;
 }
 
 describe('OrderService — branches', () => {
@@ -152,6 +154,7 @@ describe('OrderService — branches', () => {
         updateMany: jest.fn(),
       },
       catalog_variants: { update: jest.fn(), updateMany: jest.fn() },
+      $transaction: jest.fn((ops: unknown[]) => Promise.all(ops)),
       shipments: { create: jest.fn() },
       shipping_options: { findFirst: jest.fn() },
     };
@@ -971,6 +974,155 @@ describe('OrderService — branches', () => {
           estimated_delivery_at: new Date('2026-07-05T00:00:00.000Z'),
         }),
       });
+    });
+  });
+  // ─────────────────────────────────────────────
+  // Stock reservation batching
+  // ─────────────────────────────────────────────
+
+  describe('createOrder — stock reservation', () => {
+    const SECOND_ITEM_ID = '00000000-0000-4000-8000-00000000000a';
+
+    function orderDto(items: { itemId: string; quantity: number; variantId?: string }[]) {
+      return {
+        clientId: CLIENT_ID,
+        items,
+        paymentMethod: PaymentMethod.COD,
+      } as Parameters<OrderService['createOrder']>[1];
+    }
+
+    beforeEach(() => {
+      repository.getNextOrderNumber.mockResolvedValue('ORD-2026-00001');
+      repository.createOrder.mockResolvedValue(createMockOrder() as never);
+    });
+
+    it('reserves stock for every line in a single transaction', async () => {
+      prisma.catalog_items.findMany.mockResolvedValue([
+        createMockCatalogItem(),
+        createMockCatalogItem({ id: SECOND_ITEM_ID, sku: 'TEST-002' }),
+      ]);
+
+      await service.createOrder(
+        BUSINESS_ID,
+        orderDto([
+          { itemId: ITEM_ID, quantity: 2 },
+          { itemId: SECOND_ITEM_ID, quantity: 3 },
+        ]),
+      );
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.$transaction.mock.calls[0][0]).toHaveLength(2);
+      expect(prisma.catalog_items.update).toHaveBeenCalledWith({
+        where: { id: ITEM_ID, business_id: BUSINESS_ID },
+        data: { stock_quantity: { decrement: 2 } },
+      });
+      expect(prisma.catalog_items.update).toHaveBeenCalledWith({
+        where: { id: SECOND_ITEM_ID, business_id: BUSINESS_ID },
+        data: { stock_quantity: { decrement: 3 } },
+      });
+    });
+
+    it('leaks no stock when a later line fails validation', async () => {
+      // Line 1 is satisfiable, line 2 is not. The pre-batching code decremented
+      // line 1 before reaching line 2 and left the reservation behind.
+      prisma.catalog_items.findMany.mockResolvedValue([
+        createMockCatalogItem(),
+        createMockCatalogItem({ id: SECOND_ITEM_ID, stock_quantity: 1 }),
+      ]);
+
+      await expect(
+        service.createOrder(
+          BUSINESS_ID,
+          orderDto([
+            { itemId: ITEM_ID, quantity: 2 },
+            { itemId: SECOND_ITEM_ID, quantity: 5 },
+          ]),
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      // Nothing was executed: a Prisma delegate call only builds a lazy
+      // PrismaPromise, so $transaction never firing is what proves no stock
+      // moved — not whether .update() was invoked to construct the operation.
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(repository.createOrder).not.toHaveBeenCalled();
+    });
+
+    it('leaks no stock when the coupon is rejected after the lines validate', async () => {
+      prisma.catalog_items.findMany.mockResolvedValue([createMockCatalogItem()]);
+      couponService.validateAndComputeDiscount.mockRejectedValue(
+        new BadRequestException('Coupon expired'),
+      );
+
+      await expect(
+        service.createOrder(BUSINESS_ID, {
+          ...orderDto([{ itemId: ITEM_ID, quantity: 2 }]),
+          discountCode: 'EXPIRED',
+        } as Parameters<OrderService['createOrder']>[1]),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('issues no transaction when nothing tracks inventory', async () => {
+      prisma.catalog_items.findMany.mockResolvedValue([
+        createMockCatalogItem({ track_inventory: false }),
+      ]);
+
+      await service.createOrder(BUSINESS_ID, orderDto([{ itemId: ITEM_ID, quantity: 2 }]));
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(repository.createOrder).toHaveBeenCalled();
+    });
+
+    it('reserves against the variant when one is chosen', async () => {
+      prisma.catalog_items.findMany.mockResolvedValue([
+        createMockCatalogItem({ variants: [createMockVariant()] }),
+      ]);
+
+      await service.createOrder(
+        BUSINESS_ID,
+        orderDto([{ itemId: ITEM_ID, quantity: 2, variantId: VARIANT_ID }]),
+      );
+
+      expect(prisma.catalog_variants.update).toHaveBeenCalledWith({
+        where: { id: VARIANT_ID, business_id: BUSINESS_ID },
+        data: { stock_quantity: { decrement: 2 } },
+      });
+      expect(prisma.catalog_items.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('restoreStock batching', () => {
+    it('restores every line in a single transaction', async () => {
+      repository.findOrderById.mockResolvedValue(
+        createMockOrder({
+          line_items: [
+            { ...MOCK_LINE_ITEMS[0], quantity: 2 },
+            { ...MOCK_LINE_ITEMS[0], itemId: '00000000-0000-4000-8000-00000000000b', quantity: 3 },
+          ],
+        }) as never,
+      );
+      repository.updateOrderStatus.mockResolvedValue(
+        createMockOrder({ status: OrderStatus.CANCELLED }) as never,
+      );
+
+      await service.cancelOrder(BUSINESS_ID, ORDER_ID, { reason: 'changed mind' });
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.$transaction.mock.calls[0][0]).toHaveLength(2);
+    });
+
+    it('issues no transaction for an order with no line items', async () => {
+      repository.findOrderById.mockResolvedValue(
+        createMockOrder({ line_items: [] }) as never,
+      );
+      repository.updateOrderStatus.mockResolvedValue(
+        createMockOrder({ status: OrderStatus.CANCELLED }) as never,
+      );
+
+      await service.cancelOrder(BUSINESS_ID, ORDER_ID, { reason: 'changed mind' });
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
   });
 });

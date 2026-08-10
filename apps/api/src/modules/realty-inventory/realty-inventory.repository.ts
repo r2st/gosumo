@@ -166,6 +166,33 @@ export class RealtyInventoryRepository {
   }
 
   /**
+   * Units for many projects at once, keyed by project id.
+   *
+   * Exports and other whole-portfolio reads walk every project; asking per
+   * project cost two round trips each (existence check + units) for a set the
+   * caller already holds.
+   */
+  async listUnitsByProjects(
+    businessId: string,
+    projectIds: string[],
+  ): Promise<Map<string, realty_units[]>> {
+    const grouped = new Map<string, realty_units[]>();
+    if (projectIds.length === 0) return grouped;
+
+    const units = await this.prisma.realty_units.findMany({
+      where: { business_id: businessId, project_id: { in: projectIds }, deleted_at: null },
+      orderBy: [{ project_id: 'asc' }, { config: 'asc' }, { all_in_price: 'asc' }],
+    });
+
+    for (const unit of units) {
+      const bucket = grouped.get(unit.project_id);
+      if (bucket) bucket.push(unit);
+      else grouped.set(unit.project_id, [unit]);
+    }
+    return grouped;
+  }
+
+  /**
    * Candidate units for matching: AVAILABLE and verified within the freshness
    * window (default 24h). Stale/unverified units are excluded so the AI never
    * asserts availability it can't back with a fresh check (hard rule §14).

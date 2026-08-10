@@ -99,6 +99,34 @@ export class RealtyCadenceRepository {
     });
   }
 
+  /** Resolve many templates by name — used by the idempotent seeder. */
+  async findTemplatesByNames(
+    businessId: string,
+    names: string[],
+  ): Promise<realty_message_templates[]> {
+    if (names.length === 0) return [];
+    return this.prisma.realty_message_templates.findMany({
+      where: { name: { in: [...new Set(names)] }, business_id: businessId, deleted_at: null },
+    });
+  }
+
+  /**
+   * Resolve many templates at once.
+   *
+   * Cadence writes validate every referenced template before touching the
+   * cadence row; doing that with findTemplateById per step cost one round trip
+   * per step on a request that already knows the full id set upfront.
+   */
+  async findTemplatesByIds(
+    businessId: string,
+    ids: string[],
+  ): Promise<realty_message_templates[]> {
+    if (ids.length === 0) return [];
+    return this.prisma.realty_message_templates.findMany({
+      where: { id: { in: [...new Set(ids)] }, business_id: businessId, deleted_at: null },
+    });
+  }
+
   async listTemplates(
     businessId: string,
     filters: { category?: string; approvalStatus?: string } = {},
@@ -189,12 +217,61 @@ export class RealtyCadenceRepository {
     });
   }
 
+  /**
+   * Insert a cadence's steps in one statement.
+   *
+   * `createMany` skips the per-row round trip that writing steps in a loop
+   * incurred, and keeps a partially-written cadence from surviving a failure
+   * halfway through the list.
+   */
+  async createSteps(steps: CreateStepData[]): Promise<void> {
+    if (steps.length === 0) return;
+    await this.prisma.realty_cadence_steps.createMany({
+      data: steps.map((s) => ({
+        business_id: s.businessId,
+        cadence_id: s.cadenceId,
+        template_id: s.templateId,
+        step_order: s.stepOrder,
+        day_offset: s.dayOffset,
+        condition: s.condition ?? {},
+        stop_on: s.stopOn,
+      })),
+    });
+  }
+
   async listStepsByCadence(businessId: string, cadenceId: string): Promise<StepWithTemplate[]> {
     return this.prisma.realty_cadence_steps.findMany({
       where: { business_id: businessId, cadence_id: cadenceId, deleted_at: null },
       orderBy: { step_order: 'asc' },
       include: { template: true },
     });
+  }
+
+  /**
+   * Steps for many cadences in one query, keyed by cadence id.
+   *
+   * `listCadences` assembles a response per cadence; fetching steps per cadence
+   * meant the list endpoint issued one query per row it returned.
+   */
+  async listStepsByCadences(
+    businessId: string,
+    cadenceIds: string[],
+  ): Promise<Map<string, StepWithTemplate[]>> {
+    const grouped = new Map<string, StepWithTemplate[]>();
+    if (cadenceIds.length === 0) return grouped;
+
+    const steps = await this.prisma.realty_cadence_steps.findMany({
+      where: { business_id: businessId, cadence_id: { in: cadenceIds }, deleted_at: null },
+      orderBy: [{ cadence_id: 'asc' }, { step_order: 'asc' }],
+      include: { template: true },
+    });
+
+    for (const step of steps) {
+      const bucket = grouped.get(step.cadence_id);
+      if (bucket) bucket.push(step);
+      else grouped.set(step.cadence_id, [step]);
+    }
+    return grouped;
   }
 
   async deleteStepsByCadence(businessId: string, cadenceId: string): Promise<void> {

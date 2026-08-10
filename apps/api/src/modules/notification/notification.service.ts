@@ -535,19 +535,30 @@ export class NotificationService {
       });
     }
 
-    for (const trigger of triggers) {
-      if (!evaluateConditions(trigger.conditions, payload)) {
-        continue;
-      }
+    // Resolve every trigger's template up front. One event can fan out to
+    // several triggers, and resolving inside the loop meant a query per
+    // trigger for a set already known here.
+    const applicable = triggers.filter((t) => evaluateConditions(t.conditions, payload));
+    const templates = await this.repository.findTemplatesForTriggers(
+      businessId,
+      applicable.flatMap((t) => (t.templateId ? [t.templateId] : [])),
+      applicable.flatMap((t) =>
+        !t.templateId && t.templateName
+          ? [{ channel: t.channel, name: t.templateName }]
+          : [],
+      ),
+    );
+    const templatesById = new Map(templates.map((t) => [t.id, t]));
+    const templatesByChannelName = new Map(
+      templates.map((t) => [`${t.channel}:${t.name}`, t]),
+    );
+
+    for (const trigger of applicable) {
       try {
         const template = trigger.templateId
-          ? await this.repository.findTemplateById(businessId, trigger.templateId)
+          ? (templatesById.get(trigger.templateId) ?? null)
           : trigger.templateName
-            ? await this.repository.findTemplateByName(
-                businessId,
-                trigger.channel,
-                trigger.templateName,
-              )
+            ? (templatesByChannelName.get(`${trigger.channel}:${trigger.templateName}`) ?? null)
             : null;
         if (template) {
           this.assertWhatsAppTemplateApproved(trigger.channel, template);

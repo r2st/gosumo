@@ -68,6 +68,7 @@ describe('SheetsExportService', () => {
     inventory = {
       listProjects: jest.fn(),
       listUnits: jest.fn(),
+      listUnitsForProjects: jest.fn().mockResolvedValue(new Map()),
     } as unknown as jest.Mocked<RealtyInventoryService>;
     sheets = {
       getAuthUrl: jest.fn(),
@@ -170,7 +171,9 @@ describe('SheetsExportService', () => {
         totalPages: 1,
       });
       inventory.listProjects.mockResolvedValue([{ id: 'proj-1' }] as never);
-      inventory.listUnits.mockResolvedValue([{ id: 'unit-1' }] as never);
+      inventory.listUnitsForProjects.mockResolvedValue(
+        new Map([['proj-1', [{ id: 'unit-1' }]]]) as never,
+      );
       sheets.ensureSpreadsheet.mockResolvedValue({
         spreadsheetId: 'sheet-123',
         spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/sheet-123',

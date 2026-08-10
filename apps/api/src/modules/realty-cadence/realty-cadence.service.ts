@@ -91,12 +91,15 @@ export class RealtyCadenceService {
     let templateCount = 0;
     const byName = new Map<string, string>();
 
+    // One lookup for the whole default set instead of one per template.
+    const existingTemplates = await this.repository.findTemplatesByNames(
+      businessId,
+      DEFAULT_TEMPLATES.map((t) => t.name),
+    );
+    for (const t of existingTemplates) byName.set(t.name, t.id);
+
     for (const t of DEFAULT_TEMPLATES) {
-      const existing = await this.repository.findTemplateByName(businessId, t.name);
-      if (existing) {
-        byName.set(t.name, existing.id);
-        continue;
-      }
+      if (byName.has(t.name)) continue;
       const created = await this.repository.createTemplate({
         businessId,
         name: t.name,
@@ -123,18 +126,23 @@ export class RealtyCadenceService {
         trigger: c.trigger as realty_cadences['trigger'],
         isActive: true,
       });
-      for (const step of c.steps) {
-        const templateId = byName.get(step.templateName);
-        if (!templateId) continue;
-        await this.repository.createStep({
-          businessId,
-          cadenceId: cadence.id,
-          templateId,
-          stepOrder: step.order,
-          dayOffset: step.dayOffset,
-          stopOn: step.stopOn as realty_cadence_steps['stop_on'],
-        });
-      }
+      await this.repository.createSteps(
+        c.steps.flatMap((step) => {
+          const templateId = byName.get(step.templateName);
+          return templateId
+            ? [
+                {
+                  businessId,
+                  cadenceId: cadence.id,
+                  templateId,
+                  stepOrder: step.order,
+                  dayOffset: step.dayOffset,
+                  stopOn: step.stopOn as realty_cadence_steps['stop_on'],
+                },
+              ]
+            : [];
+        }),
+      );
       cadenceCount++;
     }
 
@@ -214,10 +222,7 @@ export class RealtyCadenceService {
 
   async createCadence(businessId: string, dto: CreateCadenceDto): Promise<CadenceResponseDto> {
     // Every referenced template must exist and belong to the tenant.
-    for (const step of dto.steps) {
-      const template = await this.repository.findTemplateById(businessId, step.templateId);
-      if (!template) throw new NotFoundException(`Template ${step.templateId} not found`);
-    }
+    await this.assertTemplatesExist(businessId, dto.steps);
     const cadence = await this.repository.createCadence({
       businessId,
       name: dto.name,
@@ -231,7 +236,13 @@ export class RealtyCadenceService {
 
   async listCadences(businessId: string, query: ListCadencesQueryDto): Promise<CadenceResponseDto[]> {
     const cadences = await this.repository.listCadences(businessId, { trigger: query.trigger });
-    return Promise.all(cadences.map((c) => this.assembleCadence(businessId, c)));
+    // Two queries regardless of how many cadences come back, rather than one
+    // per cadence.
+    const stepsByCadence = await this.repository.listStepsByCadences(
+      businessId,
+      cadences.map((c) => c.id),
+    );
+    return cadences.map((c) => this.buildCadence(c, stepsByCadence.get(c.id) ?? []));
   }
 
   async getCadence(businessId: string, id: string): Promise<CadenceResponseDto> {
@@ -252,10 +263,7 @@ export class RealtyCadenceService {
     if (Object.keys(d).length) await this.repository.updateCadence(businessId, id, d);
 
     if (dto.steps !== undefined) {
-      for (const step of dto.steps) {
-        const template = await this.repository.findTemplateById(businessId, step.templateId);
-        if (!template) throw new NotFoundException(`Template ${step.templateId} not found`);
-      }
+      await this.assertTemplatesExist(businessId, dto.steps);
       await this.repository.deleteStepsByCadence(businessId, id);
       await this.writeSteps(businessId, id, dto.steps);
     }
@@ -288,16 +296,16 @@ export class RealtyCadenceService {
     steps: CreateCadenceDto['steps'],
   ): Promise<void> {
     const ordered = [...steps].sort((a, b) => a.order - b.order);
-    for (const step of ordered) {
-      await this.repository.createStep({
+    await this.repository.createSteps(
+      ordered.map((step) => ({
         businessId,
         cadenceId,
         templateId: step.templateId,
         stepOrder: step.order,
         dayOffset: step.dayOffset,
         stopOn: (step.stopOn ?? []) as realty_cadence_steps['stop_on'],
-      });
-    }
+      })),
+    );
   }
 
   private async assembleCadence(
@@ -305,6 +313,14 @@ export class RealtyCadenceService {
     cadence: realty_cadences,
   ): Promise<CadenceResponseDto> {
     const steps = await this.repository.listStepsByCadence(businessId, cadence.id);
+    return this.buildCadence(cadence, steps);
+  }
+
+  /** Shape a cadence + its already-loaded steps into the response DTO. */
+  private buildCadence(
+    cadence: realty_cadences,
+    steps: StepWithTemplate[],
+  ): CadenceResponseDto {
     return {
       id: cadence.id,
       name: cadence.name,
@@ -315,6 +331,22 @@ export class RealtyCadenceService {
       createdAt: cadence.created_at,
       updatedAt: cadence.updated_at,
     };
+  }
+
+  /**
+   * Reject the write unless every referenced template exists for this tenant.
+   * One query for the whole step list; the first missing id is reported so the
+   * message matches the per-step check this replaced.
+   */
+  private async assertTemplatesExist(
+    businessId: string,
+    steps: { templateId: string }[],
+  ): Promise<void> {
+    const ids = steps.map((s) => s.templateId);
+    const found = await this.repository.findTemplatesByIds(businessId, ids);
+    const known = new Set(found.map((t) => t.id));
+    const missing = ids.find((id) => !known.has(id));
+    if (missing) throw new NotFoundException(`Template ${missing} not found`);
   }
 
   private async mustFindTemplate(businessId: string, id: string): Promise<realty_message_templates> {

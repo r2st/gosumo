@@ -266,6 +266,29 @@ export class NotificationRepository {
     });
   }
 
+  /**
+   * Resolve the templates a batch of triggers refers to, by id and by
+   * (channel, name), in one query each.
+   *
+   * A single domain event fans out to every trigger a tenant has configured
+   * for it, and each one used to resolve its template with its own query while
+   * the whole set was already known.
+   */
+  async findTemplatesForTriggers(
+    businessId: string,
+    ids: string[],
+    named: { channel: NotificationTemplateChannel; name: string }[],
+  ): Promise<notification_templates[]> {
+    const or: Prisma.notification_templatesWhereInput[] = [];
+    if (ids.length > 0) or.push({ id: { in: [...new Set(ids)] } });
+    for (const n of named) or.push({ channel: n.channel, name: n.name });
+    if (or.length === 0) return [];
+
+    return this.prisma.notification_templates.findMany({
+      where: { business_id: businessId, deleted_at: null, OR: or },
+    });
+  }
+
   async listTemplates(
     businessId: string,
     channel?: NotificationTemplateChannel,

@@ -152,6 +152,13 @@ export class OrderService {
     let subtotalPaise = 0;
     let totalTaxPaise = 0;
 
+    // Stock decrements are collected here and issued as one transaction after
+    // every line has been validated. Applying them inside the loop meant a
+    // later line failing validation — insufficient stock, unknown variant —
+    // left the earlier lines already decremented with no order to show for it,
+    // so the reservation leaked. It also cost one round trip per line.
+    const stockDecrements: Prisma.PrismaPromise<unknown>[] = [];
+
     // Fetch every referenced catalog item in one query rather than one per
     // line. Order creation is a hot path and carts routinely hold several
     // items, so the per-item lookup meant N sequential round trips before any
@@ -246,10 +253,12 @@ export class OrderService {
                 `Insufficient stock for variant ${item.variantId}: available ${variant.stock_quantity}, requested ${item.quantity}`,
               );
             }
-            await this.prisma.catalog_variants.update({
-              where: { id: item.variantId, business_id: businessId },
-              data: { stock_quantity: { decrement: item.quantity } },
-            });
+            stockDecrements.push(
+              this.prisma.catalog_variants.update({
+                where: { id: item.variantId, business_id: businessId },
+                data: { stock_quantity: { decrement: item.quantity } },
+              }),
+            );
           }
         } else if (catalogItem.stock_quantity !== null) {
           if (catalogItem.stock_quantity < item.quantity && !catalogItem.allow_backorder) {
@@ -257,10 +266,12 @@ export class OrderService {
               `Insufficient stock for item ${item.itemId}: available ${catalogItem.stock_quantity}, requested ${item.quantity}`,
             );
           }
-          await this.prisma.catalog_items.update({
-            where: { id: item.itemId, business_id: businessId },
-            data: { stock_quantity: { decrement: item.quantity } },
-          });
+          stockDecrements.push(
+            this.prisma.catalog_items.update({
+              where: { id: item.itemId, business_id: businessId },
+              data: { stock_quantity: { decrement: item.quantity } },
+            }),
+          );
         }
       }
     }
@@ -312,7 +323,14 @@ export class OrderService {
     const isCod = dto.paymentMethod === PaymentMethod.COD;
     const initialStatus = isCod ? OrderStatus.CONFIRMED : OrderStatus.DRAFT;
 
-    // Step 6: Create the order
+    // Step 6: Reserve stock, then create the order.
+    // Deferred to here so that nothing which can still reject the order —
+    // line validation, coupon lookup, shipping resolution, order numbering —
+    // runs after stock has been taken.
+    if (stockDecrements.length > 0) {
+      await this.prisma.$transaction(stockDecrements);
+    }
+
     // Convert paise to rupees for Prisma Decimal storage
     const order = await this.repository.createOrder({
       businessId,
@@ -1022,22 +1040,27 @@ export class OrderService {
     businessId: string,
     lineItems: OrderLineItem[],
   ): Promise<void> {
-    for (const item of lineItems) {
-      if (item.variantId) {
-        await this.prisma.catalog_variants.updateMany({
-          where: { id: item.variantId, business_id: businessId },
-          data: { stock_quantity: { increment: item.quantity } },
-        });
-      } else {
-        await this.prisma.catalog_items.updateMany({
-          where: {
-            id: item.itemId,
-            business_id: businessId,
-            track_inventory: true,
-          },
-          data: { stock_quantity: { increment: item.quantity } },
-        });
-      }
+    // One transaction rather than a sequential await per line: a cancellation
+    // that failed partway used to restore some lines and not others, leaving
+    // stock permanently understated with no record of which lines were missed.
+    const increments = lineItems.map((item) =>
+      item.variantId
+        ? this.prisma.catalog_variants.updateMany({
+            where: { id: item.variantId, business_id: businessId },
+            data: { stock_quantity: { increment: item.quantity } },
+          })
+        : this.prisma.catalog_items.updateMany({
+            where: {
+              id: item.itemId,
+              business_id: businessId,
+              track_inventory: true,
+            },
+            data: { stock_quantity: { increment: item.quantity } },
+          }),
+    );
+
+    if (increments.length > 0) {
+      await this.prisma.$transaction(increments);
     }
   }
 

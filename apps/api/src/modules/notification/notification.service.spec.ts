@@ -161,6 +161,19 @@ class FakeRepo {
       ) ?? null
     );
   });
+  findTemplatesForTriggers = jest.fn(
+    async (b: string, ids: string[], named: { channel: string; name: string }[]) => {
+      if (ids.length === 0 && named.length === 0) return [];
+      const idSet = new Set(ids);
+      return [...this.templates.values()].filter(
+        (t) =>
+          t.business_id === b &&
+          !t.deleted_at &&
+          (idSet.has(t.id) ||
+            named.some((n) => n.channel === t.channel && n.name === t.name)),
+      );
+    },
+  );
   listTemplates = jest.fn(async () => [...this.templates.values()]);
   updateTemplate = jest.fn(async (b: string, id: string, data: any) => {
     const t = this.templates.get(id);
@@ -1885,5 +1898,93 @@ describe('NotificationService outbound mapping', () => {
         data: { orderId: 'o-1' },
       }),
     );
+  });
+});
+
+describe('NotificationService.handleEventTrigger — template batching', () => {
+  it('resolves every trigger\'s template in one query, not one per trigger', async () => {
+    const { service, repo } = makeService();
+    repo.seedClient();
+
+    const a = await service.createTemplate(BUSINESS, {
+      name: 'tpl_sms',
+      channel: NotificationTemplateChannel.SMS,
+      content: { text: 'sms {{orderId}}' },
+    } as Parameters<typeof service.createTemplate>[1]);
+    const b = await service.createTemplate(BUSINESS, {
+      name: 'tpl_email',
+      channel: NotificationTemplateChannel.EMAIL,
+      content: { text: 'email {{orderId}}' },
+    } as Parameters<typeof service.createTemplate>[1]);
+
+    await service.createTrigger(BUSINESS, {
+      eventType: 'order.created',
+      channel: NotificationTemplateChannel.SMS,
+      templateId: a.id,
+    });
+    await service.createTrigger(BUSINESS, {
+      eventType: 'order.created',
+      channel: NotificationTemplateChannel.EMAIL,
+      templateId: b.id,
+    });
+
+    repo.findTemplatesForTriggers.mockClear();
+    repo.findTemplateById.mockClear();
+
+    await service.handleEventTrigger('order.created', {
+      businessId: BUSINESS,
+      clientId: CLIENT,
+      orderId: 'o-9',
+    });
+
+    expect(repo.findTemplatesForTriggers).toHaveBeenCalledTimes(1);
+    expect(repo.findTemplateById).not.toHaveBeenCalled();
+    expect([...repo.notifications.values()]).toHaveLength(2);
+  });
+
+  it('asks for nothing when no trigger passes its conditions', async () => {
+    const { service, repo } = makeService();
+    repo.seedClient();
+    await service.createTrigger(BUSINESS, {
+      eventType: 'order.created',
+      channel: NotificationTemplateChannel.SMS,
+      conditions: [{ path: 'total', op: 'gt', value: 1000 }],
+    });
+
+    repo.findTemplatesForTriggers.mockClear();
+
+    await service.handleEventTrigger('order.created', {
+      businessId: BUSINESS,
+      clientId: CLIENT,
+      orderId: 'o-9',
+      total: 10,
+    });
+
+    expect(repo.findTemplatesForTriggers).toHaveBeenCalledWith(BUSINESS, [], []);
+    expect([...repo.notifications.values()]).toHaveLength(0);
+  });
+
+  it('still dispatches when a trigger references a template that no longer exists', async () => {
+    const { service, repo } = makeService();
+    repo.seedClient();
+    const tpl = await service.createTemplate(BUSINESS, {
+      name: 'gone',
+      channel: NotificationTemplateChannel.SMS,
+      content: { text: 'x' },
+    } as Parameters<typeof service.createTemplate>[1]);
+    await service.createTrigger(BUSINESS, {
+      eventType: 'order.created',
+      channel: NotificationTemplateChannel.SMS,
+      templateId: tpl.id,
+    });
+    repo.templates.delete(tpl.id);
+
+    await service.handleEventTrigger('order.created', {
+      businessId: BUSINESS,
+      clientId: CLIENT,
+      orderId: 'o-9',
+    });
+
+    expect([...repo.notifications.values()]).toHaveLength(1);
   });
 });

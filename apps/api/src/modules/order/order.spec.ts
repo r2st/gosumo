@@ -134,6 +134,8 @@ interface PrismaMock {
   };
   shipments: { create: jest.Mock };
   shipping_options: { findFirst: jest.Mock };
+  /** Stock reservation and restoration are issued as one batched transaction. */
+  $transaction: jest.Mock;
 }
 
 // ─────────────────────────────────────────────
@@ -173,6 +175,9 @@ describe('OrderService', () => {
       },
       shipments: { create: jest.fn() },
       shipping_options: { findFirst: jest.fn() },
+      // The real client executes the queued PrismaPromises; the mock resolves
+      // them so the assertions below can inspect what was queued.
+      $transaction: jest.fn((ops: unknown[]) => Promise.all(ops)),
     };
 
     const mockCouponService = {

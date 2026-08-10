@@ -209,6 +209,25 @@ export class RealtyInventoryService {
     return units.map((u) => this.mapUnit(u));
   }
 
+  /**
+   * Units for many projects in one query, keyed by project id.
+   *
+   * Unlike `listUnits` this does not re-verify each project exists — the
+   * caller supplies ids it just read for this tenant, and the query is
+   * business-scoped, so a foreign id simply returns nothing.
+   */
+  async listUnitsForProjects(
+    businessId: string,
+    projectIds: string[],
+  ): Promise<Map<string, UnitResponseDto[]>> {
+    const rows = await this.repository.listUnitsByProjects(businessId, projectIds);
+    const mapped = new Map<string, UnitResponseDto[]>();
+    for (const [projectId, units] of rows) {
+      mapped.set(projectId, units.map((u) => this.mapUnit(u)));
+    }
+    return mapped;
+  }
+
   /** Fetch a single unit (used e.g. to resolve a lead's matched unit → project). */
   async getUnit(businessId: string, unitId: string): Promise<UnitResponseDto> {
     return this.mapUnit(await this.mustFindUnit(businessId, unitId));

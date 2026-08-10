@@ -67,6 +67,8 @@ describe('RealtyCadenceService', () => {
       createTemplate: jest.fn(),
       findTemplateById: jest.fn(),
       findTemplateByName: jest.fn(),
+      findTemplatesByIds: jest.fn().mockResolvedValue([]),
+      findTemplatesByNames: jest.fn().mockResolvedValue([]),
       listTemplates: jest.fn(),
       updateTemplate: jest.fn(),
       softDeleteTemplate: jest.fn(),
@@ -76,7 +78,9 @@ describe('RealtyCadenceService', () => {
       updateCadence: jest.fn(),
       softDeleteCadence: jest.fn(),
       createStep: jest.fn(),
+      createSteps: jest.fn(),
       listStepsByCadence: jest.fn(),
+      listStepsByCadences: jest.fn().mockResolvedValue(new Map()),
       deleteStepsByCadence: jest.fn(),
       listEnrollments: jest.fn(),
     };
@@ -96,11 +100,10 @@ describe('RealtyCadenceService', () => {
   // ── Seeding ──
   describe('seedDefaults', () => {
     it('installs every default template and 3 cadences on a fresh tenant', async () => {
-      repository.findTemplateByName.mockResolvedValue(null);
+      repository.findTemplatesByNames.mockResolvedValue([] as never);
       repository.createTemplate.mockImplementation(async (d) => makeTemplate({ name: d.name }) as never);
       repository.listCadences.mockResolvedValue([]);
       repository.createCadence.mockResolvedValue(makeCadence() as never);
-      repository.createStep.mockResolvedValue({} as never);
 
       const result = await service.seedDefaults(BUSINESS_ID);
 
@@ -110,7 +113,11 @@ describe('RealtyCadenceService', () => {
     });
 
     it('is idempotent — skips templates/cadences that already exist', async () => {
-      repository.findTemplateByName.mockResolvedValue(makeTemplate() as never); // all exist
+      // All defaults already present — resolved in a single lookup.
+      repository.findTemplatesByNames.mockImplementation(
+        async (_b: string, names: string[]) =>
+          names.map((name) => makeTemplate({ name })) as never,
+      );
       repository.listCadences.mockResolvedValue([
         makeCadence({ name: 'No-response follow-up (D1 / D3 / D7)' }),
         makeCadence({ name: 'Post-visit nurture' }),
@@ -196,9 +203,8 @@ describe('RealtyCadenceService', () => {
     });
 
     it('creates the cadence and writes its steps', async () => {
-      repository.findTemplateById.mockResolvedValue(makeTemplate() as never);
+      repository.findTemplatesByIds.mockResolvedValue([makeTemplate()] as never);
       repository.createCadence.mockResolvedValue(makeCadence() as never);
-      repository.createStep.mockResolvedValue({} as never);
       repository.findCadenceById.mockResolvedValue(makeCadence() as never);
       repository.listStepsByCadence.mockResolvedValue([]);
 
@@ -211,19 +217,91 @@ describe('RealtyCadenceService', () => {
         ],
       });
 
-      // Steps are written ordered by `order` (0 then 1).
-      expect(repository.createStep).toHaveBeenCalledTimes(2);
-      const firstOrder = (repository.createStep.mock.calls[0]![0] as { stepOrder: number }).stepOrder;
-      expect(firstOrder).toBe(0);
+      // One insert for the whole list, still ordered by `order` (0 then 1).
+      expect(repository.createSteps).toHaveBeenCalledTimes(1);
+      const written = repository.createSteps.mock.calls[0]![0] as { stepOrder: number }[];
+      expect(written.map((s) => s.stepOrder)).toEqual([0, 1]);
+    });
+
+    it('validates every referenced template in one query', async () => {
+      repository.findTemplatesByIds.mockResolvedValue([makeTemplate()] as never);
+      repository.createCadence.mockResolvedValue(makeCadence() as never);
+      repository.findCadenceById.mockResolvedValue(makeCadence() as never);
+      repository.listStepsByCadence.mockResolvedValue([]);
+
+      await service.createCadence(BUSINESS_ID, {
+        name: 'C',
+        trigger: CadenceTrigger.NO_RESPONSE,
+        steps: [
+          { order: 0, dayOffset: 1, templateId: TEMPLATE_ID, stopOn: [] },
+          { order: 1, dayOffset: 3, templateId: TEMPLATE_ID, stopOn: [] },
+          { order: 2, dayOffset: 7, templateId: TEMPLATE_ID, stopOn: [] },
+        ],
+      });
+
+      expect(repository.findTemplatesByIds).toHaveBeenCalledTimes(1);
+      expect(repository.findTemplateById).not.toHaveBeenCalled();
+    });
+
+    it('names the first unknown template and writes nothing', async () => {
+      const MISSING = '00000000-0000-4000-a000-0000000000ee';
+      repository.findTemplatesByIds.mockResolvedValue([makeTemplate()] as never);
+
+      await expect(
+        service.createCadence(BUSINESS_ID, {
+          name: 'C',
+          trigger: CadenceTrigger.NO_RESPONSE,
+          steps: [
+            { order: 0, dayOffset: 1, templateId: TEMPLATE_ID, stopOn: [] },
+            { order: 1, dayOffset: 3, templateId: MISSING, stopOn: [] },
+          ],
+        }),
+      ).rejects.toThrow(`Template ${MISSING} not found`);
+
+      expect(repository.createCadence).not.toHaveBeenCalled();
+      expect(repository.createSteps).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('listCadences', () => {
+    it('loads every cadence\'s steps in one query, not one per cadence', async () => {
+      const a = makeCadence({ id: CADENCE_ID, name: 'A' });
+      const b = makeCadence({ id: '00000000-0000-4000-a000-0000000000ab', name: 'B' });
+      repository.listCadences.mockResolvedValue([a, b] as never);
+      repository.listStepsByCadences.mockResolvedValue(new Map() as never);
+
+      const result = await service.listCadences(BUSINESS_ID, {});
+
+      expect(result).toHaveLength(2);
+      expect(repository.listStepsByCadences).toHaveBeenCalledTimes(1);
+      expect(repository.listStepsByCadences).toHaveBeenCalledWith(BUSINESS_ID, [a.id, b.id]);
+      expect(repository.listStepsByCadence).not.toHaveBeenCalled();
+    });
+
+    it('returns an empty step list for a cadence with no steps', async () => {
+      repository.listCadences.mockResolvedValue([makeCadence()] as never);
+      repository.listStepsByCadences.mockResolvedValue(new Map() as never);
+
+      const [cadence] = await service.listCadences(BUSINESS_ID, {});
+
+      expect(cadence!.steps).toEqual([]);
+    });
+
+    it('makes no step query when the tenant has no cadences', async () => {
+      repository.listCadences.mockResolvedValue([] as never);
+
+      const result = await service.listCadences(BUSINESS_ID, {});
+
+      expect(result).toEqual([]);
+      expect(repository.listStepsByCadences).toHaveBeenCalledWith(BUSINESS_ID, []);
     });
   });
 
   describe('updateCadence', () => {
     it('replaces the step list when steps are provided', async () => {
       repository.findCadenceById.mockResolvedValue(makeCadence() as never);
-      repository.findTemplateById.mockResolvedValue(makeTemplate() as never);
+      repository.findTemplatesByIds.mockResolvedValue([makeTemplate()] as never);
       repository.deleteStepsByCadence.mockResolvedValue(undefined as never);
-      repository.createStep.mockResolvedValue({} as never);
       repository.listStepsByCadence.mockResolvedValue([]);
 
       await service.updateCadence(BUSINESS_ID, CADENCE_ID, {
@@ -231,7 +309,7 @@ describe('RealtyCadenceService', () => {
       });
 
       expect(repository.deleteStepsByCadence).toHaveBeenCalledWith(BUSINESS_ID, CADENCE_ID);
-      expect(repository.createStep).toHaveBeenCalledTimes(1);
+      expect(repository.createSteps).toHaveBeenCalledTimes(1);
     });
   });
 });

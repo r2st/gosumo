@@ -588,4 +588,53 @@ describe('NotificationRepository', () => {
       });
     });
   });
+  describe('findTemplatesForTriggers', () => {
+    it('queries nothing when there are no ids and no names', async () => {
+      const result = await repository.findTemplatesForTriggers(BUSINESS_ID, [], []);
+
+      expect(result).toEqual([]);
+      expect(prisma.notification_templates.findMany).not.toHaveBeenCalled();
+    });
+
+    it('collapses duplicate ids into one IN list', async () => {
+      await repository.findTemplatesForTriggers(
+        BUSINESS_ID,
+        [TEMPLATE_ID, TEMPLATE_ID],
+        [],
+      );
+
+      expect(whereOf(prisma.notification_templates.findMany)).toEqual({
+        business_id: BUSINESS_ID,
+        deleted_at: null,
+        OR: [{ id: { in: [TEMPLATE_ID] } }],
+      });
+    });
+
+    it('matches named templates on channel AND name, never name alone', async () => {
+      await repository.findTemplatesForTriggers(BUSINESS_ID, [], [
+        { channel: NotificationTemplateChannel.SMS, name: 'receipt' },
+        { channel: NotificationTemplateChannel.EMAIL, name: 'receipt' },
+      ]);
+
+      expect(whereOf(prisma.notification_templates.findMany)).toEqual({
+        business_id: BUSINESS_ID,
+        deleted_at: null,
+        OR: [
+          { channel: NotificationTemplateChannel.SMS, name: 'receipt' },
+          { channel: NotificationTemplateChannel.EMAIL, name: 'receipt' },
+        ],
+      });
+    });
+
+    it('scopes to the tenant and excludes soft-deleted templates', async () => {
+      await repository.findTemplatesForTriggers(BUSINESS_ID, [TEMPLATE_ID], [
+        { channel: NotificationTemplateChannel.SMS, name: 'receipt' },
+      ]);
+
+      const where = whereOf(prisma.notification_templates.findMany) as Record<string, unknown>;
+      expect(where['business_id']).toBe(BUSINESS_ID);
+      expect(where['deleted_at']).toBeNull();
+      expect(where['OR']).toHaveLength(2);
+    });
+  });
 });

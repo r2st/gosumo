@@ -290,12 +290,15 @@ export class SheetsExportService {
     businessId: string,
   ): Promise<Array<{ project: ProjectResponseDto; units: UnitResponseDto[] }>> {
     const projects = await this.inventoryService.listProjects(businessId, {});
-    const entries: Array<{ project: ProjectResponseDto; units: UnitResponseDto[] }> = [];
-    for (const project of projects) {
-      const units = await this.inventoryService.listUnits(businessId, project.id);
-      entries.push({ project, units });
-    }
-    return entries;
+    // Two queries for the whole portfolio rather than two per project.
+    const unitsByProject = await this.inventoryService.listUnitsForProjects(
+      businessId,
+      projects.map((p) => p.id),
+    );
+    return projects.map((project) => ({
+      project,
+      units: unitsByProject.get(project.id) ?? [],
+    }));
   }
 
   // ── Helpers ──────────────────────────────────
