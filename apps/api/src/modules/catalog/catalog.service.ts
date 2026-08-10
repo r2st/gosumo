@@ -64,11 +64,10 @@ function slugify(name: string): string {
     .replace(/^-|-$/g, '');
 }
 
-/** Generate a short SKU from a prefix and random suffix. */
-function generateSKU(prefix?: string): string {
-  const pfx = prefix ? prefix.toUpperCase().slice(0, 3) : 'ITM';
+/** Generate a short SKU with a random suffix. */
+function generateSKU(): string {
   const suffix = Math.random().toString(36).substring(2, 8).toUpperCase();
-  return `${pfx}-${suffix}`;
+  return `ITM-${suffix}`;
 }
 
 /** Shape of line items that order events may carry. */

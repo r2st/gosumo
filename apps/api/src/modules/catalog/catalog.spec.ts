@@ -1006,4 +1006,553 @@ describe('CatalogService', () => {
       expect(repository.listItems.mock.calls[0]?.[0]).toBe(OTHER_BUSINESS_ID);
     });
   });
+
+  // ─────────────────────────────────────────────
+  // BRANCH COVERAGE — optional fields, fallbacks, mappers
+  // ─────────────────────────────────────────────
+
+  describe('createItem (optional fields and fallbacks)', () => {
+    it('gives up after 10 collisions on the auto-generated SKU', async () => {
+      repository.findItemBySlug.mockResolvedValue(null as never);
+      // Every generated SKU collides.
+      repository.findItemBySku.mockResolvedValue(makeItem() as never);
+
+      await expect(
+        service.createItem(BUSINESS_ID, { name: 'Mouse', pricePaise: 49900 }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(repository.createItem).not.toHaveBeenCalled();
+    });
+
+    it('converts comparePricePaise and taxRate when supplied', async () => {
+      repository.findItemBySlug.mockResolvedValue(null as never);
+      repository.findItemBySku.mockResolvedValue(null as never);
+      repository.createItem.mockResolvedValue(makeItem() as never);
+
+      await service.createItem(BUSINESS_ID, {
+        name: 'Mouse',
+        pricePaise: 49900,
+        comparePricePaise: 69900,
+        taxRate: 0.18,
+      });
+
+      const data = repository.createItem.mock.calls[0]?.[0] as unknown as Record<string, unknown>;
+      expect(Number(data['comparePrice'])).toBe(699);
+      expect(Number(data['taxRate'])).toBe(0.18);
+    });
+
+    it('leaves comparePrice null and taxRate undefined when not supplied', async () => {
+      repository.findItemBySlug.mockResolvedValue(null as never);
+      repository.findItemBySku.mockResolvedValue(null as never);
+      repository.createItem.mockResolvedValue(makeItem() as never);
+
+      await service.createItem(BUSINESS_ID, { name: 'Mouse', pricePaise: 49900 });
+
+      const data = repository.createItem.mock.calls[0]?.[0] as unknown as Record<string, unknown>;
+      expect(data['comparePrice']).toBeNull();
+      expect(data['taxRate']).toBeUndefined();
+    });
+
+    it('falls back to the generated SKU and an undefined categoryId in the event', async () => {
+      repository.findItemBySlug.mockResolvedValue(null as never);
+      repository.findItemBySku.mockResolvedValue(null as never);
+      repository.createItem.mockResolvedValue(
+        makeItem({ sku: null, category_id: null, category: null }) as never,
+      );
+
+      await service.createItem(BUSINESS_ID, { name: 'Mouse', pricePaise: 49900 });
+
+      const event = eventEmitter.emit.mock.calls.find(
+        (c) => c[0] === 'catalog.item.created',
+      )?.[1] as { sku: string; categoryId?: string };
+      expect(event.sku).toMatch(/^ITM-/);
+      expect(event.categoryId).toBeUndefined();
+    });
+
+    it('derives the ai_description from the long description when there is no short one', async () => {
+      repository.findItemBySlug.mockResolvedValue(null as never);
+      repository.findItemBySku.mockResolvedValue(null as never);
+      repository.createItem.mockResolvedValue(makeItem() as never);
+
+      await service.createItem(BUSINESS_ID, {
+        name: 'Mouse',
+        pricePaise: 49900,
+        description: 'A long description',
+      });
+
+      const data = repository.createItem.mock.calls[0]?.[0] as unknown as Record<string, unknown>;
+      expect(data['aiDescription']).toBe('Mouse. A long description');
+    });
+
+    it('derives the ai_description from name alone when nothing else is given', async () => {
+      repository.findItemBySlug.mockResolvedValue(null as never);
+      repository.findItemBySku.mockResolvedValue(null as never);
+      repository.createItem.mockResolvedValue(makeItem() as never);
+
+      await service.createItem(BUSINESS_ID, { name: 'Mouse', pricePaise: 49900 });
+
+      const data = repository.createItem.mock.calls[0]?.[0] as unknown as Record<string, unknown>;
+      expect(data['aiDescription']).toBe('Mouse');
+    });
+  });
+
+  describe('updateItem (per-field change tracking)', () => {
+    it('maps every optional field and reports each one as changed', async () => {
+      repository.findItemById.mockResolvedValue(makeItem() as never);
+      repository.findItemBySku.mockResolvedValue(null as never);
+      repository.findItemBySlug.mockResolvedValue(null as never);
+      repository.findCategoryById.mockResolvedValue(makeCategory() as never);
+      repository.updateItem.mockResolvedValue(makeItem() as never);
+
+      await service.updateItem(BUSINESS_ID, ITEM_ID, {
+        name: 'New name',
+        slug: 'new-slug',
+        type: CatalogItemType.SERVICE,
+        categoryId: PARENT_CATEGORY_ID,
+        description: 'desc',
+        shortDescription: 'short',
+        pricePaise: 10000,
+        comparePricePaise: 20000,
+        currency: 'USD',
+        taxRate: 0.05,
+        taxInclusive: false,
+        sku: 'NEW-SKU',
+        barcode: 'BAR-1',
+        stockQuantity: 7,
+        trackInventory: false,
+        allowBackorder: true,
+        lowStockThreshold: 3,
+        weightGrams: 120,
+        images: [{ url: 'https://cdn.test/a.jpg' }],
+        tags: ['a'],
+        aiDescription: 'ai',
+        isActive: false,
+        isFeatured: true,
+        sortOrder: 9,
+      });
+
+      const event = eventEmitter.emit.mock.calls.find(
+        (c) => c[0] === 'catalog.item.updated',
+      )?.[1] as { changedFields: string[] };
+      expect(event.changedFields).toEqual(
+        expect.arrayContaining([
+          'name', 'slug', 'type', 'categoryId', 'description', 'shortDescription',
+          'price', 'comparePrice', 'currency', 'taxRate', 'taxInclusive', 'sku',
+          'barcode', 'stockQuantity', 'trackInventory', 'allowBackorder',
+          'lowStockThreshold', 'weightGrams', 'images', 'tags', 'aiDescription',
+          'isActive', 'isFeatured', 'sortOrder',
+        ]),
+      );
+      expect(event.changedFields).toHaveLength(24);
+    });
+
+    it('clears comparePrice when comparePricePaise is explicitly null', async () => {
+      repository.findItemById.mockResolvedValue(makeItem() as never);
+      repository.updateItem.mockResolvedValue(makeItem() as never);
+
+      await service.updateItem(BUSINESS_ID, ITEM_ID, { comparePricePaise: null });
+
+      const data = repository.updateItem.mock.calls[0]?.[2] as unknown as Record<string, unknown>;
+      expect(data['comparePrice']).toBeNull();
+    });
+
+    it('emits nothing when the update carries no fields', async () => {
+      repository.findItemById.mockResolvedValue(makeItem() as never);
+      repository.updateItem.mockResolvedValue(makeItem() as never);
+
+      await service.updateItem(BUSINESS_ID, ITEM_ID, {});
+
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('variants (price conversion branches)', () => {
+    it('converts an explicit comparePricePaise when adding a variant', async () => {
+      repository.findItemById.mockResolvedValue(makeItem() as never);
+      repository.findVariantBySku.mockResolvedValue(null as never);
+      repository.findItemBySku.mockResolvedValue(null as never);
+      repository.createVariant.mockResolvedValue(makeVariant() as never);
+
+      await service.addVariant(BUSINESS_ID, ITEM_ID, {
+        name: 'Large',
+        sku: 'VAR-L',
+        pricePaise: 59900,
+        comparePricePaise: 79900,
+      });
+
+      const data = repository.createVariant.mock.calls[0]?.[0] as unknown as Record<string, unknown>;
+      expect(Number(data['price'])).toBe(599);
+      expect(Number(data['comparePrice'])).toBe(799);
+    });
+
+    it('writes explicit nulls when a variant price is cleared', async () => {
+      repository.findVariantById.mockResolvedValue(makeVariant() as never);
+      repository.updateVariant.mockResolvedValue(makeVariant() as never);
+
+      await service.updateVariant(BUSINESS_ID, ITEM_ID, VARIANT_ID, {
+        pricePaise: null,
+        comparePricePaise: null,
+      });
+
+      const data = repository.updateVariant.mock.calls[0]?.[2] as unknown as Record<string, unknown>;
+      expect(data['price']).toBeNull();
+      expect(data['comparePrice']).toBeNull();
+    });
+
+    it('converts both variant prices when new values are given', async () => {
+      repository.findVariantById.mockResolvedValue(makeVariant() as never);
+      repository.updateVariant.mockResolvedValue(makeVariant() as never);
+
+      await service.updateVariant(BUSINESS_ID, ITEM_ID, VARIANT_ID, {
+        pricePaise: 12300,
+        comparePricePaise: 45600,
+      });
+
+      const data = repository.updateVariant.mock.calls[0]?.[2] as unknown as Record<string, unknown>;
+      expect(Number(data['price'])).toBe(123);
+      expect(Number(data['comparePrice'])).toBe(456);
+    });
+
+    it('leaves both variant prices untouched when neither is supplied', async () => {
+      repository.findVariantById.mockResolvedValue(makeVariant() as never);
+      repository.updateVariant.mockResolvedValue(makeVariant() as never);
+
+      await service.updateVariant(BUSINESS_ID, ITEM_ID, VARIANT_ID, { name: 'Renamed' });
+
+      const data = repository.updateVariant.mock.calls[0]?.[2] as unknown as Record<string, unknown>;
+      expect(data['price']).toBeUndefined();
+      expect(data['comparePrice']).toBeUndefined();
+    });
+  });
+
+  describe('getEffectivePrice (null price)', () => {
+    it('treats a null item price as zero paise', async () => {
+      repository.findItemById.mockResolvedValue(
+        makeItem({ price: null, compare_price: null }) as never,
+      );
+
+      const result = await service.getEffectivePrice(BUSINESS_ID, ITEM_ID);
+
+      expect(result.basePricePaise).toBe(0);
+    });
+  });
+
+  describe('updateStock (null stock and threshold fallbacks)', () => {
+    it('treats a null post-update stock as zero and emits stock.out for a variant', async () => {
+      const item = makeItem({
+        low_stock_threshold: null,
+        variants: [makeVariant()],
+      });
+      repository.findItemById.mockResolvedValue(item as never);
+      repository.updateVariantStock.mockResolvedValue({ stock_quantity: null } as never);
+
+      await service.updateStock(BUSINESS_ID, ITEM_ID, {
+        variantId: VARIANT_ID,
+        delta: -5,
+      });
+
+      const emitted = eventEmitter.emit.mock.calls.map((c) => c[0]);
+      expect(emitted).toContain('catalog.stock.out');
+    });
+
+    it('treats a null item stock as zero after an item-level update', async () => {
+      repository.findItemById.mockResolvedValue(
+        makeItem({ low_stock_threshold: null }) as never,
+      );
+      repository.updateItemStock.mockResolvedValue({ stock_quantity: null } as never);
+
+      await service.updateStock(BUSINESS_ID, ITEM_ID, { delta: -5 });
+
+      const emitted = eventEmitter.emit.mock.calls.map((c) => c[0]);
+      expect(emitted).toContain('catalog.stock.out');
+    });
+
+    it('names the variant in the low-stock log line', async () => {
+      const item = makeItem({ low_stock_threshold: 10, variants: [makeVariant()] });
+      repository.findItemById.mockResolvedValue(item as never);
+      repository.updateVariantStock.mockResolvedValue({ stock_quantity: 3 } as never);
+
+      await service.updateStock(BUSINESS_ID, ITEM_ID, {
+        variantId: VARIANT_ID,
+        delta: -17,
+      });
+
+      const event = eventEmitter.emit.mock.calls.find(
+        (c) => c[0] === 'catalog.stock.low',
+      )?.[1] as { variantId?: string; currentStock: number };
+      expect(event.variantId).toBe(VARIANT_ID);
+      expect(event.currentStock).toBe(3);
+    });
+  });
+
+  describe('order event listeners (error handling and stock paths)', () => {
+    it('swallows a non-Error thrown while decrementing stock', async () => {
+      repository.findItemById.mockImplementation(() => {
+        throw 'boom';
+      });
+
+      await expect(
+        service.handleOrderCreated({
+          id: 'evt',
+          type: 'order.created',
+          timestamp: new Date().toISOString(),
+          businessId: BUSINESS_ID,
+          correlationId: 'corr',
+          orderId: ORDER_ID,
+          clientId: CLIENT_ID,
+          lineItems: [{ itemId: ITEM_ID, quantity: 1 }],
+        } as never),
+      ).resolves.toBeUndefined();
+    });
+
+    it('swallows a non-Error thrown while restocking', async () => {
+      repository.findItemById.mockImplementation(() => {
+        throw 'boom';
+      });
+
+      await expect(
+        service.handleOrderCancelled({
+          id: 'evt',
+          type: 'order.created',
+          timestamp: new Date().toISOString(),
+          businessId: BUSINESS_ID,
+          correlationId: 'corr',
+          orderId: ORDER_ID,
+          clientId: CLIENT_ID,
+          lineItems: [{ itemId: ITEM_ID, quantity: 1 }],
+        } as never),
+      ).resolves.toBeUndefined();
+    });
+
+    it('decrements a variant and emits stock.out when the variant hits zero', async () => {
+      const before = makeItem({ variants: [makeVariant({ stock_quantity: 1 })] });
+      const after = makeItem({ variants: [makeVariant({ stock_quantity: 0 })] });
+      repository.findItemById
+        .mockResolvedValueOnce(before as never)
+        .mockResolvedValueOnce(after as never);
+      repository.updateVariantStock.mockResolvedValue({ stock_quantity: 0 } as never);
+
+      await service.handleOrderCreated({
+        id: 'evt',
+        type: 'order.created',
+        timestamp: new Date().toISOString(),
+        businessId: BUSINESS_ID,
+        correlationId: 'corr',
+        orderId: ORDER_ID,
+        clientId: CLIENT_ID,
+        lineItems: [{ itemId: ITEM_ID, variantId: VARIANT_ID, quantity: 1 }],
+      } as never);
+
+      expect(repository.updateVariantStock).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        VARIANT_ID,
+        -1,
+      );
+      expect(eventEmitter.emit.mock.calls.map((c) => c[0])).toContain('catalog.stock.out');
+    });
+
+    it('emits stock.low when a variant decrement lands on the threshold', async () => {
+      const before = makeItem({ variants: [makeVariant({ stock_quantity: 12 })] });
+      const after = makeItem({
+        low_stock_threshold: 10,
+        variants: [makeVariant({ stock_quantity: 8 })],
+      });
+      repository.findItemById
+        .mockResolvedValueOnce(before as never)
+        .mockResolvedValueOnce(after as never);
+      repository.updateVariantStock.mockResolvedValue({ stock_quantity: 8 } as never);
+
+      await service.handleOrderCreated({
+        id: 'evt',
+        type: 'order.created',
+        timestamp: new Date().toISOString(),
+        businessId: BUSINESS_ID,
+        correlationId: 'corr',
+        orderId: ORDER_ID,
+        clientId: CLIENT_ID,
+        lineItems: [{ itemId: ITEM_ID, variantId: VARIANT_ID, quantity: 4 }],
+      } as never);
+
+      const low = eventEmitter.emit.mock.calls.find((c) => c[0] === 'catalog.stock.low');
+      expect(low?.[1]).toMatchObject({ currentStock: 8, threshold: 10 });
+    });
+
+    it('stops after the decrement when the item vanishes mid-flight', async () => {
+      repository.findItemById
+        .mockResolvedValueOnce(makeItem() as never)
+        .mockResolvedValueOnce(null as never);
+      repository.updateItemStock.mockResolvedValue({ stock_quantity: 0 } as never);
+
+      await service.handleOrderCreated({
+        id: 'evt',
+        type: 'order.created',
+        timestamp: new Date().toISOString(),
+        businessId: BUSINESS_ID,
+        correlationId: 'corr',
+        orderId: ORDER_ID,
+        clientId: CLIENT_ID,
+        lineItems: [{ itemId: ITEM_ID, quantity: 1 }],
+      } as never);
+
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
+    });
+
+    it('restocks a specific variant on cancellation', async () => {
+      repository.findItemById.mockResolvedValue(makeItem() as never);
+
+      await service.handleOrderCancelled({
+        id: 'evt',
+        type: 'order.created',
+        timestamp: new Date().toISOString(),
+        businessId: BUSINESS_ID,
+        correlationId: 'corr',
+        orderId: ORDER_ID,
+        clientId: CLIENT_ID,
+        lineItems: [{ itemId: ITEM_ID, variantId: VARIANT_ID, quantity: 2 }],
+      } as never);
+
+      expect(repository.updateVariantStock).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        VARIANT_ID,
+        2,
+      );
+    });
+
+    it('ignores line items for untracked inventory on cancellation', async () => {
+      repository.findItemById.mockResolvedValue(
+        makeItem({ track_inventory: false }) as never,
+      );
+
+      await service.handleOrderCancelled({
+        id: 'evt',
+        type: 'order.created',
+        timestamp: new Date().toISOString(),
+        businessId: BUSINESS_ID,
+        correlationId: 'corr',
+        orderId: ORDER_ID,
+        clientId: CLIENT_ID,
+        lineItems: [{ itemId: ITEM_ID, quantity: 2 }],
+      } as never);
+
+      expect(repository.updateItemStock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('stock level and response mappers (null fallbacks)', () => {
+    it('falls back to zero for a null variant stock and null threshold', async () => {
+      repository.findItemById.mockResolvedValue(
+        makeItem({
+          low_stock_threshold: null,
+          variants: [makeVariant({ stock_quantity: null })],
+        }) as never,
+      );
+
+      const level = await service.getStockLevel(BUSINESS_ID, ITEM_ID, VARIANT_ID);
+
+      expect(level.stockQuantity).toBe(0);
+      expect(level.isOutOfStock).toBe(true);
+      expect(level.isLowStock).toBe(false);
+    });
+
+    it('falls back to zero for a null item stock', async () => {
+      repository.findItemById.mockResolvedValue(
+        makeItem({ stock_quantity: null }) as never,
+      );
+
+      const level = await service.getStockLevel(BUSINESS_ID, ITEM_ID);
+
+      expect(level.stockQuantity).toBe(0);
+    });
+
+    it('maps an item whose optional columns are all null', async () => {
+      repository.findItemById.mockResolvedValue(
+        makeItem({
+          category_id: null,
+          category: null,
+          description: null,
+          short_description: null,
+          price: null,
+          compare_price: null,
+          sku: null,
+          barcode: null,
+          stock_quantity: null,
+          low_stock_threshold: null,
+          weight_grams: null,
+          images: null,
+          tags: null,
+          ai_description: null,
+          variants: undefined,
+        }) as never,
+      );
+
+      const dto = await service.getItem(BUSINESS_ID, ITEM_ID);
+
+      expect(dto).toMatchObject({
+        categoryId: null,
+        description: null,
+        shortDescription: null,
+        pricePaise: 0,
+        comparePricePaise: null,
+        sku: null,
+        barcode: null,
+        stockQuantity: null,
+        lowStockThreshold: null,
+        weightGrams: null,
+        images: [],
+        tags: [],
+        aiDescription: null,
+        category: null,
+      });
+      expect(dto.variants).toBeUndefined();
+    });
+
+    it('maps a category whose optional columns are null and which has no children', async () => {
+      repository.findItemById.mockResolvedValue(
+        makeItem({
+          category: makeCategory({
+            parent_id: null,
+            description: null,
+            image_url: null,
+            children: undefined,
+          }),
+        }) as never,
+      );
+
+      const dto = await service.getItem(BUSINESS_ID, ITEM_ID);
+
+      expect(dto.category).toMatchObject({
+        parentId: null,
+        description: null,
+        imageUrl: null,
+      });
+      expect(dto.category?.children).toBeUndefined();
+    });
+
+    it('maps a variant whose optional columns are all null', async () => {
+      repository.findItemById.mockResolvedValue(makeItem() as never);
+      repository.listVariantsByItemId.mockResolvedValue([
+        makeVariant({
+          sku: null,
+          barcode: null,
+          price: null,
+          compare_price: null,
+          attributes: null,
+          stock_quantity: null,
+          image_url: null,
+        }),
+      ] as never);
+
+      const [dto] = await service.listVariants(BUSINESS_ID, ITEM_ID);
+
+      expect(dto).toMatchObject({
+        sku: null,
+        barcode: null,
+        pricePaise: null,
+        comparePricePaise: null,
+        attributes: {},
+        stockQuantity: null,
+        imageUrl: null,
+      });
+    });
+  });
+
 });
