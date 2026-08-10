@@ -1,83 +1,190 @@
 /**
- * Tests for the calendar and staff routes added to BookingController
- * to fix "Something went wrong" on the bookings page.
+ * BookingController — the calendar, staff and list routes that back the
+ * dashboard's bookings page.
+ *
+ * These previously re-implemented the controller's mapping inline, which meant
+ * they kept passing no matter what the controller did. They now drive the real
+ * controller against a mocked service.
  */
-describe('BookingController calendar & staff routes', () => {
-  const TENANT_ID = '11111111-1111-1111-1111-111111111111';
+import { BookingController } from './booking.controller';
+import { BookingService } from './booking.service';
+import { BookingStatus } from '@gosumo/shared';
+import type { BookingDto, ListBookingsQueryDto } from './dto';
 
-  // ─── Calendar route ──────────────────────────
+const TENANT_ID = '11111111-1111-1111-1111-111111111111';
+const BOOKING_ID = '22222222-2222-2222-2222-222222222222';
+const STAFF_ID = '33333333-3333-3333-3333-333333333333';
 
-  describe('getCalendar', () => {
-    it('should map bookings to calendar events format', () => {
-      const bookings = [
-        {
-          id: 'b1', notes: 'Haircut', start_at: '2024-06-01T10:00:00Z',
-          end_at: '2024-06-01T11:00:00Z', status: 'CONFIRMED',
-          client: { name: 'Alice' }, staffMember: { name: 'Bob' },
-        },
-      ];
+function bookingDto(overrides: Partial<BookingDto> = {}): BookingDto {
+  return {
+    id: BOOKING_ID,
+    businessId: TENANT_ID,
+    clientId: 'client-1',
+    catalogItemId: null,
+    staffId: null,
+    recurrenceId: null,
+    status: BookingStatus.CONFIRMED,
+    startAt: '2030-06-27T10:00:00.000Z',
+    endAt: '2030-06-27T11:00:00.000Z',
+    timezone: 'Asia/Kolkata',
+    durationMinutes: 60,
+    locationType: null,
+    locationAddress: null,
+    meetingUrl: null,
+    pricePaise: null,
+    depositPaise: null,
+    paymentId: null,
+    gcalEventId: null,
+    gcalCalendarId: null,
+    remindersSent: 0,
+    lastReminderAt: null,
+    cancelledAt: null,
+    cancellationReason: null,
+    cancelledBy: null,
+    notes: null,
+    createdAt: '2026-06-01T00:00:00.000Z',
+    updatedAt: '2026-06-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
 
-      const events = bookings.map((b: any) => ({
-        id: b.id,
-        title: b.notes || 'Appointment',
-        start: b.startAt ?? b.start_at,
-        end: b.endAt ?? b.end_at,
-        status: b.status,
-        clientName: b.client?.name ?? null,
-        staffName: b.staffMember?.name ?? null,
-      }));
+function page(data: BookingDto[]) {
+  return { data, total: data.length, page: 1, limit: 200, totalPages: 1 };
+}
 
-      expect(events).toHaveLength(1);
-      expect(events[0]!.id).toBe('b1');
-      expect(events[0]!.title).toBe('Haircut');
-      expect(events[0]!.start).toBe('2024-06-01T10:00:00Z');
-      expect(events[0]!.clientName).toBe('Alice');
-      expect(events[0]!.staffName).toBe('Bob');
-    });
+describe('BookingController', () => {
+  let service: jest.Mocked<Pick<BookingService, 'listBookings' | 'getStaffMembers'>>;
+  let controller: BookingController;
 
-    it('should use Appointment as default title when notes is empty', () => {
-      const b = { id: 'b2', notes: '', start_at: '2024-06-01T10:00:00Z' };
-      const title = b.notes || 'Appointment';
-      expect(title).toBe('Appointment');
+  beforeEach(() => {
+    service = {
+      listBookings: jest.fn().mockResolvedValue(page([])),
+      getStaffMembers: jest.fn().mockResolvedValue({ staff: [] }),
+    } as unknown as jest.Mocked<
+      Pick<BookingService, 'listBookings' | 'getStaffMembers'>
+    >;
+    controller = new BookingController(service as unknown as BookingService);
+  });
+
+  describe('listBookings', () => {
+    it('wraps the paginated result in the dashboard envelope', async () => {
+      service.listBookings.mockResolvedValue({
+        data: [bookingDto()],
+        total: 42,
+        page: 2,
+        limit: 10,
+        totalPages: 5,
+      });
+
+      const result = await controller.listBookings(TENANT_ID, {
+        page: 2,
+        limit: 10,
+      } as ListBookingsQueryDto);
+
+      expect(result.data).toHaveLength(1);
+      expect(result.pagination).toEqual({
+        total: 42,
+        limit: 10,
+        page: 2,
+        totalPages: 5,
+      });
     });
   });
 
-  // ─── Staff route ─────────────────────────────
+  describe('getCalendar', () => {
+    it('maps bookings to calendar events', async () => {
+      service.listBookings.mockResolvedValue(
+        page([bookingDto({ notes: 'Haircut', staffId: STAFF_ID })]),
+      );
 
-  describe('getStaffMembers', () => {
-    it('should map team members to staff shape', () => {
-      const members = [
-        { id: 'm1', name: 'Alice', email: 'alice@test.com', role: 'STAFF', avatar_url: 'https://img.test/a.jpg' },
-        { id: 'm2', name: null, email: 'bob@test.com', role: 'ADMIN', avatar_url: null },
-      ];
+      const { events } = await controller.getCalendar(TENANT_ID);
 
-      const staff = members.map((m: any) => ({
-        id: m.id,
-        name: m.name ?? m.email?.split('@')[0] ?? 'Staff',
-        email: m.email,
-        role: m.role,
-        avatarUrl: m.avatar_url ?? null,
-      }));
-
-      expect(staff).toHaveLength(2);
-      expect(staff[0]!.name).toBe('Alice');
-      expect(staff[0]!.avatarUrl).toBe('https://img.test/a.jpg');
-      expect(staff[1]!.name).toBe('bob'); // derived from email
-      expect(staff[1]!.avatarUrl).toBeNull();
+      expect(events).toEqual([
+        {
+          id: BOOKING_ID,
+          title: 'Haircut',
+          start: '2030-06-27T10:00:00.000Z',
+          end: '2030-06-27T11:00:00.000Z',
+          status: BookingStatus.CONFIRMED,
+          clientId: 'client-1',
+          staffId: STAFF_ID,
+        },
+      ]);
     });
 
-    it('should return empty staff array when no members', () => {
-      const members: any[] = [];
-      const result = { staff: (members ?? []).map(() => ({})) };
-      expect(result.staff).toEqual([]);
+    it('titles an untitled booking "Appointment"', async () => {
+      service.listBookings.mockResolvedValue(page([bookingDto({ notes: '' })]));
+
+      const { events } = await controller.getCalendar(TENANT_ID);
+
+      expect(events[0]!.title).toBe('Appointment');
+    });
+
+    it('queries a wide page with no filters by default', async () => {
+      await controller.getCalendar(TENANT_ID);
+
+      expect(service.listBookings).toHaveBeenCalledWith(TENANT_ID, {
+        page: 1,
+        limit: 200,
+      });
+    });
+
+    it('forwards the from/to/staff filters when supplied', async () => {
+      await controller.getCalendar(
+        TENANT_ID,
+        '2030-06-01T00:00:00.000Z',
+        '2030-06-30T00:00:00.000Z',
+        STAFF_ID,
+      );
+
+      expect(service.listBookings).toHaveBeenCalledWith(TENANT_ID, {
+        page: 1,
+        limit: 200,
+        from: '2030-06-01T00:00:00.000Z',
+        to: '2030-06-30T00:00:00.000Z',
+        staffId: STAFF_ID,
+      });
+    });
+
+    it('returns an empty event list when there are no bookings', async () => {
+      const { events } = await controller.getCalendar(TENANT_ID);
+      expect(events).toEqual([]);
+    });
+  });
+
+  describe('getStaff', () => {
+    it('passes the staff roster straight through', async () => {
+      service.getStaffMembers.mockResolvedValue({
+        staff: [
+          {
+            id: 'm1',
+            name: 'Alice',
+            email: 'alice@biz.in',
+            role: 'STAFF',
+            avatarUrl: null,
+          },
+        ],
+      });
+
+      await expect(controller.getStaff(TENANT_ID)).resolves.toEqual({
+        staff: [
+          {
+            id: 'm1',
+            name: 'Alice',
+            email: 'alice@biz.in',
+            role: 'STAFF',
+            avatarUrl: null,
+          },
+        ],
+      });
     });
   });
 });
 
 describe('ListBookingsQueryDto include field', () => {
-  it('should accept include as an optional string parameter', () => {
-    // The DTO fix ensures include=client does not cause a 400 validation error
-    const dto = { include: 'client', page: 1, limit: 10 };
+  it('accepts include as an optional string parameter', () => {
+    // The DTO fix ensures include=client does not cause a 400 validation error.
+    const dto: ListBookingsQueryDto = { include: 'client', page: 1, limit: 10 };
     expect(dto.include).toBe('client');
   });
 });
