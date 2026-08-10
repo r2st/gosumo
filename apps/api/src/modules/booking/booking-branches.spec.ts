@@ -286,8 +286,16 @@ describe('BookingService — branch coverage', () => {
     });
 
     it('skips occurrences that fall inside a blocked period', async () => {
+      // A block spanning both daily occurrences. The interval must genuinely
+      // overlap: the series-wide fetch applies the same predicate the
+      // repository does, so a zero-length block at the occurrence start would
+      // (correctly) not skip anything.
       repository.findBlocksInRange.mockResolvedValue([
-        { id: 'blk-1', start_at: new Date(FUTURE_START), end_at: new Date(FUTURE_START) },
+        {
+          id: 'blk-1',
+          start_at: new Date('2030-06-27T00:00:00.000Z'),
+          end_at: new Date('2030-06-29T00:00:00.000Z'),
+        },
       ] as never);
 
       const result = await service.createRecurringBooking(BUSINESS_ID, {
@@ -297,6 +305,44 @@ describe('BookingService — branch coverage', () => {
 
       expect(result.occurrences).toHaveLength(0);
       expect(result.skipped.map((s) => s.reason)).toEqual(['blocked time', 'blocked time']);
+    });
+
+    it('fetches blocked slots once for the whole series, not once per occurrence', async () => {
+      const result = await service.createRecurringBooking(BUSINESS_ID, {
+        ...baseDto,
+        recurrence: { frequency: RecurrenceFrequency.DAILY, count: 5 },
+      });
+
+      expect(result.occurrences).toHaveLength(5);
+      expect(repository.findBlocksInRange).toHaveBeenCalledTimes(1);
+      // The single window spans the first occurrence's start to the last one's end.
+      const [, , windowStart, windowEnd] =
+        repository.findBlocksInRange.mock.calls[0]!;
+      expect((windowStart as Date).toISOString()).toBe(FUTURE_START);
+      expect((windowEnd as Date).getTime()).toBeGreaterThan(
+        new Date(FUTURE_START).getTime(),
+      );
+    });
+
+    it('skips only the occurrences a mid-series block actually overlaps', async () => {
+      // One block covering the second day alone — the other four days stand.
+      repository.findBlocksInRange.mockResolvedValue([
+        {
+          id: 'blk-1',
+          start_at: new Date('2030-06-28T00:00:00.000Z'),
+          end_at: new Date('2030-06-29T00:00:00.000Z'),
+        },
+      ] as never);
+
+      const result = await service.createRecurringBooking(BUSINESS_ID, {
+        ...baseDto,
+        recurrence: { frequency: RecurrenceFrequency.DAILY, count: 5 },
+      });
+
+      expect(result.occurrences).toHaveLength(4);
+      expect(result.skipped).toEqual([
+        { startAt: '2030-06-28T09:00:00.000Z', reason: 'blocked time' },
+      ]);
     });
 
     it('records a non-Error rejection with the generic reason', async () => {

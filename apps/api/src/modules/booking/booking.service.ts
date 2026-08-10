@@ -244,6 +244,18 @@ export class BookingService {
     const created: BookingDto[] = [];
     const skipped: Array<{ startAt: string; reason: string }> = [];
 
+    // Blocked slots for the whole series, fetched once. A weekly rule over a
+    // year expands to ~52 occurrences, and asking per occurrence meant that
+    // many sequential round trips before the first booking row was written.
+    // The rows are the same set either way — the per-occurrence predicate is
+    // an interval overlap, which is cheaper to apply in memory than to re-ask.
+    const seriesBlocks = await this.repository.findBlocksInRange(
+      businessId,
+      dto.staffId ?? null,
+      new Date(Math.min(...occurrences.map((o) => o.startAt.getTime()))),
+      new Date(Math.max(...occurrences.map((o) => o.endAt.getTime()))),
+    );
+
     for (const occ of occurrences) {
       // Skip occurrences in the past, but keep generating future ones.
       if (occ.startAt.getTime() <= Date.now()) {
@@ -251,11 +263,12 @@ export class BookingService {
         continue;
       }
       try {
-        const blocked = await this.repository.findBlocksInRange(
-          businessId,
-          dto.staffId ?? null,
-          occ.startAt,
-          occ.endAt,
+        // Same overlap test the repository applies: starts before this
+        // occurrence ends, and ends after it starts.
+        const blocked = seriesBlocks.filter(
+          (b) =>
+            b.start_at.getTime() < occ.endAt.getTime() &&
+            b.end_at.getTime() > occ.startAt.getTime(),
         );
         if (blocked.length > 0) {
           skipped.push({
