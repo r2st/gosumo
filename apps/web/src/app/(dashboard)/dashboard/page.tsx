@@ -16,6 +16,9 @@ import { Avatar } from '@/components/ui/avatar';
 import { StatusBadge } from '@/components/status-badge';
 import { ChannelIcon } from '@/components/channel-icon';
 import { EmptyState, ErrorState } from '@/components/ui/states';
+import { MorningBriefing } from '@/components/dashboard/morning-briefing';
+import { BriefingMetrics } from '@/components/dashboard/briefing-metrics';
+import { NorthStarKpi } from '@/components/dashboard/north-star-kpi';
 import {
   useBookings,
   useConversationReport,
@@ -41,6 +44,10 @@ export default function DashboardPage() {
       <PageHeader title="Dashboard" description="Today at a glance across all your channels." />
 
       <div className="space-y-6 p-4 lg:p-6">
+        {/* GoSumo Realty — morning briefing: four glance metrics + the 7:30 AM digest */}
+        <BriefingMetrics />
+        <MorningBriefing />
+
         {metricsQ.isError ? (
           <ErrorState
             message={(metricsQ.error as Error)?.message}
@@ -48,6 +55,9 @@ export default function DashboardPage() {
           />
         ) : (
           <>
+            {/* GoSumo Realty — North Star: site visits per 100 leads (goal ≥ 8) */}
+            <NorthStarKpi />
+
             {/* KPI cards */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
               <KpiCard

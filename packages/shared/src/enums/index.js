@@ -3,7 +3,8 @@
 // CHANNEL & MESSAGING
 // ─────────────────────────────────────────────
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CartStatus = exports.DiscountType = exports.CatalogItemType = exports.CampaignType = exports.InvoiceStatus = exports.RefundMethod = exports.RefundType = exports.RefundStatus = exports.PaymentGateway = exports.TeamRole = exports.ShipmentStatus = exports.RecurrenceFrequency = exports.BookingActor = exports.BookingLocationType = exports.BookingStatus = exports.PaymentMethod = exports.PaymentStatus = exports.OrderStatus = exports.ConfidenceMode = exports.IntentType = exports.TaskPriority = exports.TaskType = exports.TaskStatus = exports.ConversationPriority = exports.ConversationStatus = exports.MessageStatus = exports.MessageContentType = exports.MessageDirection = exports.ChannelType = void 0;
+exports.RealtyPlan = exports.TemplateApprovalStatus = exports.TemplateCategory = exports.CadenceEnrollmentStatus = exports.CadenceStopOn = exports.CadenceTrigger = exports.RealtyRoutePolicy = exports.RealtyIntent = exports.RealtyPortal = exports.SiteVisitOutcome = exports.SiteVisitStatus = exports.RealtyAssetType = exports.NetworkVisibility = exports.UnitAvailability = exports.ProjectStatus = exports.LeadExchangeStatus = exports.FinancingStatus = exports.LeadPurpose = exports.LeadStage = exports.LeadTemperature = exports.LeadSource = exports.CartStatus = exports.DiscountType = exports.CatalogItemType = exports.CampaignType = exports.InvoiceStatus = exports.RefundMethod = exports.RefundType = exports.RefundStatus = exports.PaymentGateway = exports.TeamRole = exports.ShipmentStatus = exports.RecurrenceFrequency = exports.BookingActor = exports.BookingLocationType = exports.BookingStatus = exports.PaymentMethod = exports.PaymentStatus = exports.OrderStatus = exports.ConfidenceMode = exports.IntentType = exports.TaskPriority = exports.TaskType = exports.TaskStatus = exports.ConversationPriority = exports.ConversationStatus = exports.MessageStatus = exports.MessageContentType = exports.MessageDirection = exports.ChannelType = void 0;
+exports.ResaleListingStatus = exports.SettlementState = exports.SyndicationState = exports.IntelligenceMetricType = exports.LaunchCheckStatus = exports.LaunchGateStatus = exports.NoShipKind = exports.AutonomyActorType = exports.AutonomyDirection = exports.MigrationStatus = exports.MigrationKind = exports.BrokerAlertType = exports.ConversationOwner = exports.AutonomyLevel = exports.ApprovalStatus = exports.ConsentType = void 0;
 var ChannelType;
 (function (ChannelType) {
     ChannelType["WHATSAPP"] = "WHATSAPP";
@@ -300,4 +301,405 @@ var CartStatus;
     CartStatus["CONVERTED"] = "CONVERTED";
     CartStatus["ABANDONED"] = "ABANDONED";
 })(CartStatus || (exports.CartStatus = CartStatus = {}));
+// ─────────────────────────────────────────────
+// REALTY — LEADS
+// ─────────────────────────────────────────────
+/**
+ * Where a real-estate lead was born. Attribution is recorded at birth
+ * (blueprint §14) and never mutated — it drives source-level ROI.
+ */
+var LeadSource;
+(function (LeadSource) {
+    LeadSource["PORTAL"] = "PORTAL";
+    LeadSource["META_LEAD_AD"] = "META_LEAD_AD";
+    LeadSource["CTWA"] = "CTWA";
+    LeadSource["IVR"] = "IVR";
+    LeadSource["REFERRAL"] = "REFERRAL";
+    LeadSource["CSV"] = "CSV";
+    LeadSource["WALK_IN"] = "WALK_IN";
+    LeadSource["EXCHANGE_INBOUND"] = "EXCHANGE_INBOUND";
+    LeadSource["MANUAL"] = "MANUAL";
+})(LeadSource || (exports.LeadSource = LeadSource = {}));
+/** Lead heat, derived from the qualification score. */
+var LeadTemperature;
+(function (LeadTemperature) {
+    LeadTemperature["HOT"] = "HOT";
+    LeadTemperature["WARM"] = "WARM";
+    LeadTemperature["COLD"] = "COLD";
+    LeadTemperature["JUNK"] = "JUNK";
+})(LeadTemperature || (exports.LeadTemperature = LeadTemperature = {}));
+/**
+ * Pipeline stage. Ordered NEW → … → CLOSED; DORMANT is a re-activation pool.
+ * Mirrors the broker's pipeline board on the dashboard.
+ */
+var LeadStage;
+(function (LeadStage) {
+    LeadStage["NEW"] = "NEW";
+    LeadStage["CONTACTED"] = "CONTACTED";
+    LeadStage["QUALIFIED"] = "QUALIFIED";
+    LeadStage["VISIT_BOOKED"] = "VISIT_BOOKED";
+    LeadStage["VISITED"] = "VISITED";
+    LeadStage["NEGOTIATING"] = "NEGOTIATING";
+    LeadStage["CLOSED_WON"] = "CLOSED_WON";
+    LeadStage["CLOSED_LOST"] = "CLOSED_LOST";
+    LeadStage["DORMANT"] = "DORMANT";
+})(LeadStage || (exports.LeadStage = LeadStage = {}));
+/** Why the buyer is buying — changes matching and the follow-up track. */
+var LeadPurpose;
+(function (LeadPurpose) {
+    LeadPurpose["END_USE"] = "END_USE";
+    LeadPurpose["INVEST"] = "INVEST";
+})(LeadPurpose || (exports.LeadPurpose = LeadPurpose = {}));
+/** Financing posture — one of the BLTC-adjacent qualification slots. */
+var FinancingStatus;
+(function (FinancingStatus) {
+    FinancingStatus["CASH"] = "CASH";
+    FinancingStatus["PREAPPROVED"] = "PREAPPROVED";
+    FinancingStatus["NEEDS_LOAN"] = "NEEDS_LOAN";
+})(FinancingStatus || (exports.FinancingStatus = FinancingStatus = {}));
+/** A lead's participation state in the co-broking exchange (L2). */
+var LeadExchangeStatus;
+(function (LeadExchangeStatus) {
+    LeadExchangeStatus["NONE"] = "NONE";
+    LeadExchangeStatus["ELIGIBLE"] = "ELIGIBLE";
+    LeadExchangeStatus["OFFERED"] = "OFFERED";
+    LeadExchangeStatus["SYNDICATED"] = "SYNDICATED";
+    LeadExchangeStatus["CLOSED"] = "CLOSED";
+})(LeadExchangeStatus || (exports.LeadExchangeStatus = LeadExchangeStatus = {}));
+// ─────────────────────────────────────────────
+// REALTY — INVENTORY (grounding layer)
+// ─────────────────────────────────────────────
+/** Construction / sale status of a project. */
+var ProjectStatus;
+(function (ProjectStatus) {
+    ProjectStatus["PRELAUNCH"] = "PRELAUNCH";
+    ProjectStatus["UC"] = "UC";
+    ProjectStatus["RTM"] = "RTM";
+})(ProjectStatus || (exports.ProjectStatus = ProjectStatus = {}));
+/**
+ * Availability of a specific unit. The AI may only assert AVAILABLE when
+ * `verified_at` is within 24 h — otherwise it must say "confirming".
+ */
+var UnitAvailability;
+(function (UnitAvailability) {
+    UnitAvailability["AVAILABLE"] = "AVAILABLE";
+    UnitAvailability["HOLD"] = "HOLD";
+    UnitAvailability["SOLD"] = "SOLD";
+    UnitAvailability["UNVERIFIED"] = "UNVERIFIED";
+})(UnitAvailability || (exports.UnitAvailability = UnitAvailability = {}));
+/** Whether a project/unit is exposed to the co-broking exchange (L2/L3). */
+var NetworkVisibility;
+(function (NetworkVisibility) {
+    NetworkVisibility["PRIVATE"] = "PRIVATE";
+    NetworkVisibility["EXCHANGE"] = "EXCHANGE";
+})(NetworkVisibility || (exports.NetworkVisibility = NetworkVisibility = {}));
+/** Kind of verified media asset attached to a project. */
+var RealtyAssetType;
+(function (RealtyAssetType) {
+    RealtyAssetType["BROCHURE"] = "BROCHURE";
+    RealtyAssetType["FLOORPLAN"] = "FLOORPLAN";
+    RealtyAssetType["PRICESHEET"] = "PRICESHEET";
+    RealtyAssetType["VIDEO"] = "VIDEO";
+    RealtyAssetType["PIN"] = "PIN";
+})(RealtyAssetType || (exports.RealtyAssetType = RealtyAssetType = {}));
+// ─────────────────────────────────────────────
+// REALTY — SITE VISITS (Phase 3, blueprint §14)
+// ─────────────────────────────────────────────
+/**
+ * Lifecycle of a scheduled site visit. BOOKED on creation; CONFIRMED once the
+ * buyer acknowledges; COMPLETED / NO_SHOW are terminal outcomes; RESCHEDULED
+ * marks a moved visit; CANCELLED frees the slot.
+ */
+var SiteVisitStatus;
+(function (SiteVisitStatus) {
+    SiteVisitStatus["BOOKED"] = "BOOKED";
+    SiteVisitStatus["CONFIRMED"] = "CONFIRMED";
+    SiteVisitStatus["COMPLETED"] = "COMPLETED";
+    SiteVisitStatus["NO_SHOW"] = "NO_SHOW";
+    SiteVisitStatus["RESCHEDULED"] = "RESCHEDULED";
+    SiteVisitStatus["CANCELLED"] = "CANCELLED";
+})(SiteVisitStatus || (exports.SiteVisitStatus = SiteVisitStatus = {}));
+/**
+ * Post-visit outcome logged by the broker (drives the follow-up track and
+ * pipeline stage). PENDING until the visit is completed and reviewed.
+ */
+var SiteVisitOutcome;
+(function (SiteVisitOutcome) {
+    SiteVisitOutcome["PENDING"] = "PENDING";
+    SiteVisitOutcome["INTERESTED"] = "INTERESTED";
+    SiteVisitOutcome["NOT_INTERESTED"] = "NOT_INTERESTED";
+    SiteVisitOutcome["WANTS_ALTERNATIVE"] = "WANTS_ALTERNATIVE";
+    SiteVisitOutcome["NEEDS_FOLLOWUP"] = "NEEDS_FOLLOWUP";
+    SiteVisitOutcome["TOKEN_BOOKED"] = "TOKEN_BOOKED";
+})(SiteVisitOutcome || (exports.SiteVisitOutcome = SiteVisitOutcome = {}));
+// ─────────────────────────────────────────────
+// REALTY — INGESTION (Phase 4, blueprint §15)
+// ─────────────────────────────────────────────
+/**
+ * Recognised property-portal enquiry sources. Parsed from portal enquiry
+ * emails and stored as the lead's `sub_source` for source-level ROI.
+ */
+var RealtyPortal;
+(function (RealtyPortal) {
+    RealtyPortal["NINETYNINE_ACRES"] = "99ACRES";
+    RealtyPortal["MAGICBRICKS"] = "MAGICBRICKS";
+    RealtyPortal["HOUSING"] = "HOUSING";
+    RealtyPortal["UNKNOWN"] = "UNKNOWN";
+})(RealtyPortal || (exports.RealtyPortal = RealtyPortal = {}));
+// ─────────────────────────────────────────────
+// REALTY — AI LOOP (intent set + routing, blueprint §16)
+// ─────────────────────────────────────────────
+/**
+ * The 14 real-estate conversational intents the AI loop classifies every
+ * inbound buyer/seller message into (blueprint §16.1). `GENERAL` is the
+ * catch-all fallback when nothing more specific is resolved.
+ */
+var RealtyIntent;
+(function (RealtyIntent) {
+    RealtyIntent["NEW_ENQUIRY"] = "NEW_ENQUIRY";
+    RealtyIntent["PRICE_INQUIRY"] = "PRICE_INQUIRY";
+    RealtyIntent["AVAILABILITY"] = "AVAILABILITY";
+    RealtyIntent["SITE_VISIT"] = "SITE_VISIT";
+    RealtyIntent["DOC_REQUEST"] = "DOC_REQUEST";
+    RealtyIntent["LOCATION_AMENITY"] = "LOCATION_AMENITY";
+    RealtyIntent["LOAN_QUERY"] = "LOAN_QUERY";
+    RealtyIntent["NEGOTIATION"] = "NEGOTIATION";
+    RealtyIntent["LEGAL_RERA"] = "LEGAL_RERA";
+    RealtyIntent["SELLER_LEAD"] = "SELLER_LEAD";
+    RealtyIntent["RENTAL"] = "RENTAL";
+    RealtyIntent["REACTIVATION_REPLY"] = "REACTIVATION_REPLY";
+    RealtyIntent["COMPLAINT_ABUSE"] = "COMPLAINT_ABUSE";
+    RealtyIntent["GENERAL"] = "GENERAL";
+})(RealtyIntent || (exports.RealtyIntent = RealtyIntent = {}));
+/**
+ * Per-intent default autonomy ceiling. Overrides any numeric confidence — the
+ * AI may never act beyond an intent's policy (blueprint §16.3 hard rules).
+ */
+var RealtyRoutePolicy;
+(function (RealtyRoutePolicy) {
+    /** May auto-execute when data + policy are clear (e.g. fresh AVAILABILITY, DOC send). */
+    RealtyRoutePolicy["AUTO_ALLOWED"] = "AUTO_ALLOWED";
+    /** Never auto-send; always draft for a human first (e.g. PRICE_INQUIRY). */
+    RealtyRoutePolicy["DRAFT_ONLY"] = "DRAFT_ONLY";
+    /** Always a full human hand-off (NEGOTIATION, LEGAL_RERA, LOAN_QUERY, SELLER_LEAD, COMPLAINT_ABUSE). */
+    RealtyRoutePolicy["ESCALATE"] = "ESCALATE";
+})(RealtyRoutePolicy || (exports.RealtyRoutePolicy = RealtyRoutePolicy = {}));
+// ─────────────────────────────────────────────
+// REALTY — CADENCES & COMPLIANCE (Phase 5, blueprint §17 / §21)
+// ─────────────────────────────────────────────
+/** What enrols a lead into a follow-up cadence. */
+var CadenceTrigger;
+(function (CadenceTrigger) {
+    CadenceTrigger["NO_RESPONSE"] = "NO_RESPONSE";
+    CadenceTrigger["POST_VISIT"] = "POST_VISIT";
+    CadenceTrigger["DORMANT"] = "DORMANT";
+})(CadenceTrigger || (exports.CadenceTrigger = CadenceTrigger = {}));
+/** A signal that halts a running cadence immediately. */
+var CadenceStopOn;
+(function (CadenceStopOn) {
+    CadenceStopOn["REPLY"] = "REPLY";
+    CadenceStopOn["OPTOUT"] = "OPTOUT";
+    CadenceStopOn["STAGE_CHANGE"] = "STAGE_CHANGE";
+})(CadenceStopOn || (exports.CadenceStopOn = CadenceStopOn = {}));
+/** Lifecycle of a single lead's enrolment in a cadence. */
+var CadenceEnrollmentStatus;
+(function (CadenceEnrollmentStatus) {
+    CadenceEnrollmentStatus["ACTIVE"] = "ACTIVE";
+    CadenceEnrollmentStatus["COMPLETED"] = "COMPLETED";
+    CadenceEnrollmentStatus["STOPPED"] = "STOPPED";
+})(CadenceEnrollmentStatus || (exports.CadenceEnrollmentStatus = CadenceEnrollmentStatus = {}));
+/**
+ * WhatsApp template category. Enforced in code: a MARKETING template may never
+ * be sent inside a closed 24h service window, and only category-correct
+ * templates are allowed (blueprint §21 WhatsApp hygiene).
+ */
+var TemplateCategory;
+(function (TemplateCategory) {
+    TemplateCategory["UTILITY"] = "UTILITY";
+    TemplateCategory["MARKETING"] = "MARKETING";
+})(TemplateCategory || (exports.TemplateCategory = TemplateCategory = {}));
+/** Meta approval state of a template — sends are blocked unless APPROVED. */
+var TemplateApprovalStatus;
+(function (TemplateApprovalStatus) {
+    TemplateApprovalStatus["PENDING"] = "PENDING";
+    TemplateApprovalStatus["APPROVED"] = "APPROVED";
+    TemplateApprovalStatus["REJECTED"] = "REJECTED";
+})(TemplateApprovalStatus || (exports.TemplateApprovalStatus = TemplateApprovalStatus = {}));
+// ─────────────────────────────────────────────
+// REALTY — BILLING & DPDPA COMPLIANCE (plan §9, §21)
+// ─────────────────────────────────────────────
+/** GoSumo Realty subscription tiers (business plan §9). */
+var RealtyPlan;
+(function (RealtyPlan) {
+    RealtyPlan["SOLO"] = "SOLO";
+    RealtyPlan["TEAM"] = "TEAM";
+    RealtyPlan["DEVELOPER"] = "DEVELOPER";
+})(RealtyPlan || (exports.RealtyPlan = RealtyPlan = {}));
+/** The DPDPA consent purpose a buyer has granted (or had revoked). */
+var ConsentType;
+(function (ConsentType) {
+    ConsentType["PROCESSING"] = "PROCESSING";
+    ConsentType["MARKETING"] = "MARKETING";
+    ConsentType["EXCHANGE"] = "EXCHANGE";
+})(ConsentType || (exports.ConsentType = ConsentType = {}));
+// ─────────────────────────────────────────────
+// REALTY — BROKER SURFACE (Phase 6, blueprint §16)
+// ─────────────────────────────────────────────
+/** State of an AI draft awaiting human review (70–89% confidence band). */
+var ApprovalStatus;
+(function (ApprovalStatus) {
+    ApprovalStatus["PENDING"] = "PENDING";
+    ApprovalStatus["APPROVED"] = "APPROVED";
+    ApprovalStatus["EDITED"] = "EDITED";
+    ApprovalStatus["REJECTED"] = "REJECTED";
+})(ApprovalStatus || (exports.ApprovalStatus = ApprovalStatus = {}));
+/**
+ * Per-account AI independence level (the "autonomy dial"). Raised only on
+ * evidence during pilot migration.
+ */
+var AutonomyLevel;
+(function (AutonomyLevel) {
+    AutonomyLevel["SUGGEST"] = "SUGGEST";
+    AutonomyLevel["ASSISTED"] = "ASSISTED";
+    AutonomyLevel["AUTONOMOUS"] = "AUTONOMOUS";
+})(AutonomyLevel || (exports.AutonomyLevel = AutonomyLevel = {}));
+/** Who currently owns a conversation — the AI or a human broker (takeover). */
+var ConversationOwner;
+(function (ConversationOwner) {
+    ConversationOwner["AI"] = "AI";
+    ConversationOwner["HUMAN"] = "HUMAN";
+})(ConversationOwner || (exports.ConversationOwner = ConversationOwner = {}));
+/** Kinds of item that surface in the broker's notification centre. */
+var BrokerAlertType;
+(function (BrokerAlertType) {
+    BrokerAlertType["HOT_LEAD"] = "HOT_LEAD";
+    BrokerAlertType["MORNING_BRIEFING"] = "MORNING_BRIEFING";
+    BrokerAlertType["APPROVAL_PENDING"] = "APPROVAL_PENDING";
+    BrokerAlertType["TAKEOVER"] = "TAKEOVER";
+    BrokerAlertType["VISIT_REMINDER"] = "VISIT_REMINDER";
+})(BrokerAlertType || (exports.BrokerAlertType = BrokerAlertType = {}));
+// ─────────────────────────────────────────────
+// REALTY — PILOT MIGRATION (Phase 8, blueprint §22 / §24)
+// ─────────────────────────────────────────────
+/** What kind of existing broker data a pilot-migration run imported. */
+var MigrationKind;
+(function (MigrationKind) {
+    MigrationKind["LEADS"] = "LEADS";
+    MigrationKind["CONTACTS"] = "CONTACTS";
+    MigrationKind["INVENTORY"] = "INVENTORY";
+})(MigrationKind || (exports.MigrationKind = MigrationKind = {}));
+/**
+ * Lifecycle of a migration run. A dry-run ends at VALIDATED (nothing written);
+ * a committed run ends COMMITTED (or FAILED if the write path errored).
+ */
+var MigrationStatus;
+(function (MigrationStatus) {
+    MigrationStatus["VALIDATED"] = "VALIDATED";
+    MigrationStatus["COMMITTED"] = "COMMITTED";
+    MigrationStatus["FAILED"] = "FAILED";
+})(MigrationStatus || (exports.MigrationStatus = MigrationStatus = {}));
+/**
+ * Direction the evidence-driven autonomy dial moved on an evaluation. The dial
+ * only ever OPENs one rung at a time, and any no-ship incident forces a CLOSE
+ * back to the safe floor (blueprint §24 no-ship rule).
+ */
+var AutonomyDirection;
+(function (AutonomyDirection) {
+    AutonomyDirection["OPEN"] = "OPEN";
+    AutonomyDirection["HOLD"] = "HOLD";
+    AutonomyDirection["CLOSE"] = "CLOSE";
+})(AutonomyDirection || (exports.AutonomyDirection = AutonomyDirection = {}));
+/** Who triggered an autonomy-dial change — an operator or an automatic sweep. */
+var AutonomyActorType;
+(function (AutonomyActorType) {
+    AutonomyActorType["HUMAN"] = "HUMAN";
+    AutonomyActorType["AI"] = "AI";
+})(AutonomyActorType || (exports.AutonomyActorType = AutonomyActorType = {}));
+/**
+ * A "no-ship" condition that reached (or would have reached) a buyer — the
+ * launch-gate hard fails if any occurred in the window (blueprint §24). In a
+ * healthy system the guardrails block these upstream, so the ledger stays empty.
+ */
+var NoShipKind;
+(function (NoShipKind) {
+    NoShipKind["UNVERIFIED_PRICE"] = "UNVERIFIED_PRICE";
+    NoShipKind["STALE_AVAILABILITY"] = "STALE_AVAILABILITY";
+    NoShipKind["OPTED_OUT_SEND"] = "OPTED_OUT_SEND";
+    NoShipKind["RERA_CLAIM"] = "RERA_CLAIM";
+    NoShipKind["CROSS_BUYER"] = "CROSS_BUYER";
+})(NoShipKind || (exports.NoShipKind = NoShipKind = {}));
+/** Overall verdict of the launch-readiness gate (blueprint §24). */
+var LaunchGateStatus;
+(function (LaunchGateStatus) {
+    LaunchGateStatus["GO"] = "GO";
+    LaunchGateStatus["NO_GO"] = "NO_GO";
+    LaunchGateStatus["NOT_READY"] = "NOT_READY";
+})(LaunchGateStatus || (exports.LaunchGateStatus = LaunchGateStatus = {}));
+/** Per-check outcome inside a launch-gate report. */
+var LaunchCheckStatus;
+(function (LaunchCheckStatus) {
+    LaunchCheckStatus["PASS"] = "PASS";
+    LaunchCheckStatus["FAIL"] = "FAIL";
+    LaunchCheckStatus["INSUFFICIENT_DATA"] = "INSUFFICIENT_DATA";
+})(LaunchCheckStatus || (exports.LaunchCheckStatus = LaunchCheckStatus = {}));
+// ─────────────────────────────────────────────
+// REALTY — MICRO-MARKET INTELLIGENCE (L1, blueprint §18)
+// ─────────────────────────────────────────────
+/**
+ * The corridor-pattern metrics computed nightly by the micro-market intelligence
+ * layer. Each aggregate row carries exactly one; the JSONB payload shape is
+ * metric-specific (documented in the realty-intelligence module CLAUDE.md).
+ */
+var IntelligenceMetricType;
+(function (IntelligenceMetricType) {
+    IntelligenceMetricType["CADENCE_CONVERSION"] = "CADENCE_CONVERSION";
+    IntelligenceMetricType["OBJECTION_FREQUENCY"] = "OBJECTION_FREQUENCY";
+    IntelligenceMetricType["PRICE_ELASTICITY"] = "PRICE_ELASTICITY";
+    IntelligenceMetricType["SOURCE_QUALITY"] = "SOURCE_QUALITY";
+    IntelligenceMetricType["SEASONAL_VELOCITY"] = "SEASONAL_VELOCITY";
+})(IntelligenceMetricType || (exports.IntelligenceMetricType = IntelligenceMetricType = {}));
+// ─────────────────────────────────────────────
+// REALTY — EXCHANGE (L2 co-broking, blueprint §19)
+// ─────────────────────────────────────────────
+/**
+ * Lifecycle of a co-broking syndication — the formalised 50:50 deal share.
+ * OFFERED once the originating broker syndicates a consented lead; ACCEPTED
+ * when the counterparty takes it on; VISIT after the buyer physically visits;
+ * CLOSED on a booked deal (commission pool + platform fee settle); EXPIRED if
+ * the offer lapses unaccepted; DISPUTED if either side contests the split.
+ */
+var SyndicationState;
+(function (SyndicationState) {
+    SyndicationState["OFFERED"] = "OFFERED";
+    SyndicationState["ACCEPTED"] = "ACCEPTED";
+    SyndicationState["VISIT"] = "VISIT";
+    SyndicationState["CLOSED"] = "CLOSED";
+    SyndicationState["EXPIRED"] = "EXPIRED";
+    SyndicationState["DISPUTED"] = "DISPUTED";
+})(SyndicationState || (exports.SyndicationState = SyndicationState = {}));
+/**
+ * Settlement posture of a syndication's money leg — tracked separately from the
+ * deal `state` so a CLOSED deal can still be awaiting payout. UNSETTLED until
+ * close; PENDING once the platform fee is computed and collection is due;
+ * SETTLED after payout; REVERSED if a dispute unwinds it.
+ */
+var SettlementState;
+(function (SettlementState) {
+    SettlementState["UNSETTLED"] = "UNSETTLED";
+    SettlementState["PENDING"] = "PENDING";
+    SettlementState["SETTLED"] = "SETTLED";
+    SettlementState["REVERSED"] = "REVERSED";
+})(SettlementState || (exports.SettlementState = SettlementState = {}));
+/**
+ * Status of a resale listing — Tier-1 "oxygen" supply that also feeds the
+ * exchange. ACTIVE is matchable; UNDER_OFFER is soft-held; SOLD / WITHDRAWN are
+ * terminal and excluded from matching.
+ */
+var ResaleListingStatus;
+(function (ResaleListingStatus) {
+    ResaleListingStatus["ACTIVE"] = "ACTIVE";
+    ResaleListingStatus["UNDER_OFFER"] = "UNDER_OFFER";
+    ResaleListingStatus["SOLD"] = "SOLD";
+    ResaleListingStatus["WITHDRAWN"] = "WITHDRAWN";
+})(ResaleListingStatus || (exports.ResaleListingStatus = ResaleListingStatus = {}));
 //# sourceMappingURL=index.js.map

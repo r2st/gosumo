@@ -710,7 +710,7 @@ describe('HitlService', () => {
         suggestedActions: [
           { type: 'SEND_MESSAGE', parameters: { text: 'Hello' }, confidence: 0.75 },
         ],
-        modelId: 'claude-3',
+        modelId: 'openai/gpt-oss-20b:free',
         latencyMs: 500,
       };
 
@@ -759,7 +759,7 @@ describe('HitlService', () => {
         suggestedActions: [
           { type: 'SEND_MESSAGE', parameters: { text: 'Hello' }, confidence: 0.93 },
         ],
-        modelId: 'claude-3',
+        modelId: 'openai/gpt-oss-20b:free',
         latencyMs: 400,
       };
 

@@ -9,6 +9,7 @@ import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-
 import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { PrismaService } from '../../common/services/prisma.service';
+import { PlanLimit } from '../billing/plan.decorator';
 
 @ApiTags('team')
 @Controller('auth/team')
@@ -29,7 +30,9 @@ export class TeamController {
   }
 
   @Post('invite')
+  @PlanLimit('seats')
   @ApiOperation({ summary: 'Invite a team member' })
+  @ApiResponse({ status: 403, description: 'Seat limit reached — upgrade required' })
   async inviteMember(@TenantId() tenantId: string, @CurrentUser() user: AuthenticatedUser, @Body() dto: InviteMemberDto) {
     return this.tenantService.inviteMember(tenantId, dto, user.sub);
   }

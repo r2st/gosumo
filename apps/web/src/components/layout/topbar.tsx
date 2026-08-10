@@ -1,11 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, LogOut, Menu, Settings, User } from 'lucide-react';
+import { ChevronDown, Languages, LogOut, Menu, Moon, Settings, Sun, User } from 'lucide-react';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { NotificationCenter } from '@/components/notifications/notification-center';
 import { useAuth } from '@/providers/auth-provider';
+import { useTheme } from '@/providers/theme-provider';
+import { useLanguage } from '@/providers/language-provider';
+import { UI_LANGUAGE_LABELS } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 
@@ -15,7 +18,9 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
 
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border bg-card/80 px-4 backdrop-blur lg:px-6">
-      <button onClick={onMenuClick} className="rounded-md p-2 hover:bg-muted lg:hidden">
+      {/* Tablet-only drawer trigger. On mobile the bottom nav's "More" tab opens the sidebar,
+          so the hamburger is hidden below md; on desktop the sidebar is always visible. */}
+      <button onClick={onMenuClick} className="hidden rounded-md p-2 hover:bg-muted md:inline-flex lg:hidden">
         <Menu className="h-5 w-5" />
       </button>
 
@@ -32,6 +37,12 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
           </p>
         )}
       </div>
+
+      {/* Language switcher */}
+      <LanguageToggle />
+
+      {/* Theme toggle */}
+      <ThemeToggle />
 
       {/* Notifications */}
       <NotificationCenter />
@@ -73,6 +84,37 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
         )}
       </div>
     </header>
+  );
+}
+
+function LanguageToggle() {
+  const { lang, setLang } = useLanguage();
+  const next = lang === 'en' ? 'hi' : 'en';
+  return (
+    <button
+      onClick={() => setLang(next)}
+      className="flex h-9 items-center gap-1 rounded-md px-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      aria-label={`Switch to ${UI_LANGUAGE_LABELS[next]}`}
+      title={`Switch to ${UI_LANGUAGE_LABELS[next]}`}
+    >
+      <Languages className="h-4 w-4" />
+      <span>{UI_LANGUAGE_LABELS[lang]}</span>
+    </button>
+  );
+}
+
+function ThemeToggle() {
+  const { theme, toggleTheme } = useTheme();
+  const isDark = theme === 'dark';
+  return (
+    <button
+      onClick={toggleTheme}
+      className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+    >
+      {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+    </button>
   );
 }
 

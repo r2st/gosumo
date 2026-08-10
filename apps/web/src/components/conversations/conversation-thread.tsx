@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Clock3, RotateCcw, Send } from 'lucide-react';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/status-badge';
 import { ChannelIcon, channelLabel } from '@/components/channel-icon';
 import { LoadingState, ErrorState } from '@/components/ui/states';
-import { MessageBubble } from './message-bubble';
+import { MessageBubble, DayDivider } from './message-bubble';
 import { AiDraftPanel } from './ai-draft-panel';
 import {
   useConversation,
@@ -18,7 +18,8 @@ import {
   useSendMessage,
   useUpdateConversation,
 } from '@/hooks/use-queries';
-import type { HitlTask } from '@/lib/types';
+import { formatDayLabelIST, istDayKey } from '@/lib/format';
+import type { HitlTask, Message } from '@/lib/types';
 
 const QUICK_REPLIES = [
   'Thanks for reaching out! How can I help? 😊',
@@ -39,6 +40,19 @@ export function ConversationThread({ conversationId }: { conversationId: string 
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const messages = messagesQ.data?.data ?? [];
+
+  // Group consecutive messages by their IST calendar day so the thread can show
+  // a centered date pill ("Today", "Yesterday", "3 Jul 2026") between days.
+  const dayGroups = useMemo(() => {
+    const groups: Array<{ key: string; label: string; items: Message[] }> = [];
+    for (const msg of messages) {
+      const key = istDayKey(msg.timestamp);
+      const last = groups[groups.length - 1];
+      if (last && last.key === key) last.items.push(msg);
+      else groups.push({ key, label: formatDayLabelIST(msg.timestamp), items: [msg] });
+    }
+    return groups;
+  }, [messages]);
 
   // Auto-scroll to the latest message.
   useEffect(() => {
@@ -127,7 +141,14 @@ export function ConversationThread({ conversationId }: { conversationId: string 
         ) : messages.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">No messages in this conversation yet.</p>
         ) : (
-          messages.map((msg) => <MessageBubble key={msg.id} message={msg} />)
+          dayGroups.map((group) => (
+            <div key={group.key} className="space-y-2">
+              <DayDivider label={group.label} />
+              {group.items.map((msg) => (
+                <MessageBubble key={msg.id} message={msg} />
+              ))}
+            </div>
+          ))
         )}
       </div>
 

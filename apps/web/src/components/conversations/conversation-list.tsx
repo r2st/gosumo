@@ -8,6 +8,7 @@ import { ChannelIcon } from '@/components/channel-icon';
 import { StatusBadge } from '@/components/status-badge';
 import { LoadingState, EmptyState, ErrorState } from '@/components/ui/states';
 import { useConversations } from '@/hooks/use-queries';
+import { usePullToRefresh, PullToRefreshIndicator } from '@/hooks/use-pull-to-refresh';
 import { timeAgo } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { ChannelType, ConversationStatus } from '@/lib/types';
@@ -66,6 +67,9 @@ export function ConversationList({
 
   const set = (patch: Partial<ConvFilterState>) => onFiltersChange({ ...filters, ...patch });
 
+  // Pull-to-refresh (touch only) on the conversation list.
+  const { containerRef, pullDistance, isRefreshing } = usePullToRefresh<HTMLDivElement>(() => refetch());
+
   return (
     <div className="flex h-full flex-col">
       {/* Search + filters */}
@@ -87,7 +91,8 @@ export function ConversationList({
       </div>
 
       {/* List */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
+      <div ref={containerRef} className="relative flex-1 overflow-y-auto scrollbar-thin">
+        <PullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshing} />
         {isLoading ? (
           <LoadingState label="Loading…" />
         ) : isError ? (

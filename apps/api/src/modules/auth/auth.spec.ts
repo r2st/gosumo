@@ -58,6 +58,7 @@ const mockTeamMember: TeamMemberWithBusiness = {
     profile: {},
     onboarding_progress: {},
     is_active: true,
+    intelligence_opt_in: false,
     created_at: new Date(),
     updated_at: new Date(),
     deleted_at: null,

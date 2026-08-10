@@ -957,6 +957,114 @@ export class BookingService {
     return { synced, failed };
   }
 
+  /**
+   * Push an arbitrary realty site-visit event to the connected Google Calendar.
+   * Reuses the booking module's OAuth connection + silent token refresh so the
+   * `realty-sitevisits` module never touches calendar credentials directly.
+   *
+   * Best-effort: returns `null` when there is no active connection or the token
+   * refresh fails (a HITL task is raised in that case) — the caller still keeps
+   * the visit; it just isn't mirrored to the calendar. When `existingEventId`
+   * is provided the event is updated in place instead of created.
+   */
+  async pushRealtyVisitToCalendar(
+    businessId: string,
+    params: {
+      staffId?: string | null;
+      summary: string;
+      description?: string;
+      startAt: Date;
+      endAt: Date;
+      timeZone: string;
+      location?: string;
+      reminderMinutes?: number[];
+      existingEventId?: string | null;
+      existingCalendarId?: string | null;
+    },
+  ): Promise<{ eventId: string; calendarId: string } | null> {
+    try {
+      const connection = await this.repository.findConnection(
+        businessId,
+        params.staffId ?? null,
+      );
+      if (!connection || !connection.sync_enabled) {
+        return null;
+      }
+      const accessToken = await this.ensureAccessToken(connection).catch(
+        async (err) => {
+          await this.handleCalendarAuthFailure(businessId, connection, err);
+          return null;
+        },
+      );
+      if (!accessToken) {
+        return null;
+      }
+
+      const calendarId =
+        params.existingCalendarId ?? connection.google_calendar_id ?? 'primary';
+      const eventInput = {
+        summary: params.summary,
+        description: params.description,
+        startAt: params.startAt,
+        endAt: params.endAt,
+        timeZone: params.timeZone,
+        location: params.location,
+        reminderMinutes: params.reminderMinutes ?? [120],
+      };
+
+      if (params.existingEventId) {
+        await this.googleCalendar.updateEvent(
+          accessToken,
+          calendarId,
+          params.existingEventId,
+          eventInput,
+        );
+        return { eventId: params.existingEventId, calendarId };
+      }
+      const result = await this.googleCalendar.createEvent(
+        accessToken,
+        calendarId,
+        eventInput,
+      );
+      return { eventId: result.eventId, calendarId };
+    } catch (err) {
+      this.logger.warn(
+        `Non-fatal: could not sync realty visit to Google Calendar: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return null;
+    }
+  }
+
+  /** Remove a realty site-visit event from Google Calendar (best-effort). */
+  async removeRealtyVisitFromCalendar(
+    businessId: string,
+    params: { staffId?: string | null; calendarId: string; eventId: string },
+  ): Promise<void> {
+    try {
+      const connection = await this.repository.findConnection(
+        businessId,
+        params.staffId ?? null,
+      );
+      if (!connection) {
+        return;
+      }
+      const accessToken = await this.ensureAccessToken(connection);
+      await this.googleCalendar.deleteEvent(
+        accessToken,
+        params.calendarId,
+        params.eventId,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Non-fatal: could not remove realty visit calendar event: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
   async getCalendarConnection(
     businessId: string,
     staffId?: string,

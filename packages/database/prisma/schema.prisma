@@ -352,6 +352,256 @@ enum AnalyticsEventCategory {
 }
 
 // ─────────────────────────────────────────────
+// REALTY ENUMS (GoSumo Realty)
+// ─────────────────────────────────────────────
+
+enum LeadSource {
+  PORTAL
+  META_LEAD_AD
+  CTWA
+  IVR
+  REFERRAL
+  CSV
+  WALK_IN
+  EXCHANGE_INBOUND
+  MANUAL
+}
+
+enum LeadTemperature {
+  HOT
+  WARM
+  COLD
+  JUNK
+}
+
+enum LeadStage {
+  NEW
+  CONTACTED
+  QUALIFIED
+  VISIT_BOOKED
+  VISITED
+  NEGOTIATING
+  CLOSED_WON
+  CLOSED_LOST
+  DORMANT
+}
+
+enum LeadPurpose {
+  END_USE
+  INVEST
+}
+
+enum FinancingStatus {
+  CASH
+  PREAPPROVED
+  NEEDS_LOAN
+}
+
+enum LeadExchangeStatus {
+  NONE
+  ELIGIBLE
+  OFFERED
+  SYNDICATED
+  CLOSED
+}
+
+enum ProjectStatus {
+  PRELAUNCH
+  UC
+  RTM
+}
+
+enum UnitAvailability {
+  AVAILABLE
+  HOLD
+  SOLD
+  UNVERIFIED
+}
+
+enum NetworkVisibility {
+  PRIVATE
+  EXCHANGE
+}
+
+enum RealtyAssetType {
+  BROCHURE
+  FLOORPLAN
+  PRICESHEET
+  VIDEO
+  PIN
+}
+
+enum SiteVisitStatus {
+  BOOKED
+  CONFIRMED
+  COMPLETED
+  NO_SHOW
+  RESCHEDULED
+  CANCELLED
+}
+
+enum SiteVisitOutcome {
+  PENDING
+  INTERESTED
+  NOT_INTERESTED
+  WANTS_ALTERNATIVE
+  NEEDS_FOLLOWUP
+  TOKEN_BOOKED
+}
+
+// Realty — cadences & compliance (Phase 5)
+enum CadenceTrigger {
+  NO_RESPONSE
+  POST_VISIT
+  DORMANT
+}
+
+enum CadenceStopOn {
+  REPLY
+  OPTOUT
+  STAGE_CHANGE
+}
+
+enum CadenceEnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  STOPPED
+}
+
+enum TemplateCategory {
+  UTILITY
+  MARKETING
+}
+
+enum TemplateApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// Realty — broker surface (Phase 6)
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  EDITED
+  REJECTED
+}
+
+enum AutonomyLevel {
+  SUGGEST
+  ASSISTED
+  AUTONOMOUS
+}
+
+enum ConversationOwner {
+  AI
+  HUMAN
+}
+
+enum BrokerAlertType {
+  HOT_LEAD
+  MORNING_BRIEFING
+  APPROVAL_PENDING
+  TAKEOVER
+  VISIT_REMINDER
+}
+
+/// Lifecycle of a dead-lettered realty operation (Phase 7 hardening).
+enum DeadLetterStatus {
+  PENDING
+  REPLAYED
+  RESOLVED
+  DISCARDED
+}
+
+// Realty — pilot migration (Phase 8)
+enum MigrationKind {
+  LEADS
+  CONTACTS
+  INVENTORY
+}
+
+enum MigrationStatus {
+  VALIDATED
+  COMMITTED
+  FAILED
+}
+
+enum AutonomyDirection {
+  OPEN
+  HOLD
+  CLOSE
+}
+
+enum AutonomyActorType {
+  HUMAN
+  AI
+}
+
+enum NoShipKind {
+  UNVERIFIED_PRICE
+  STALE_AVAILABILITY
+  OPTED_OUT_SEND
+  RERA_CLAIM
+  CROSS_BUYER
+}
+
+// ─────────────────────────────────────────────
+// REALTY — BILLING & DPDPA COMPLIANCE (plan §9, §21)
+// ─────────────────────────────────────────────
+
+/// GoSumo Realty subscription tiers (business plan §9).
+enum RealtyPlan {
+  SOLO // ₹3,999/mo · 1 seat · 300 leads/mo
+  TEAM // ₹9,999/mo · 5 seats · 1,500 leads/mo · routing + analytics
+  DEVELOPER // ₹24,999/mo · unlimited seats + leads · CRM sync, IVR, priority
+}
+
+/// The DPDPA consent purpose a buyer has granted (or had revoked).
+enum ConsentType {
+  PROCESSING // core: process personal data to assist the property search
+  MARKETING // enrol in follow-up / marketing cadences
+  EXCHANGE // share the lead into the co-broking exchange
+}
+
+/// The corridor-pattern metrics computed by the micro-market intelligence layer
+/// (L1, blueprint §18). Each row in realty_intelligence_aggregates carries one of
+/// these; the JSONB metric_value shape is metric-specific (see the module CLAUDE.md).
+enum IntelligenceMetricType {
+  CADENCE_CONVERSION // which follow-up timing converts, by corridor
+  OBJECTION_FREQUENCY // recurring objections, by project/config type
+  PRICE_ELASTICITY // realistic budget bands, by locality
+  SOURCE_QUALITY // downstream quality of each lead source
+  SEASONAL_VELOCITY // lead inflow + conversion curve, by month
+}
+
+/// Lifecycle of a co-broking syndication (L2 exchange, blueprint §19).
+enum SyndicationState {
+  OFFERED
+  ACCEPTED
+  VISIT
+  CLOSED
+  EXPIRED
+  DISPUTED
+}
+
+/// Settlement posture of a syndication's money leg (tracked apart from state).
+enum SettlementState {
+  UNSETTLED
+  PENDING
+  SETTLED
+  REVERSED
+}
+
+/// Status of a resale listing — Tier-1 oxygen + exchange supply.
+enum ResaleListingStatus {
+  ACTIVE
+  UNDER_OFFER
+  SOLD
+  WITHDRAWN
+}
+
+// ─────────────────────────────────────────────
 // PLATFORM LAYER
 // ─────────────────────────────────────────────
 
@@ -386,45 +636,75 @@ model businesses {
   onboarding_progress Json @default("{}") @db.JsonB
 
   is_active  Boolean   @default(true)
+  /// Consent to contribute anonymized corridor patterns to the micro-market
+  /// intelligence layer (L1). Off by default (DPDPA purpose-limitation); the
+  /// nightly aggregator reads ONLY businesses where this is true.
+  intelligence_opt_in Boolean @default(false)
   created_at DateTime  @default(now()) @db.Timestamptz
   updated_at DateTime  @updatedAt @db.Timestamptz
   deleted_at DateTime? @db.Timestamptz
 
   // Relations
-  team_members               team_members[]
-  clients                    clients[]
-  channel_accounts           channel_accounts[]
-  channel_contacts           channel_contacts[]
-  conversations              conversations[]
-  messages                   messages[]
-  business_rules             business_rules[]
-  catalog_categories         catalog_categories[]
-  catalog_items              catalog_items[]
-  catalog_variants           catalog_variants[]
-  catalog_packages           catalog_packages[]
-  orders                     orders[]
-  payments                   payments[]
-  bookings                   bookings[]
-  shipments                  shipments[]
-  campaigns                  campaigns[]
-  notification_templates     notification_templates[]
-  notifications              notifications[]
-  notification_preferences   notification_preferences[]
-  notification_triggers      notification_triggers[]
-  tasks                      tasks[]
-  ai_decisions               ai_decisions[]
-  ai_precedents              ai_precedents[]
-  analytics_events           analytics_events[]
-  vector_embeddings_metadata vector_embeddings_metadata[]
-  file_uploads               file_uploads[]
-  audit_logs                 audit_logs[]
-  webhook_events             webhook_events[]
-  shipping_addresses         shipping_addresses[]
-  shipping_options           shipping_options[]
-  refunds                    refunds[]
-  carts                      carts[]
-  cart_items                 cart_items[]
-  coupons                    coupons[]
+  team_members                team_members[]
+  clients                     clients[]
+  channel_accounts            channel_accounts[]
+  channel_contacts            channel_contacts[]
+  conversations               conversations[]
+  messages                    messages[]
+  business_rules              business_rules[]
+  catalog_categories          catalog_categories[]
+  catalog_items               catalog_items[]
+  catalog_variants            catalog_variants[]
+  catalog_packages            catalog_packages[]
+  orders                      orders[]
+  payments                    payments[]
+  bookings                    bookings[]
+  shipments                   shipments[]
+  campaigns                   campaigns[]
+  notification_templates      notification_templates[]
+  notifications               notifications[]
+  notification_preferences    notification_preferences[]
+  notification_triggers       notification_triggers[]
+  tasks                       tasks[]
+  ai_decisions                ai_decisions[]
+  ai_precedents               ai_precedents[]
+  analytics_events            analytics_events[]
+  vector_embeddings_metadata  vector_embeddings_metadata[]
+  file_uploads                file_uploads[]
+  audit_logs                  audit_logs[]
+  webhook_events              webhook_events[]
+  shipping_addresses          shipping_addresses[]
+  shipping_options            shipping_options[]
+  refunds                     refunds[]
+  carts                       carts[]
+  cart_items                  cart_items[]
+  coupons                     coupons[]
+  realty_leads                realty_leads[]
+  realty_projects             realty_projects[]
+  realty_units                realty_units[]
+  realty_assets               realty_assets[]
+  realty_site_visits          realty_site_visits[]
+  realty_message_templates    realty_message_templates[]
+  realty_cadences             realty_cadences[]
+  realty_cadence_steps        realty_cadence_steps[]
+  realty_cadence_enrollments  realty_cadence_enrollments[]
+  realty_approvals            realty_approvals[]
+  realty_account_settings     realty_account_settings?
+  realty_broker_alerts        realty_broker_alerts[]
+  realty_conversation_control realty_conversation_control[]
+  realty_dead_letters         realty_dead_letters[]
+  realty_migration_runs       realty_migration_runs[]
+  realty_autonomy_events      realty_autonomy_events[]
+  realty_no_ship_incidents    realty_no_ship_incidents[]
+  realty_intelligence_aggregates realty_intelligence_aggregates[]
+  realty_syndications         realty_syndications[]
+  realty_reliability_scores   realty_reliability_scores[]
+  realty_resale_listings      realty_resale_listings[]
+  business_subscription       business_subscriptions?
+  consent_logs                consent_logs[]
+  realty_compliance_settings  realty_compliance_settings?
+  realty_integration_connections realty_integration_connections[]
+  realty_eoi_requests            realty_eoi_requests[]
 
   @@index([slug])
   @@index([email])
@@ -2042,4 +2322,1045 @@ model audit_logs {
   @@index([actor_id, created_at(sort: Desc)])
   @@index([created_at(sort: Desc)])
   @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────
+// REALTY — LEADS (GoSumo Realty core entity)
+// ─────────────────────────────────────────────
+
+/// A property buyer lead — the central object of the AI Lead Manager.
+/// Normalized across every source; one buyer, one history (merge on phone).
+model realty_leads {
+  id                String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id       String  @db.Uuid
+  /// FK to team_members — the broker/agent who owns this lead
+  assigned_agent_id String? @db.Uuid
+  /// Optional bridge to the messaging spine
+  client_id         String? @db.Uuid
+  conversation_id   String? @db.Uuid
+
+  // Identity — E.164 phone is the primary cross-source join key
+  whatsapp_phone String  @db.VarChar(20)
+  alt_phone      String? @db.VarChar(20)
+  email          String? @db.VarChar(320)
+  name           String? @db.VarChar(255)
+  /// e.g. "hi", "en", "hinglish"
+  language_pref  String  @default("hinglish") @db.VarChar(20)
+
+  // Attribution — recorded at birth, never mutated
+  source         LeadSource
+  sub_source     String?    @db.VarChar(120)
+  campaign_id    String?    @db.Uuid
+  /// The specific listing/ad the buyer enquired about
+  listing_ref    String?    @db.VarChar(255)
+  first_touch_at DateTime   @default(now()) @db.Timestamptz
+
+  // Requirement profile (BLTC+) — amounts in rupees (Decimal), paise at API edge
+  budget_min      Decimal?         @db.Decimal(14, 2)
+  budget_max      Decimal?         @db.Decimal(14, 2)
+  localities      String[]         @default([])
+  timeline_months Int?
+  config          String?          @db.VarChar(60)
+  purpose         LeadPurpose?
+  financing       FinancingStatus?
+
+  // State
+  qual_score       Int             @default(0)
+  temperature      LeadTemperature @default(COLD)
+  stage            LeadStage       @default(NEW)
+  matched_unit_ids String[]        @default([]) @db.Uuid
+
+  // Memory — the compounding asset
+  extracted_facts Json @default("[]") @db.JsonB
+  objections      Json @default("[]") @db.JsonB
+  promises        Json @default("[]") @db.JsonB
+
+  // Compliance & network
+  opt_out         Boolean            @default(false)
+  consent_log     Json               @default("[]") @db.JsonB
+  share_consent   Boolean            @default(false)
+  exchange_status LeadExchangeStatus @default(NONE)
+
+  // Persistence (follow-up engine state)
+  cadence_id       String?   @db.Uuid
+  cadence_step     Int       @default(0)
+  next_followup_at DateTime? @db.Timestamptz
+
+  last_activity_at DateTime? @db.Timestamptz
+  metadata         Json      @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@unique([business_id, whatsapp_phone], map: "uq_realty_leads_business_phone")
+  @@index([business_id, stage, last_activity_at(sort: Desc)])
+  @@index([business_id, temperature, qual_score(sort: Desc)])
+  @@index([business_id, assigned_agent_id, stage])
+  @@index([business_id, source])
+  @@index([business_id, next_followup_at])
+  @@index([deleted_at])
+  @@map("realty_leads")
+}
+
+// ─────────────────────────────────────────────
+// REALTY — INVENTORY GROUNDING LAYER
+// ─────────────────────────────────────────────
+
+/// A verified real-estate project — the sole ground truth the AI may quote.
+model realty_projects {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  name      String  @db.VarChar(255)
+  developer String? @db.VarChar(255)
+  locality  String  @db.VarChar(180)
+  /// { lat, lng }
+  geo       Json?   @db.JsonB
+
+  /// RERA registration number — cited verbatim in outbound where required
+  rera_number     String?       @db.VarChar(120)
+  possession_date DateTime?     @db.Date
+  status          ProjectStatus @default(UC)
+  amenities       String[]      @default([])
+
+  // Price band (rupees) — paise at the API boundary
+  price_band_min Decimal? @db.Decimal(14, 2)
+  price_band_max Decimal? @db.Decimal(14, 2)
+
+  /// FK to file_uploads — the registered fact sheet
+  fact_sheet_doc_id String? @db.Uuid
+  /// CP commission terms — PRIVATE, never surfaced to buyers
+  commission_terms  Json    @default("{}") @db.JsonB
+
+  network_visibility NetworkVisibility @default(PRIVATE)
+  is_active          Boolean           @default(true)
+  metadata           Json              @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses      @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  units    realty_units[]
+  assets   realty_assets[]
+
+  @@index([business_id, locality, status])
+  @@index([business_id, network_visibility])
+  @@index([business_id, is_active])
+  @@index([deleted_at])
+  @@map("realty_projects")
+}
+
+/// A sellable unit within a project. Availability freshness (`verified_at`)
+/// gates whether the AI may assert availability (hard rule: staler than 24h ⇒ "confirming").
+model realty_units {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+  project_id  String @db.Uuid
+
+  /// e.g. "2BHK", "3BHK+Study"
+  config       String  @db.VarChar(60)
+  carpet_sqft  Int?
+  builtup_sqft Int?
+  floor        Int?
+  facing       String? @db.VarChar(40)
+
+  // Prices in rupees (Decimal) — paise at the API boundary
+  base_price   Decimal? @db.Decimal(14, 2)
+  all_in_price Decimal  @db.Decimal(14, 2)
+
+  availability UnitAvailability @default(UNVERIFIED)
+  /// Last time availability was verified — drives the 24h freshness rule
+  verified_at  DateTime?        @db.Timestamptz
+
+  network_visibility NetworkVisibility @default(PRIVATE)
+  metadata           Json              @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses      @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  project  realty_projects @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, project_id, availability])
+  @@index([business_id, config, availability])
+  @@index([business_id, all_in_price])
+  @@index([deleted_at])
+  @@map("realty_units")
+}
+
+/// A pre-uploaded verified media asset (brochure, floor plan, price sheet…)
+/// sent instantly on WhatsApp. Versioned to prevent stale price-sheet leaks.
+model realty_assets {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+  project_id  String @db.Uuid
+
+  type        RealtyAssetType
+  /// WhatsApp-side media id for instant re-send without re-upload
+  wa_media_id String?         @db.VarChar(255)
+  url         String?         @db.Text
+  title       String?         @db.VarChar(255)
+  version     Int             @default(1)
+  is_current  Boolean         @default(true)
+  metadata    Json            @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses      @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  project  realty_projects @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, project_id, type, is_current])
+  @@index([deleted_at])
+  @@map("realty_assets")
+}
+
+// ─────────────────────────────────────────────
+// REALTY — SITE VISITS (Phase 3)
+// ─────────────────────────────────────────────
+
+/// A scheduled property site visit. Sits on top of the `booking` module for
+/// Google Calendar sync; owns the realty-specific reminder cadence (T-24h,
+/// T-2h), reschedule/cancel flows, and post-visit feedback + outcome logging.
+/// lead_id / project_id / unit_id are loose UUID references (module-boundary
+/// decoupling) with FK constraints enforced at the DB level.
+model realty_site_visits {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  lead_id           String  @db.Uuid
+  project_id        String  @db.Uuid
+  unit_id           String? @db.Uuid
+  assigned_agent_id String? @db.Uuid
+
+  scheduled_at     DateTime @db.Timestamptz
+  duration_minutes Int      @default(45)
+  timezone         String   @default("Asia/Kolkata") @db.VarChar(60)
+
+  status SiteVisitStatus @default(BOOKED)
+
+  // Google Calendar linkage (via the booking module's OAuth connection)
+  booking_id        String? @db.Uuid
+  calendar_event_id String? @db.VarChar(255)
+  calendar_id       String? @db.VarChar(255)
+
+  // Reminder tracking — { "1440": true, "120": false } keyed by minutes-before
+  reminder_state   Json      @default("{}") @db.JsonB
+  reminders_sent   Int       @default(0)
+  last_reminder_at DateTime? @db.Timestamptz
+
+  // Post-visit capture
+  feedback String?          @db.Text
+  outcome  SiteVisitOutcome @default(PENDING)
+
+  rescheduled_from    DateTime? @db.Timestamptz
+  cancellation_reason String?   @db.Text
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, status, scheduled_at])
+  @@index([business_id, lead_id])
+  @@index([business_id, scheduled_at])
+  @@index([business_id, assigned_agent_id, scheduled_at])
+  @@index([deleted_at])
+  @@map("realty_site_visits")
+}
+
+// ─────────────────────────────────────────────
+// REALTY — CADENCES & COMPLIANCE (Phase 5)
+// ─────────────────────────────────────────────
+
+/// A WhatsApp message template mirror of the Meta template registry.
+/// Sends are blocked unless approval_status = APPROVED and the category
+/// is correct for the current service-window state (blueprint §21).
+model realty_message_templates {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  /// Stable key referenced by cadence steps, e.g. "followup_d3"
+  name            String                 @db.VarChar(120)
+  category        TemplateCategory       @default(UTILITY)
+  /// BCP-47-ish language tag, e.g. "en", "hi", "en_US"
+  language        String                 @db.VarChar(20)
+  /// The template body with {{1}}, {{2}} placeholders
+  body            String                 @db.Text
+  /// Ordered placeholder variable names for {{1..n}}
+  variables       String[]               @default([])
+  approval_status TemplateApprovalStatus @default(PENDING)
+  approved_at     DateTime?              @db.Timestamptz
+  metadata        Json                   @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses             @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  steps    realty_cadence_steps[]
+
+  @@unique([business_id, name], map: "uq_realty_templates_business_name")
+  @@index([business_id, approval_status])
+  @@index([deleted_at])
+  @@map("realty_message_templates")
+}
+
+/// A declarative follow-up sequence. Leads auto-enroll when the trigger fires.
+model realty_cadences {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  name        String         @db.VarChar(160)
+  description String?        @db.Text
+  trigger     CadenceTrigger
+  is_active   Boolean        @default(true)
+  metadata    Json           @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business    businesses                   @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  steps       realty_cadence_steps[]
+  enrollments realty_cadence_enrollments[]
+
+  @@index([business_id, trigger, is_active])
+  @@index([deleted_at])
+  @@map("realty_cadences")
+}
+
+/// One step in a cadence: fire `template` on day `day_offset` after enrolment,
+/// gated by `condition`, and abort the cadence on any `stop_on` signal.
+model realty_cadence_steps {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+  cadence_id  String @db.Uuid
+  template_id String @db.Uuid
+
+  step_order Int
+  day_offset Int
+  /// Optional per-step guard (stageIn / temperatureIn / score bounds)
+  condition  Json            @default("{}") @db.JsonB
+  stop_on    CadenceStopOn[] @default([])
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses               @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  cadence  realty_cadences          @relation(fields: [cadence_id], references: [id], onDelete: Cascade)
+  template realty_message_templates @relation(fields: [template_id], references: [id], onDelete: Restrict)
+
+  @@unique([cadence_id, step_order], map: "uq_realty_cadence_step_order")
+  @@index([business_id, cadence_id])
+  @@index([deleted_at])
+  @@map("realty_cadence_steps")
+}
+
+/// A single lead's run through a cadence. Scheduling state (next_run_at,
+/// current_step) lives here so the engine can process due steps cheaply.
+model realty_cadence_enrollments {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+  cadence_id  String @db.Uuid
+  lead_id     String @db.Uuid
+
+  status            CadenceEnrollmentStatus @default(ACTIVE)
+  current_step      Int                     @default(0)
+  next_run_at       DateTime?               @db.Timestamptz
+  trigger           CadenceTrigger
+  stop_reason       String?                 @db.VarChar(60)
+  last_step_sent_at DateTime?               @db.Timestamptz
+  started_at        DateTime                @default(now()) @db.Timestamptz
+  completed_at      DateTime?               @db.Timestamptz
+  metadata          Json                    @default("{}") @db.JsonB
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses      @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  cadence  realty_cadences @relation(fields: [cadence_id], references: [id], onDelete: Cascade)
+
+  /// One active enrolment per lead at a time is enforced in the service layer.
+  @@index([business_id, status, next_run_at])
+  @@index([business_id, lead_id, status])
+  @@index([business_id, cadence_id])
+  @@map("realty_cadence_enrollments")
+}
+
+// ─────────────────────────────────────────────
+// REALTY — BROKER SURFACE (Phase 6)
+// ─────────────────────────────────────────────
+
+/// An AI draft parked for human review (70–89% confidence band).
+model realty_approvals {
+  id              String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id     String  @db.Uuid
+  lead_id         String  @db.Uuid
+  conversation_id String? @db.Uuid
+
+  draft_text  String         @db.Text
+  edited_text String?        @db.Text
+  /// 0–100 realty confidence that produced this draft
+  confidence  Int
+  intent      String?        @db.VarChar(60)
+  status      ApprovalStatus @default(PENDING)
+  reviewed_by String?        @db.Uuid
+  reviewed_at DateTime?      @db.Timestamptz
+  reason      String?        @db.VarChar(500)
+  metadata    Json           @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, status, created_at])
+  @@index([business_id, lead_id])
+  @@index([deleted_at])
+  @@map("realty_approvals")
+}
+
+/// Per-account broker configuration — the autonomy dial + kill switch + digest.
+/// Exactly one row per business.
+model realty_account_settings {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @unique @db.Uuid
+
+  autonomy_level         AutonomyLevel @default(SUGGEST)
+  /// Confidence at/above which the AI may auto-send in ASSISTED/AUTONOMOUS (0–100)
+  auto_approve_threshold Int           @default(90)
+  /// Master off-switch — when true, the AI never sends autonomously
+  kill_switch            Boolean       @default(false)
+  briefing_enabled       Boolean       @default(true)
+  /// Local-time hour (IST) the morning briefing is generated
+  briefing_hour          Int           @default(7)
+  briefing_minute        Int           @default(30)
+  /// Where hot-lead alerts are pushed
+  hot_alert_whatsapp     String?       @db.VarChar(20)
+  metadata               Json          @default("{}") @db.JsonB
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@map("realty_account_settings")
+}
+
+/// The broker's notification-centre feed — hot leads, briefings, approvals, etc.
+model realty_broker_alerts {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  type    BrokerAlertType
+  lead_id String?         @db.Uuid
+  title   String          @db.VarChar(200)
+  body    String?         @db.Text
+  /// Structured payload (e.g. the hot-lead dossier)
+  payload Json            @default("{}") @db.JsonB
+  is_read Boolean         @default(false)
+  read_at DateTime?       @db.Timestamptz
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, is_read, created_at])
+  @@index([business_id, type, created_at])
+  @@index([business_id, lead_id])
+  @@map("realty_broker_alerts")
+}
+
+/// Who currently owns a conversation — the AI or a human broker (takeover).
+/// A row exists only once a conversation's control has ever been asserted.
+model realty_conversation_control {
+  id              String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id     String  @db.Uuid
+  conversation_id String  @db.Uuid
+  lead_id         String? @db.Uuid
+
+  owner         ConversationOwner @default(AI)
+  taken_over_by String?           @db.Uuid
+  taken_over_at DateTime?         @db.Timestamptz
+  released_at   DateTime?         @db.Timestamptz
+  metadata      Json              @default("{}") @db.JsonB
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@unique([business_id, conversation_id], map: "uq_realty_conv_control")
+  @@index([business_id, owner])
+  @@index([business_id, lead_id])
+  @@map("realty_conversation_control")
+}
+
+// ─────────────────────────────────────────────
+// REALTY — HARDENING (Phase 7): dead-letter queue
+// ─────────────────────────────────────────────
+
+/// A realty operation that failed after exhausting its retries. Captured (never
+/// dropped) so it can be inspected and deterministically replayed during the
+/// 7-day unattended soak. Append-mostly: only `status`/replay bookkeeping mutate.
+model realty_dead_letters {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  /// Logical source of the failed work, e.g. "realty-cadence" | "realty-sitevisits".
+  source    String @db.VarChar(80)
+  /// The queue or operation name, e.g. "cadence.step.send" | "visit.reminder".
+  operation String @db.VarChar(120)
+
+  /// The full job payload, sufficient to replay the operation verbatim.
+  payload Json @db.JsonB
+
+  /// The terminal error class + message that sent this to the DLQ.
+  error_message String  @db.Text
+  error_stack   String? @db.Text
+  /// How many attempts were made before dead-lettering.
+  attempts      Int     @default(0)
+
+  status         DeadLetterStatus @default(PENDING)
+  /// Free-form note captured when a human resolves/discards the entry.
+  resolution     String?          @db.Text
+  correlation_id String?          @db.VarChar(64)
+
+  /// Optional bridges back to the offending domain objects (loose UUID refs).
+  lead_id         String? @db.Uuid
+  conversation_id String? @db.Uuid
+
+  replayed_at DateTime? @db.Timestamptz
+  resolved_at DateTime? @db.Timestamptz
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, status, created_at(sort: Desc)])
+  @@index([business_id, source, operation])
+  @@index([business_id, lead_id])
+  @@map("realty_dead_letters")
+}
+
+// ─────────────────────────────────────────────
+// REALTY — PILOT MIGRATION (Phase 8, blueprint §22 / §24)
+// ─────────────────────────────────────────────
+
+/// The audit record of one pilot-firm data import (leads / contacts / inventory).
+/// A dry-run ends VALIDATED (nothing written); a commit ends COMMITTED or FAILED.
+model realty_migration_runs {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  kind    MigrationKind
+  status  MigrationStatus @default(VALIDATED)
+  dry_run Boolean         @default(false)
+
+  total_rows    Int @default(0)
+  created_count Int @default(0)
+  merged_count  Int @default(0)
+  skipped_count Int @default(0)
+  error_count   Int @default(0)
+
+  /// Per-row errors ([{ row, reason }]) and a free-form summary of the outcome.
+  errors  Json @default("[]") @db.JsonB
+  summary Json @default("{}") @db.JsonB
+
+  /// The team member who ran the import (null for automated runs).
+  created_by String? @db.Uuid
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, kind, created_at(sort: Desc)])
+  @@index([business_id, status])
+  @@index([deleted_at])
+  @@map("realty_migration_runs")
+}
+
+/// Append-only ledger of every autonomy-dial evaluation that changed (or held)
+/// the dial. The dial "opens gradually on evidence" — each row captures the
+/// evidence snapshot behind an OPEN/HOLD/CLOSE. Never updated or deleted.
+model realty_autonomy_events {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  direction AutonomyDirection
+
+  from_level     AutonomyLevel
+  to_level       AutonomyLevel
+  from_threshold Int
+  to_threshold   Int
+
+  /// The evidence gathered for this evaluation (AutonomyEvidence shape).
+  evidence Json   @default("{}") @db.JsonB
+  reason   String @db.VarChar(500)
+
+  actor_type AutonomyActorType @default(HUMAN)
+  actor_id   String?           @db.Uuid
+
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, created_at(sort: Desc)])
+  @@map("realty_autonomy_events")
+}
+
+/// Append-only ledger of "no-ship" incidents — a price/availability/opt-out/RERA
+/// violation that reached (or would have reached) a buyer. The launch gate hard
+/// fails if any exist in its window. Guardrails keep this empty in a healthy run.
+model realty_no_ship_incidents {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  kind            NoShipKind
+  lead_id         String?    @db.Uuid
+  conversation_id String?    @db.Uuid
+
+  /// What was detected + where it came from (e.g. "realty-ai:auto_send").
+  detail String @db.VarChar(500)
+  source String @db.VarChar(80)
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, created_at(sort: Desc)])
+  @@index([business_id, kind])
+  @@map("realty_no_ship_incidents")
+}
+
+// ─────────────────────────────────────────────
+// REALTY — MICRO-MARKET INTELLIGENCE (L1, blueprint §18)
+// ─────────────────────────────────────────────
+
+/// A single consented, anonymized corridor aggregate — the unit of the data
+/// network effect. Built nightly ONLY from businesses with intelligence_opt_in,
+/// and only when sample_size >= min_n_threshold so no individual lead can be
+/// reconstructed. metric_value is a metric-specific JSONB payload; these priors
+/// are injected into the grounded AI prompt to make every broker's AI smarter.
+model realty_intelligence_aggregates {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  /// The micro-market corridor this pattern describes (a locality/sub-market key).
+  corridor    String                 @db.VarChar(180)
+  metric_type IntelligenceMetricType
+
+  /// Metric-specific aggregate payload (never raw rows — always summary stats).
+  metric_value Json @db.JsonB
+
+  /// Number of underlying data points behind this aggregate.
+  sample_size     Int
+  /// Minimum data points required to emit an aggregate (anti-reconstruction).
+  min_n_threshold Int @default(5)
+
+  period_start DateTime @db.Timestamptz
+  period_end   DateTime @db.Timestamptz
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  // One current aggregate per business + corridor + metric + period window.
+  @@unique([business_id, corridor, metric_type, period_start], map: "uq_realty_intel_business_corridor_metric_period")
+  @@index([business_id, corridor, metric_type])
+  @@index([business_id, metric_type, period_end(sort: Desc)])
+  @@map("realty_intelligence_aggregates")
+}
+
+// ─────────────────────────────────────────────
+// REALTY — EXCHANGE (L2 co-broking, blueprint §19)
+// ─────────────────────────────────────────────
+
+/// The immutable attribution ledger behind a co-broking deal share. The
+/// originating broker owns the row (`business_id` = `from_business_id`), scoping
+/// it for RLS. Attribution facts (lead, from/to/developer, split_terms,
+/// buyer_consent_at) are set once at OFFER and never rewritten; only the deal
+/// `state`, `settlement_state`, and the money legs advance through the lifecycle.
+/// `to_business_id` / `developer_id` are loose UUID references (module-boundary
+/// decoupling), FK-constrained on `business_id` only.
+model realty_syndications {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  /// The syndicated lead (loose reference to realty_leads).
+  lead_id String @db.Uuid
+
+  /// Originator (owns the lead) — mirrors business_id for query symmetry.
+  from_business_id String  @db.Uuid
+  /// Counterparty (inventory/closing side).
+  to_business_id   String  @db.Uuid
+  /// Optional developer/channel-partner counterparty on a primary deal.
+  developer_id     String? @db.Uuid
+
+  /// { originatorPct, counterpartyPct, developerPct?, note? } — sums to 100.
+  split_terms Json @default("{}") @db.JsonB
+
+  /// Buyer's explicit consent to share their lead across the network (gate).
+  buyer_consent_at DateTime? @db.Timestamptz
+
+  state SyndicationState @default(OFFERED)
+
+  // Money in rupees (Decimal) — paise at the API boundary.
+  commission_pool Decimal @default(0) @db.Decimal(14, 2)
+  platform_fee    Decimal @default(0) @db.Decimal(14, 2)
+
+  settlement_state SettlementState @default(UNSETTLED)
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, state])
+  @@index([business_id, lead_id])
+  @@index([to_business_id, state])
+  @@index([business_id, settlement_state])
+  @@index([deleted_at])
+  @@map("realty_syndications")
+}
+
+/// Per-member composite trust score that gates and ranks exchange matching.
+/// One row per (owner business, target member, period) — the owner's rolling
+/// view of a counterparty's reliability, recomputed each period from deal signals.
+model realty_reliability_scores {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  /// The member being scored (loose reference to businesses).
+  target_business_id String @db.Uuid
+
+  // All sub-scores and the composite are 0–100.
+  response_speed_score       Decimal @default(0) @db.Decimal(5, 2)
+  showup_integrity_score     Decimal @default(0) @db.Decimal(5, 2)
+  split_honoring_score       Decimal @default(0) @db.Decimal(5, 2)
+  documentation_hygiene_score Decimal @default(0) @db.Decimal(5, 2)
+  composite_score            Decimal @default(0) @db.Decimal(5, 2)
+
+  period_start DateTime @db.Timestamptz
+  period_end   DateTime @db.Timestamptz
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@unique([business_id, target_business_id, period_start])
+  @@index([business_id, target_business_id])
+  @@index([business_id, composite_score(sort: Desc)])
+  @@map("realty_reliability_scores")
+}
+
+/// A resale (secondary-market) listing — Tier-1 "oxygen" supply that also feeds
+/// the exchange. ACTIVE listings are matchable network-wide as co-broking supply.
+model realty_resale_listings {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  /// Optional link to a verified project (loose reference to realty_projects).
+  project_id String? @db.Uuid
+
+  locality     String  @db.VarChar(180)
+  config       String  @db.VarChar(60)
+  carpet_sqft  Int?
+  /// Asking price in rupees (Decimal) — paise at the API boundary.
+  asking_price Decimal @db.Decimal(14, 2)
+  /// Seller contact — PRIVATE, never surfaced to a counterparty pre-consent.
+  seller_phone String  @db.VarChar(20)
+
+  status      ResaleListingStatus @default(ACTIVE)
+  verified_at DateTime?           @db.Timestamptz
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, status])
+  @@index([status, locality, config])
+  @@index([deleted_at])
+  @@map("realty_resale_listings")
+}
+
+// ─────────────────────────────────────────────
+// REALTY — BILLING (pricing tier enforcement, plan §9)
+// ─────────────────────────────────────────────
+
+/// One subscription row per business — the pricing tier and its live usage
+/// counters. Lead limits are enforced against `leads_used_this_cycle`, which the
+/// billing module rolls over each `billing_cycle_start + 1 month`. A null limit
+/// means "unlimited" (DEVELOPER). All money in paise (integer).
+model business_subscriptions {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @unique @db.Uuid
+
+  plan RealtyPlan @default(SOLO)
+
+  /// Included leads per billing cycle — null = unlimited.
+  monthly_lead_limit Int?
+  /// Included seats (team members) — null = unlimited.
+  seat_limit         Int?
+  /// Recurring price in paise (e.g. 399900 = ₹3,999).
+  plan_price_paise   Int @default(399900)
+  /// Per-lead charge in paise once the included allotment is exhausted (₹8 = 800).
+  overage_rate_paise Int @default(800)
+
+  /// Start of the current billing cycle; usage resets one month after this.
+  billing_cycle_start   DateTime @default(now()) @db.Timestamptz
+  /// Leads captured within the current cycle (reset on rollover).
+  leads_used_this_cycle Int      @default(0)
+  /// Leads billed as overage within the current cycle (beyond the included limit).
+  overage_leads_this_cycle Int   @default(0)
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([plan])
+  @@map("business_subscriptions")
+}
+
+// ─────────────────────────────────────────────
+// REALTY — DPDPA COMPLIANCE (plan §21)
+// ─────────────────────────────────────────────
+
+/// Append-only consent ledger (DPDPA §6 — consent must be recorded, auditable,
+/// and withdrawable). One row per consent grant/revoke event; `revoked_at` is set
+/// in place when a previously-granted consent is withdrawn (the only mutation).
+model consent_logs {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  /// E.164 phone — the buyer identity key (matches realty_leads.whatsapp_phone).
+  phone        String      @db.VarChar(20)
+  consent_type ConsentType
+
+  granted_at DateTime  @default(now()) @db.Timestamptz
+  revoked_at DateTime? @db.Timestamptz
+
+  /// Channel the consent was captured on (WHATSAPP / WEB / IVR / SYSTEM …).
+  channel    String  @default("SYSTEM") @db.VarChar(30)
+  /// The message that carried the notice/opt-in, when applicable.
+  message_id String? @db.Uuid
+  /// Free-form provenance (e.g. "first_contact_notice", "exchange_opt_in").
+  source     String? @db.VarChar(80)
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, phone, consent_type])
+  @@index([business_id, consent_type, granted_at(sort: Desc)])
+  @@map("consent_logs")
+}
+
+/// Per-business DPDPA configuration. The broker is the data fiduciary; GoSumo is
+/// the data processor. Exactly one row per business.
+model realty_compliance_settings {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @unique @db.Uuid
+
+  /// Data-retention window in months; inactive leads/messages are anonymized
+  /// after this. Default 24 (plan §21).
+  retention_months Int @default(24)
+
+  /// The broker has accepted the data-processor agreement (fiduciary ⇄ processor).
+  data_processor_agreement Boolean   @default(false)
+  data_processor_agreed_at DateTime? @db.Timestamptz
+
+  /// Timestamp of the last completed retention sweep for this business.
+  last_retention_run_at DateTime? @db.Timestamptz
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@map("realty_compliance_settings")
+}
+
+// ─────────────────────────────────────────────
+// REALTY — OUTBOUND INTEGRATIONS (Phase 5)
+//   Google Sheets export · CRM push · Razorpay EOI · parser health
+// ─────────────────────────────────────────────
+
+/// External systems a business can wire GoSumo Realty into.
+enum RealtyIntegrationProvider {
+  GOOGLE_SHEETS
+  SELLDO
+  LEADSQUARED
+  PRIVYR
+}
+
+/// Connection health for an outbound integration.
+enum RealtyIntegrationStatus {
+  DISCONNECTED
+  CONNECTED
+  ERROR
+}
+
+/// Lifecycle of an Expression-of-Interest (टोकन) payment request.
+enum RealtyEoiStatus {
+  PENDING_APPROVAL
+  APPROVED
+  LINK_SENT
+  PAID
+  EXPIRED
+  REJECTED
+  CANCELLED
+}
+
+/// Result of a portal-email parser health probe.
+enum RealtyParserHealthStatus {
+  HEALTHY
+  DEGRADED
+  FAILED
+}
+
+/// One connection per (business, provider) to an external system — Google Sheets
+/// (nightly leads/inventory export) or an Indian CRM (Sell.Do / LeadSquared /
+/// Privyr) that leads are pushed to on create/update/stage-change. `config` holds
+/// the provider credentials (OAuth tokens, API keys) and settings; it is never
+/// surfaced on read DTOs.
+model realty_integration_connections {
+  id          String                    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String                    @db.Uuid
+  provider    RealtyIntegrationProvider
+  status      RealtyIntegrationStatus   @default(DISCONNECTED)
+
+  /// Provider secrets + settings — { accessToken, refreshToken, apiKey, spreadsheetId, ... }.
+  /// PRIVATE: stripped from every response DTO; only the sync worker reads it.
+  config Json @default("{}") @db.JsonB
+
+  /// A human-facing external reference (spreadsheet id, CRM account id/subdomain).
+  external_ref String? @db.VarChar(255)
+
+  last_sync_at   DateTime? @db.Timestamptz
+  last_error     String?   @db.Text
+  sync_count     Int       @default(0)
+  pushed_count   Int       @default(0)
+  metadata       Json      @default("{}") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@unique([business_id, provider], map: "uq_realty_integration_business_provider")
+  @@index([business_id, status])
+  @@index([provider, status])
+  @@index([deleted_at])
+  @@map("realty_integration_connections")
+}
+
+/// An Expression-of-Interest token (बुकिंग टोकन) payment request against a
+/// qualified lead. A broker must APPROVE before the Razorpay payment link is
+/// generated and sent; the link's payment then advances the lead's stage.
+/// Money in rupees (Decimal); paise at the API boundary.
+model realty_eoi_requests {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  /// Loose UUID references (module-boundary decoupling), FK-enforced at the DB.
+  lead_id String  @db.Uuid
+  unit_id String? @db.Uuid
+
+  /// Token amount in rupees.
+  amount   Decimal @db.Decimal(14, 2)
+  currency String  @default("INR") @db.Char(3)
+  /// Buyer-facing label for the token, e.g. "टोकन", "बुकिंग राशि".
+  token_label String @default("टोकन") @db.VarChar(60)
+
+  status RealtyEoiStatus @default(PENDING_APPROVAL)
+
+  /// Razorpay payment-link id (plink_xxx) + its short url, set once approved+sent.
+  payment_link_id   String? @db.VarChar(120)
+  payment_link_url  String? @db.Text
+  gateway_payment_id String? @db.VarChar(120)
+
+  requested_by  String?   @db.Uuid
+  approved_by   String?   @db.Uuid
+  approved_at   DateTime? @db.Timestamptz
+  sent_at       DateTime? @db.Timestamptz
+  paid_at       DateTime? @db.Timestamptz
+  expires_at    DateTime? @db.Timestamptz
+  reject_reason String?   @db.Text
+
+  notes    Json @default("{}") @db.JsonB
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, status])
+  @@index([business_id, lead_id])
+  @@index([business_id, payment_link_id])
+  @@map("realty_eoi_requests")
+}
+
+/// A platform-ops snapshot of a portal-email parser probe (99acres / MagicBricks
+/// / Housing.com). NOT tenant-scoped — parsers are global code, and this table
+/// records whether they still extract a valid candidate from known-good sample
+/// emails, so format drift (a portal changing its template) is caught early. No
+/// tenant data is stored, so no RLS.
+model realty_parser_health_checks {
+  id     String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  portal String                   @db.VarChar(40)
+  status RealtyParserHealthStatus
+
+  sample_count Int
+  pass_count   Int
+  fail_count   Int
+  empty_count  Int @default(0)
+
+  /// Per-sample outcomes + which expected fields went missing.
+  details Json @default("{}") @db.JsonB
+
+  checked_at DateTime @default(now()) @db.Timestamptz
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  @@index([portal, checked_at(sort: Desc)])
+  @@index([status, checked_at(sort: Desc)])
+  @@map("realty_parser_health_checks")
 }

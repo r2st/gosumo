@@ -9,6 +9,7 @@ import {
   useUpdateBusinessSettings,
 } from '@/hooks/use-settings';
 import { SettingsCard, SaveButton, FormRow } from '@/components/settings/settings-kit';
+import { useToast } from '@/providers/toast-provider';
 import { BusinessHoursEditor } from '@/components/settings/business-hours-editor';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -62,13 +63,17 @@ function ProfileFormInner({
     (k: keyof typeof form) => (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
       setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  const toast = useToast();
   const dirty = JSON.stringify(form) !== JSON.stringify(initial);
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        update.mutate(form as Partial<BusinessProfile>);
+        update.mutate(form as Partial<BusinessProfile>, {
+          onSuccess: () => toast.success('Business profile saved.', { title: 'Settings saved' }),
+          onError: () => toast.error('Could not save your changes. Please try again.'),
+        });
       }}
     >
       <SettingsCard
@@ -126,6 +131,7 @@ function ProfileFormInner({
 }
 
 function HoursForm() {
+  const toast = useToast();
   const { data: settings, isLoading, isError, refetch } = useBusinessSettings();
   const update = useUpdateBusinessSettings();
   const [hours, setHours] = useState<OfficeHours | null>(null);
@@ -152,7 +158,13 @@ function HoursForm() {
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        update.mutate({ officeHoursEnabled: enabled, officeHours: hours, outsideHoursMessage: outsideMsg });
+        update.mutate(
+          { officeHoursEnabled: enabled, officeHours: hours, outsideHoursMessage: outsideMsg },
+          {
+            onSuccess: () => toast.success('Business hours saved.', { title: 'Settings saved' }),
+            onError: () => toast.error('Could not save your changes. Please try again.'),
+          },
+        );
       }}
     >
       <SettingsCard

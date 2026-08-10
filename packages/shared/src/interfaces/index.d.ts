@@ -222,4 +222,471 @@ export interface ChannelAdapter {
     downloadMedia(mediaId: string): Promise<Buffer>;
     uploadMedia(buffer: Buffer, mimeType: string): Promise<string>;
 }
+/**
+ * The structured buyer requirement the AI extracts conversationally
+ * (blueprint §16.2). Everything downstream — matching, cadences, the
+ * exchange — keys off this object. Amounts are integer paise.
+ *
+ * A slot is "known" when its value is non-null; the BLTC state machine
+ * asks for at most one unknown slot per turn and never re-asks a known one.
+ */
+export interface BltcProfile {
+    /** Budget floor in paise (null = unknown). */
+    budgetMinPaise: number | null;
+    /** Budget ceiling in paise (null = unknown). */
+    budgetMaxPaise: number | null;
+    /** Preferred localities/corridors (empty = unknown). */
+    localities: string[];
+    /** Purchase horizon in months (null = unknown). */
+    timelineMonths: number | null;
+    /** Unit configuration, e.g. "2BHK" (null = unknown). */
+    config: string | null;
+    /** End-use vs investment (null = unknown). */
+    purpose: LeadPurposeValue | null;
+    /** Financing posture (null = unknown). */
+    financing: FinancingStatusValue | null;
+}
+/** String-literal mirror of the LeadPurpose enum (shared has no runtime dep). */
+export type LeadPurposeValue = 'END_USE' | 'INVEST';
+/** String-literal mirror of the FinancingStatus enum. */
+export type FinancingStatusValue = 'CASH' | 'PREAPPROVED' | 'NEEDS_LOAN';
+/** Which BLTC slots remain UNKNOWN — the state-machine's working set. */
+export interface BltcSlotState {
+    budget: boolean;
+    location: boolean;
+    timeline: boolean;
+    config: boolean;
+    purpose: boolean;
+    financing: boolean;
+}
+/**
+ * A single memory fact the AI must never lose (blueprint §5.1):
+ * an extracted fact ("wife wants east-facing"), an objection, or a promise.
+ */
+export interface LeadMemoryEntry {
+    text: string;
+    /** ISO-8601 capture time. */
+    at: string;
+    /** Optional source message id for provenance. */
+    messageId?: string;
+}
+/** Result of scoring a lead (blueprint §16.2 weights). */
+export interface LeadScoreResult {
+    /** 0–100 composite qualification score. */
+    score: number;
+    temperature: 'HOT' | 'WARM' | 'COLD' | 'JUNK';
+    /** Per-factor contribution for explainability. */
+    breakdown: {
+        budgetFit: number;
+        timeline: number;
+        engagement: number;
+        financing: number;
+        purpose: number;
+    };
+}
+/** A matched unit returned by the inventory matching service, ranked by fit. */
+export interface UnitMatch {
+    unitId: string;
+    projectId: string;
+    projectName: string;
+    config: string;
+    allInPricePaise: number;
+    locality: string;
+    /** 0–100 fit score. */
+    fitScore: number;
+    /** Why it matched — human-readable reasons for the broker/AI. */
+    reasons: string[];
+}
+/**
+ * How the commission on a syndicated deal is split. Percentages are integer
+ * basis-of-100 shares that MUST sum to 100 (e.g. the canonical 50:50 → 50/50).
+ * The originator is the broker who owns the lead; the counterparty is the
+ * inventory/closing side. An optional developer cut is carved out first.
+ */
+export interface SplitTerms {
+    /** Originating broker's share of the commission pool, in percent (0–100). */
+    originatorPct: number;
+    /** Counterparty (inventory side) share, in percent (0–100). */
+    counterpartyPct: number;
+    /** Optional developer/channel-partner cut taken off the top, in percent. */
+    developerPct?: number;
+    /** Free-form note captured at offer time (e.g. "post-visit only"). */
+    note?: string;
+}
+/**
+ * A network-supply candidate surfaced by the exchange matcher — a unit or
+ * resale listing from ANOTHER business, ranked by BLTC fit blended with the
+ * counterparty's reliability score. This is the cross-tenant read that makes
+ * the co-broking network liquid; only EXCHANGE-visible supply is ever exposed
+ * and no private commission terms are carried.
+ */
+export interface ExchangeMatch {
+    /** Source row id (a resale listing id or an EXCHANGE-visible unit id). */
+    listingId: string;
+    /** Which supply pool the candidate came from. */
+    sourceType: 'RESALE' | 'UNIT';
+    /** The counterparty business that owns the supply. */
+    ownerBusinessId: string;
+    projectName: string | null;
+    locality: string;
+    config: string;
+    askingPricePaise: number;
+    /** 0–100 BLTC fit score (config, price band, locality). */
+    fitScore: number;
+    /** 0–100 composite reliability of the counterparty at match time. */
+    reliabilityScore: number;
+    /** Ranking key: fit blended with counterparty reliability (0–100). */
+    blendedScore: number;
+    /** Human-readable reasons for the broker. */
+    reasons: string[];
+}
+/** The four reliability sub-scores plus their weighted composite (all 0–100). */
+export interface ReliabilityScoreBreakdown {
+    responseSpeedScore: number;
+    showupIntegrityScore: number;
+    splitHonoringScore: number;
+    documentationHygieneScore: number;
+    compositeScore: number;
+}
+/**
+ * A normalized lead candidate produced by any ingestion path (Meta Leadgen,
+ * portal-email parser, CSV import, CTWA context) and handed to
+ * `RealtyLeadsService.ingestLead`, which owns the E.164 identity-merge.
+ *
+ * `whatsappPhone` is the join key — it MUST be normalized to E.164 by the
+ * caller (`normalizeIndianPhone`). Fields left undefined are not written on a
+ * merge (existing values are never clobbered by ingestion).
+ */
+export interface LeadIngestCandidate {
+    /** E.164 phone — the cross-source identity key. */
+    whatsappPhone: string;
+    /** Attribution at birth — one of the LeadSource values. */
+    source: string;
+    /** Fine-grained source, e.g. "99acres", the ad/campaign, or portal name. */
+    subSource?: string;
+    /** The specific listing/ad/project the buyer enquired about (CTWA context). */
+    listingRef?: string;
+    name?: string;
+    email?: string;
+    altPhone?: string;
+    languagePref?: string;
+    /** Bridge to an existing conversation when the ingest arrived over a channel. */
+    conversationId?: string;
+    /** Bridge to an existing client record. */
+    clientId?: string;
+    /** Free-form provenance retained on lead metadata (raw form fields, headers). */
+    raw?: Record<string, unknown>;
+}
+/** The outcome of an ingest: the resolved lead id and whether it merged. */
+export interface LeadIngestResult {
+    leadId: string;
+    /** True when folded into an existing lead (same phone); false when created. */
+    merged: boolean;
+}
+/** String-literal mirror of the RealtyIntent enum (shared has no runtime dep). */
+export type RealtyIntentValue = 'NEW_ENQUIRY' | 'PRICE_INQUIRY' | 'AVAILABILITY' | 'SITE_VISIT' | 'DOC_REQUEST' | 'LOCATION_AMENITY' | 'LOAN_QUERY' | 'NEGOTIATION' | 'LEGAL_RERA' | 'SELLER_LEAD' | 'RENTAL' | 'REACTIVATION_REPLY' | 'COMPLAINT_ABUSE' | 'GENERAL';
+/** The four core BLTC slots the qualifier drives to completion. */
+export type BltcSlot = 'budget' | 'location' | 'timeline' | 'config';
+/**
+ * The candidate BLTC values the extractor lifted from a single turn. Only the
+ * slots the buyer actually mentioned are present; everything else is absent.
+ */
+export interface BltcExtraction {
+    budgetMinPaise?: number | null;
+    budgetMaxPaise?: number | null;
+    localities?: string[];
+    timelineMonths?: number | null;
+    config?: string | null;
+    purpose?: LeadPurposeValue | null;
+    financing?: FinancingStatusValue | null;
+}
+/** A slot whose incoming value conflicts with a value already on file. */
+export interface BltcContradiction {
+    slot: string;
+    existing: unknown;
+    incoming: unknown;
+}
+/**
+ * The BLTC state-machine's decision for one conversational turn: what it merged,
+ * what conflicted, and the single question it should ask next (blueprint §16.2).
+ */
+export interface BltcTurnResult {
+    /** Profile after merging non-conflicting extractions. */
+    profile: BltcProfile;
+    /** Names of slots newly filled this turn. */
+    filledThisTurn: string[];
+    /** Conflicts surfaced for a human — never silently overwritten. */
+    contradictions: BltcContradiction[];
+    /** The single slot to ask about next, or null when nothing remains. */
+    nextSlotToAsk: BltcSlot | null;
+    /** A ready-to-send question for `nextSlotToAsk`, or null. */
+    nextQuestion: string | null;
+    /** True when all 4 core BLTC slots are filled. */
+    bltcComplete: boolean;
+    /** True when complete AND the contact is reachable ⇒ QUALIFIED. */
+    qualified: boolean;
+}
+/** A concrete side-effect the grounded turn wants the system to perform. */
+export interface RealtyAction {
+    type: string;
+    parameters: Record<string, unknown>;
+}
+/**
+ * The strict JSON contract the grounded realty turn returns (blueprint §16.3).
+ * `confidence` is on a 0–100 scale to match the realty routing bands.
+ */
+export interface RealtyGroundedResponse {
+    responseText: string | null;
+    confidence: number;
+    intent: RealtyIntentValue;
+    bltcUpdates: BltcExtraction;
+    stageTransition: string | null;
+    actions: RealtyAction[];
+    escalationReason?: string | null;
+}
+/** Routing mode chosen from a realty confidence score. */
+export type RealtyRouteMode = 'AUTO' | 'DRAFT' | 'GUIDED' | 'ESCALATE';
+/** A hard rule that fired and (usually) capped confidence downward. */
+export interface RealtyOverride {
+    code: string;
+    reason: string;
+}
+/**
+ * Realty confidence breakdown (blueprint §16.4):
+ * finalScore = dataAvailability × 0.5 + policyClarity × 0.5, then hard-rule
+ * overrides cap it. All components are on a 0–100 scale.
+ */
+export interface RealtyConfidence {
+    dataAvailability: number;
+    policyClarity: number;
+    finalScore: number;
+    mode: RealtyRouteMode;
+    overrides: RealtyOverride[];
+}
+/** String-literal mirrors of the cadence enums (shared has no runtime dep). */
+export type CadenceTriggerValue = 'NO_RESPONSE' | 'POST_VISIT' | 'DORMANT';
+export type CadenceStopOnValue = 'REPLY' | 'OPTOUT' | 'STAGE_CHANGE';
+export type TemplateCategoryValue = 'UTILITY' | 'MARKETING';
+/**
+ * An optional guard on a cadence step — the step only fires when the lead still
+ * matches. Any field left undefined is not checked.
+ */
+export interface CadenceStepCondition {
+    /** Only fire if the lead is still in one of these stages. */
+    stageIn?: string[];
+    /** Only fire if the lead's temperature is one of these. */
+    temperatureIn?: string[];
+    /** Only fire above this qualification score. */
+    minQualScore?: number;
+    /** Only fire at/below this qualification score. */
+    maxQualScore?: number;
+}
+/** A declarative step in a cadence definition (day-offset scheduling). */
+export interface CadenceStepDefinition {
+    /** 0-based execution order within the cadence. */
+    order: number;
+    /** Days after enrolment to fire this step. */
+    dayOffset: number;
+    /** The WhatsApp template to send at this step. */
+    templateId: string;
+    /** Optional guard; the step is skipped (not stopped) when unmet. */
+    condition?: CadenceStepCondition;
+    /** Signals that abort the whole cadence at/after this step. */
+    stopOn: CadenceStopOnValue[];
+}
+/**
+ * The verdict of the WhatsApp compliance gate for a single outbound send
+ * (blueprint §21). A send proceeds only when `allowed` is true.
+ */
+export interface ComplianceDecision {
+    allowed: boolean;
+    /** Machine-readable reason a send was blocked (`OK` when allowed). */
+    code: 'OK' | 'OPTED_OUT' | 'TEMPLATE_NOT_APPROVED' | 'MARKETING_OUTSIDE_WINDOW' | 'CATEGORY_MISMATCH' | 'NO_TEMPLATE';
+    /** Human-readable explanation for the audit log / broker. */
+    reason: string;
+    /** Whether the send must go out as an approved template (window closed). */
+    requiresTemplate: boolean;
+}
+/**
+ * The hot-lead dossier pushed to the broker the instant a lead turns HOT
+ * (blueprint §16): who, what they want, where they came from, best-fit units,
+ * and a one-tap takeover handle.
+ */
+export interface HotLeadDossier {
+    leadId: string;
+    name: string | null;
+    whatsappPhone: string;
+    qualScore: number;
+    temperature: string;
+    stage: string;
+    source: string;
+    bltcSummary: string;
+    matchedUnitIds: string[];
+    conversationId: string | null;
+    assignedAgentId: string | null;
+}
+/** One line-item in the morning briefing. */
+export interface BriefingItem {
+    leadId: string;
+    name: string | null;
+    detail: string;
+}
+/**
+ * The 7:30 AM broker digest (blueprint §16): today's visits, hot leads,
+ * pending follow-ups due today, and a pipeline snapshot.
+ */
+export interface MorningBriefing {
+    date: string;
+    hotLeads: BriefingItem[];
+    visitsToday: BriefingItem[];
+    followupsDue: BriefingItem[];
+    pendingApprovals: number;
+    pipeline: Array<{
+        stage: string;
+        count: number;
+    }>;
+    generatedAt: string;
+}
+/** Aggregate metrics for the broker console header. */
+export interface BrokerConsoleMetrics {
+    activeLeads: number;
+    hotLeads: number;
+    pendingApprovals: number;
+    followupsDueToday: number;
+    activeCadences: number;
+    autonomyLevel: string;
+    aiHandledPct: number;
+}
+/** One error against a specific 1-based row of a migration file. */
+export interface MigrationRowError {
+    row: number;
+    reason: string;
+}
+/**
+ * The outcome of a pilot-migration run — how many rows became new records, how
+ * many folded into existing ones (E.164 identity merge for leads), and the
+ * per-row errors. `dryRun` runs validate only and never persist.
+ */
+export interface MigrationSummary {
+    kind: string;
+    status: string;
+    dryRun: boolean;
+    total: number;
+    created: number;
+    merged: number;
+    skipped: number;
+    errors: MigrationRowError[];
+}
+/**
+ * A raw inventory-import row: one project and, optionally, one of its units in
+ * the same line (the common "one row per unit" broker spreadsheet). Rows sharing
+ * a project name+locality collapse into a single project with many units.
+ */
+export interface InventoryImportRow {
+    projectName?: string;
+    developer?: string;
+    locality?: string;
+    reraNumber?: string;
+    possessionDate?: string;
+    projectStatus?: string;
+    priceBandMin?: string | number;
+    priceBandMax?: string | number;
+    config?: string;
+    carpetSqft?: string | number;
+    floor?: string | number;
+    facing?: string;
+    allInPrice?: string | number;
+    availability?: string;
+}
+/** A validated project (with its units) ready to be committed to inventory. */
+export interface NormalizedInventoryProject {
+    name: string;
+    developer?: string;
+    locality: string;
+    reraNumber?: string;
+    possessionDate?: string;
+    status?: string;
+    priceBandMinPaise?: number;
+    priceBandMaxPaise?: number;
+    units: NormalizedInventoryUnit[];
+}
+export interface NormalizedInventoryUnit {
+    config: string;
+    carpetSqft?: number;
+    floor?: number;
+    facing?: string;
+    allInPricePaise: number;
+    availability?: string;
+}
+/** A rung on the autonomy ladder — a level+threshold with its evidence gates. */
+export interface AutonomyRung {
+    level: string;
+    threshold: number;
+    minDecisions: number;
+    minAccuracy: number;
+    minDays: number;
+}
+/** The evidence gathered for one autonomy-dial evaluation. */
+export interface AutonomyEvidence {
+    daysActive: number;
+    decisionsObserved: number;
+    approvedVerbatim: number;
+    approvalAccuracy: number;
+    noShipIncidents: number;
+    hotAlertActionRate: number;
+}
+/** The recommendation a dial evaluation produces (pure, from the ladder util). */
+export interface AutonomyRecommendation {
+    direction: string;
+    from: {
+        level: string;
+        threshold: number;
+    };
+    to: {
+        level: string;
+        threshold: number;
+    };
+    gatesFailed: string[];
+    reason: string;
+    evidence: AutonomyEvidence;
+}
+/**
+ * The measured KPIs the launch gate evaluates. A null value means the metric
+ * could not be measured for this business/window (→ INSUFFICIENT_DATA), which
+ * blocks GO without hard-failing.
+ */
+export interface LaunchMetrics {
+    responseP95Seconds: number | null;
+    engagementRatePct: number | null;
+    qualificationRatePct: number | null;
+    visitsPer100Leads: number | null;
+    showUpRatePct: number | null;
+    aiAutonomyPct: number | null;
+    hotAlertActionRatePct: number | null;
+    noShipIncidents: number;
+    /** Per-kind no-ship counts (NoShipKind → count); powers the itemized checks. */
+    noShipByKind?: Record<string, number>;
+    totalLeads: number;
+}
+/** One line of the launch-gate report. */
+export interface LaunchGateCheck {
+    key: string;
+    label: string;
+    status: string;
+    actual: number | null;
+    threshold: number;
+    comparator: 'gte' | 'lte' | 'eq';
+    detail: string;
+}
+/** The full GO / NO-GO launch-readiness report (blueprint §24). */
+export interface LaunchGateReport {
+    status: string;
+    kpiChecks: LaunchGateCheck[];
+    noShipChecks: LaunchGateCheck[];
+    passed: number;
+    failed: number;
+    insufficient: number;
+    windowDays: number | null;
+    generatedAt: string;
+}
 //# sourceMappingURL=index.d.ts.map

@@ -57,7 +57,7 @@ getClientSummaryForAI(businessId, clientId): Promise<ClientAISummaryDto>
 - `@gosumo/shared` — `ChannelType`, client event types
 - `@gosumo/message` — reads message text for fact extraction
 - Qdrant client — upsert and search client profile vectors
-- Anthropic SDK — lightweight fact extraction LLM calls
+- OpenRouter (free-tier models) — lightweight fact-extraction LLM calls
 - BullMQ — async intelligence refresh jobs
 
 ## Test Command

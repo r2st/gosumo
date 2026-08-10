@@ -555,6 +555,441 @@ export interface NotificationSkippedEvent extends BaseEvent {
 }
 
 // ─────────────────────────────────────────────
+// REALTY — LEAD EVENTS
+// ─────────────────────────────────────────────
+
+/** Emitted when a new real-estate lead is captured from any source. */
+export interface RealtyLeadCreatedEvent extends BaseEvent {
+  readonly type: 'realty.lead.created';
+  leadId: string;
+  source: string;
+  whatsappPhone: string;
+  listingRef?: string;
+  conversationId?: string;
+}
+
+/** Emitted when a lead reaches 4/4 BLTC slots + reachable contact. */
+export interface RealtyLeadQualifiedEvent extends BaseEvent {
+  readonly type: 'realty.lead.qualified';
+  leadId: string;
+  qualScore: number;
+  temperature: string;
+}
+
+/** Emitted on any pipeline stage transition. */
+export interface RealtyLeadStageChangedEvent extends BaseEvent {
+  readonly type: 'realty.lead.stage_changed';
+  leadId: string;
+  fromStage: string;
+  toStage: string;
+}
+
+/**
+ * Emitted when a lead crosses the hot threshold — triggers the broker's
+ * real-time dossier alert (name · BLTC · source · best-fit · takeover).
+ */
+export interface RealtyLeadHotEvent extends BaseEvent {
+  readonly type: 'realty.lead.hot';
+  leadId: string;
+  qualScore: number;
+  assignedAgentId?: string;
+  matchedUnitIds: string[];
+}
+
+/** Emitted when a lead opts out — must halt all automated sends. */
+export interface RealtyLeadOptedOutEvent extends BaseEvent {
+  readonly type: 'realty.lead.opted_out';
+  leadId: string;
+  whatsappPhone: string;
+}
+
+// ─────────────────────────────────────────────
+// REALTY — INVENTORY EVENTS
+// ─────────────────────────────────────────────
+
+/** Emitted when a verified project is added to the grounding layer. */
+export interface RealtyProjectCreatedEvent extends BaseEvent {
+  readonly type: 'realty.project.created';
+  projectId: string;
+  reraNumber?: string;
+  locality: string;
+}
+
+/** Emitted whenever a unit's availability changes (feeds freshness rules). */
+export interface RealtyUnitAvailabilityChangedEvent extends BaseEvent {
+  readonly type: 'realty.unit.availability_changed';
+  unitId: string;
+  projectId: string;
+  availability: string;
+}
+
+/** Emitted when a verified asset (brochure, floor plan, etc.) is published. */
+export interface RealtyAssetPublishedEvent extends BaseEvent {
+  readonly type: 'realty.asset.published';
+  assetId: string;
+  projectId: string;
+  assetType: string;
+  version: number;
+}
+
+// ─────────────────────────────────────────────
+// REALTY — SITE VISIT EVENTS (Phase 3)
+// ─────────────────────────────────────────────
+
+/** Emitted when a site visit is booked — moves the lead to VISIT_BOOKED. */
+export interface RealtyVisitBookedEvent extends BaseEvent {
+  readonly type: 'realty.visit.booked';
+  visitId: string;
+  leadId: string;
+  projectId: string;
+  unitId?: string;
+  scheduledAt: string;
+  assignedAgentId?: string;
+}
+
+/** Emitted when the buyer confirms attendance. */
+export interface RealtyVisitConfirmedEvent extends BaseEvent {
+  readonly type: 'realty.visit.confirmed';
+  visitId: string;
+  leadId: string;
+  scheduledAt: string;
+}
+
+/** Emitted when a visit is moved to a new time. */
+export interface RealtyVisitRescheduledEvent extends BaseEvent {
+  readonly type: 'realty.visit.rescheduled';
+  visitId: string;
+  leadId: string;
+  oldScheduledAt: string;
+  newScheduledAt: string;
+}
+
+/** Emitted when a visit is cancelled and its slot freed. */
+export interface RealtyVisitCancelledEvent extends BaseEvent {
+  readonly type: 'realty.visit.cancelled';
+  visitId: string;
+  leadId: string;
+  reason?: string;
+}
+
+/** Emitted when a visit completes — moves the lead to VISITED, carries outcome. */
+export interface RealtyVisitCompletedEvent extends BaseEvent {
+  readonly type: 'realty.visit.completed';
+  visitId: string;
+  leadId: string;
+  projectId: string;
+  outcome: string;
+}
+
+/** Emitted when a buyer does not show up for a booked visit. */
+export interface RealtyVisitNoShowEvent extends BaseEvent {
+  readonly type: 'realty.visit.no_show';
+  visitId: string;
+  leadId: string;
+  scheduledAt: string;
+}
+
+/**
+ * Emitted at each reminder offset (T-24h, T-2h) before a visit. Self-consumed
+ * by the notification path to send the WhatsApp reminder template.
+ */
+export interface RealtyVisitReminderEvent extends BaseEvent {
+  readonly type: 'realty.visit.reminder';
+  visitId: string;
+  leadId: string;
+  scheduledAt: string;
+  minutesBefore: number;
+}
+
+// ─────────────────────────────────────────────
+// REALTY — INGESTION EVENTS (Phase 4)
+// ─────────────────────────────────────────────
+
+/**
+ * Emitted whenever a lead is ingested from any external source (Meta Leadgen,
+ * portal email, CSV, CTWA). Carries source metadata for attribution ROI.
+ * `merged` is true when the ingest folded into an existing lead (same E.164
+ * phone) rather than creating a new one — one buyer, one history.
+ */
+export interface RealtyLeadIngestedEvent extends BaseEvent {
+  readonly type: 'realty.lead.ingested';
+  leadId: string;
+  source: string;
+  subSource?: string;
+  listingRef?: string;
+  whatsappPhone: string;
+  merged: boolean;
+}
+
+// ─────────────────────────────────────────────
+// REALTY — CADENCE EVENTS (Phase 5)
+// ─────────────────────────────────────────────
+
+/** Emitted when a lead is enrolled into a follow-up cadence. */
+export interface RealtyCadenceStartedEvent extends BaseEvent {
+  readonly type: 'realty.cadence.started';
+  enrollmentId: string;
+  leadId: string;
+  cadenceId: string;
+  trigger: string;
+}
+
+/** Emitted when a cadence step's template is dispatched (or would be). */
+export interface RealtyCadenceStepSentEvent extends BaseEvent {
+  readonly type: 'realty.cadence.step_sent';
+  enrollmentId: string;
+  leadId: string;
+  cadenceId: string;
+  stepOrder: number;
+  templateId: string;
+}
+
+/** Emitted when a cadence finishes — either ran out of steps or was stopped. */
+export interface RealtyCadenceCompletedEvent extends BaseEvent {
+  readonly type: 'realty.cadence.completed';
+  enrollmentId: string;
+  leadId: string;
+  cadenceId: string;
+  /** COMPLETED (ran all steps) or STOPPED (halted by a stop_on signal). */
+  outcome: string;
+  stopReason?: string;
+}
+
+// ─────────────────────────────────────────────
+// REALTY — BROKER SURFACE EVENTS (Phase 6)
+// ─────────────────────────────────────────────
+
+/** Emitted when any item is pushed to the broker's notification centre. */
+export interface RealtyBrokerAlertEvent extends BaseEvent {
+  readonly type: 'realty.broker.alert';
+  alertId: string;
+  alertType: string;
+  leadId?: string;
+  title: string;
+}
+
+/** Emitted when an AI draft enters the human approval queue (70–89% band). */
+export interface RealtyApprovalCreatedEvent extends BaseEvent {
+  readonly type: 'realty.approval.created';
+  approvalId: string;
+  leadId: string;
+  conversationId?: string;
+  confidence: number;
+}
+
+/** Emitted when a broker approves / edits / rejects an AI draft. */
+export interface RealtyApprovalResolvedEvent extends BaseEvent {
+  readonly type: 'realty.approval.resolved';
+  approvalId: string;
+  leadId: string;
+  outcome: string; // APPROVED | EDITED | REJECTED
+  reviewedBy?: string;
+}
+
+/** Emitted when a broker takes a conversation over from the AI (handoff). */
+export interface RealtyConversationTakenOverEvent extends BaseEvent {
+  readonly type: 'realty.conversation.taken_over';
+  conversationId: string;
+  leadId?: string;
+  owner: string; // AI | HUMAN
+  takenOverBy?: string;
+}
+
+// ─────────────────────────────────────────────
+// REALTY — AI LOOP EVENTS (Phase 2, formalized in Phase 8)
+// ─────────────────────────────────────────────
+
+/**
+ * Emitted after the realty AI loop finishes one turn. Carries the routed mode,
+ * confidence, and any guardrail violation codes so downstream watchers (the
+ * no-ship ledger) can detect a violation that co-occurred with an actual send.
+ */
+export interface RealtyAiTurnCompletedEvent extends BaseEvent {
+  readonly type: 'realty.ai.turn_completed';
+  leadId: string;
+  conversationId?: string;
+  intent: string;
+  routeMode: string; // AUTO | DRAFT | GUIDED | ESCALATE
+  confidence: number;
+  /** Guardrail violation codes fired on the proposed response (empty when clean). */
+  violations: string[];
+  /** Violation codes that were BLOCK-severity (must never ship autonomously). */
+  blockingViolations: string[];
+}
+
+// ─────────────────────────────────────────────
+// REALTY — PILOT MIGRATION EVENTS (Phase 8)
+// ─────────────────────────────────────────────
+
+/** Emitted when a pilot-migration run is recorded (dry-run or committed). */
+export interface RealtyMigrationCompletedEvent extends BaseEvent {
+  readonly type: 'realty.migration.completed';
+  runId: string;
+  kind: string; // MigrationKind
+  status: string; // MigrationStatus
+  dryRun: boolean;
+  created: number;
+  merged: number;
+  skipped: number;
+}
+
+/** Emitted when the evidence-driven autonomy dial changes (OPEN / CLOSE). */
+export interface RealtyAutonomyChangedEvent extends BaseEvent {
+  readonly type: 'realty.autonomy.changed';
+  autonomyEventId: string;
+  direction: string; // AutonomyDirection
+  fromLevel: string;
+  toLevel: string;
+  fromThreshold: number;
+  toThreshold: number;
+  actorType: string; // AutonomyActorType
+}
+
+/** Emitted when a no-ship incident is recorded (a hard-fail for the launch gate). */
+export interface RealtyNoShipIncidentEvent extends BaseEvent {
+  readonly type: 'realty.no_ship.incident';
+  incidentId: string;
+  kind: string; // NoShipKind
+  leadId?: string;
+  source: string;
+}
+
+/** Emitted whenever the launch-readiness gate is evaluated (GO / NO-GO / NOT_READY). */
+export interface RealtyLaunchGateEvaluatedEvent extends BaseEvent {
+  readonly type: 'realty.launch_gate.evaluated';
+  status: string; // LaunchGateStatus
+  passed: number;
+  failed: number;
+  insufficient: number;
+}
+
+// ─────────────────────────────────────────────
+// REALTY — MICRO-MARKET INTELLIGENCE (L1, blueprint §18)
+// ─────────────────────────────────────────────
+
+/** Emitted after a nightly aggregation run persists corridor patterns. */
+export interface RealtyIntelligenceAggregatesGeneratedEvent extends BaseEvent {
+  readonly type: 'realty.intelligence.aggregates_generated';
+  /** How many opted-in businesses were included in the run. */
+  businessCount: number;
+  /** How many aggregate rows were written across all corridors/metrics. */
+  aggregateCount: number;
+  /** Distinct corridors covered this run. */
+  corridorCount: number;
+  periodStart: string;
+  periodEnd: string;
+}
+
+/** Emitted when a business consents to contribute to the intelligence layer. */
+export interface RealtyIntelligenceOptedInEvent extends BaseEvent {
+  readonly type: 'realty.intelligence.opted_in';
+}
+
+/** Emitted when a business withdraws intelligence consent. */
+export interface RealtyIntelligenceOptedOutEvent extends BaseEvent {
+  readonly type: 'realty.intelligence.opted_out';
+}
+
+// ─────────────────────────────────────────────
+// REALTY — EXCHANGE (L2 co-broking, blueprint §19)
+// ─────────────────────────────────────────────
+
+/** A consented lead was syndicated to a counterparty (state → OFFERED). */
+export interface RealtySyndicationOfferedEvent extends BaseEvent {
+  readonly type: 'realty.syndication.offered';
+  syndicationId: string;
+  leadId: string;
+  fromBusinessId: string;
+  toBusinessId: string;
+}
+
+/** The counterparty accepted the syndication (state → ACCEPTED). */
+export interface RealtySyndicationAcceptedEvent extends BaseEvent {
+  readonly type: 'realty.syndication.accepted';
+  syndicationId: string;
+  leadId: string;
+  toBusinessId: string;
+}
+
+/** A syndicated deal closed; the commission pool and platform fee are settled. */
+export interface RealtySyndicationClosedEvent extends BaseEvent {
+  readonly type: 'realty.syndication.closed';
+  syndicationId: string;
+  leadId: string;
+  /** Commission pool in paise. */
+  commissionPoolPaise: number;
+  /** Platform fee in paise. */
+  platformFeePaise: number;
+}
+
+/** A syndication was contested by either side (state → DISPUTED). */
+export interface RealtySyndicationDisputedEvent extends BaseEvent {
+  readonly type: 'realty.syndication.disputed';
+  syndicationId: string;
+  leadId: string;
+  reason: string;
+}
+
+// ─────────────────────────────────────────────
+// REALTY — BILLING (pricing tier enforcement, plan §9)
+// ─────────────────────────────────────────────
+
+/** A business changed its subscription tier (upgrade/downgrade). */
+export interface RealtyPlanChangedEvent extends BaseEvent {
+  readonly type: 'realty.plan.changed';
+  fromPlan: string; // RealtyPlan
+  toPlan: string; // RealtyPlan
+}
+
+/** A lead was counted against the plan's monthly allotment. */
+export interface RealtyLeadUsageRecordedEvent extends BaseEvent {
+  readonly type: 'realty.lead_usage.recorded';
+  leadsUsed: number;
+  monthlyLeadLimit: number | null;
+  /** True when this lead fell beyond the included allotment (billed as overage). */
+  overage: boolean;
+}
+
+/** The plan's monthly lead limit was reached (soft cap — an upgrade is prompted). */
+export interface RealtyLeadLimitReachedEvent extends BaseEvent {
+  readonly type: 'realty.lead_limit.reached';
+  plan: string; // RealtyPlan
+  monthlyLeadLimit: number;
+  leadsUsed: number;
+}
+
+// ─────────────────────────────────────────────
+// REALTY — DPDPA COMPLIANCE (plan §21)
+// ─────────────────────────────────────────────
+
+/** A consent was granted or revoked for a buyer phone (DPDPA ledger). */
+export interface RealtyConsentRecordedEvent extends BaseEvent {
+  readonly type: 'realty.consent.recorded';
+  phone: string;
+  consentType: string; // ConsentType
+  granted: boolean;
+  channel: string;
+}
+
+/** A buyer's data was erased (anonymized) on request or by retention policy. */
+export interface RealtyLeadErasedEvent extends BaseEvent {
+  readonly type: 'realty.lead.erased';
+  leadId: string;
+  /** "REQUEST" (right to erasure) | "RETENTION" (auto-anonymize). */
+  reason: string;
+  /** How many message rows had their sender info anonymized. */
+  messagesAnonymized: number;
+}
+
+/** A retention sweep finished for a business. */
+export interface RealtyRetentionRunEvent extends BaseEvent {
+  readonly type: 'realty.retention.run';
+  leadsAnonymized: number;
+  messagesAnonymized: number;
+  retentionMonths: number;
+}
+
+// ─────────────────────────────────────────────
 // UNION TYPE (for typed event bus subscriptions)
 // ─────────────────────────────────────────────
 
@@ -605,7 +1040,48 @@ export type DomainEvent =
   | NotificationSentEvent
   | NotificationDeliveredEvent
   | NotificationFailedEvent
-  | NotificationSkippedEvent;
+  | NotificationSkippedEvent
+  | RealtyLeadCreatedEvent
+  | RealtyLeadQualifiedEvent
+  | RealtyLeadStageChangedEvent
+  | RealtyLeadHotEvent
+  | RealtyLeadOptedOutEvent
+  | RealtyProjectCreatedEvent
+  | RealtyUnitAvailabilityChangedEvent
+  | RealtyAssetPublishedEvent
+  | RealtyVisitBookedEvent
+  | RealtyVisitConfirmedEvent
+  | RealtyVisitRescheduledEvent
+  | RealtyVisitCancelledEvent
+  | RealtyVisitCompletedEvent
+  | RealtyVisitNoShowEvent
+  | RealtyVisitReminderEvent
+  | RealtyLeadIngestedEvent
+  | RealtyCadenceStartedEvent
+  | RealtyCadenceStepSentEvent
+  | RealtyCadenceCompletedEvent
+  | RealtyBrokerAlertEvent
+  | RealtyApprovalCreatedEvent
+  | RealtyApprovalResolvedEvent
+  | RealtyConversationTakenOverEvent
+  | RealtyAiTurnCompletedEvent
+  | RealtyMigrationCompletedEvent
+  | RealtyAutonomyChangedEvent
+  | RealtyNoShipIncidentEvent
+  | RealtyLaunchGateEvaluatedEvent
+  | RealtySyndicationOfferedEvent
+  | RealtySyndicationAcceptedEvent
+  | RealtySyndicationClosedEvent
+  | RealtySyndicationDisputedEvent
+  | RealtyIntelligenceAggregatesGeneratedEvent
+  | RealtyIntelligenceOptedInEvent
+  | RealtyIntelligenceOptedOutEvent
+  | RealtyPlanChangedEvent
+  | RealtyLeadUsageRecordedEvent
+  | RealtyLeadLimitReachedEvent
+  | RealtyConsentRecordedEvent
+  | RealtyLeadErasedEvent
+  | RealtyRetentionRunEvent;
 
 /** Infer the event type from the `type` discriminant */
 export type EventType = DomainEvent['type'];

@@ -1,0 +1,707 @@
+'use client';
+
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiRequest } from '@/lib/api-client';
+import { toQuery } from '@/lib/utils';
+import type {
+  Lead,
+  LeadListResponse,
+  LeadBoardColumn,
+  LeadStage,
+  RealtyProject,
+  RealtyAsset,
+  UnitMatch,
+  RealtyUnit,
+  MessageTemplate,
+  Cadence,
+  CadenceEnrollment,
+  CadenceTrigger,
+  Approval,
+  ApprovalStatus,
+  BrokerSettings,
+  AlertsResponse,
+  MorningBriefing,
+  BrokerConsoleMetrics,
+  SiteVisit,
+  SiteVisitStatus,
+  SiteVisitOutcome,
+  SiteVisitListResponse,
+  BookVisitInput,
+  CsvImportRow,
+  CsvImportResult,
+  Syndication,
+  SyndicationState,
+  CreateSyndicationInput,
+  RateSyndicationInput,
+  ReliabilityScore,
+  ResaleListing,
+  ResaleListingStatus,
+  ExchangeMatchResult,
+} from '@/lib/realty-types';
+import type {
+  IntelligenceAggregate,
+  IntelligenceMetricType,
+  CorridorsResponse,
+  CorridorPriorsResponse,
+  SourceQualityReport,
+  OptInStatus,
+} from '@/lib/intelligence-types';
+
+const LEADS_KEY = ['realty', 'leads'];
+const BOARD_KEY = ['realty', 'leads', 'board'];
+const PROJECTS_KEY = ['realty', 'projects'];
+const TEMPLATES_KEY = ['realty', 'templates'];
+const CADENCES_KEY = ['realty', 'cadences'];
+const APPROVALS_KEY = ['realty', 'approvals'];
+const ALERTS_KEY = ['realty', 'alerts'];
+const SETTINGS_KEY = ['realty', 'broker', 'settings'];
+const CONSOLE_KEY = ['realty', 'broker', 'console'];
+const BRIEFING_KEY = ['realty', 'broker', 'briefing'];
+const VISITS_KEY = ['realty', 'site-visits'];
+
+export interface LeadListFilters {
+  stage?: LeadStage;
+  temperature?: string;
+  source?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+}
+
+// ── Leads ─────────────────────────────────────────────────────────────────────
+
+export function useLeads(filters: LeadListFilters = {}) {
+  return useQuery({
+    queryKey: [...LEADS_KEY, filters],
+    queryFn: ({ signal }) =>
+      apiRequest<LeadListResponse>(`/realty/leads${toQuery({ ...filters })}`, { signal }),
+  });
+}
+
+export function useLeadBoard() {
+  return useQuery({
+    queryKey: BOARD_KEY,
+    queryFn: ({ signal }) => apiRequest<LeadBoardColumn[]>('/realty/leads/board', { signal }),
+  });
+}
+
+export function useLead(id: string | null) {
+  return useQuery({
+    queryKey: ['realty', 'lead', id],
+    queryFn: () => apiRequest<Lead>(`/realty/leads/${id}`),
+    enabled: !!id,
+  });
+}
+
+export function useTransitionStage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, stage }: { id: string; stage: LeadStage }) =>
+      apiRequest<Lead>(`/realty/leads/${id}/stage`, { method: 'POST', body: { stage } }),
+    onSuccess: (_data, { id }) => {
+      qc.invalidateQueries({ queryKey: ['realty', 'lead', id] });
+      qc.invalidateQueries({ queryKey: LEADS_KEY });
+      qc.invalidateQueries({ queryKey: BOARD_KEY });
+    },
+  });
+}
+
+export function useMatchForLead() {
+  return useMutation({
+    mutationFn: ({ id, limit }: { id: string; limit?: number }) =>
+      apiRequest<UnitMatch[]>(`/realty/leads/${id}/match${toQuery({ limit })}`, { method: 'POST', body: {} }),
+  });
+}
+
+export function useAssignLead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, agentId }: { id: string; agentId: string }) =>
+      apiRequest<Lead>(`/realty/leads/${id}/assign`, { method: 'POST', body: { agentId } }),
+    onSuccess: (_data, { id }) => {
+      qc.invalidateQueries({ queryKey: ['realty', 'lead', id] });
+      qc.invalidateQueries({ queryKey: LEADS_KEY });
+    },
+  });
+}
+
+export type UpdateLeadInput = Partial<Pick<Lead, 'name' | 'email' | 'altPhone' | 'languagePref'>>;
+
+/** Patch editable lead fields (name, contact, language preference). */
+export function useUpdateLead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: UpdateLeadInput }) =>
+      apiRequest<Lead>(`/realty/leads/${id}`, { method: 'PATCH', body: patch }),
+    onSuccess: (data, { id }) => {
+      qc.setQueryData(['realty', 'lead', id], data);
+      qc.invalidateQueries({ queryKey: LEADS_KEY });
+      qc.invalidateQueries({ queryKey: BOARD_KEY });
+    },
+  });
+}
+
+// ── Inventory ─────────────────────────────────────────────────────────────────
+
+export function useProjects(filters: { locality?: string; status?: string } = {}) {
+  return useQuery({
+    queryKey: [...PROJECTS_KEY, filters],
+    queryFn: ({ signal }) =>
+      apiRequest<RealtyProject[]>(`/realty/projects${toQuery({ ...filters })}`, { signal }),
+  });
+}
+
+export function useProject(id: string | null) {
+  return useQuery({
+    queryKey: ['realty', 'project', id],
+    queryFn: () => apiRequest<RealtyProject>(`/realty/projects/${id}`),
+    enabled: !!id,
+  });
+}
+
+/** Units for one project — powers config range, price range, availability, and freshness on inventory cards. */
+export function useProjectUnits(projectId: string | null) {
+  return useQuery({
+    queryKey: [...PROJECTS_KEY, projectId, 'units'],
+    queryFn: ({ signal }) =>
+      apiRequest<RealtyUnit[]>(`/realty/projects/${projectId}/units`, { signal }),
+    enabled: !!projectId,
+  });
+}
+
+/** Versioned media assets (brochures, floor plans, price sheets, videos) for one project. */
+export function useProjectAssets(projectId: string | null) {
+  return useQuery({
+    queryKey: [...PROJECTS_KEY, projectId, 'assets'],
+    queryFn: ({ signal }) =>
+      apiRequest<RealtyAsset[]>(`/realty/projects/${projectId}/assets`, { signal }),
+    enabled: !!projectId,
+  });
+}
+
+/** Patch a project — used by the detail page's network-visibility toggle. */
+export function useUpdateProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string } & Partial<RealtyProject>) =>
+      apiRequest<RealtyProject>(`/realty/projects/${id}`, { method: 'PATCH', body }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['realty', 'project', data.id] });
+      qc.invalidateQueries({ queryKey: PROJECTS_KEY });
+    },
+  });
+}
+
+// ── Cadence: templates ──────────────────────────────────────────────────────────
+
+export function useTemplates(filters: { category?: string; approvalStatus?: string } = {}) {
+  return useQuery({
+    queryKey: [...TEMPLATES_KEY, filters],
+    queryFn: ({ signal }) =>
+      apiRequest<MessageTemplate[]>(`/realty/cadence/templates${toQuery({ ...filters })}`, { signal }),
+  });
+}
+
+export function useSetTemplateApproval() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, approvalStatus }: { id: string; approvalStatus: string }) =>
+      apiRequest<MessageTemplate>(`/realty/cadence/templates/${id}/approval`, {
+        method: 'POST',
+        body: { approvalStatus },
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: TEMPLATES_KEY }),
+  });
+}
+
+// ── Cadence: cadences ───────────────────────────────────────────────────────────
+
+export function useCadences(filters: { trigger?: CadenceTrigger } = {}) {
+  return useQuery({
+    queryKey: [...CADENCES_KEY, filters],
+    queryFn: ({ signal }) =>
+      apiRequest<Cadence[]>(`/realty/cadence/cadences${toQuery({ ...filters })}`, { signal }),
+  });
+}
+
+export function useUpdateCadence() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
+      apiRequest<Cadence>(`/realty/cadence/cadences/${id}`, { method: 'PATCH', body: { isActive } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: CADENCES_KEY }),
+  });
+}
+
+/** Manually enrol a lead into the active cadence for a given trigger. */
+export function useEnrollCadence() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ leadId, trigger }: { leadId: string; trigger: CadenceTrigger }) =>
+      apiRequest<CadenceEnrollment | null>(`/realty/cadence/enroll`, {
+        method: 'POST',
+        body: { leadId, trigger },
+      }),
+    onSuccess: (_data, { leadId }) => {
+      qc.invalidateQueries({ queryKey: ['realty', 'lead', leadId] });
+      qc.invalidateQueries({ queryKey: LEADS_KEY });
+    },
+  });
+}
+
+export function useSeedCadences() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiRequest<{ templates: number; cadences: number }>(`/realty/cadence/seed`, {
+        method: 'POST',
+        body: {},
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: TEMPLATES_KEY });
+      qc.invalidateQueries({ queryKey: CADENCES_KEY });
+    },
+  });
+}
+
+// ── Broker: approval queue ──────────────────────────────────────────────────────
+
+export function useApprovals(filters: { status?: ApprovalStatus } = {}) {
+  return useQuery({
+    queryKey: [...APPROVALS_KEY, filters],
+    queryFn: ({ signal }) =>
+      apiRequest<Approval[]>(`/realty/broker/approvals${toQuery({ ...filters })}`, { signal }),
+  });
+}
+
+export function useResolveApproval() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      status,
+      editedText,
+      reason,
+    }: {
+      id: string;
+      status: ApprovalStatus;
+      editedText?: string;
+      reason?: string;
+    }) =>
+      apiRequest<Approval>(`/realty/broker/approvals/${id}/resolve`, {
+        method: 'POST',
+        body: { status, editedText, reason },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: APPROVALS_KEY });
+      qc.invalidateQueries({ queryKey: CONSOLE_KEY });
+    },
+  });
+}
+
+// ── Broker: settings, alerts, console, briefing ─────────────────────────────────
+
+export function useBrokerSettings() {
+  return useQuery({
+    queryKey: SETTINGS_KEY,
+    queryFn: ({ signal }) => apiRequest<BrokerSettings>('/realty/broker/settings', { signal }),
+  });
+}
+
+export function useUpdateBrokerSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Partial<BrokerSettings>) =>
+      apiRequest<BrokerSettings>('/realty/broker/settings', { method: 'PATCH', body }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: SETTINGS_KEY });
+      qc.invalidateQueries({ queryKey: CONSOLE_KEY });
+    },
+  });
+}
+
+export function useBrokerAlerts(unreadOnly = false) {
+  return useQuery({
+    queryKey: [...ALERTS_KEY, { unreadOnly }],
+    queryFn: ({ signal }) =>
+      apiRequest<AlertsResponse>(`/realty/broker/alerts${toQuery({ unreadOnly })}`, { signal }),
+    refetchInterval: 60_000,
+  });
+}
+
+export function useMarkAlertRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiRequest(`/realty/broker/alerts/${id}/read`, { method: 'POST', body: {} }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ALERTS_KEY }),
+  });
+}
+
+export function useMarkAllAlertsRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiRequest(`/realty/broker/alerts/read-all`, { method: 'POST', body: {} }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ALERTS_KEY }),
+  });
+}
+
+export function useBrokerConsole() {
+  return useQuery({
+    queryKey: CONSOLE_KEY,
+    queryFn: ({ signal }) => apiRequest<BrokerConsoleMetrics>('/realty/broker/console', { signal }),
+  });
+}
+
+export function useMorningBriefing() {
+  return useQuery({
+    queryKey: BRIEFING_KEY,
+    queryFn: ({ signal }) => apiRequest<MorningBriefing>('/realty/broker/briefing', { signal }),
+  });
+}
+
+// ── Site visits (Phase 3) ───────────────────────────────────────────────────────
+
+export interface SiteVisitFilters {
+  status?: SiteVisitStatus;
+  leadId?: string;
+  from?: string;
+  to?: string;
+  upcoming?: boolean;
+  page?: number;
+  limit?: number;
+}
+
+export function useSiteVisits(filters: SiteVisitFilters = {}) {
+  return useQuery({
+    queryKey: [...VISITS_KEY, filters],
+    queryFn: ({ signal }) =>
+      apiRequest<SiteVisitListResponse>(`/realty/site-visits${toQuery({ ...filters })}`, { signal }),
+  });
+}
+
+export function useSiteVisit(id: string | null) {
+  return useQuery({
+    queryKey: ['realty', 'site-visit', id],
+    queryFn: () => apiRequest<SiteVisit>(`/realty/site-visits/${id}`),
+    enabled: !!id,
+  });
+}
+
+/** A single lead's visit history — powers the lead detail drawer. */
+export function useLeadVisits(leadId: string | null) {
+  return useQuery({
+    queryKey: [...VISITS_KEY, 'lead', leadId],
+    queryFn: () =>
+      apiRequest<SiteVisitListResponse>(`/realty/site-visits${toQuery({ leadId, limit: 50 })}`),
+    enabled: !!leadId,
+  });
+}
+
+function invalidateVisits(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: VISITS_KEY });
+  qc.invalidateQueries({ queryKey: LEADS_KEY });
+  qc.invalidateQueries({ queryKey: BOARD_KEY });
+}
+
+export function useBookVisit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: BookVisitInput) =>
+      apiRequest<SiteVisit>('/realty/site-visits', { method: 'POST', body }),
+    onSuccess: () => invalidateVisits(qc),
+  });
+}
+
+export function useConfirmVisit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiRequest<SiteVisit>(`/realty/site-visits/${id}/confirm`, { method: 'POST', body: {} }),
+    onSuccess: () => invalidateVisits(qc),
+  });
+}
+
+export function useRescheduleVisit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, newScheduledAt, durationMinutes }: { id: string; newScheduledAt: string; durationMinutes?: number }) =>
+      apiRequest<SiteVisit>(`/realty/site-visits/${id}/reschedule`, {
+        method: 'POST',
+        body: { newScheduledAt, durationMinutes },
+      }),
+    onSuccess: () => invalidateVisits(qc),
+  });
+}
+
+export function useCancelVisit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
+      apiRequest<SiteVisit>(`/realty/site-visits/${id}/cancel`, { method: 'POST', body: { reason } }),
+    onSuccess: () => invalidateVisits(qc),
+  });
+}
+
+export function useCompleteVisit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, outcome, feedback }: { id: string; outcome: SiteVisitOutcome; feedback?: string }) =>
+      apiRequest<SiteVisit>(`/realty/site-visits/${id}/complete`, {
+        method: 'POST',
+        body: { outcome, feedback },
+      }),
+    onSuccess: () => invalidateVisits(qc),
+  });
+}
+
+export function useMarkNoShow() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiRequest<SiteVisit>(`/realty/site-visits/${id}/no-show`, { method: 'POST', body: {} }),
+    onSuccess: () => invalidateVisits(qc),
+  });
+}
+
+// ── Ingestion: CSV import (Phase 4) ─────────────────────────────────────────────
+
+export function useImportCsv() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (rows: CsvImportRow[]) =>
+      apiRequest<CsvImportResult>('/realty/ingestion/csv', { method: 'POST', body: { rows } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: LEADS_KEY });
+      qc.invalidateQueries({ queryKey: BOARD_KEY });
+    },
+  });
+}
+
+// ── Exchange (L2 co-broking) ─────────────────────────────────────────────────────
+
+const SYNDICATIONS_KEY = ['realty', 'exchange', 'syndications'];
+const RELIABILITY_KEY = ['realty', 'exchange', 'reliability'];
+const RESALE_KEY = ['realty', 'exchange', 'resale-listings'];
+
+export interface SyndicationFilters {
+  state?: SyndicationState;
+  role?: 'from' | 'to';
+}
+
+export function useSyndications(filters: SyndicationFilters = {}) {
+  return useQuery({
+    queryKey: [...SYNDICATIONS_KEY, filters],
+    queryFn: ({ signal }) =>
+      apiRequest<Syndication[]>(`/realty/exchange/syndications${toQuery({ ...filters })}`, { signal }),
+  });
+}
+
+export function useSyndication(id: string | null) {
+  return useQuery({
+    queryKey: ['realty', 'exchange', 'syndication', id],
+    queryFn: () => apiRequest<Syndication>(`/realty/exchange/syndications/${id}`),
+    enabled: !!id,
+  });
+}
+
+export function useCreateSyndication() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateSyndicationInput) =>
+      apiRequest<Syndication>('/realty/exchange/syndications', { method: 'POST', body: input }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: SYNDICATIONS_KEY }),
+  });
+}
+
+/** One hook for every no-body state transition: accept / visit / expire. */
+function useSyndicationAction(action: 'accept' | 'visit' | 'expire') {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiRequest<Syndication>(`/realty/exchange/syndications/${id}/${action}`, {
+        method: 'POST',
+        body: {},
+      }),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: SYNDICATIONS_KEY });
+      qc.invalidateQueries({ queryKey: ['realty', 'exchange', 'syndication', id] });
+    },
+  });
+}
+
+export const useAcceptSyndication = () => useSyndicationAction('accept');
+export const useRecordVisit = () => useSyndicationAction('visit');
+export const useExpireSyndication = () => useSyndicationAction('expire');
+
+export function useCloseSyndication() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      commissionPoolPaise,
+      platformFeeRate,
+    }: {
+      id: string;
+      commissionPoolPaise: number;
+      platformFeeRate?: number;
+    }) =>
+      apiRequest<Syndication>(`/realty/exchange/syndications/${id}/close`, {
+        method: 'POST',
+        body: { commissionPoolPaise, platformFeeRate },
+      }),
+    onSuccess: (_data, { id }) => {
+      qc.invalidateQueries({ queryKey: SYNDICATIONS_KEY });
+      qc.invalidateQueries({ queryKey: ['realty', 'exchange', 'syndication', id] });
+    },
+  });
+}
+
+export function useDisputeSyndication() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      apiRequest<Syndication>(`/realty/exchange/syndications/${id}/dispute`, {
+        method: 'POST',
+        body: { reason },
+      }),
+    onSuccess: (_data, { id }) => {
+      qc.invalidateQueries({ queryKey: SYNDICATIONS_KEY });
+      qc.invalidateQueries({ queryKey: ['realty', 'exchange', 'syndication', id] });
+    },
+  });
+}
+
+export function useRateSyndication() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ratings }: { id: string; ratings: RateSyndicationInput }) =>
+      apiRequest<ReliabilityScore>(`/realty/exchange/syndications/${id}/rate`, {
+        method: 'POST',
+        body: ratings,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: RELIABILITY_KEY }),
+  });
+}
+
+export function useExchangeMatch(
+  leadId: string | null,
+  opts: { limit?: number; aiRationale?: boolean } = {},
+) {
+  return useQuery({
+    queryKey: ['realty', 'exchange', 'match', leadId, opts],
+    queryFn: ({ signal }) =>
+      apiRequest<ExchangeMatchResult>(
+        `/realty/exchange/leads/${leadId}/match${toQuery({ ...opts })}`,
+        { signal },
+      ),
+    enabled: !!leadId,
+  });
+}
+
+export function useReliabilityScores() {
+  return useQuery({
+    queryKey: RELIABILITY_KEY,
+    queryFn: ({ signal }) =>
+      apiRequest<ReliabilityScore[]>('/realty/exchange/reliability', { signal }),
+  });
+}
+
+export function useResaleListings(filters: { status?: ResaleListingStatus; locality?: string } = {}) {
+  return useQuery({
+    queryKey: [...RESALE_KEY, filters],
+    queryFn: ({ signal }) =>
+      apiRequest<ResaleListing[]>(`/realty/exchange/resale-listings${toQuery({ ...filters })}`, { signal }),
+  });
+}
+
+export function useCreateResaleListing() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      locality: string;
+      config: string;
+      askingPricePaise: number;
+      sellerPhone: string;
+      carpetSqft?: number;
+      projectId?: string;
+    }) => apiRequest<ResaleListing>('/realty/exchange/resale-listings', { method: 'POST', body: input }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: RESALE_KEY }),
+  });
+}
+
+// ── Micro-market intelligence (L1) ──────────────────────────────────────────────
+
+const INTEL_KEY = ['realty', 'intelligence'];
+const INTEL_CORRIDORS_KEY = ['realty', 'intelligence', 'corridors'];
+const INTEL_SOURCE_QUALITY_KEY = ['realty', 'intelligence', 'source-quality'];
+const INTEL_OPT_IN_KEY = ['realty', 'intelligence', 'opt-in'];
+
+/** Corridors (localities) that currently have aggregates for this business. */
+export function useIntelligenceCorridors() {
+  return useQuery({
+    queryKey: INTEL_CORRIDORS_KEY,
+    queryFn: ({ signal }) =>
+      apiRequest<CorridorsResponse>('/realty/intelligence/corridors', { signal }),
+  });
+}
+
+/** All stored aggregates, optionally filtered to one corridor / metric. */
+export function useIntelligenceAggregates(
+  filters: { corridor?: string; metricType?: IntelligenceMetricType } = {},
+) {
+  return useQuery({
+    queryKey: [...INTEL_KEY, 'aggregates', filters],
+    queryFn: ({ signal }) =>
+      apiRequest<IntelligenceAggregate[]>(
+        `/realty/intelligence/aggregates${toQuery({ ...filters })}`,
+        { signal },
+      ),
+  });
+}
+
+/** Latest priors for one corridor plus the AI prompt-context narrative. */
+export function useCorridorPriors(corridor: string | null) {
+  return useQuery({
+    queryKey: [...INTEL_KEY, 'corridor-priors', corridor],
+    queryFn: ({ signal }) =>
+      apiRequest<CorridorPriorsResponse>(
+        `/realty/intelligence/corridor-priors${toQuery({ corridor })}`,
+        { signal },
+      ),
+    enabled: !!corridor,
+  });
+}
+
+/** This business's own per-source ROI report (no minimum-n suppression). */
+export function useSourceQuality() {
+  return useQuery({
+    queryKey: INTEL_SOURCE_QUALITY_KEY,
+    queryFn: ({ signal }) =>
+      apiRequest<SourceQualityReport>('/realty/intelligence/source-quality', { signal }),
+  });
+}
+
+/** Whether this business contributes anonymized patterns to the network. */
+export function useIntelligenceOptIn() {
+  return useQuery({
+    queryKey: INTEL_OPT_IN_KEY,
+    queryFn: ({ signal }) => apiRequest<OptInStatus>('/realty/intelligence/opt-in', { signal }),
+  });
+}
+
+/** Toggle intelligence-contribution consent (opt-in / opt-out). */
+export function useSetIntelligenceOptIn() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (optIn: boolean) =>
+      apiRequest<OptInStatus>(`/realty/intelligence/${optIn ? 'opt-in' : 'opt-out'}`, {
+        method: 'POST',
+        body: {},
+      }),
+    onSuccess: (data) => {
+      qc.setQueryData(INTEL_OPT_IN_KEY, data);
+      qc.invalidateQueries({ queryKey: INTEL_OPT_IN_KEY });
+    },
+  });
+}

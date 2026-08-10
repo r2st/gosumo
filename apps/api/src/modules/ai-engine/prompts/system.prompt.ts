@@ -27,7 +27,7 @@ export interface SystemPromptVars {
 }
 
 /**
- * The output schema description handed to Claude. Kept in sync with the
+ * The output schema description handed to the model. Kept in sync with the
  * `LlmResponseShape` the response parser validates against.
  */
 export const OUTPUT_SCHEMA_INSTRUCTIONS = `
@@ -52,7 +52,7 @@ You MUST respond with a single valid JSON object and nothing else. Schema:
 
 /**
  * Build the full system prompt. Sections follow the fixed 8-block order from
- * AI_ENGINE_DESIGN.md §6 so Claude parses them reliably.
+ * AI_ENGINE_DESIGN.md §6 so the model parses them reliably.
  */
 export function buildSystemPrompt(vars: SystemPromptVars): string {
   return `You are an AI customer service agent for ${vars.businessName}, a ${vars.businessType} business in ${vars.businessCity}, ${vars.businessState}, India.

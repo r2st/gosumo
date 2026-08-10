@@ -47,17 +47,21 @@ export const LLM_TIMEOUT_MS = 8_000;
 export const LOOP_DETECTION_THRESHOLD = 3;
 
 // ─────────────────────────────────────────────
-// Model routing — pick a Claude tier by intent
+// Model routing — pick an OpenRouter free-tier model by intent
+//
+// All models are OpenRouter free slugs (":free"). LLM calls go through the
+// OpenAI-compatible chat endpoint in `LlmClientService`. Swap these for any
+// other OpenRouter model id (free or paid) without touching call sites.
 // ─────────────────────────────────────────────
 
-export const DEFAULT_MODEL = 'claude-sonnet-4-5';
-export const FAST_MODEL = 'claude-haiku-4-5';
-export const REASONING_MODEL = 'claude-opus-4-5';
+export const DEFAULT_MODEL = 'openai/gpt-oss-20b:free';
+export const FAST_MODEL = 'openai/gpt-oss-20b:free';
+export const REASONING_MODEL = 'openai/gpt-oss-120b:free';
 
 /**
- * Map each intent to the most cost-appropriate Claude tier.
- * High-stakes intents (refunds, complaints, legal) use the reasoning model;
- * chit-chat and simple inquiries use the fast model.
+ * Map each intent to the most cost-appropriate model tier.
+ * High-stakes intents (refunds, complaints, legal) use the larger reasoning
+ * model; chit-chat and simple inquiries use the fast model.
  */
 export const INTENT_MODEL_ROUTING: Record<IntentType, string> = {
   [IntentType.CHIT_CHAT]: FAST_MODEL,

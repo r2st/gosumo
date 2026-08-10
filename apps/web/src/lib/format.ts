@@ -55,6 +55,30 @@ export function formatTimeIST(iso: string | undefined | null): string {
   }
 }
 
+/** Stable IST calendar-day key (yyyy-MM-dd) — used to group messages by day. */
+export function istDayKey(iso: string | undefined | null): string {
+  if (!iso) return '';
+  try {
+    return formatInTimeZone(new Date(iso), IST, 'yyyy-MM-dd');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Human day label for a chat date divider: "Today", "Yesterday", or an absolute
+ * IST date like "3 Jul 2026". Comparisons are done on IST calendar days so a
+ * message just before midnight IST groups under the correct local day.
+ */
+export function formatDayLabelIST(iso: string | undefined | null): string {
+  const key = istDayKey(iso);
+  if (!key) return '';
+  const now = Date.now();
+  if (key === istDayKey(new Date(now).toISOString())) return 'Today';
+  if (key === istDayKey(new Date(now - 86_400_000).toISOString())) return 'Yesterday';
+  return formatDateIST(iso);
+}
+
 /** Relative "time ago" string, e.g. "2m", "3h", "5d". */
 export function timeAgo(iso: string | undefined | null): string {
   if (!iso) return '';

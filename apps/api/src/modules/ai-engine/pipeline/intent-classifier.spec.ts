@@ -44,7 +44,7 @@ describe('IntentClassifierService', () => {
     it('calls the LLM and returns its classification when rules miss', async () => {
       llm.complete.mockResolvedValue({
         text: '{"primaryIntent":"CHIT_CHAT","secondaryIntent":null,"confidence":0.8,"entities":{},"reasoning":"greeting"}',
-        modelId: 'claude-haiku-4-5',
+        modelId: 'openai/gpt-oss-20b:free',
         promptTokens: 10,
         completionTokens: 5,
         latencyMs: 100,

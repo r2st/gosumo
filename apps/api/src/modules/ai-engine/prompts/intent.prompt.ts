@@ -34,7 +34,7 @@ Respond with a single valid JSON object and nothing else:
 }`;
 
 /**
- * Shape the classifier prompt expects back from Claude. Validated by the
+ * Shape the classifier prompt expects back from the model. Validated by the
  * intent classifier service before use.
  */
 export interface LlmIntentResult {

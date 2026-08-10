@@ -17,7 +17,7 @@ const HISTORY_WINDOW = 6;
  * OnboardingAssistantService — the AI helper that answers operator questions
  * during onboarding (e.g. "What WhatsApp number format do I need?").
  *
- * It reuses the project's existing Claude integration (`LlmClientService`) and
+ * It reuses the project's existing OpenRouter LLM integration (`LlmClientService`) and
  * grounds answers in {@link ONBOARDING_KNOWLEDGE} for the current step. When the
  * LLM is unavailable (no API key, timeout, error) it degrades gracefully to a
  * deterministic answer built from the same knowledge base, so the assistant is

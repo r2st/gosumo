@@ -12,7 +12,7 @@ import { LlmClientService } from '../ai-engine/pipeline/llm-client.service';
  *
  * Owns no tables of its own; onboarding state lives in
  * `businesses.onboarding_progress`. Reuses the ai-engine's `LlmClientService`
- * (a stateless Claude wrapper depending only on ConfigService) for the chat
+ * (a stateless OpenRouter LLM wrapper depending only on ConfigService) for the chat
  * assistant, so it does not pull in the full AI pipeline graph.
  */
 @Module({
