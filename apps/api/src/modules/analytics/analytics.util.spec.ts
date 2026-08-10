@@ -7,6 +7,7 @@ import {
   stepBucket,
   enumerateBuckets,
   fillTimeSeries,
+  toCsv,
 } from './analytics.util';
 import { Granularity } from './dto';
 
@@ -148,6 +149,30 @@ describe('analytics.util', () => {
       const rows = [{ bucket: new Date('2026-06-01T00:30:00.000Z'), value: 33.33333 }];
       const series = fillTimeSeries(from, to, Granularity.HOUR, rows);
       expect(series[0]!.value).toBe(33.33);
+    });
+  });
+
+  describe('toCsv', () => {
+    it('returns an empty string for no rows', () => {
+      expect(toCsv([])).toBe('');
+    });
+
+    it('renders a header row from the first row\'s keys, then one row per entry', () => {
+      const csv = toCsv([
+        { date: '2026-06-01', conversations: 3 },
+        { date: '2026-06-02', conversations: 5 },
+      ]);
+      expect(csv).toBe('date,conversations\r\n2026-06-01,3\r\n2026-06-02,5');
+    });
+
+    it('quotes values containing commas, quotes, or newlines and doubles internal quotes', () => {
+      const csv = toCsv([{ name: 'Say "hi", please\nthanks' }]);
+      expect(csv).toBe('name\r\n"Say ""hi"", please\nthanks"');
+    });
+
+    it('renders null as an empty field', () => {
+      const csv = toCsv([{ note: null }]);
+      expect(csv).toBe('note\r\n');
     });
   });
 });

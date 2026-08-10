@@ -351,6 +351,12 @@ enum AnalyticsEventCategory {
   CLIENT
 }
 
+/// Which SLA clock a `sla_breaches` row is tracking.
+enum SlaBreachType {
+  FIRST_RESPONSE
+  RESOLUTION
+}
+
 // ─────────────────────────────────────────────
 // REALTY ENUMS (GoSumo Realty)
 // ─────────────────────────────────────────────
@@ -635,76 +641,80 @@ model businesses {
   /// onboarding module (see apps/api/src/modules/onboarding).
   onboarding_progress Json @default("{}") @db.JsonB
 
-  is_active  Boolean   @default(true)
+  is_active           Boolean   @default(true)
   /// Consent to contribute anonymized corridor patterns to the micro-market
   /// intelligence layer (L1). Off by default (DPDPA purpose-limitation); the
   /// nightly aggregator reads ONLY businesses where this is true.
-  intelligence_opt_in Boolean @default(false)
-  created_at DateTime  @default(now()) @db.Timestamptz
-  updated_at DateTime  @updatedAt @db.Timestamptz
-  deleted_at DateTime? @db.Timestamptz
+  intelligence_opt_in Boolean   @default(false)
+  created_at          DateTime  @default(now()) @db.Timestamptz
+  updated_at          DateTime  @updatedAt @db.Timestamptz
+  deleted_at          DateTime? @db.Timestamptz
 
   // Relations
-  team_members                team_members[]
-  clients                     clients[]
-  channel_accounts            channel_accounts[]
-  channel_contacts            channel_contacts[]
-  conversations               conversations[]
-  messages                    messages[]
-  business_rules              business_rules[]
-  catalog_categories          catalog_categories[]
-  catalog_items               catalog_items[]
-  catalog_variants            catalog_variants[]
-  catalog_packages            catalog_packages[]
-  orders                      orders[]
-  payments                    payments[]
-  bookings                    bookings[]
-  shipments                   shipments[]
-  campaigns                   campaigns[]
-  notification_templates      notification_templates[]
-  notifications               notifications[]
-  notification_preferences    notification_preferences[]
-  notification_triggers       notification_triggers[]
-  tasks                       tasks[]
-  ai_decisions                ai_decisions[]
-  ai_precedents               ai_precedents[]
-  analytics_events            analytics_events[]
-  vector_embeddings_metadata  vector_embeddings_metadata[]
-  file_uploads                file_uploads[]
-  audit_logs                  audit_logs[]
-  webhook_events              webhook_events[]
-  shipping_addresses          shipping_addresses[]
-  shipping_options            shipping_options[]
-  refunds                     refunds[]
-  carts                       carts[]
-  cart_items                  cart_items[]
-  coupons                     coupons[]
-  realty_leads                realty_leads[]
-  realty_projects             realty_projects[]
-  realty_units                realty_units[]
-  realty_assets               realty_assets[]
-  realty_site_visits          realty_site_visits[]
-  realty_message_templates    realty_message_templates[]
-  realty_cadences             realty_cadences[]
-  realty_cadence_steps        realty_cadence_steps[]
-  realty_cadence_enrollments  realty_cadence_enrollments[]
-  realty_approvals            realty_approvals[]
-  realty_account_settings     realty_account_settings?
-  realty_broker_alerts        realty_broker_alerts[]
-  realty_conversation_control realty_conversation_control[]
-  realty_dead_letters         realty_dead_letters[]
-  realty_migration_runs       realty_migration_runs[]
-  realty_autonomy_events      realty_autonomy_events[]
-  realty_no_ship_incidents    realty_no_ship_incidents[]
+  team_members                   team_members[]
+  clients                        clients[]
+  channel_accounts               channel_accounts[]
+  channel_contacts               channel_contacts[]
+  conversations                  conversations[]
+  messages                       messages[]
+  business_rules                 business_rules[]
+  catalog_categories             catalog_categories[]
+  catalog_items                  catalog_items[]
+  catalog_variants               catalog_variants[]
+  catalog_packages               catalog_packages[]
+  orders                         orders[]
+  payments                       payments[]
+  bookings                       bookings[]
+  shipments                      shipments[]
+  campaigns                      campaigns[]
+  notification_templates         notification_templates[]
+  notifications                  notifications[]
+  notification_preferences       notification_preferences[]
+  notification_triggers          notification_triggers[]
+  tasks                          tasks[]
+  ai_decisions                   ai_decisions[]
+  ai_precedents                  ai_precedents[]
+  analytics_events               analytics_events[]
+  vector_embeddings_metadata     vector_embeddings_metadata[]
+  file_uploads                   file_uploads[]
+  audit_logs                     audit_logs[]
+  webhook_events                 webhook_events[]
+  shipping_addresses             shipping_addresses[]
+  shipping_options               shipping_options[]
+  refunds                        refunds[]
+  carts                          carts[]
+  cart_items                     cart_items[]
+  coupons                        coupons[]
+  realty_leads                   realty_leads[]
+  realty_projects                realty_projects[]
+  realty_units                   realty_units[]
+  realty_assets                  realty_assets[]
+  realty_site_visits             realty_site_visits[]
+  realty_message_templates       realty_message_templates[]
+  realty_cadences                realty_cadences[]
+  realty_cadence_steps           realty_cadence_steps[]
+  realty_cadence_enrollments     realty_cadence_enrollments[]
+  realty_approvals               realty_approvals[]
+  realty_account_settings        realty_account_settings?
+  realty_broker_alerts           realty_broker_alerts[]
+  realty_conversation_control    realty_conversation_control[]
+  realty_dead_letters            realty_dead_letters[]
+  realty_migration_runs          realty_migration_runs[]
+  realty_autonomy_events         realty_autonomy_events[]
+  realty_no_ship_incidents       realty_no_ship_incidents[]
   realty_intelligence_aggregates realty_intelligence_aggregates[]
-  realty_syndications         realty_syndications[]
-  realty_reliability_scores   realty_reliability_scores[]
-  realty_resale_listings      realty_resale_listings[]
-  business_subscription       business_subscriptions?
-  consent_logs                consent_logs[]
-  realty_compliance_settings  realty_compliance_settings?
+  realty_syndications            realty_syndications[]
+  realty_reliability_scores      realty_reliability_scores[]
+  realty_resale_listings         realty_resale_listings[]
+  business_subscription          business_subscriptions?
+  consent_logs                   consent_logs[]
+  realty_compliance_settings     realty_compliance_settings?
   realty_integration_connections realty_integration_connections[]
   realty_eoi_requests            realty_eoi_requests[]
+  segments                       segments[]
+  canned_responses               canned_responses[]
+  sla_policies                   sla_policies[]
+  sla_breaches                   sla_breaches[]
 
   @@index([slug])
   @@index([email])
@@ -748,12 +758,13 @@ model team_members {
   updated_at DateTime  @updatedAt @db.Timestamptz
   deleted_at DateTime? @db.Timestamptz
 
-  business       businesses     @relation(fields: [business_id], references: [id], onDelete: Cascade)
-  inviter        team_members?  @relation("InvitedBy", fields: [invited_by], references: [id])
-  invitees       team_members[] @relation("InvitedBy")
-  assigned_tasks tasks[]        @relation("AssignedTo")
-  resolved_tasks tasks[]        @relation("ResolvedBy")
-  audit_logs     audit_logs[]
+  business         businesses         @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  inviter          team_members?      @relation("InvitedBy", fields: [invited_by], references: [id])
+  invitees         team_members[]     @relation("InvitedBy")
+  assigned_tasks   tasks[]            @relation("AssignedTo")
+  resolved_tasks   tasks[]            @relation("ResolvedBy")
+  audit_logs       audit_logs[]
+  canned_responses canned_responses[]
 
   @@unique([business_id, email])
   @@index([business_id, status])
@@ -774,9 +785,11 @@ model clients {
   consumer_user_id String? @db.Uuid
 
   /// AI-built enrichment profile
-  profile  Json @default("{}") @db.JsonB
+  profile  Json     @default("{}") @db.JsonB
   /// Opt-out status per channel: { "WHATSAPP": true }
-  opt_outs Json @default("{}") @db.JsonB
+  opt_outs Json     @default("{}") @db.JsonB
+  /// Free-form contact tags, managed by the `contact` module
+  tags     String[] @default([])
 
   ltv_score         Decimal?  @db.Decimal(12, 2)
   /// 0.0000–1.0000
@@ -961,6 +974,7 @@ model conversations {
   tasks            tasks[]
   ai_decisions     ai_decisions[]
   analytics_events analytics_events[]
+  sla_breaches     sla_breaches[]
 
   @@index([business_id, status, last_message_at(sort: Desc)])
   @@index([business_id, client_id])
@@ -2325,6 +2339,126 @@ model audit_logs {
 }
 
 // ─────────────────────────────────────────────
+// OPERATIONS — contacts, canned responses, SLA
+// ─────────────────────────────────────────────
+
+/// A saved contact segment — a dynamic filter over `clients`, used to target
+/// campaigns and to group the contact list in the dashboard.
+model segments {
+  id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String  @db.Uuid
+  name        String  @db.VarChar(255)
+  description String? @db.Text
+
+  /// Filter evaluated against `clients` at query time:
+  /// { tags?: string[], channels?: ChannelType[], minLtv?, maxChurnRisk?,
+  ///   minEngagement?, hasOrders?: boolean }
+  filter Json @default("{}") @db.JsonB
+
+  is_active Boolean @default(true)
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@unique([business_id, name])
+  @@index([business_id, is_active])
+  @@map("segments")
+}
+
+/// A reusable, pre-written reply agents can insert into a conversation.
+model canned_responses {
+  id          String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String       @db.Uuid
+  title       String       @db.VarChar(255)
+  /// Slash-command style trigger, e.g. "refund-policy" — unique per business
+  shortcut    String       @db.VarChar(100)
+  content     String       @db.Text
+  category    String?      @db.VarChar(100)
+  /// null = usable on any channel
+  channel     ChannelType?
+  tags        String[]     @default([])
+  is_active   Boolean      @default(true)
+  usage_count Int          @default(0)
+  created_by  String?      @db.Uuid
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses    @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  author   team_members? @relation(fields: [created_by], references: [id])
+
+  @@unique([business_id, shortcut])
+  @@index([business_id, is_active, category])
+  @@map("canned_responses")
+}
+
+/// A configurable SLA target (first-response / resolution) with match
+/// conditions and escalation actions, evaluated against conversations.
+model sla_policies {
+  id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String  @db.Uuid
+  name        String  @db.VarChar(255)
+  description String? @db.Text
+  /// Higher = evaluated first; the first matching active policy wins
+  priority    Int     @default(0)
+  is_active   Boolean @default(true)
+
+  /// Match conditions: { channels?: ChannelType[], tags?: string[] }.
+  /// Empty object matches every conversation.
+  conditions Json @default("{}") @db.JsonB
+
+  first_response_target_minutes Int
+  resolution_target_minutes     Int
+
+  /// [{ type: "NOTIFY" | "REASSIGN" | "CREATE_TASK", target?: teamMemberId | role }]
+  escalation_actions Json @default("[]") @db.JsonB
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses     @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  breaches sla_breaches[]
+
+  @@index([business_id, is_active, priority(sort: Desc)])
+  @@map("sla_policies")
+}
+
+/// One SLA clock (first-response or resolution) tracked — and possibly
+/// breached — for a single conversation against the policy that matched it.
+model sla_breaches {
+  id              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id     String        @db.Uuid
+  conversation_id String        @db.Uuid
+  policy_id       String        @db.Uuid
+  breach_type     SlaBreachType
+
+  target_minutes Int
+  due_at         DateTime  @db.Timestamptz
+  met_at         DateTime? @db.Timestamptz
+  breached       Boolean   @default(false)
+  breached_at    DateTime? @db.Timestamptz
+  escalated      Boolean   @default(false)
+  escalated_at   DateTime? @db.Timestamptz
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business     businesses    @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  conversation conversations @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+  policy       sla_policies  @relation(fields: [policy_id], references: [id])
+
+  @@unique([conversation_id, breach_type])
+  @@index([business_id, breached, due_at])
+  @@index([business_id, conversation_id])
+  @@map("sla_breaches")
+}
+
+// ─────────────────────────────────────────────
 // REALTY — LEADS (GoSumo Realty core entity)
 // ─────────────────────────────────────────────
 
@@ -3057,11 +3191,11 @@ model realty_reliability_scores {
   target_business_id String @db.Uuid
 
   // All sub-scores and the composite are 0–100.
-  response_speed_score       Decimal @default(0) @db.Decimal(5, 2)
-  showup_integrity_score     Decimal @default(0) @db.Decimal(5, 2)
-  split_honoring_score       Decimal @default(0) @db.Decimal(5, 2)
+  response_speed_score        Decimal @default(0) @db.Decimal(5, 2)
+  showup_integrity_score      Decimal @default(0) @db.Decimal(5, 2)
+  split_honoring_score        Decimal @default(0) @db.Decimal(5, 2)
   documentation_hygiene_score Decimal @default(0) @db.Decimal(5, 2)
-  composite_score            Decimal @default(0) @db.Decimal(5, 2)
+  composite_score             Decimal @default(0) @db.Decimal(5, 2)
 
   period_start DateTime @db.Timestamptz
   period_end   DateTime @db.Timestamptz
@@ -3132,16 +3266,16 @@ model business_subscriptions {
   /// Included seats (team members) — null = unlimited.
   seat_limit         Int?
   /// Recurring price in paise (e.g. 399900 = ₹3,999).
-  plan_price_paise   Int @default(399900)
+  plan_price_paise   Int  @default(399900)
   /// Per-lead charge in paise once the included allotment is exhausted (₹8 = 800).
-  overage_rate_paise Int @default(800)
+  overage_rate_paise Int  @default(800)
 
   /// Start of the current billing cycle; usage resets one month after this.
-  billing_cycle_start   DateTime @default(now()) @db.Timestamptz
+  billing_cycle_start      DateTime @default(now()) @db.Timestamptz
   /// Leads captured within the current cycle (reset on rollover).
-  leads_used_this_cycle Int      @default(0)
+  leads_used_this_cycle    Int      @default(0)
   /// Leads billed as overage within the current cycle (beyond the included limit).
-  overage_leads_this_cycle Int   @default(0)
+  overage_leads_this_cycle Int      @default(0)
 
   metadata Json @default("{}") @db.JsonB
 
@@ -3273,11 +3407,11 @@ model realty_integration_connections {
   /// A human-facing external reference (spreadsheet id, CRM account id/subdomain).
   external_ref String? @db.VarChar(255)
 
-  last_sync_at   DateTime? @db.Timestamptz
-  last_error     String?   @db.Text
-  sync_count     Int       @default(0)
-  pushed_count   Int       @default(0)
-  metadata       Json      @default("{}") @db.JsonB
+  last_sync_at DateTime? @db.Timestamptz
+  last_error   String?   @db.Text
+  sync_count   Int       @default(0)
+  pushed_count Int       @default(0)
+  metadata     Json      @default("{}") @db.JsonB
 
   created_at DateTime  @default(now()) @db.Timestamptz
   updated_at DateTime  @updatedAt @db.Timestamptz
@@ -3305,16 +3439,16 @@ model realty_eoi_requests {
   unit_id String? @db.Uuid
 
   /// Token amount in rupees.
-  amount   Decimal @db.Decimal(14, 2)
-  currency String  @default("INR") @db.Char(3)
+  amount      Decimal @db.Decimal(14, 2)
+  currency    String  @default("INR") @db.Char(3)
   /// Buyer-facing label for the token, e.g. "टोकन", "बुकिंग राशि".
-  token_label String @default("टोकन") @db.VarChar(60)
+  token_label String  @default("टोकन") @db.VarChar(60)
 
   status RealtyEoiStatus @default(PENDING_APPROVAL)
 
   /// Razorpay payment-link id (plink_xxx) + its short url, set once approved+sent.
-  payment_link_id   String? @db.VarChar(120)
-  payment_link_url  String? @db.Text
+  payment_link_id    String? @db.VarChar(120)
+  payment_link_url   String? @db.Text
   gateway_payment_id String? @db.VarChar(120)
 
   requested_by  String?   @db.Uuid

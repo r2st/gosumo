@@ -40,6 +40,7 @@ function makeClient(overrides: Partial<Record<string, unknown>> = {}): ClientWit
     consumer_user_id: null,
     profile: {},
     opt_outs: {},
+    tags: [],
     ltv_score: null,
     churn_risk: null,
     engagement_score: null,

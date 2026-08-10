@@ -8,8 +8,10 @@ import {
 import { ChannelType } from '@gosumo/shared';
 import { AnalyticsRepository, DateRange } from './analytics.repository';
 import { ANALYTICS_CACHE, AnalyticsCache } from './analytics.cache';
-import { fillTimeSeries, pct, round2, rupeesToPaise } from './analytics.util';
+import { fillTimeSeries, pct, round2, rupeesToPaise, toCsv } from './analytics.util';
+import { LlmClientService, LlmUnavailableError } from '../ai-engine/pipeline/llm-client.service';
 import {
+  AiSummaryDto,
   AnalyticsRangeQueryDto,
   AnalyticsTopQueryDto,
   AutonomyMetricsDto,
@@ -24,6 +26,9 @@ import {
   ConversationMetricsDto,
   DashboardSummaryDto,
   EscalationReasonDto,
+  ExportedReportDto,
+  ExportMetric,
+  ExportReportQueryDto,
   Granularity,
   ResolvedRangeDto,
   ResponseTimeMetricsDto,
@@ -67,6 +72,7 @@ export class AnalyticsService {
   constructor(
     private readonly repository: AnalyticsRepository,
     @Inject(ANALYTICS_CACHE) private readonly cache: AnalyticsCache,
+    private readonly llmClient: LlmClientService,
   ) {}
 
   // ───────────────────────────────────────────────────────────────────
@@ -457,6 +463,150 @@ export class AnalyticsService {
       cancellationRate: pct(counts.cancelled + counts.noShow, counts.total),
       series: this.buildSeries(range, seriesRows),
     };
+  }
+
+  // ───────────────────────────────────────────────────────────────────
+  // Report export (CSV)
+  // ───────────────────────────────────────────────────────────────────
+
+  /**
+   * Render a metric's time series (or, for STAFF, the per-member table) as
+   * a downloadable CSV. Reuses the same range-resolution and repository
+   * queries as the JSON endpoints — this is a rendering, not a new query.
+   */
+  async exportReport(businessId: string, query: ExportReportQueryDto): Promise<ExportedReportDto> {
+    const metric = query.metric ?? ExportMetric.CONVERSATIONS;
+    const range = this.resolveRange(query);
+
+    let rows: Record<string, string | number | boolean | null>[];
+
+    switch (metric) {
+      case ExportMetric.RESPONSE_TIME: {
+        const data = await this.getResponseTimeMetrics(businessId, query);
+        rows = data.series.map((p) => ({ date: p.date, avgFirstResponseSeconds: p.value }));
+        break;
+      }
+      case ExportMetric.REVENUE: {
+        const data = await this.getRevenueMetrics(businessId, query);
+        rows = data.revenueSeries.map((p, i) => ({
+          date: p.date,
+          grossRevenuePaise: p.value,
+          orderCount: data.orderCountSeries[i]?.value ?? 0,
+        }));
+        break;
+      }
+      case ExportMetric.AUTONOMY: {
+        const data = await this.getAutonomyMetrics(businessId, query);
+        rows = data.autonomySeries.map((p) => ({ date: p.date, autonomyRatePercent: p.value }));
+        break;
+      }
+      case ExportMetric.STAFF: {
+        const data = await this.getStaffMetrics(businessId, query);
+        rows = data.map((s) => ({
+          memberId: s.memberId,
+          name: s.name,
+          role: s.role,
+          assignedConversations: s.assignedConversations,
+          resolvedConversations: s.resolvedConversations,
+          tasksResolved: s.tasksResolved,
+          avgTaskResolutionSeconds: s.avgTaskResolutionSeconds,
+        }));
+        break;
+      }
+      case ExportMetric.CONVERSATIONS:
+      default: {
+        const data = await this.getConversationMetrics(businessId, query);
+        rows = data.volumeSeries.map((p) => ({ date: p.date, conversations: p.value }));
+        break;
+      }
+    }
+
+    const dateStamp = range.to.toISOString().slice(0, 10);
+    return {
+      filename: `gosumo-${metric.toLowerCase()}-${dateStamp}.csv`,
+      contentType: 'text/csv',
+      csv: toCsv(rows),
+    };
+  }
+
+  // ───────────────────────────────────────────────────────────────────
+  // AI-generated narrative summary (OpenRouter)
+  // ───────────────────────────────────────────────────────────────────
+
+  /**
+   * A short, business-friendly narrative summary of the period's performance,
+   * generated via OpenRouter. Fails open: if the LLM is unavailable, returns
+   * a deterministic summary built from the same numbers instead of erroring.
+   */
+  async getAiSummary(businessId: string, query: AnalyticsRangeQueryDto = {}): Promise<AiSummaryDto> {
+    const range = this.resolveRange(query);
+    const dateRange = this.asDateRange(range);
+
+    const [conversations, response, revenue, autonomy] = await Promise.all([
+      this.repository.getConversationCounts(businessId, dateRange),
+      this.repository.getResponseTimeStats(businessId, dateRange),
+      this.repository.getRevenueSummary(businessId, dateRange),
+      this.repository.getAiDecisionCounts(businessId, dateRange),
+    ]);
+
+    const facts = {
+      conversationsTotal: conversations.total,
+      resolutionRatePercent: pct(conversations.resolved, conversations.total),
+      avgFirstResponseSeconds: round2(response.avgSeconds),
+      grossRevenuePaise: rupeesToPaise(revenue.grossRevenueRupees),
+      orderCount: revenue.orderCount,
+      autonomyRatePercent: pct(autonomy.autoExecuted, autonomy.total),
+      escalatedCount: autonomy.escalated,
+    };
+
+    try {
+      const result = await this.llmClient.complete({
+        system:
+          'You are a concise business analyst summarizing customer-support metrics for a small ' +
+          'Indian business owner. Write 3-5 short bullet points in plain English, no markdown ' +
+          'headers, no fluff. Call out the single most important number and one clear ' +
+          'recommendation if a metric looks concerning (e.g. low autonomy, low resolution rate).',
+        user: `Metrics for ${range.from.toISOString().slice(0, 10)} to ${range.to.toISOString().slice(0, 10)}:\n${JSON.stringify(facts, null, 2)}`,
+        maxTokens: 300,
+        temperature: 0.4,
+      });
+
+      return {
+        range: this.toResolvedRangeDto(range),
+        summary: result.text || this.fallbackSummary(facts),
+        aiGenerated: Boolean(result.text),
+        modelId: result.modelId,
+        generatedAt: new Date().toISOString(),
+      };
+    } catch (err) {
+      if (!(err instanceof LlmUnavailableError)) {
+        this.logger.warn(`Unexpected error generating AI summary: ${this.errMsg(err)}`);
+      }
+      return {
+        range: this.toResolvedRangeDto(range),
+        summary: this.fallbackSummary(facts),
+        aiGenerated: false,
+        generatedAt: new Date().toISOString(),
+      };
+    }
+  }
+
+  private fallbackSummary(facts: {
+    conversationsTotal: number;
+    resolutionRatePercent: number;
+    avgFirstResponseSeconds: number;
+    grossRevenuePaise: number;
+    orderCount: number;
+    autonomyRatePercent: number;
+    escalatedCount: number;
+  }): string {
+    const revenueRupees = round2(facts.grossRevenuePaise / 100);
+    return [
+      `${facts.conversationsTotal} conversations, ${facts.resolutionRatePercent}% resolved.`,
+      `Average first response: ${Math.round(facts.avgFirstResponseSeconds)}s.`,
+      `Revenue: ₹${revenueRupees} across ${facts.orderCount} orders.`,
+      `AI autonomy rate: ${facts.autonomyRatePercent}% (${facts.escalatedCount} escalated to a human).`,
+    ].join(' ');
   }
 
   // ───────────────────────────────────────────────────────────────────

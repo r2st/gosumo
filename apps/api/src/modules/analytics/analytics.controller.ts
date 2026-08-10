@@ -1,8 +1,10 @@
-import { Controller, Get, Query, Logger } from '@nestjs/common';
+import { Controller, Get, Query, Res, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { AnalyticsService } from './analytics.service';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import {
+  AiSummaryDto,
   AnalyticsRangeQueryDto,
   AnalyticsTopQueryDto,
   AutonomyMetricsDto,
@@ -13,6 +15,7 @@ import {
   ConversationMetricsDto,
   DashboardSummaryDto,
   EscalationReasonDto,
+  ExportReportQueryDto,
   ResponseTimeMetricsDto,
   RevenueMetricsDto,
   StaffMetricsDto,
@@ -266,6 +269,35 @@ export class AnalyticsController {
     @Query() query: AnalyticsRangeQueryDto,
   ): Promise<BookingMetricsDto> {
     return this.analyticsService.getBookingMetrics(tenantId, query);
+  }
+
+  // ─────────────────────────────────────────────
+  // Reports (export + AI summary)
+  // ─────────────────────────────────────────────
+
+  @Get('reports/export')
+  @ApiOperation({ summary: 'Export a metric\'s time series as CSV' })
+  @ApiResponse({ status: 200, description: 'CSV file' })
+  @ApiResponse({ status: 422, description: 'Date range exceeds 365 days' })
+  async exportReport(
+    @TenantId() tenantId: string,
+    @Query() query: ExportReportQueryDto,
+    @Res() res: Response,
+  ): Promise<void> {
+    const report = await this.analyticsService.exportReport(tenantId, query);
+    res.setHeader('Content-Type', `${report.contentType}; charset=utf-8`);
+    res.setHeader('Content-Disposition', `attachment; filename="${report.filename}"`);
+    res.send(report.csv);
+  }
+
+  @Get('reports/summary')
+  @ApiOperation({ summary: 'AI-generated narrative summary of the period\'s performance' })
+  @ApiResponse({ status: 200, description: 'Narrative summary (falls back to a deterministic one if the LLM is unavailable)' })
+  async getAiSummary(
+    @TenantId() tenantId: string,
+    @Query() query: AnalyticsRangeQueryDto,
+  ): Promise<AiSummaryDto> {
+    return this.analyticsService.getAiSummary(tenantId, query);
   }
 
   // ─────────────────────────────────────────────

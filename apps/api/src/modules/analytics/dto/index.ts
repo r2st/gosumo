@@ -365,3 +365,43 @@ export interface BookingMetricsDto {
   /** Bookings (by start time) over time. */
   series: TimeSeriesPointDto[];
 }
+
+// ─────────────────────────────────────────────
+// Report export
+// ─────────────────────────────────────────────
+
+/** Which metric's time series to render as CSV. */
+export enum ExportMetric {
+  CONVERSATIONS = 'CONVERSATIONS',
+  RESPONSE_TIME = 'RESPONSE_TIME',
+  REVENUE = 'REVENUE',
+  AUTONOMY = 'AUTONOMY',
+  STAFF = 'STAFF',
+}
+
+export class ExportReportQueryDto extends AnalyticsRangeQueryDto {
+  @ApiPropertyOptional({ enum: ExportMetric, default: ExportMetric.CONVERSATIONS })
+  @IsOptional()
+  @IsEnum(ExportMetric)
+  metric?: ExportMetric;
+}
+
+export interface ExportedReportDto {
+  filename: string;
+  contentType: string;
+  csv: string;
+}
+
+// ─────────────────────────────────────────────
+// AI-generated narrative summary
+// ─────────────────────────────────────────────
+
+export interface AiSummaryDto {
+  range: ResolvedRangeDto;
+  /** Short, business-friendly narrative summarizing the period's performance. */
+  summary: string;
+  /** false when the LLM was unavailable and a deterministic fallback was used. */
+  aiGenerated: boolean;
+  modelId?: string;
+  generatedAt: string;
+}

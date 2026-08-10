@@ -462,6 +462,54 @@ export interface ClientProfileUpdatedEvent extends BaseEvent {
 }
 
 // ─────────────────────────────────────────────
+// CONTACT EVENTS
+// ─────────────────────────────────────────────
+
+/** Emitted by the contact module whenever a contact's tag set changes. */
+export interface ContactTaggedEvent extends BaseEvent {
+  readonly type: 'contact.tagged';
+  contactId: string;
+  /** The contact's full tag list after the change. */
+  tags: string[];
+}
+
+// ─────────────────────────────────────────────
+// CANNED RESPONSE EVENTS
+// ─────────────────────────────────────────────
+
+/** Emitted by the canned-response module when a saved reply is used. */
+export interface CannedResponseUsedEvent extends BaseEvent {
+  readonly type: 'canned_response.used';
+  cannedResponseId: string;
+  conversationId?: string;
+  usedBy?: string;
+}
+
+// ─────────────────────────────────────────────
+// SLA EVENTS
+// ─────────────────────────────────────────────
+
+/** Emitted by the sla module when a conversation misses its SLA target. */
+export interface SlaBreachedEvent extends BaseEvent {
+  readonly type: 'sla.breached';
+  conversationId: string;
+  policyId: string;
+  breachType: 'FIRST_RESPONSE' | 'RESOLUTION';
+  targetMinutes: number;
+  actualMinutes: number;
+}
+
+/** Emitted by the sla module when a breach is escalated per policy action. */
+export interface SlaEscalatedEvent extends BaseEvent {
+  readonly type: 'sla.escalated';
+  conversationId: string;
+  policyId: string;
+  breachType: 'FIRST_RESPONSE' | 'RESOLUTION';
+  action: 'NOTIFY' | 'REASSIGN' | 'CREATE_TASK';
+  target?: string;
+}
+
+// ─────────────────────────────────────────────
 // CATALOG EVENTS
 // ─────────────────────────────────────────────
 
@@ -1032,6 +1080,10 @@ export type DomainEvent =
   | BookingCompletedEvent
   | BookingReminderEvent
   | ClientProfileUpdatedEvent
+  | ContactTaggedEvent
+  | CannedResponseUsedEvent
+  | SlaBreachedEvent
+  | SlaEscalatedEvent
   | CatalogItemCreatedEvent
   | CatalogItemUpdatedEvent
   | CatalogStockLowEvent

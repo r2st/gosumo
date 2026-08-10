@@ -380,6 +380,38 @@ export interface ClientProfileUpdatedEvent extends BaseEvent {
     updatedBy: 'AI' | 'HUMAN' | 'SYSTEM';
     updatedByActorId?: string;
 }
+/** Emitted by the contact module whenever a contact's tag set changes. */
+export interface ContactTaggedEvent extends BaseEvent {
+    readonly type: 'contact.tagged';
+    contactId: string;
+    /** The contact's full tag list after the change. */
+    tags: string[];
+}
+/** Emitted by the canned-response module when a saved reply is used. */
+export interface CannedResponseUsedEvent extends BaseEvent {
+    readonly type: 'canned_response.used';
+    cannedResponseId: string;
+    conversationId?: string;
+    usedBy?: string;
+}
+/** Emitted by the sla module when a conversation misses its SLA target. */
+export interface SlaBreachedEvent extends BaseEvent {
+    readonly type: 'sla.breached';
+    conversationId: string;
+    policyId: string;
+    breachType: 'FIRST_RESPONSE' | 'RESOLUTION';
+    targetMinutes: number;
+    actualMinutes: number;
+}
+/** Emitted by the sla module when a breach is escalated per policy action. */
+export interface SlaEscalatedEvent extends BaseEvent {
+    readonly type: 'sla.escalated';
+    conversationId: string;
+    policyId: string;
+    breachType: 'FIRST_RESPONSE' | 'RESOLUTION';
+    action: 'NOTIFY' | 'REASSIGN' | 'CREATE_TASK';
+    target?: string;
+}
 export interface CatalogItemCreatedEvent extends BaseEvent {
     readonly type: 'catalog.item.created';
     itemId: string;
@@ -802,7 +834,6 @@ export interface RealtyRetentionRunEvent extends BaseEvent {
     messagesAnonymized: number;
     retentionMonths: number;
 }
-export type DomainEvent = MessageReceivedEvent | MessageSentEvent | MessageFailedEvent | MessageStoredEvent | ConversationCreatedEvent | ConversationResolvedEvent | ConversationEscalatedEvent | ConversationStatusChangedEvent | ConversationAssignedEvent | AIIntentClassifiedEvent | AIResponseGeneratedEvent | AIResponseApprovedEvent | AIResponseRejectedEvent | TaskCreatedEvent | TaskAssignedEvent | TaskResolvedEvent | OrderCreatedEvent | OrderConfirmedEvent | OrderCancelledEvent | OrderPackedEvent | OrderPaidEvent | OrderShippedEvent | OrderDeliveredEvent | OrderReturnedEvent | PaymentCreatedEvent | PaymentSuccessEvent | PaymentFailedEvent | PaymentRefundEvent | InvoiceCreatedEvent | InvoiceIssuedEvent | InvoicePaidEvent | BookingCreatedEvent | BookingCancelledEvent | BookingConfirmedEvent | BookingRescheduledEvent | BookingCompletedEvent | BookingReminderEvent | ClientProfileUpdatedEvent | CatalogItemCreatedEvent | CatalogItemUpdatedEvent | CatalogStockLowEvent | CatalogStockOutEvent | NotificationQueuedEvent | NotificationSentEvent | NotificationDeliveredEvent | NotificationFailedEvent | NotificationSkippedEvent | RealtyLeadCreatedEvent | RealtyLeadQualifiedEvent | RealtyLeadStageChangedEvent | RealtyLeadHotEvent | RealtyLeadOptedOutEvent | RealtyProjectCreatedEvent | RealtyUnitAvailabilityChangedEvent | RealtyAssetPublishedEvent | RealtyVisitBookedEvent | RealtyVisitConfirmedEvent | RealtyVisitRescheduledEvent | RealtyVisitCancelledEvent | RealtyVisitCompletedEvent | RealtyVisitNoShowEvent | RealtyVisitReminderEvent | RealtyLeadIngestedEvent | RealtyCadenceStartedEvent | RealtyCadenceStepSentEvent | RealtyCadenceCompletedEvent | RealtyBrokerAlertEvent | RealtyApprovalCreatedEvent | RealtyApprovalResolvedEvent | RealtyConversationTakenOverEvent | RealtyAiTurnCompletedEvent | RealtyMigrationCompletedEvent | RealtyAutonomyChangedEvent | RealtyNoShipIncidentEvent | RealtyLaunchGateEvaluatedEvent | RealtySyndicationOfferedEvent | RealtySyndicationAcceptedEvent | RealtySyndicationClosedEvent | RealtySyndicationDisputedEvent | RealtyIntelligenceAggregatesGeneratedEvent | RealtyIntelligenceOptedInEvent | RealtyIntelligenceOptedOutEvent | RealtyPlanChangedEvent | RealtyLeadUsageRecordedEvent | RealtyLeadLimitReachedEvent | RealtyConsentRecordedEvent | RealtyLeadErasedEvent | RealtyRetentionRunEvent;
+export type DomainEvent = MessageReceivedEvent | MessageSentEvent | MessageFailedEvent | MessageStoredEvent | ConversationCreatedEvent | ConversationResolvedEvent | ConversationEscalatedEvent | ConversationStatusChangedEvent | ConversationAssignedEvent | AIIntentClassifiedEvent | AIResponseGeneratedEvent | AIResponseApprovedEvent | AIResponseRejectedEvent | TaskCreatedEvent | TaskAssignedEvent | TaskResolvedEvent | OrderCreatedEvent | OrderConfirmedEvent | OrderCancelledEvent | OrderPackedEvent | OrderPaidEvent | OrderShippedEvent | OrderDeliveredEvent | OrderReturnedEvent | PaymentCreatedEvent | PaymentSuccessEvent | PaymentFailedEvent | PaymentRefundEvent | InvoiceCreatedEvent | InvoiceIssuedEvent | InvoicePaidEvent | BookingCreatedEvent | BookingCancelledEvent | BookingConfirmedEvent | BookingRescheduledEvent | BookingCompletedEvent | BookingReminderEvent | ClientProfileUpdatedEvent | ContactTaggedEvent | CannedResponseUsedEvent | SlaBreachedEvent | SlaEscalatedEvent | CatalogItemCreatedEvent | CatalogItemUpdatedEvent | CatalogStockLowEvent | CatalogStockOutEvent | NotificationQueuedEvent | NotificationSentEvent | NotificationDeliveredEvent | NotificationFailedEvent | NotificationSkippedEvent | RealtyLeadCreatedEvent | RealtyLeadQualifiedEvent | RealtyLeadStageChangedEvent | RealtyLeadHotEvent | RealtyLeadOptedOutEvent | RealtyProjectCreatedEvent | RealtyUnitAvailabilityChangedEvent | RealtyAssetPublishedEvent | RealtyVisitBookedEvent | RealtyVisitConfirmedEvent | RealtyVisitRescheduledEvent | RealtyVisitCancelledEvent | RealtyVisitCompletedEvent | RealtyVisitNoShowEvent | RealtyVisitReminderEvent | RealtyLeadIngestedEvent | RealtyCadenceStartedEvent | RealtyCadenceStepSentEvent | RealtyCadenceCompletedEvent | RealtyBrokerAlertEvent | RealtyApprovalCreatedEvent | RealtyApprovalResolvedEvent | RealtyConversationTakenOverEvent | RealtyAiTurnCompletedEvent | RealtyMigrationCompletedEvent | RealtyAutonomyChangedEvent | RealtyNoShipIncidentEvent | RealtyLaunchGateEvaluatedEvent | RealtySyndicationOfferedEvent | RealtySyndicationAcceptedEvent | RealtySyndicationClosedEvent | RealtySyndicationDisputedEvent | RealtyIntelligenceAggregatesGeneratedEvent | RealtyIntelligenceOptedInEvent | RealtyIntelligenceOptedOutEvent | RealtyPlanChangedEvent | RealtyLeadUsageRecordedEvent | RealtyLeadLimitReachedEvent | RealtyConsentRecordedEvent | RealtyLeadErasedEvent | RealtyRetentionRunEvent;
 /** Infer the event type from the `type` discriminant */
 export type EventType = DomainEvent['type'];
-//# sourceMappingURL=index.d.ts.map

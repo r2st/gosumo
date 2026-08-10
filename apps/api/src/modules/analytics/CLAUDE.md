@@ -19,6 +19,8 @@ getCampaignMetrics(businessId, query): Promise<CampaignMetricsDto>
 getStaffMetrics(businessId, query): Promise<StaffMetricsDto[]>
 getClientAcquisitionMetrics / getClientRetentionMetrics
 getDashboardSummary(businessId): Promise<DashboardSummaryDto>
+exportReport(businessId, query): Promise<ExportedReportDto>   // CSV download
+getAiSummary(businessId, query?): Promise<AiSummaryDto>       // OpenRouter narrative summary
 ```
 
 ## Events
@@ -42,6 +44,7 @@ getDashboardSummary(businessId): Promise<DashboardSummaryDto>
 - `@gosumo/shared` — all domain event types (listener only)
 - Direct read-only SQL queries on: `conversations`, `ai_decisions`, `orders`, `campaigns`, `tasks`, `messages`
 - Redis — dashboard summary cache (TTL: 5 minutes)
+- `ai-engine`'s `LlmClientService` (OpenRouter) — for `getAiSummary` only; instantiated as its own provider here rather than importing `AiEngineModule`, since it has no dependencies beyond `ConfigService`
 
 ## Test Command
 
@@ -60,3 +63,6 @@ pnpm --filter @gosumo/api test --testPathPattern=modules/analytics
 - **Zero data for a date range returns empty arrays**, not errors — never throw 404 for an empty time series
 - **Cross-tenant isolation is critical** — every aggregation query must include `business_id = :businessId`; test this explicitly in integration tests
 - `analytics_events` and `audit_logs` are append-only — never run UPDATE or DELETE on these tables
+- **`getAiSummary` fails open** — if OpenRouter is unavailable or `OPENROUTER_API_KEY` is unset, it returns a deterministic, numbers-only summary with `aiGenerated: false` instead of throwing. Never surface an LLM outage as an API error here.
+- **`exportReport` reuses the same JSON-endpoint methods** (`getConversationMetrics`, `getRevenueMetrics`, etc.) and just renders the result as CSV — it is not a separate query path, so the 30-day default / 365-day cap apply identically
+

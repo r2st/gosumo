@@ -5,6 +5,7 @@ import { AnalyticsController } from './analytics.controller';
 import { AnalyticsRepository } from './analytics.repository';
 import { analyticsCacheProvider } from './analytics.cache';
 import { PrismaService } from '../../common/services/prisma.service';
+import { LlmClientService } from '../ai-engine/pipeline/llm-client.service';
 
 /**
  * AnalyticsModule
@@ -29,6 +30,7 @@ import { PrismaService } from '../../common/services/prisma.service';
     AnalyticsRepository,
     PrismaService,
     analyticsCacheProvider,
+    LlmClientService,
   ],
   exports: [AnalyticsService],
 })

@@ -691,4 +691,3 @@ export interface LaunchGateReport {
     windowDays: number | null;
     generatedAt: string;
 }
-//# sourceMappingURL=index.d.ts.map

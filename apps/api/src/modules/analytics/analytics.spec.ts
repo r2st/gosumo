@@ -4,7 +4,8 @@ import { ChannelType } from '@gosumo/shared';
 import { AnalyticsService } from './analytics.service';
 import { AnalyticsRepository } from './analytics.repository';
 import { ANALYTICS_CACHE, AnalyticsCache } from './analytics.cache';
-import { Granularity } from './dto';
+import { LlmClientService, LlmUnavailableError } from '../ai-engine/pipeline/llm-client.service';
+import { ExportMetric, Granularity } from './dto';
 
 // ─────────────────────────────────────────────
 // Test constants
@@ -66,16 +67,19 @@ describe('AnalyticsService', () => {
   let service: AnalyticsService;
   let repo: RepoMock;
   let cache: jest.Mocked<AnalyticsCache>;
+  let llmClient: { complete: jest.Mock };
 
   beforeEach(async () => {
     repo = makeRepositoryMock();
     cache = makeCacheMock();
+    llmClient = { complete: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AnalyticsService,
         { provide: AnalyticsRepository, useValue: repo },
         { provide: ANALYTICS_CACHE, useValue: cache },
+        { provide: LlmClientService, useValue: llmClient },
       ],
     }).compile();
 
@@ -673,6 +677,137 @@ describe('AnalyticsService', () => {
         OTHER_BUSINESS_ID,
         expect.anything(),
       );
+    });
+  });
+
+  // ───────────────────────────────────────────
+  // Report export (CSV)
+  // ───────────────────────────────────────────
+
+  describe('exportReport', () => {
+    it('renders the conversations volume series as CSV', async () => {
+      repo.getConversationCounts.mockResolvedValue({
+        total: 2,
+        resolved: 1,
+        open: 1,
+        pendingHuman: 0,
+        escalated: 0,
+        snoozed: 0,
+        aiResolved: 1,
+        humanResolved: 0,
+      });
+      repo.getConversationVolumeByChannel.mockResolvedValue([]);
+      repo.getConversationVolumeSeries.mockResolvedValue([
+        { bucket: new Date(FROM), value: 2 },
+      ]);
+
+      const report = await service.exportReport(BUSINESS_ID, {
+        from: FROM,
+        to: TO,
+        metric: ExportMetric.CONVERSATIONS,
+      });
+
+      expect(report.contentType).toBe('text/csv');
+      expect(report.filename).toBe('gosumo-conversations-2026-06-15.csv');
+      expect(report.csv.split('\r\n')[0]).toBe('date,conversations');
+      expect(report.csv).toContain(',2');
+    });
+
+    it('renders the staff table as CSV', async () => {
+      repo.getStaffMetrics.mockResolvedValue([
+        {
+          memberId: 'm1',
+          name: 'Priya',
+          role: 'STAFF',
+          assignedConversations: 3,
+          resolvedConversations: 2,
+          tasksResolved: 1,
+          avgTaskResolutionSeconds: 120,
+        },
+      ]);
+
+      const report = await service.exportReport(BUSINESS_ID, {
+        from: FROM,
+        to: TO,
+        metric: ExportMetric.STAFF,
+      });
+
+      expect(report.csv.split('\r\n')[0]).toBe(
+        'memberId,name,role,assignedConversations,resolvedConversations,tasksResolved,avgTaskResolutionSeconds',
+      );
+      expect(report.csv).toContain('Priya');
+    });
+  });
+
+  // ───────────────────────────────────────────
+  // AI-generated narrative summary
+  // ───────────────────────────────────────────
+
+  describe('getAiSummary', () => {
+    const emptyCounts = {
+      total: 0,
+      resolved: 0,
+      open: 0,
+      pendingHuman: 0,
+      escalated: 0,
+      snoozed: 0,
+      aiResolved: 0,
+      humanResolved: 0,
+    };
+
+    beforeEach(() => {
+      repo.getConversationCounts.mockResolvedValue(emptyCounts);
+      repo.getResponseTimeStats.mockResolvedValue({ avgSeconds: 30, p50Seconds: 20, p90Seconds: 60, sampleSize: 5 });
+      repo.getRevenueSummary.mockResolvedValue({ grossRevenueRupees: 500, refundsRupees: 0, orderCount: 2 });
+      repo.getAiDecisionCounts.mockResolvedValue({
+        total: 10,
+        autoExecuted: 8,
+        sentForReview: 1,
+        escalated: 1,
+        overriddenByHuman: 0,
+        expired: 0,
+        overridden: 0,
+      });
+    });
+
+    it('returns the LLM-generated summary when available', async () => {
+      llmClient.complete.mockResolvedValue({
+        text: 'Great week overall.',
+        modelId: 'openai/gpt-oss-20b:free',
+        promptTokens: 100,
+        completionTokens: 20,
+        latencyMs: 500,
+      });
+
+      const result = await service.getAiSummary(BUSINESS_ID, { from: FROM, to: TO });
+
+      expect(result.aiGenerated).toBe(true);
+      expect(result.summary).toBe('Great week overall.');
+      expect(result.modelId).toBe('openai/gpt-oss-20b:free');
+    });
+
+    it('falls back to a deterministic summary when the LLM is unavailable', async () => {
+      llmClient.complete.mockRejectedValue(new LlmUnavailableError('OPENROUTER_API_KEY is not configured'));
+
+      const result = await service.getAiSummary(BUSINESS_ID, { from: FROM, to: TO });
+
+      expect(result.aiGenerated).toBe(false);
+      expect(result.modelId).toBeUndefined();
+      expect(result.summary).toContain('conversations');
+    });
+
+    it('falls back when the LLM returns empty text', async () => {
+      llmClient.complete.mockResolvedValue({
+        text: '',
+        modelId: 'openai/gpt-oss-20b:free',
+        promptTokens: 0,
+        completionTokens: 0,
+        latencyMs: 10,
+      });
+
+      const result = await service.getAiSummary(BUSINESS_ID, { from: FROM, to: TO });
+      expect(result.aiGenerated).toBe(false);
+      expect(result.summary).toContain('orders');
     });
   });
 });

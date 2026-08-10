@@ -40,6 +40,11 @@ import { RealtyIntelligenceModule } from './modules/realty-intelligence/realty-i
 import { BillingModule } from './modules/billing/billing.module';
 import { ComplianceModule } from './modules/compliance/compliance.module';
 import { RealtyIntegrationsModule } from './modules/realty-integrations/realty-integrations.module';
+import { ContactModule } from './modules/contact/contact.module';
+import { CannedResponseModule } from './modules/canned-response/canned-response.module';
+import { SlaModule } from './modules/sla/sla.module';
+import { AgentPerformanceModule } from './modules/agent-performance/agent-performance.module';
+import { WebhookLogModule } from './modules/webhook-log/webhook-log.module';
 
 @Module({
   imports: [
@@ -119,6 +124,13 @@ import { RealtyIntegrationsModule } from './modules/realty-integrations/realty-i
     BillingModule,
     ComplianceModule,
     RealtyIntegrationsModule,
+
+    // Operations: contacts, canned responses, SLA, agent performance, webhook log
+    ContactModule,
+    CannedResponseModule,
+    SlaModule,
+    AgentPerformanceModule,
+    WebhookLogModule,
   ],
 })
 export class AppModule {}

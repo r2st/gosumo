@@ -149,3 +149,24 @@ export function fillTimeSeries(
     value: round2(byBucket.get(bucketStart.getTime()) ?? 0),
   }));
 }
+
+/**
+ * Render rows of primitives as RFC 4180 CSV (CRLF line endings, values
+ * containing a comma/quote/newline are quoted and internal quotes doubled).
+ * Column order follows the keys of the first row.
+ */
+export function toCsv(rows: Record<string, string | number | boolean | null>[]): string {
+  if (rows.length === 0) return '';
+
+  const headers = Object.keys(rows[0] as Record<string, unknown>);
+  const escape = (value: string | number | boolean | null): string => {
+    const str = value === null || value === undefined ? '' : String(value);
+    return /[",\r\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+  };
+
+  const lines = [headers.join(',')];
+  for (const row of rows) {
+    lines.push(headers.map((h) => escape(row[h] ?? null)).join(','));
+  }
+  return lines.join('\r\n');
+}
