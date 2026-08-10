@@ -271,6 +271,13 @@ export class PreviewTemplateDto {
   data!: Record<string, unknown>;
 }
 
+export class RejectTemplateDto {
+  @ApiProperty({ description: 'Why the template was rejected (e.g. Meta review feedback)' })
+  @IsString()
+  @MaxLength(1000)
+  reason!: string;
+}
+
 // ─────────────────────────────────────────────
 // Preferences (opt-in/opt-out)
 // ─────────────────────────────────────────────

@@ -549,6 +549,9 @@ export class NotificationService {
                 trigger.templateName,
               )
             : null;
+        if (template) {
+          this.assertWhatsAppTemplateApproved(trigger.channel, template);
+        }
 
         const scheduledAt =
           trigger.delayMinutes > 0
@@ -777,6 +780,37 @@ export class NotificationService {
     return this.toTemplateDto(row);
   }
 
+  /**
+   * Mark a template approved (e.g. once Meta approves a WhatsApp template
+   * name). Only APPROVED WhatsApp templates may be used to dispatch — see
+   * the gate in `loadTemplateByNameOrThrow`.
+   */
+  async approveTemplate(businessId: string, id: string): Promise<TemplateDto> {
+    await this.getTemplateRow(businessId, id);
+    const row = await this.repository.updateTemplate(businessId, id, {
+      is_approved: true,
+      approval_status: 'APPROVED',
+      approved_at: new Date(),
+      rejection_reason: null,
+    });
+    return this.toTemplateDto(row);
+  }
+
+  /** Mark a template rejected (e.g. Meta declined the WhatsApp submission). */
+  async rejectTemplate(
+    businessId: string,
+    id: string,
+    reason: string,
+  ): Promise<TemplateDto> {
+    await this.getTemplateRow(businessId, id);
+    const row = await this.repository.updateTemplate(businessId, id, {
+      is_approved: false,
+      approval_status: 'REJECTED',
+      rejection_reason: reason,
+    });
+    return this.toTemplateDto(row);
+  }
+
   async listTemplates(
     businessId: string,
     channel?: NotificationTemplateChannel,
@@ -930,7 +964,27 @@ export class NotificationService {
     if (!template.is_active) {
       throw new BadRequestException(`Template "${name}" is inactive`);
     }
+    this.assertWhatsAppTemplateApproved(channel, template);
     return template;
+  }
+
+  /**
+   * WhatsApp Business messaging requires the template to be approved by Meta
+   * before it can be used outside a customer-initiated 24h session —
+   * dispatching an unapproved template is a guaranteed provider-side
+   * rejection, so fail fast here instead. Other channels have no equivalent
+   * approval step, so this only gates WHATSAPP. Shared by both the by-name
+   * dispatch path and the event-trigger path so neither can bypass it.
+   */
+  private assertWhatsAppTemplateApproved(
+    channel: NotificationTemplateChannel,
+    template: notification_templates,
+  ): void {
+    if (channel === NotificationTemplateChannel.WHATSAPP && !template.is_approved) {
+      throw new BadRequestException(
+        `WhatsApp template "${template.name}" is not approved (status: ${template.approval_status ?? 'PENDING'})`,
+      );
+    }
   }
 
   private async getTemplateRow(

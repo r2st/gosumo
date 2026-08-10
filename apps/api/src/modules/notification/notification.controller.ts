@@ -23,6 +23,7 @@ import {
   CreateTemplateDto,
   UpdateTemplateDto,
   PreviewTemplateDto,
+  RejectTemplateDto,
   SetPreferenceDto,
   CreateTriggerDto,
   UpdateTriggerDto,
@@ -165,6 +166,27 @@ export class NotificationController {
     @Body() dto: PreviewTemplateDto,
   ) {
     return this.service.previewTemplate(tenantId, id, dto.data);
+  }
+
+  @Post('templates/:id/approve')
+  @ApiOperation({ summary: 'Mark a template approved (e.g. Meta approved the WhatsApp submission)' })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  async approveTemplate(
+    @TenantId() tenantId: string,
+    @Param('id', UuidValidationPipe) id: string,
+  ) {
+    return this.service.approveTemplate(tenantId, id);
+  }
+
+  @Post('templates/:id/reject')
+  @ApiOperation({ summary: 'Mark a template rejected' })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  async rejectTemplate(
+    @TenantId() tenantId: string,
+    @Param('id', UuidValidationPipe) id: string,
+    @Body() dto: RejectTemplateDto,
+  ) {
+    return this.service.rejectTemplate(tenantId, id, dto.reason);
   }
 
   @Delete('templates/:id')

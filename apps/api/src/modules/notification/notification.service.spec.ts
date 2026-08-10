@@ -607,6 +607,30 @@ describe('NotificationService.handleEventTrigger', () => {
     await service.handleEventTrigger('order.confirmed', { orderId: 'x' });
     expect(repo.createNotification).not.toHaveBeenCalled();
   });
+
+  it('does not dispatch a configured trigger pointing at an unapproved WhatsApp template', async () => {
+    const { service, repo, queue } = makeService();
+    repo.seedClient();
+    const tpl = await service.createTemplate(BUSINESS, {
+      channel: NotificationTemplateChannel.WHATSAPP,
+      name: 'order_confirmed_wa',
+      content: { text: 'Your order is confirmed' },
+    });
+    await service.createTrigger(BUSINESS, {
+      eventType: 'order.confirmed',
+      channel: NotificationTemplateChannel.WHATSAPP,
+      templateId: tpl.id,
+    });
+
+    await service.handleEventTrigger('order.confirmed', {
+      businessId: BUSINESS,
+      clientId: CLIENT,
+      orderId: 'ORD-3',
+    });
+
+    expect(queue.add).not.toHaveBeenCalled();
+    expect(repo.createNotification).not.toHaveBeenCalled();
+  });
 });
 
 // ─────────────────────────────────────────────
@@ -646,6 +670,88 @@ describe('NotificationService templates', () => {
     });
     const preview = await service.previewTemplate(BUSINESS, tpl.id, { otp: '123' });
     expect(preview.text).toBe('Code: 123');
+  });
+
+  it('rejects dispatch by name for an unapproved WhatsApp template', async () => {
+    const { service } = makeService();
+    await service.createTemplate(BUSINESS, {
+      channel: NotificationTemplateChannel.WHATSAPP,
+      name: 'order_shipped',
+      content: { text: 'Your order shipped' },
+    });
+
+    await expect(
+      service.dispatch(BUSINESS, {
+        channel: NotificationTemplateChannel.WHATSAPP,
+        templateName: 'order_shipped',
+        recipient: '+919876543210',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('dispatches by name once a WhatsApp template is approved', async () => {
+    const { service } = makeService();
+    const tpl = await service.createTemplate(BUSINESS, {
+      channel: NotificationTemplateChannel.WHATSAPP,
+      name: 'order_shipped',
+      content: { text: 'Your order shipped' },
+    });
+    await service.approveTemplate(BUSINESS, tpl.id);
+
+    const result = await service.dispatch(BUSINESS, {
+      channel: NotificationTemplateChannel.WHATSAPP,
+      templateName: 'order_shipped',
+      recipient: '+919876543210',
+    });
+
+    expect(result.skipped).toBe(false);
+  });
+
+  it('does not gate non-WhatsApp channels on approval', async () => {
+    const { service } = makeService();
+    const tpl = await service.createTemplate(BUSINESS, {
+      channel: NotificationTemplateChannel.SMS,
+      name: 'shipped_sms',
+      content: { text: 'Your order shipped' },
+    });
+    expect(tpl.isApproved).toBe(false);
+
+    const result = await service.dispatch(BUSINESS, {
+      channel: NotificationTemplateChannel.SMS,
+      templateName: 'shipped_sms',
+      recipient: '+919876543210',
+    });
+
+    expect(result.skipped).toBe(false);
+  });
+
+  it('approveTemplate sets is_approved and clears any rejection reason', async () => {
+    const { service } = makeService();
+    const tpl = await service.createTemplate(BUSINESS, {
+      channel: NotificationTemplateChannel.WHATSAPP,
+      name: 'promo',
+      content: { text: 'Sale!' },
+    });
+    await service.rejectTemplate(BUSINESS, tpl.id, 'Marketing copy too aggressive');
+
+    const approved = await service.approveTemplate(BUSINESS, tpl.id);
+
+    expect(approved.isApproved).toBe(true);
+    expect(approved.approvalStatus).toBe('APPROVED');
+  });
+
+  it('rejectTemplate records the rejection reason', async () => {
+    const { service } = makeService();
+    const tpl = await service.createTemplate(BUSINESS, {
+      channel: NotificationTemplateChannel.WHATSAPP,
+      name: 'promo2',
+      content: { text: 'Sale!' },
+    });
+
+    const rejected = await service.rejectTemplate(BUSINESS, tpl.id, 'Formatting violation');
+
+    expect(rejected.isApproved).toBe(false);
+    expect(rejected.approvalStatus).toBe('REJECTED');
   });
 });
 
