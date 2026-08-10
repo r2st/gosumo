@@ -151,9 +151,11 @@ describe('MessageTemplateService', () => {
 
       await service.deleteTemplate(BUSINESS_ID, TEMPLATE_ID);
 
+      // Scoped by tenant as well as id — a bare-id soft-delete would let one
+      // business retire another's template.
       expect(prisma.notification_templates.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: TEMPLATE_ID },
+          where: { id: TEMPLATE_ID, business_id: BUSINESS_ID },
           data: expect.objectContaining({ is_active: false }),
         }),
       );

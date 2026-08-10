@@ -427,8 +427,10 @@ describe('OrderService', () => {
         paymentMethod: PaymentMethod.COD,
       });
 
+      // The decrement must be tenant-scoped: an item id alone would let a
+      // crafted order move another business's stock.
       expect(prisma.catalog_items.update).toHaveBeenCalledWith({
-        where: { id: ITEM_ID },
+        where: { id: ITEM_ID, business_id: BUSINESS_ID },
         data: { stock_quantity: { decrement: 3 } },
       });
     });

@@ -35,7 +35,7 @@ import { PrismaService } from '../../common/services/prisma.service';
 function makeMockPrisma(): PrismaService {
   return {
     channel_accounts: { findFirst: jest.fn().mockResolvedValue(null) },
-    channel_contacts: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
+    channel_contacts: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
     clients: { create: jest.fn() },
     conversations: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
     messages: { create: jest.fn() },
@@ -991,7 +991,10 @@ function makeResolvingPrisma(
       }),
     },
     channel_contacts: {
-      findUnique: jest.fn().mockResolvedValue(existingContact),
+      // The lookup is a tenant-scoped `findFirst`, not a `findUnique` on the
+      // (channel_account_id, external_id) compound key — a mock that only
+      // stubs `findUnique` makes the service throw on an undefined method.
+      findFirst: jest.fn().mockResolvedValue(existingContact),
       create: jest.fn().mockResolvedValue({ id: 'contact-1', client_id: 'client-1' }),
       update: jest.fn().mockResolvedValue({}),
     },
@@ -1115,7 +1118,7 @@ describe('ChannelAdapterService — client phone identity', () => {
     );
 
     expect(prisma.clients.update).toHaveBeenCalledWith({
-      where: { id: 'client-1' },
+      where: { id: 'client-1', business_id: 'biz-1' },
       data: { phone: '+919999900001' },
     });
   });
@@ -1138,6 +1141,10 @@ describe('ChannelAdapterService — client phone identity', () => {
 
     // An operator-corrected phone must survive inbound traffic.
     expect(prisma.clients.update).not.toHaveBeenCalled();
+    // …and the assertion above must not pass vacuously: if the resolution path
+    // had thrown (an unstubbed Prisma method, say), `clients.update` would also
+    // be uncalled. `channel_contacts.update` proves the branch actually ran.
+    expect(prisma.channel_contacts.update).toHaveBeenCalled();
   });
 
   it('does not create a duplicate client when the contact already exists', async () => {
