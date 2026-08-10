@@ -186,7 +186,7 @@ export class CadenceEngineService {
     businessId: string,
     enrollment: realty_cadence_enrollments,
     now: Date,
-    stepCache?: Map<string, Promise<StepWithTemplate[]>>,
+    stepCache: Map<string, Promise<StepWithTemplate[]>>,
   ): Promise<'sent' | 'skipped' | 'stopped' | 'completed'> {
     const steps = await this.loadSteps(businessId, enrollment.cadence_id, stepCache);
     const step = steps[enrollment.current_step];
@@ -216,13 +216,11 @@ export class CadenceEngineService {
       return this.advance(businessId, enrollment, steps, now, 'skipped');
     }
 
+    // Opt-out is already handled above, so every block reaching here is
+    // non-fatal (closed service window / unapproved template) — skip the send
+    // and move on rather than terminating the enrolment.
     const decision = this.checkCompliance(step, lead, now);
     if (!decision.allowed) {
-      if (decision.code === 'OPTED_OUT') {
-        await this.finish(businessId, enrollment, 'STOPPED', 'opted_out');
-        return 'stopped';
-      }
-      // Non-fatal block (window/template) — skip this send, move on.
       this.logger.debug(
         `Skipping step ${step.step_order} for lead ${lead.id}: ${decision.code}`,
       );
@@ -255,11 +253,8 @@ export class CadenceEngineService {
   private async loadSteps(
     businessId: string,
     cadenceId: string,
-    cache?: Map<string, Promise<StepWithTemplate[]>>,
+    cache: Map<string, Promise<StepWithTemplate[]>>,
   ): Promise<StepWithTemplate[]> {
-    if (!cache) {
-      return this.repository.listStepsByCadence(businessId, cadenceId);
-    }
     const key = `${businessId}:${cadenceId}`;
     let pending = cache.get(key);
     if (!pending) {

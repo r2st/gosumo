@@ -127,21 +127,18 @@ export class RealtyCadenceService {
         isActive: true,
       });
       await this.repository.createSteps(
-        c.steps.flatMap((step) => {
-          const templateId = byName.get(step.templateName);
-          return templateId
-            ? [
-                {
-                  businessId,
-                  cadenceId: cadence.id,
-                  templateId,
-                  stepOrder: step.order,
-                  dayOffset: step.dayOffset,
-                  stopOn: step.stopOn as realty_cadence_steps['stop_on'],
-                },
-              ]
-            : [];
-        }),
+        // Every step's templateName resolves against DEFAULT_TEMPLATES — that
+        // invariant is pinned on the constant table itself in
+        // default-templates.spec.ts ("references only real template names"),
+        // so there is no unresolvable-name case to fall back on here.
+        c.steps.map((step) => ({
+          businessId,
+          cadenceId: cadence.id,
+          templateId: byName.get(step.templateName)!,
+          stepOrder: step.order,
+          dayOffset: step.dayOffset,
+          stopOn: step.stopOn as realty_cadence_steps['stop_on'],
+        })),
       );
       cadenceCount++;
     }
