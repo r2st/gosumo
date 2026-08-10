@@ -15,6 +15,7 @@ import {
 } from '@gosumo/shared';
 import { generateId } from '@gosumo/shared';
 import { BaseChannelAdapter } from './base.adapter';
+import { allowUnverifiedWebhook, isProductionEnv } from './webhook-verification.util';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Instagram Messaging API payload types
@@ -152,6 +153,8 @@ export class InstagramAdapter extends BaseChannelAdapter {
 
   private readonly metaBaseUrl: string;
   private readonly appSecret: string;
+  /** Fail-closed switch: a missing secret rejects webhooks in production. */
+  private readonly isProduction: boolean;
   private readonly accessToken: string;
   private readonly pageId: string;
   private readonly verifyToken: string;
@@ -164,9 +167,14 @@ export class InstagramAdapter extends BaseChannelAdapter {
     this.accessToken = this.configService.get<string>('instagram.accessToken', '');
     this.pageId = this.configService.get<string>('instagram.pageId', '');
     this.verifyToken = this.configService.get<string>('instagram.verifyToken', '');
+    this.isProduction = isProductionEnv(this.configService);
 
     if (!this.appSecret) {
-      this.logger.warn('INSTAGRAM_APP_SECRET is not set — webhook signature verification disabled');
+      this.logger.warn(
+        this.isProduction
+          ? 'INSTAGRAM_APP_SECRET is not set — inbound Instagram webhooks will be REJECTED'
+          : 'INSTAGRAM_APP_SECRET is not set — webhook signature verification disabled (non-production)',
+      );
     }
   }
 
@@ -184,9 +192,11 @@ export class InstagramAdapter extends BaseChannelAdapter {
    */
   validateWebhook(req: RawRequest): boolean {
     if (!this.appSecret) {
-      // In development without a secret, skip verification but log a warning
-      this.logger.warn('Webhook signature verification skipped — INSTAGRAM_APP_SECRET not set');
-      return true;
+      return allowUnverifiedWebhook(
+        this.logger,
+        this.isProduction,
+        'INSTAGRAM_APP_SECRET is not set',
+      );
     }
 
     const signature = (req.headers['x-hub-signature-256'] as string | undefined) ?? '';

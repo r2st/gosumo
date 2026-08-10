@@ -80,7 +80,7 @@ export class RealtyBrokerRepository {
     id: string,
     data: Record<string, unknown>,
   ): Promise<realty_approvals> {
-    return this.prisma.realty_approvals.update({ where: { id }, data });
+    return this.prisma.realty_approvals.update({ where: { id, business_id: businessId }, data });
   }
 
   async countApprovals(businessId: string, status: string): Promise<number> {
@@ -173,7 +173,7 @@ export class RealtyBrokerRepository {
 
   async markAlertRead(businessId: string, id: string): Promise<realty_broker_alerts> {
     return this.prisma.realty_broker_alerts.update({
-      where: { id },
+      where: { id, business_id: businessId },
       data: { is_read: true, read_at: new Date() },
     });
   }

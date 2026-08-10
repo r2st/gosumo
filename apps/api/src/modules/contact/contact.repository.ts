@@ -138,7 +138,7 @@ export class ContactRepository {
 
   async update(businessId: string, id: string, data: UpdateContactData): Promise<clients> {
     return this.prisma.clients.update({
-      where: { id },
+      where: { id, business_id: businessId },
       data: {
         ...(data.name !== undefined ? { name: data.name } : {}),
         ...(data.email !== undefined ? { email: data.email } : {}),
@@ -246,7 +246,7 @@ export class ContactRepository {
 
   async updateSegment(businessId: string, id: string, data: UpdateSegmentData): Promise<segments> {
     return this.prisma.segments.update({
-      where: { id },
+      where: { id, business_id: businessId },
       data: {
         ...(data.name !== undefined ? { name: data.name } : {}),
         ...(data.description !== undefined ? { description: data.description } : {}),
@@ -258,7 +258,7 @@ export class ContactRepository {
 
   async softDeleteSegment(businessId: string, id: string): Promise<void> {
     await this.prisma.segments.update({
-      where: { id },
+      where: { id, business_id: businessId },
       data: { deleted_at: new Date() },
     });
   }

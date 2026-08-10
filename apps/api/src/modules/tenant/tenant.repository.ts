@@ -188,7 +188,7 @@ export class TenantRepository {
     channelAccountId: string,
   ): Promise<channel_accounts> {
     return this.prisma.channel_accounts.update({
-      where: { id: channelAccountId },
+      where: { id: channelAccountId, business_id: businessId },
       data: {
         deleted_at: new Date(),
         is_active: false,
@@ -205,7 +205,7 @@ export class TenantRepository {
     isActive: boolean,
   ): Promise<channel_accounts> {
     return this.prisma.channel_accounts.update({
-      where: { id: channelAccountId },
+      where: { id: channelAccountId, business_id: businessId },
       data: { is_active: isActive },
     });
   }
@@ -328,7 +328,7 @@ export class TenantRepository {
     memberId: string,
   ): Promise<team_members> {
     return this.prisma.team_members.update({
-      where: { id: memberId },
+      where: { id: memberId, business_id: businessId },
       data: {
         deleted_at: new Date(),
         status: TeamMemberStatus.SUSPENDED,

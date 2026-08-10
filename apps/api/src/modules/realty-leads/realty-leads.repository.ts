@@ -156,12 +156,12 @@ export class RealtyLeadsRepository {
     if (data.lastActivityAt !== undefined) d['last_activity_at'] = data.lastActivityAt;
     if (data.metadata !== undefined) d['metadata'] = data.metadata;
 
-    return this.prisma.realty_leads.update({ where: { id: leadId }, data: d });
+    return this.prisma.realty_leads.update({ where: { id: leadId, business_id: businessId }, data: d });
   }
 
   async softDelete(businessId: string, leadId: string): Promise<realty_leads> {
     return this.prisma.realty_leads.update({
-      where: { id: leadId },
+      where: { id: leadId, business_id: businessId },
       data: { deleted_at: new Date() },
     });
   }

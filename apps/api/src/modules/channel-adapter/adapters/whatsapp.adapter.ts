@@ -15,6 +15,7 @@ import {
 } from '@gosumo/shared';
 import { generateId } from '@gosumo/shared';
 import { BaseChannelAdapter } from './base.adapter';
+import { allowUnverifiedWebhook, isProductionEnv } from './webhook-verification.util';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Meta Cloud API payload types
@@ -208,6 +209,8 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
 
   private readonly metaBaseUrl: string;
   private readonly appSecret: string;
+  /** Fail-closed switch: a missing secret rejects webhooks in production. */
+  private readonly isProduction: boolean;
   private readonly accessToken: string;
   private readonly phoneNumberId: string;
 
@@ -218,9 +221,14 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
     this.appSecret = this.configService.get<string>('whatsapp.appSecret', '');
     this.accessToken = this.configService.get<string>('whatsapp.accessToken', '');
     this.phoneNumberId = this.configService.get<string>('whatsapp.phoneNumberId', '');
+    this.isProduction = isProductionEnv(this.configService);
 
     if (!this.appSecret) {
-      this.logger.warn('WHATSAPP_APP_SECRET is not set — webhook signature verification disabled');
+      this.logger.warn(
+        this.isProduction
+          ? 'WHATSAPP_APP_SECRET is not set — inbound WhatsApp webhooks will be REJECTED'
+          : 'WHATSAPP_APP_SECRET is not set — webhook signature verification disabled (non-production)',
+      );
     }
   }
 
@@ -236,9 +244,11 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
    */
   validateWebhook(req: RawRequest): boolean {
     if (!this.appSecret) {
-      // In development without a secret, skip verification but log a warning
-      this.logger.warn('Webhook signature verification skipped — WHATSAPP_APP_SECRET not set');
-      return true;
+      return allowUnverifiedWebhook(
+        this.logger,
+        this.isProduction,
+        'WHATSAPP_APP_SECRET is not set',
+      );
     }
 
     const signature = (req.headers['x-hub-signature-256'] as string | undefined) ?? '';

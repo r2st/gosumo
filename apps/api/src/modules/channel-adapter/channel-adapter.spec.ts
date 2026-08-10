@@ -966,3 +966,221 @@ describe('WhatsAppAdapter — getCapabilities', () => {
     expect(caps.maxMessageLength).toBeGreaterThan(0);
   });
 });
+
+// ─────────────────────────────────────────────
+// 10. ChannelAdapterService — client phone identity resolution
+// ─────────────────────────────────────────────
+
+/**
+ * Prisma mock whose `channel_accounts.findFirst` DOES resolve, so
+ * handleInboundWebhook runs the full client / conversation / message
+ * resolution path rather than the "partial event" shortcut.
+ */
+function makeResolvingPrisma(
+  opts: { existingContact?: Record<string, unknown> | null } = {},
+) {
+  const { existingContact = null } = opts;
+  return {
+    channel_accounts: {
+      findFirst: jest.fn().mockResolvedValue({
+        id: 'acct-1',
+        business_id: 'biz-1',
+        channel: ChannelType.WHATSAPP,
+        external_id: PHONE_NUMBER_ID,
+        is_active: true,
+      }),
+    },
+    channel_contacts: {
+      findUnique: jest.fn().mockResolvedValue(existingContact),
+      create: jest.fn().mockResolvedValue({ id: 'contact-1', client_id: 'client-1' }),
+      update: jest.fn().mockResolvedValue({}),
+    },
+    clients: {
+      create: jest.fn().mockResolvedValue({ id: 'client-1' }),
+      update: jest.fn().mockResolvedValue({}),
+    },
+    conversations: {
+      findFirst: jest.fn().mockResolvedValue({ id: 'conv-1' }),
+      create: jest.fn().mockResolvedValue({ id: 'conv-1' }),
+      update: jest.fn().mockResolvedValue({}),
+    },
+    messages: { create: jest.fn().mockResolvedValue({}) },
+    webhook_events: { create: jest.fn().mockResolvedValue({ id: 'evt_1' }) },
+  };
+}
+
+describe('ChannelAdapterService — client phone identity', () => {
+  async function buildService(prismaMock: ReturnType<typeof makeResolvingPrisma>) {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ChannelAdapterService,
+        { provide: EventEmitter2, useValue: { emit: jest.fn() } },
+        { provide: PrismaService, useValue: prismaMock as unknown as PrismaService },
+      ],
+    }).compile();
+
+    const service = module.get<ChannelAdapterService>(ChannelAdapterService);
+    service.registerAdapter(await buildAdapter());
+    return service;
+  }
+
+  /** Build a signed webhook whose sender wa_id is `waId`. */
+  function signedWebhookFrom(waId: string): RawRequest {
+    const payload = makeTextWebhookPayload({
+      contacts: [{ profile: { name: 'Priya Sharma' }, wa_id: waId }],
+      messages: [
+        {
+          from: waId,
+          id: 'wamid.TEST',
+          timestamp: '1700000000',
+          type: 'text',
+          text: { body: 'Hello' },
+        },
+      ],
+    });
+    return buildSignedRequest(payload, APP_SECRET);
+  }
+
+  it('stores a new WhatsApp client phone in E.164, not the raw wa_id', async () => {
+    const prisma = makeResolvingPrisma();
+    const service = await buildService(prisma);
+
+    // Meta sends wa_id without a leading '+' — storing it raw left
+    // `clients.phone` unmatchable by E.164-keyed lookups.
+    await service.handleInboundWebhook(
+      ChannelType.WHATSAPP,
+      signedWebhookFrom('919999900001'),
+      'biz-1',
+    );
+
+    expect(prisma.clients.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ phone: '+919999900001' }),
+      }),
+    );
+  });
+
+  it('never leaves a WhatsApp-originated client without a phone', async () => {
+    // Regression guard: a null phone makes the client unreachable for
+    // WHATSAPP/SMS notifications, which resolve the recipient from
+    // `clients.phone`.
+    const prisma = makeResolvingPrisma();
+    const service = await buildService(prisma);
+
+    await service.handleInboundWebhook(
+      ChannelType.WHATSAPP,
+      signedWebhookFrom('919999900001'),
+      'biz-1',
+    );
+
+    const created = prisma.clients.create.mock.calls[0][0] as {
+      data: { phone?: string };
+    };
+    expect(created.data.phone).toBeTruthy();
+  });
+
+  it('falls back to the raw sender id when the number is not a valid Indian mobile', async () => {
+    const prisma = makeResolvingPrisma();
+    const service = await buildService(prisma);
+
+    // A non-Indian sender does not normalize; keeping the raw id beats
+    // dropping the identity entirely.
+    await service.handleInboundWebhook(
+      ChannelType.WHATSAPP,
+      signedWebhookFrom('14155552671'),
+      'biz-1',
+    );
+
+    expect(prisma.clients.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ phone: '14155552671' }),
+      }),
+    );
+  });
+
+  it('backfills a blank phone on a client created before normalization existed', async () => {
+    const prisma = makeResolvingPrisma({
+      existingContact: {
+        id: 'contact-1',
+        client_id: 'client-1',
+        client: { id: 'client-1', phone: null },
+      },
+    });
+    const service = await buildService(prisma);
+
+    await service.handleInboundWebhook(
+      ChannelType.WHATSAPP,
+      signedWebhookFrom('919999900001'),
+      'biz-1',
+    );
+
+    expect(prisma.clients.update).toHaveBeenCalledWith({
+      where: { id: 'client-1' },
+      data: { phone: '+919999900001' },
+    });
+  });
+
+  it('does not overwrite a phone that is already set', async () => {
+    const prisma = makeResolvingPrisma({
+      existingContact: {
+        id: 'contact-1',
+        client_id: 'client-1',
+        client: { id: 'client-1', phone: '+919876543210' },
+      },
+    });
+    const service = await buildService(prisma);
+
+    await service.handleInboundWebhook(
+      ChannelType.WHATSAPP,
+      signedWebhookFrom('919999900001'),
+      'biz-1',
+    );
+
+    // An operator-corrected phone must survive inbound traffic.
+    expect(prisma.clients.update).not.toHaveBeenCalled();
+  });
+
+  it('does not create a duplicate client when the contact already exists', async () => {
+    const prisma = makeResolvingPrisma({
+      existingContact: {
+        id: 'contact-1',
+        client_id: 'client-1',
+        client: { id: 'client-1', phone: '+919999900001' },
+      },
+    });
+    const service = await buildService(prisma);
+
+    await service.handleInboundWebhook(
+      ChannelType.WHATSAPP,
+      signedWebhookFrom('919999900001'),
+      'biz-1',
+    );
+
+    expect(prisma.clients.create).not.toHaveBeenCalled();
+    expect(prisma.channel_contacts.update).toHaveBeenCalled();
+  });
+
+  it('scopes the created client and message to the resolved channel account business', async () => {
+    // Multi-tenant guard: the business must come from the resolved
+    // channel_account, never from the caller-supplied businessId.
+    const prisma = makeResolvingPrisma();
+    const service = await buildService(prisma);
+
+    await service.handleInboundWebhook(
+      ChannelType.WHATSAPP,
+      signedWebhookFrom('919999900001'),
+      'attacker-supplied-business',
+    );
+
+    expect(prisma.clients.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ business_id: 'biz-1' }),
+      }),
+    );
+    expect(prisma.messages.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ business_id: 'biz-1' }),
+      }),
+    );
+  });
+});

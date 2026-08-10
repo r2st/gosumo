@@ -100,7 +100,7 @@ export class CannedResponseRepository {
 
   async update(businessId: string, id: string, data: UpdateCannedResponseData): Promise<canned_responses> {
     return this.prisma.canned_responses.update({
-      where: { id },
+      where: { id, business_id: businessId },
       data: {
         ...(data.title !== undefined ? { title: data.title } : {}),
         ...(data.content !== undefined ? { content: data.content } : {}),
@@ -114,14 +114,14 @@ export class CannedResponseRepository {
 
   async softDelete(businessId: string, id: string): Promise<void> {
     await this.prisma.canned_responses.update({
-      where: { id },
+      where: { id, business_id: businessId },
       data: { deleted_at: new Date() },
     });
   }
 
   async incrementUsage(businessId: string, id: string): Promise<canned_responses> {
     return this.prisma.canned_responses.update({
-      where: { id },
+      where: { id, business_id: businessId },
       data: { usage_count: { increment: 1 } },
     });
   }

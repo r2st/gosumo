@@ -206,7 +206,7 @@ export class CatalogRepository {
     if (data.metadata !== undefined) updateData['metadata'] = data.metadata;
 
     return this.prisma.catalog_categories.update({
-      where: { id: categoryId },
+      where: { id: categoryId, business_id: businessId },
       data: updateData,
     });
   }
@@ -216,7 +216,7 @@ export class CatalogRepository {
     categoryId: string,
   ): Promise<catalog_categories> {
     return this.prisma.catalog_categories.update({
-      where: { id: categoryId },
+      where: { id: categoryId, business_id: businessId },
       data: { deleted_at: new Date() },
     });
   }
@@ -360,7 +360,7 @@ export class CatalogRepository {
     itemId: string,
   ): Promise<catalog_items> {
     return this.prisma.catalog_items.update({
-      where: { id: itemId },
+      where: { id: itemId, business_id: businessId },
       data: { deleted_at: new Date(), is_active: false },
     });
   }
@@ -548,7 +548,7 @@ export class CatalogRepository {
     if (data.imageUrl !== undefined) updateData['image_url'] = data.imageUrl;
 
     return this.prisma.catalog_variants.update({
-      where: { id: variantId },
+      where: { id: variantId, business_id: businessId },
       data: updateData,
     });
   }
@@ -558,7 +558,7 @@ export class CatalogRepository {
     variantId: string,
   ): Promise<catalog_variants> {
     return this.prisma.catalog_variants.update({
-      where: { id: variantId },
+      where: { id: variantId, business_id: businessId },
       data: { deleted_at: new Date(), is_active: false },
     });
   }

@@ -22,7 +22,7 @@ import {
   MessageFailedEvent,
   MessageDirection,
 } from '@gosumo/shared';
-import { generateId, generateCorrelationId } from '@gosumo/shared';
+import { generateId, generateCorrelationId, normalizeIndianPhone } from '@gosumo/shared';
 import { PrismaService } from '../../common/services/prisma.service';
 
 /**
@@ -204,6 +204,20 @@ export class ChannelAdapterService {
 
         // Find or create client via channel_contacts
         const senderExternalId = normalized.sender.externalId;
+
+        // WhatsApp `wa_id` (e.g. `919876543210`) and SMS sender ids are both
+        // phone identities, but neither arrives in E.164 — which is what
+        // `clients.phone` is declared to hold. Normalize here so notification
+        // recipient resolution, consent lookups, and lead matching (all keyed
+        // on E.164) actually resolve. Fall back to the raw id when the number
+        // is not a valid Indian mobile, so a non-normalizable sender still
+        // keeps a usable identity rather than losing the phone entirely.
+        const isPhoneChannel =
+          channelType === ChannelType.WHATSAPP || channelType === ChannelType.SMS;
+        const senderPhone = isPhoneChannel
+          ? normalizeIndianPhone(senderExternalId) ?? senderExternalId
+          : undefined;
+
         let channelContact = await this.prisma.channel_contacts.findUnique({
           where: {
             channel_account_id_external_id: {
@@ -220,7 +234,7 @@ export class ChannelAdapterService {
             data: {
               business_id: channelAccount.business_id,
               name: normalized.sender.displayName || senderExternalId,
-              phone: channelType === ChannelType.SMS ? senderExternalId : undefined,
+              phone: senderPhone,
               email: channelType === ChannelType.EMAIL ? senderExternalId : undefined,
             },
           });
@@ -247,6 +261,20 @@ export class ChannelAdapterService {
             where: { id: channelContact.id },
             data: { last_seen_at: new Date() },
           });
+
+          // Backfill the phone for contacts created before phone normalization
+          // existed (WhatsApp senders were stored with no phone at all, which
+          // left them unreachable for WHATSAPP/SMS notifications). Only fill a
+          // blank — never overwrite a phone an operator may have corrected.
+          if (senderPhone && !channelContact.client?.phone) {
+            await this.prisma.clients.update({
+              where: { id: channelContact.client_id },
+              data: { phone: senderPhone },
+            });
+            this.logger.log(
+              `[${traceId}] Backfilled phone for client ${channelContact.client_id}`,
+            );
+          }
         }
 
         resolvedClientId = channelContact.client_id;

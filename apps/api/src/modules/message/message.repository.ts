@@ -203,7 +203,7 @@ export class MessageRepository {
     timestamps: UpdateStatusTimestamps,
   ): Promise<messages> {
     return this.prisma.messages.update({
-      where: { id: messageId },
+      where: { id: messageId, business_id: businessId },
       data: {
         status,
         delivered_at: timestamps.deliveredAt
@@ -275,7 +275,7 @@ export class MessageRepository {
     },
   ): Promise<messages> {
     return this.prisma.messages.update({
-      where: { id: messageId },
+      where: { id: messageId, business_id: businessId },
       data: {
         is_ai_generated: metadata.is_ai_generated,
         confidence_score: metadata.confidence_score ?? undefined,

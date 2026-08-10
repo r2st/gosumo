@@ -118,12 +118,12 @@ export class RealtyCadenceRepository {
     id: string,
     data: Record<string, unknown>,
   ): Promise<realty_message_templates> {
-    return this.prisma.realty_message_templates.update({ where: { id }, data });
+    return this.prisma.realty_message_templates.update({ where: { id, business_id: businessId }, data });
   }
 
   async softDeleteTemplate(businessId: string, id: string): Promise<realty_message_templates> {
     return this.prisma.realty_message_templates.update({
-      where: { id },
+      where: { id, business_id: businessId },
       data: { deleted_at: new Date() },
     });
   }
@@ -166,11 +166,11 @@ export class RealtyCadenceRepository {
   }
 
   async updateCadence(businessId: string, id: string, data: Record<string, unknown>): Promise<realty_cadences> {
-    return this.prisma.realty_cadences.update({ where: { id }, data });
+    return this.prisma.realty_cadences.update({ where: { id, business_id: businessId }, data });
   }
 
   async softDeleteCadence(businessId: string, id: string): Promise<realty_cadences> {
-    return this.prisma.realty_cadences.update({ where: { id }, data: { deleted_at: new Date() } });
+    return this.prisma.realty_cadences.update({ where: { id, business_id: businessId }, data: { deleted_at: new Date() } });
   }
 
   // ── Steps ────────────────────────────────────
@@ -275,7 +275,7 @@ export class RealtyCadenceRepository {
     if (data.stopReason !== undefined) d['stop_reason'] = data.stopReason;
     if (data.lastStepSentAt !== undefined) d['last_step_sent_at'] = data.lastStepSentAt;
     if (data.completedAt !== undefined) d['completed_at'] = data.completedAt;
-    return this.prisma.realty_cadence_enrollments.update({ where: { id }, data: d });
+    return this.prisma.realty_cadence_enrollments.update({ where: { id, business_id: businessId }, data: d });
   }
 
   async countActiveEnrollments(businessId: string): Promise<number> {

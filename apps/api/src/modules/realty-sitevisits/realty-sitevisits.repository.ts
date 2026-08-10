@@ -121,12 +121,12 @@ export class RealtyVisitsRepository {
     if (data.cancellationReason !== undefined) d['cancellation_reason'] = data.cancellationReason;
     if (data.metadata !== undefined) d['metadata'] = data.metadata;
 
-    return this.prisma.realty_site_visits.update({ where: { id: visitId }, data: d });
+    return this.prisma.realty_site_visits.update({ where: { id: visitId, business_id: businessId }, data: d });
   }
 
   async softDelete(businessId: string, visitId: string): Promise<realty_site_visits> {
     return this.prisma.realty_site_visits.update({
-      where: { id: visitId },
+      where: { id: visitId, business_id: businessId },
       data: { deleted_at: new Date() },
     });
   }

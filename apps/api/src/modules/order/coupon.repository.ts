@@ -154,7 +154,7 @@ export class CouponRepository {
     if (data.isActive !== undefined) updateData.is_active = data.isActive;
 
     return this.prisma.coupons.update({
-      where: { id: couponId },
+      where: { id: couponId, business_id: businessId },
       data: updateData,
     });
   }
@@ -164,7 +164,7 @@ export class CouponRepository {
    */
   async softDelete(businessId: string, couponId: string): Promise<coupons> {
     return this.prisma.coupons.update({
-      where: { id: couponId },
+      where: { id: couponId, business_id: businessId },
       data: { deleted_at: new Date(), is_active: false },
     });
   }

@@ -101,7 +101,7 @@ export class SlaRepository {
 
   async updatePolicy(businessId: string, id: string, data: UpdatePolicyData): Promise<sla_policies> {
     return this.prisma.sla_policies.update({
-      where: { id },
+      where: { id, business_id: businessId },
       data: {
         ...(data.name !== undefined ? { name: data.name } : {}),
         ...(data.description !== undefined ? { description: data.description } : {}),
@@ -125,7 +125,7 @@ export class SlaRepository {
 
   async softDeletePolicy(businessId: string, id: string): Promise<void> {
     await this.prisma.sla_policies.update({
-      where: { id },
+      where: { id, business_id: businessId },
       data: { deleted_at: new Date() },
     });
   }

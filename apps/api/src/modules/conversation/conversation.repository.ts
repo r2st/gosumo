@@ -177,7 +177,7 @@ export class ConversationRepository {
     }
 
     return this.prisma.conversations.update({
-      where: { id: conversationId },
+      where: { id: conversationId, business_id: businessId },
       data: updateData,
       include: CONVERSATION_INCLUDE,
     });
@@ -341,7 +341,7 @@ export class ConversationRepository {
     assigneeId: string | null,
   ): Promise<conversations> {
     return this.prisma.conversations.update({
-      where: { id: conversationId },
+      where: { id: conversationId, business_id: businessId },
       data: { assigned_to: assigneeId },
       include: CONVERSATION_INCLUDE,
     });

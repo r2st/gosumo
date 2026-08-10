@@ -15,6 +15,7 @@ import {
 } from "@gosumo/shared";
 import { generateId } from "@gosumo/shared";
 import { BaseChannelAdapter } from "./base.adapter";
+import { allowUnverifiedWebhook, isProductionEnv } from "./webhook-verification.util";
 
 @Injectable()
 export class SmsAdapter extends BaseChannelAdapter {
@@ -23,6 +24,8 @@ export class SmsAdapter extends BaseChannelAdapter {
   private readonly accountSid: string;
   private readonly authToken: string;
   private readonly fromNumber: string;
+  /** Fail-closed switch: an unverifiable webhook is rejected in production. */
+  private readonly isProduction: boolean;
 
   constructor(private readonly configService: ConfigService) {
     super("SmsAdapter", { maxAttempts: 3, retryDelayMs: 500 });
@@ -30,6 +33,7 @@ export class SmsAdapter extends BaseChannelAdapter {
     this.accountSid = this.configService.get<string>("twilio.accountSid", "");
     this.authToken = this.configService.get<string>("twilio.authToken", "");
     this.fromNumber = this.configService.get<string>("twilio.fromNumber", "");
+    this.isProduction = isProductionEnv(this.configService);
 
     if (!this.accountSid) {
       this.logger.warn("TWILIO_ACCOUNT_SID is not set — SMS adapter will rely on per-channel credentials");
@@ -38,8 +42,11 @@ export class SmsAdapter extends BaseChannelAdapter {
 
   validateWebhook(req: RawRequest): boolean {
     if (!this.authToken) {
-      this.logger.warn("Webhook signature verification skipped — no auth token configured");
-      return true;
+      return allowUnverifiedWebhook(
+        this.logger,
+        this.isProduction,
+        "TWILIO_AUTH_TOKEN is not configured",
+      );
     }
 
     const signature = req.headers["x-twilio-signature"] ?? "";
@@ -55,11 +62,16 @@ export class SmsAdapter extends BaseChannelAdapter {
     const webhookUrl = proto + "://" + host + originalUrl;
 
     if (!host) {
-      this.logger.warn("Cannot reconstruct webhook URL for Twilio signature validation — skipping");
-      return true;
+      // Without the Host header the signed URL cannot be rebuilt, so the
+      // signature is uncheckable — same fail-closed rule as a missing token.
+      return allowUnverifiedWebhook(
+        this.logger,
+        this.isProduction,
+        "Host header missing, cannot reconstruct the signed webhook URL",
+      );
     }
 
-    const body = req.body as Record<string, string>;
+    const body = (req.body ?? {}) as Record<string, string>;
     const sortedKeys = Object.keys(body).sort();
     let dataString = webhookUrl;
     for (const key of sortedKeys) {
@@ -71,7 +83,20 @@ export class SmsAdapter extends BaseChannelAdapter {
       .update(dataString)
       .digest("base64");
 
-    return signature === computed;
+    // Constant-time compare — a plain `===` leaks how much of the signature
+    // matched via early exit, which is enough to forge one byte at a time.
+    const sigBuffer = Buffer.from(signature);
+    const expectedBuffer = Buffer.from(computed);
+    if (sigBuffer.length !== expectedBuffer.length) {
+      this.logger.warn("Webhook rejected: signature length mismatch");
+      return false;
+    }
+
+    const isValid = crypto.timingSafeEqual(sigBuffer, expectedBuffer);
+    if (!isValid) {
+      this.logger.warn("Webhook rejected: signature mismatch");
+    }
+    return isValid;
   }
 
   parseInbound(req: RawRequest): NormalizedMessage {

@@ -90,12 +90,12 @@ export class RealtyInventoryRepository {
     projectId: string,
     data: Record<string, unknown>,
   ): Promise<realty_projects> {
-    return this.prisma.realty_projects.update({ where: { id: projectId }, data });
+    return this.prisma.realty_projects.update({ where: { id: projectId, business_id: businessId }, data });
   }
 
   async softDeleteProject(businessId: string, projectId: string): Promise<realty_projects> {
     return this.prisma.realty_projects.update({
-      where: { id: projectId },
+      where: { id: projectId, business_id: businessId },
       data: { deleted_at: new Date(), is_active: false },
     });
   }
@@ -148,12 +148,12 @@ export class RealtyInventoryRepository {
     unitId: string,
     data: Record<string, unknown>,
   ): Promise<realty_units> {
-    return this.prisma.realty_units.update({ where: { id: unitId }, data });
+    return this.prisma.realty_units.update({ where: { id: unitId, business_id: businessId }, data });
   }
 
   async softDeleteUnit(businessId: string, unitId: string): Promise<realty_units> {
     return this.prisma.realty_units.update({
-      where: { id: unitId },
+      where: { id: unitId, business_id: businessId },
       data: { deleted_at: new Date() },
     });
   }
