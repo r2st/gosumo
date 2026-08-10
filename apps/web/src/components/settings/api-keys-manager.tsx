@@ -62,9 +62,12 @@ export function ApiKeysManager() {
             </THead>
             <TBody>
               {data.data.map((key) => {
-                const revoked = !!key.revokedAt;
+                // Revoking hard-deletes the row, so a revoked key never reaches
+                // this list. Expiry is the only lifecycle state that shows up
+                // here: the key is still listed but no longer authenticates.
+                const expired = !!key.expiresAt && new Date(key.expiresAt).getTime() <= Date.now();
                 return (
-                  <TR key={key.id} className={revoked ? 'opacity-60' : undefined}>
+                  <TR key={key.id} className={expired ? 'opacity-60' : undefined}>
                     <TD className="font-medium">{key.name}</TD>
                     <TD>
                       <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
@@ -88,9 +91,8 @@ export function ApiKeysManager() {
                     <TD className="text-muted-foreground">{key.lastUsedAt ? timeAgo(key.lastUsedAt) : 'never'}</TD>
                     <TD className="text-muted-foreground">{formatDateIST(key.createdAt)}</TD>
                     <TD className="text-right">
-                      {revoked ? (
-                        <Badge tone="danger">Revoked</Badge>
-                      ) : (
+                      <div className="flex items-center justify-end gap-2">
+                        {expired && <Badge tone="danger">Expired</Badge>}
                         <button
                           onClick={() => setToRevoke(key)}
                           className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-danger"
@@ -98,7 +100,7 @@ export function ApiKeysManager() {
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
-                      )}
+                      </div>
                     </TD>
                   </TR>
                 );

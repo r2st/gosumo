@@ -715,6 +715,7 @@ model businesses {
   canned_responses               canned_responses[]
   sla_policies                   sla_policies[]
   sla_breaches                   sla_breaches[]
+  api_keys                       api_keys[]
 
   @@index([slug])
   @@index([email])
@@ -765,6 +766,7 @@ model team_members {
   resolved_tasks   tasks[]            @relation("ResolvedBy")
   audit_logs       audit_logs[]
   canned_responses canned_responses[]
+  api_keys         api_keys[]
 
   @@unique([business_id, email])
   @@index([business_id, status])
@@ -3497,4 +3499,35 @@ model realty_parser_health_checks {
   @@index([portal, checked_at(sort: Desc)])
   @@index([status, checked_at(sort: Desc)])
   @@map("realty_parser_health_checks")
+}
+
+/// A hashed, per-business API key granting programmatic access.
+///
+/// Only the SHA-256 digest is stored — the raw key is returned once at creation
+/// and is unrecoverable afterwards. Revocation hard-deletes the row: unlike
+/// other business data, a soft-deleted credential that still authenticates
+/// would defeat the point of revoking it.
+model api_keys {
+  id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String  @db.Uuid
+  name        String  @db.VarChar(255)
+  /// Display-only leading fragment of the raw key, e.g. "gs_a1b2c3d"
+  prefix      String  @db.VarChar(20)
+  /// Display-only trailing fragment, rendered as prefix••••last4
+  last4       String  @default("") @db.VarChar(8)
+  /// SHA-256 hex digest of the raw key
+  key_hash    String  @unique @db.VarChar(64)
+  /// Granted scopes, e.g. ["conversations:read", "orders:write"]
+  scopes      String[] @default([])
+  created_by  String? @db.Uuid
+
+  created_at   DateTime  @default(now()) @db.Timestamptz
+  last_used_at DateTime? @db.Timestamptz
+  expires_at   DateTime? @db.Timestamptz
+
+  business businesses    @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  author   team_members? @relation(fields: [created_by], references: [id], onDelete: SetNull)
+
+  @@index([business_id, created_at(sort: Desc)])
+  @@map("api_keys")
 }

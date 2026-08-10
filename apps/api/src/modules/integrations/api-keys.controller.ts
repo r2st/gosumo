@@ -1,36 +1,30 @@
 import {
   Controller, Get, Post, Delete,
-  Body, Param, Query, Logger, HttpCode, HttpStatus,
+  Body, Param, Query, Logger, HttpCode, HttpStatus, NotFoundException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../common/services/prisma.service';
+import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
 import { randomBytes, createHash } from 'crypto';
 import { CreateApiKeyDto } from './dto/create-api-key.dto';
 
-/** Shape of the raw `api_keys` rows this controller selects. */
-interface ApiKeyRow {
-  id: string;
-  name: string;
-  prefix: string;
-  created_at: Date;
-  last_used_at: Date | null;
-  expires_at: Date | null;
-}
+/** Bounds on `?limit=`; anything unparseable falls back to the default. */
+const DEFAULT_LIMIT = 100;
+const MAX_LIMIT = 200;
 
 /**
- * The `api_keys` table is created lazily on first write, so an
- * undefined-table error (SQLSTATE 42P01) is an expected control-flow signal
- * rather than a failure. Prisma surfaces raw-query errors as opaque objects,
- * hence the structural check.
+ * Clamp a client-supplied `limit` into range.
+ *
+ * `parseInt` yields NaN for absent or non-numeric input and silently truncates
+ * a trailing suffix ("50abc" → 50); both are treated as the default rather than
+ * reaching Prisma, where NaN would surface as an opaque query error.
  */
-function isPgError(err: unknown, code: string): boolean {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    (err as { code?: unknown }).code === code
-  );
+function parseLimit(raw: string | undefined): number {
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1) return DEFAULT_LIMIT;
+  return Math.min(n, MAX_LIMIT);
 }
 
 @ApiTags('api-keys')
@@ -42,30 +36,35 @@ export class ApiKeysController {
   @Get()
   @ApiOperation({ summary: 'List API keys' })
   async list(@TenantId() tenantId: string, @Query('limit') limit?: string) {
-    // Check if api_keys table exists, otherwise return empty
-    try {
-      const keys = await this.prisma.$queryRawUnsafe<ApiKeyRow[]>(
-        `SELECT id, name, prefix, created_at, last_used_at, expires_at
-         FROM api_keys WHERE business_id = $1
-         ORDER BY created_at DESC LIMIT $2`,
-        tenantId,
-        parseInt(limit ?? '100', 10),
-      );
-      return {
-        data: keys.map((k) => ({
-          id: k.id,
-          name: k.name,
-          prefix: k.prefix,
-          createdAt: k.created_at,
-          lastUsedAt: k.last_used_at,
-          expiresAt: k.expires_at,
-        })),
-        pagination: { total: keys.length, limit: parseInt(limit ?? '100', 10), page: 1, totalPages: 1 },
-      };
-    } catch {
-      // Table may not exist yet
-      return { data: [], pagination: { total: 0, limit: 100, page: 1, totalPages: 1 } };
-    }
+    const take = parseLimit(limit);
+
+    const [keys, total] = await Promise.all([
+      this.prisma.api_keys.findMany({
+        where: { business_id: tenantId },
+        orderBy: { created_at: 'desc' },
+        take,
+      }),
+      this.prisma.api_keys.count({ where: { business_id: tenantId } }),
+    ]);
+
+    return {
+      data: keys.map((k) => ({
+        id: k.id,
+        name: k.name,
+        prefix: k.prefix,
+        last4: k.last4,
+        scopes: k.scopes,
+        createdAt: k.created_at,
+        lastUsedAt: k.last_used_at,
+        expiresAt: k.expires_at,
+      })),
+      pagination: {
+        total,
+        limit: take,
+        page: 1,
+        totalPages: Math.max(1, Math.ceil(total / take)),
+      },
+    };
   }
 
   @Post()
@@ -76,49 +75,38 @@ export class ApiKeysController {
     @Body() dto: CreateApiKeyDto,
   ) {
     const raw = `gs_${randomBytes(32).toString('hex')}`;
-    const prefix = raw.slice(0, 10) + '…';
+    const prefix = raw.slice(0, 10);
+    const last4 = raw.slice(-4);
     const hash = createHash('sha256').update(raw).digest('hex');
     const expiresAt = dto.expiresInDays
-      ? new Date(Date.now() + dto.expiresInDays * 86400000).toISOString()
+      ? new Date(Date.now() + dto.expiresInDays * 86400000)
       : null;
 
-    try {
-      await this.prisma.$executeRawUnsafe(
-        `INSERT INTO api_keys (id, business_id, name, prefix, key_hash, created_by, expires_at)
-         VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6::timestamptz)`,
-        tenantId, dto.name, prefix, hash, user.sub, expiresAt,
-      );
-    } catch (e: unknown) {
-      // Table may not exist — create it
-      if (isPgError(e, '42P01')) {
-        await this.prisma.$executeRawUnsafe(`
-          CREATE TABLE IF NOT EXISTS api_keys (
-            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-            business_id UUID NOT NULL,
-            name VARCHAR(255) NOT NULL,
-            prefix VARCHAR(20) NOT NULL,
-            key_hash VARCHAR(64) NOT NULL,
-            created_by UUID,
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            last_used_at TIMESTAMPTZ,
-            expires_at TIMESTAMPTZ
-          )
-        `);
-        await this.prisma.$executeRawUnsafe(
-          `INSERT INTO api_keys (id, business_id, name, prefix, key_hash, created_by, expires_at)
-           VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6::timestamptz)`,
-          tenantId, dto.name, prefix, hash, user.sub, expiresAt,
-        );
-      } else {
-        throw e;
-      }
-    }
+    const created = await this.prisma.api_keys.create({
+      data: {
+        business_id: tenantId,
+        name: dto.name,
+        prefix,
+        last4,
+        key_hash: hash,
+        scopes: dto.scopes ?? [],
+        created_by: user.sub,
+        expires_at: expiresAt,
+      },
+    });
+
+    this.logger.log(`Issued API key ${prefix}… for tenant ${tenantId}`);
 
     return {
-      name: dto.name,
+      id: created.id,
+      name: created.name,
       prefix,
+      last4,
+      scopes: created.scopes,
+      secret: raw,
+      /** @deprecated Use `secret`; kept for callers written against the old shape. */
       key: raw,
-      expiresAt,
+      expiresAt: expiresAt ? expiresAt.toISOString() : null,
       message: 'Copy this key now — it won\'t be shown again.',
     };
   }
@@ -126,14 +114,22 @@ export class ApiKeysController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Revoke an API key' })
-  async revoke(@TenantId() tenantId: string, @Param('id') id: string) {
-    try {
-      await this.prisma.$executeRawUnsafe(
-        `DELETE FROM api_keys WHERE id = $1::uuid AND business_id = $2`,
-        id, tenantId,
-      );
-    } catch {
-      // Table may not exist — that's fine
+  async revoke(
+    @TenantId() tenantId: string,
+    @Param('id', UuidValidationPipe) id: string,
+  ) {
+    // Hard delete: a revoked credential must stop authenticating immediately,
+    // so the soft-delete rule that governs business data does not apply here.
+    // deleteMany (not delete) keeps business_id in the WHERE clause — deleting
+    // by id alone would let one tenant revoke another tenant's key.
+    const { count } = await this.prisma.api_keys.deleteMany({
+      where: { id, business_id: tenantId },
+    });
+
+    if (count === 0) {
+      throw new NotFoundException(`API key ${id} not found`);
     }
+
+    this.logger.log(`Revoked API key ${id} for tenant ${tenantId}`);
   }
 }

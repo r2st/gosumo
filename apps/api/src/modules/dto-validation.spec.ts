@@ -29,6 +29,7 @@ import { SnoozeConversationDto, AssignConversationDto } from './conversation/dto
 import { CreateLeadDto } from './realty-leads/dto';
 import { DispatchNotificationDto } from './notification/dto';
 import { CreateBookingDto } from './booking/dto';
+import { CreateApiKeyDto, API_KEY_SCOPES } from './integrations/dto/create-api-key.dto';
 
 /** The exact pipe configuration from main.ts. */
 function productionPipe(): ValidationPipe {
@@ -470,5 +471,47 @@ describe('Lead identity fields', () => {
 describe('Conversation assignment', () => {
   it('rejects a non-UUID assignee', async () => {
     await expectRejected(AssignConversationDto, { assigneeId: 'me' });
+  });
+});
+
+describe('API key creation', () => {
+  it('accepts a name with a known scope list', async () => {
+    const dto = await validate<CreateApiKeyDto>(CreateApiKeyDto, {
+      name: 'CI pipeline',
+      scopes: ['orders:read', 'conversations:write'],
+    });
+
+    expect(dto.scopes).toEqual(['orders:read', 'conversations:write']);
+  });
+
+  it('rejects an unknown scope rather than storing it', async () => {
+    await expectRejected(CreateApiKeyDto, { name: 'CI', scopes: ['orders:delete'] });
+  });
+
+  it('rejects a scope list longer than the catalogue', async () => {
+    await expectRejected(CreateApiKeyDto, {
+      name: 'CI',
+      scopes: [...API_KEY_SCOPES, 'orders:read'],
+    });
+  });
+
+  it('rejects scopes sent as a bare string', async () => {
+    await expectRejected(CreateApiKeyDto, { name: 'CI', scopes: 'orders:read' });
+  });
+
+  it('rejects an expiry past the ten-year ceiling', async () => {
+    await expectRejected(CreateApiKeyDto, { name: 'CI', expiresInDays: 3651 });
+  });
+
+  it('rejects a fractional expiry — the value is multiplied into a timestamp', async () => {
+    await expectRejected(CreateApiKeyDto, { name: 'CI', expiresInDays: 1.5 });
+  });
+
+  it('rejects an empty name', async () => {
+    await expectRejected(CreateApiKeyDto, { name: '' });
+  });
+
+  it('rejects an injected key hash', async () => {
+    await expectRejected(CreateApiKeyDto, { name: 'CI', key_hash: 'a'.repeat(64) });
   });
 });

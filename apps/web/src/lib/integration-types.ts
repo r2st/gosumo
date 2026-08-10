@@ -45,15 +45,22 @@ export interface TestConnectionResult {
 export interface ApiKey {
   id: string;
   name: string;
-  prefix: string; // e.g. "gsk_live_"
+  prefix: string; // e.g. "gs_a1b2c3d"
   last4: string;
   scopes: string[];
   createdAt: string;
-  lastUsedAt?: string;
-  revokedAt?: string;
+  lastUsedAt?: string | null;
+  expiresAt?: string | null;
 }
 
-/** Returned once on creation — `secret` is the full key, never retrievable again. */
-export interface CreatedApiKey extends ApiKey {
+/**
+ * Returned once on creation — `secret` is the full key, never retrievable again.
+ *
+ * `createdAt` / `lastUsedAt` are absent from the creation response, so they are
+ * omitted rather than inherited: a caller reading `created.createdAt` would get
+ * `undefined` at runtime while the type promised a string.
+ */
+export interface CreatedApiKey extends Omit<ApiKey, 'createdAt' | 'lastUsedAt'> {
   secret: string;
+  message: string;
 }
