@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@gosumo/web", "dev"],
+      "port": 3001
+    },
+    {
+      "name": "gosumo-demo",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-lc", "cd /Users/dev/gosumo-realty-demo && npm run dev -- --port 5219 --host"],
+      "port": 5219
+    }
+  ]
+}
