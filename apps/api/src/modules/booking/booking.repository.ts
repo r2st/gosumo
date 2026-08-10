@@ -7,7 +7,7 @@ import type {
   booking_calendar_connections,
   booking_recurrences,
 } from '@prisma/client';
-import { BookingStatus } from '@gosumo/shared';
+import { BookingStatus, ResourceNotFoundError } from '@gosumo/shared';
 import { PrismaService } from '../../common/services/prisma.service';
 
 // ─────────────────────────────────────────────
@@ -273,7 +273,9 @@ export class BookingRepository {
       where: { id: bookingId, business_id: businessId, deleted_at: null },
     });
     if (!existing) {
-      throw new Error(`Booking ${bookingId} not found for business ${businessId}`);
+      throw new ResourceNotFoundError('Booking', bookingId, {
+        context: { businessId },
+      });
     }
     return this.prisma.bookings.update({
       where: { id: bookingId, business_id: businessId },
@@ -390,7 +392,9 @@ export class BookingRepository {
       where: { id: blockId, business_id: businessId, deleted_at: null },
     });
     if (!existing) {
-      throw new Error(`Blocked slot ${blockId} not found for business ${businessId}`);
+      throw new ResourceNotFoundError('Blocked slot', blockId, {
+        context: { businessId },
+      });
     }
     await this.prisma.booking_blocked_slots.update({
       where: { id: blockId, business_id: businessId },

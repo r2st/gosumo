@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
-import { TaskStatus, TaskType, TaskPriority } from '@gosumo/shared';
+import { TaskStatus, TaskType, TaskPriority, ResourceNotFoundError } from '@gosumo/shared';
 import type { tasks } from '@prisma/client';
 import { Prisma } from '@prisma/client';
 
@@ -236,7 +236,9 @@ export class HitlRepository {
     });
 
     if (!existing) {
-      throw new Error(`Task ${taskId} not found for business ${businessId}`);
+      throw new ResourceNotFoundError('Task', taskId, {
+        context: { businessId },
+      });
     }
 
     return this.prisma.tasks.update({

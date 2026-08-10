@@ -16,6 +16,7 @@ import {
 import { generateId } from '@gosumo/shared';
 import { BaseChannelAdapter } from './base.adapter';
 import { allowUnverifiedWebhook, isProductionEnv } from '../../../common/utils/webhook-verification.util';
+import { ExternalServiceError, PayloadParseError, UnsupportedOperationError } from '@gosumo/shared';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Instagram Messaging API payload types
@@ -293,7 +294,10 @@ export class InstagramAdapter extends BaseChannelAdapter {
       }
     }
 
-    throw new Error('Webhook payload contained no parseable inbound message');
+    throw new PayloadParseError(
+      'Instagram',
+      'Webhook payload contained no parseable inbound message',
+    );
   }
 
   /**
@@ -394,7 +398,10 @@ export class InstagramAdapter extends BaseChannelAdapter {
     });
 
     if (!resp.ok) {
-      throw new Error(`Media download failed: ${resp.status} ${resp.statusText}`);
+      throw new ExternalServiceError('Instagram Media', 'download failed', {
+        status: resp.status,
+        context: { statusText: resp.statusText },
+      });
     }
 
     const arrayBuffer = await resp.arrayBuffer();
@@ -479,7 +486,10 @@ export class InstagramAdapter extends BaseChannelAdapter {
 
     const message = event.message;
     if (!message) {
-      throw new Error('Instagram event has no message, postback, or reaction content');
+      throw new PayloadParseError(
+        'Instagram',
+        'Event has no message, postback, or reaction content',
+      );
     }
 
     // Quick-reply tap carries both text and a payload — represent as interactive
@@ -508,7 +518,11 @@ export class InstagramAdapter extends BaseChannelAdapter {
       };
     }
 
-    throw new Error(`Unsupported Instagram message ${message.mid}: no text or attachment`);
+    throw new PayloadParseError(
+      'Instagram',
+      'Message carries neither text nor an attachment',
+      { context: { mid: message.mid } },
+    );
   }
 
   private parseAttachmentContent(attachment: IgAttachment): NormalizedMessage['content'] {
@@ -551,7 +565,10 @@ export class InstagramAdapter extends BaseChannelAdapter {
       }
 
       default:
-        throw new Error(`Unsupported Instagram attachment type: "${attachment.type}"`);
+        throw new PayloadParseError(
+          'Instagram',
+          `Unsupported attachment type "${attachment.type}"`,
+        );
     }
   }
 
@@ -599,11 +616,15 @@ export class InstagramAdapter extends BaseChannelAdapter {
         );
 
       case MessageContentType.LOCATION:
-        throw new Error('Instagram does not support sending location messages');
+        throw new UnsupportedOperationError(
+          'Instagram does not support sending location messages',
+        );
 
       default: {
         const _exhaustive: never = content;
-        throw new Error(`Unhandled content type: ${(_exhaustive as { type: string }).type}`);
+        throw new UnsupportedOperationError(
+          `Instagram cannot send content of type "${(_exhaustive as { type: string }).type}"`,
+        );
       }
     }
   }

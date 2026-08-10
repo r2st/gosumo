@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
-import { OrderStatus } from '@gosumo/shared';
+import { OrderStatus, ResourceNotFoundError } from '@gosumo/shared';
 import { Prisma, OrderStatus as PrismaOrderStatus } from '@prisma/client';
 import type { orders } from '@prisma/client';
 
@@ -200,7 +200,9 @@ export class OrderRepository {
     });
 
     if (!existing) {
-      throw new Error(`Order ${orderId} not found for business ${businessId}`);
+      throw new ResourceNotFoundError('Order', orderId, {
+        context: { businessId },
+      });
     }
 
     const updateData: Prisma.ordersUpdateInput = {

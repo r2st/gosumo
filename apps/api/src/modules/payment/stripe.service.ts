@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'crypto';
+import { ExternalServiceError } from '@gosumo/shared';
 
 // ─────────────────────────────────────────────
 // Interfaces
@@ -314,7 +315,10 @@ export class StripeService implements IStripeGateway {
       this.logger.error(
         `Stripe API error: ${response.status} ${response.statusText} — ${errorBody}`,
       );
-      throw new Error(`Stripe API error: ${response.status} ${response.statusText}`);
+      throw new ExternalServiceError('Stripe', `API error ${response.statusText}`, {
+        status: response.status,
+        context: { body: errorBody },
+      });
     }
 
     return response.json() as Promise<T>;

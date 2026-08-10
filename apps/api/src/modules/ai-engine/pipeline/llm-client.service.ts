@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ExternalServiceError, type GoSumoErrorOptions } from '@gosumo/shared';
 import { LLM_MAX_TOKENS, LLM_TIMEOUT_MS, DEFAULT_MODEL } from '../ai-engine.constants';
 
 /**
@@ -22,11 +23,16 @@ export interface LlmCompletionResult {
   latencyMs: number;
 }
 
-/** Thrown when the LLM cannot produce a usable completion after retries. */
-export class LlmUnavailableError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'LlmUnavailableError';
+/**
+ * Thrown when the LLM cannot produce a usable completion after retries.
+ *
+ * Terminal by construction: the client has already exhausted its own retries by
+ * the time this is raised, so `retryable` is false and a queue consumer that
+ * sees one should route to the DLQ rather than re-run the turn.
+ */
+export class LlmUnavailableError extends ExternalServiceError {
+  constructor(message: string, options: GoSumoErrorOptions & { status?: number } = {}) {
+    super('OpenRouter', message, { ...options, retryable: false });
   }
 }
 
@@ -92,12 +98,16 @@ export class LlmClientService {
           const errText = await this.safeText(response);
           // 4xx are non-retryable (bad request, auth) — fail fast.
           if (response.status < 500) {
-            throw new LlmUnavailableError(
-              `OpenRouter API error ${response.status}: ${errText}`,
-            );
+            throw new LlmUnavailableError(`API error ${response.status}`, {
+              status: response.status,
+              context: { body: errText },
+            });
           }
-          // 5xx — retryable
-          throw new Error(`OpenRouter API ${response.status}: ${errText}`);
+          // 5xx — retryable; the loop below re-runs it.
+          throw new ExternalServiceError('OpenRouter', `API ${response.status}`, {
+            status: response.status,
+            context: { body: errText },
+          });
         }
 
         const json = (await response.json()) as OpenRouterChatResponse;

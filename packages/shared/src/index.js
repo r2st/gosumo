@@ -20,6 +20,8 @@ __exportStar(require("./enums"), exports);
 __exportStar(require("./interfaces"), exports);
 // Domain events
 __exportStar(require("./events"), exports);
+// Error taxonomy
+__exportStar(require("./errors"), exports);
 // Utilities
 __exportStar(require("./utils"), exports);
 //# sourceMappingURL=index.js.map

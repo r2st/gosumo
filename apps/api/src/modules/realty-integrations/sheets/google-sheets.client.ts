@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { google } from 'googleapis';
 import type { SheetRow } from './sheets-row-mapper';
+import { ExternalServiceError } from '@gosumo/shared';
 
 /**
  * Per-connection Google OAuth credentials, persisted (encrypted at rest by the
@@ -129,7 +130,11 @@ export class GoogleSheetsClient implements IGoogleSheetsClient {
     });
     const spreadsheetId = created.data.spreadsheetId;
     if (!spreadsheetId) {
-      throw new Error('Google Sheets did not return a spreadsheetId on create');
+      throw new ExternalServiceError(
+        'Google Sheets',
+        'create returned no spreadsheetId',
+        { retryable: false, context: { title } },
+      );
     }
     return {
       spreadsheetId,

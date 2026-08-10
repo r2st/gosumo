@@ -38,3 +38,4 @@ export declare function currencyToPaise(amount: number): number;
  * are stored E.164). Ingestion merges leads on the E.164 result.
  */
 export declare function normalizeIndianPhone(raw: string | null | undefined): string | null;
+//# sourceMappingURL=index.d.ts.map

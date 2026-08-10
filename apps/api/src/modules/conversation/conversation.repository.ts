@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
-import { ConversationStatus, ChannelType } from '@gosumo/shared';
+import { ConversationStatus, ChannelType, ResourceNotFoundError } from '@gosumo/shared';
 import { Prisma } from '@prisma/client';
 import type { conversations } from '@prisma/client';
 
@@ -197,9 +197,9 @@ export class ConversationRepository {
       select: { id: true },
     });
     if (!existing) {
-      throw new Error(
-        `Conversation ${conversationId} not found for business ${businessId}`,
-      );
+      throw new ResourceNotFoundError('Conversation', conversationId, {
+        context: { businessId },
+      });
     }
 
     const updateData: Prisma.conversationsUpdateInput = {};

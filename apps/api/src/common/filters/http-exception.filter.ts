@@ -9,6 +9,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
+import { GoSumoError } from '@gosumo/shared';
 
 /**
  * Prisma error codes that correspond to a client mistake rather than a server
@@ -50,8 +51,18 @@ export class HttpExceptionFilter implements ExceptionFilter {
     let statusCode = HttpStatus.INTERNAL_SERVER_ERROR;
     let error = 'Internal Server Error';
     let message: string | string[] = 'An unexpected error occurred';
+    /** Log-only detail from a typed error; never merged into the response. */
+    let context: Record<string, unknown> | undefined;
 
-    if (exception instanceof HttpException) {
+    if (exception instanceof GoSumoError) {
+      // Typed errors are authored by us, so both the code and the message are
+      // deliberately safe to return. Everything sensitive lives in `context`,
+      // which goes to the log line below and never into the body.
+      statusCode = exception.httpStatus;
+      error = exception.code;
+      message = exception.message;
+      context = exception.context;
+    } else if (exception instanceof HttpException) {
       statusCode = exception.getStatus();
       const exceptionResponse = exception.getResponse();
 
@@ -88,14 +99,18 @@ export class HttpExceptionFilter implements ExceptionFilter {
       path: request.url,
     };
 
+    const detail = context && Object.keys(context).length > 0
+      ? ` ${JSON.stringify(context)}`
+      : '';
+
     if (statusCode >= HttpStatus.INTERNAL_SERVER_ERROR) {
       this.logger.error(
-        `[${traceId}] ${request.method} ${request.url} → ${statusCode}`,
+        `[${traceId}] ${request.method} ${request.url} → ${statusCode}${detail}`,
         exception instanceof Error ? exception.stack : String(exception),
       );
     } else {
       this.logger.warn(
-        `[${traceId}] ${request.method} ${request.url} → ${statusCode}: ${JSON.stringify(message)}`,
+        `[${traceId}] ${request.method} ${request.url} → ${statusCode}: ${JSON.stringify(message)}${detail}`,
       );
     }
 

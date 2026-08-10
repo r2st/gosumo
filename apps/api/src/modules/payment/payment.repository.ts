@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
-import { PaymentStatus, RefundStatus, currencyToPaise } from '@gosumo/shared';
+import { PaymentStatus, RefundStatus, currencyToPaise, ResourceNotFoundError } from '@gosumo/shared';
 import { Prisma } from '@prisma/client';
 import type { payments, refunds, invoices } from '@prisma/client';
 
@@ -229,7 +229,9 @@ export class PaymentRepository {
     });
 
     if (!existing) {
-      throw new Error(`Payment ${paymentId} not found for business ${businessId}`);
+      throw new ResourceNotFoundError('Payment', paymentId, {
+        context: { businessId },
+      });
     }
 
     const updateData: Record<string, unknown> = {
@@ -444,7 +446,9 @@ export class PaymentRepository {
     });
 
     if (!existing) {
-      throw new Error(`Refund ${refundId} not found for business ${businessId}`);
+      throw new ResourceNotFoundError('Refund', refundId, {
+        context: { businessId },
+      });
     }
 
     const updateData: Record<string, unknown> = {
@@ -749,7 +753,9 @@ export class PaymentRepository {
     });
 
     if (!existing) {
-      throw new Error(`Invoice ${invoiceId} not found for business ${businessId}`);
+      throw new ResourceNotFoundError('Invoice', invoiceId, {
+        context: { businessId },
+      });
     }
 
     const updateData: Record<string, unknown> = { status: data.status };

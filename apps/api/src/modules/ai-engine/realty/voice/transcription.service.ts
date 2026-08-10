@@ -1,13 +1,21 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ChannelType } from '@gosumo/shared';
+import {
+  ChannelType,
+  ExternalServiceError,
+  type GoSumoErrorOptions,
+} from '@gosumo/shared';
 import { ChannelAdapterService } from '../../../channel-adapter/channel-adapter.service';
 
-/** Thrown when audio cannot be transcribed (no key, download/STT failure). */
-export class TranscriptionUnavailableError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'TranscriptionUnavailableError';
+/**
+ * Thrown when audio cannot be transcribed (no key, download/STT failure).
+ *
+ * Terminal: the caller falls back to asking the buyer to type, so re-running
+ * the same download-and-transcribe would only repeat the failure.
+ */
+export class TranscriptionUnavailableError extends ExternalServiceError {
+  constructor(message: string, options: GoSumoErrorOptions & { status?: number } = {}) {
+    super('Transcription', message, { ...options, retryable: false });
   }
 }
 

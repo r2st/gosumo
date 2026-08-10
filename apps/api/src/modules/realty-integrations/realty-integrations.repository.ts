@@ -7,6 +7,7 @@ import type {
   RealtyEoiStatus,
 } from '@prisma/client';
 import { PrismaService } from '../../common/services/prisma.service';
+import { ResourceNotFoundError } from '@gosumo/shared';
 
 export interface UpsertConnectionData {
   status?: RealtyIntegrationStatus;
@@ -229,7 +230,9 @@ export class RealtyIntegrationsRepository {
     });
     const updated = await this.findEoi(businessId, eoiId);
     if (!updated) {
-      throw new Error(`EOI ${eoiId} not found after update`);
+      throw new ResourceNotFoundError('EOI', eoiId, {
+        context: { businessId, stage: 'after-update' },
+      });
     }
     return updated;
   }

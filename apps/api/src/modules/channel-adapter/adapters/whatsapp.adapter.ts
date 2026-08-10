@@ -16,6 +16,7 @@ import {
 import { generateId } from '@gosumo/shared';
 import { BaseChannelAdapter } from './base.adapter';
 import { allowUnverifiedWebhook, isProductionEnv } from '../../../common/utils/webhook-verification.util';
+import { ExternalServiceError, PayloadParseError, UnsupportedOperationError } from '@gosumo/shared';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Meta Cloud API payload types
@@ -347,7 +348,10 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
       }
     }
 
-    throw new Error('Webhook payload contained no parseable inbound message');
+    throw new PayloadParseError(
+      'WhatsApp',
+      'Webhook payload contained no parseable inbound message',
+    );
   }
 
   /**
@@ -470,7 +474,10 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
     );
 
     if (!metaUrlResp.ok) {
-      throw new Error(`Media URL fetch failed: ${metaUrlResp.status} ${metaUrlResp.statusText}`);
+      throw new ExternalServiceError('WhatsApp Media', 'URL fetch failed', {
+        status: metaUrlResp.status,
+        context: { statusText: metaUrlResp.statusText },
+      });
     }
 
     const metaUrlJson = await metaUrlResp.json() as { url: string };
@@ -482,7 +489,10 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
     });
 
     if (!mediaResp.ok) {
-      throw new Error(`Media download failed: ${mediaResp.status} ${mediaResp.statusText}`);
+      throw new ExternalServiceError('WhatsApp Media', 'download failed', {
+        status: mediaResp.status,
+        context: { statusText: mediaResp.statusText },
+      });
     }
 
     const arrayBuffer = await mediaResp.arrayBuffer();
@@ -512,7 +522,10 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
 
     if (!resp.ok) {
       const errText = await resp.text();
-      throw new Error(`Media upload failed: ${resp.status} — ${errText}`);
+      throw new ExternalServiceError('WhatsApp Media', 'upload failed', {
+        status: resp.status,
+        context: { body: errText },
+      });
     }
 
     const json = await resp.json() as { id: string };
@@ -729,7 +742,9 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
 
       default: {
         const _exhaustive: never = content;
-        throw new Error(`Unhandled content type: ${(_exhaustive as { type: string }).type}`);
+        throw new UnsupportedOperationError(
+          `WhatsApp cannot send content of type "${(_exhaustive as { type: string }).type}"`,
+        );
       }
     }
   }

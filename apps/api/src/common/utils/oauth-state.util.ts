@@ -1,4 +1,5 @@
 import * as crypto from 'crypto';
+import { ConfigurationError } from '@gosumo/shared';
 
 /**
  * Signed `state` values for outbound OAuth redirects.
@@ -58,7 +59,10 @@ export function signOAuthState(
   if (!secret) {
     // Minting an unsigned state would silently reintroduce the hole this
     // module exists to close, so refuse rather than degrade.
-    throw new Error('Cannot sign an OAuth state without a secret');
+    throw new ConfigurationError(
+      'OAUTH_STATE_SECRET',
+      'Cannot sign an OAuth state without a secret',
+    );
   }
 
   const payload: StatePayload = {

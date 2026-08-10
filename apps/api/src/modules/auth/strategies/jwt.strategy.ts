@@ -4,6 +4,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { AuthenticatedUser } from '../../../common/decorators/current-user.decorator';
 import { SessionService } from '../session.service';
+import { ConfigurationError } from '@gosumo/shared';
 
 export interface JwtPayload {
   sub: string;
@@ -23,7 +24,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   ) {
     const secret = configService.get<string>('app.jwt.secret');
     if (!secret) {
-      throw new Error('JWT_SECRET is not configured');
+      throw new ConfigurationError('app.jwt.secret', 'JWT_SECRET is not configured');
     }
 
     super({

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
-import { ChannelType } from '@gosumo/shared';
+import { ChannelType, ResourceNotFoundError } from '@gosumo/shared';
 import { Prisma, $Enums } from '@prisma/client';
 import type { clients, channel_contacts } from '@prisma/client';
 import { ChurnRiskLevel } from './dto';
@@ -264,7 +264,9 @@ export class ClientIntelligenceRepository {
     });
 
     if (!existing) {
-      throw new Error(`Client ${clientId} not found for business ${businessId}`);
+      throw new ResourceNotFoundError('Client', clientId, {
+        context: { businessId },
+      });
     }
 
     const updateData: Record<string, unknown> = {};
@@ -380,10 +382,14 @@ export class ClientIntelligenceRepository {
       ]);
 
       if (!primary) {
-        throw new Error(`Primary client ${primaryId} not found for business ${businessId}`);
+        throw new ResourceNotFoundError('Client', primaryId, {
+        context: { businessId },
+      });
       }
       if (!secondary) {
-        throw new Error(`Secondary client ${secondaryId} not found for business ${businessId}`);
+        throw new ResourceNotFoundError('Client', secondaryId, {
+        context: { businessId },
+      });
       }
 
       // Move channel_contacts from secondary to primary
@@ -489,7 +495,9 @@ export class ClientIntelligenceRepository {
     });
 
     if (!existing) {
-      throw new Error(`Client ${clientId} not found for business ${businessId}`);
+      throw new ResourceNotFoundError('Client', clientId, {
+        context: { businessId },
+      });
     }
 
     const updateData: Record<string, unknown> = {
@@ -600,7 +608,9 @@ export class ClientIntelligenceRepository {
     });
 
     if (!client) {
-      throw new Error(`Client ${clientId} not found for business ${businessId}`);
+      throw new ResourceNotFoundError('Client', clientId, {
+        context: { businessId },
+      });
     }
 
     // Get most recent order date

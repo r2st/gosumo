@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ExternalServiceError } from '@gosumo/shared';
 
 // ─────────────────────────────────────────────
 // Types
@@ -220,7 +221,10 @@ export class GoogleCalendarService implements IGoogleCalendarGateway {
       this.logger.error(
         `Google token request failed: ${response.status} ${response.statusText} — ${errorBody}`,
       );
-      throw new Error(`Google OAuth token request failed: ${response.status}`);
+      throw new ExternalServiceError('Google OAuth', 'token request failed', {
+        status: response.status,
+        context: { body: errorBody },
+      });
     }
 
     const json = (await response.json()) as {
@@ -258,7 +262,10 @@ export class GoogleCalendarService implements IGoogleCalendarGateway {
       this.logger.error(
         `Google Calendar API error: ${response.status} ${response.statusText} — ${errorBody}`,
       );
-      throw new Error(`Google Calendar API error: ${response.status}`);
+      throw new ExternalServiceError('Google Calendar', `API error ${response.status}`, {
+        status: response.status,
+        context: { body: errorBody },
+      });
     }
 
     // DELETE returns 204 No Content.

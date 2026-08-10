@@ -12,7 +12,7 @@ import {
   InteractiveMessage,
   RawRequest,
 } from "@gosumo/shared";
-import { generateId } from "@gosumo/shared";
+import { generateId, ExternalServiceError } from "@gosumo/shared";
 import { BaseChannelAdapter } from "./base.adapter";
 import {
   isProductionEnv,
@@ -189,7 +189,10 @@ export class EmailAdapter extends BaseChannelAdapter {
         } catch {
           errorBody = "Server error";
         }
-        throw new Error("SendGrid " + response.status + ": " + errorBody);
+        throw new ExternalServiceError('SendGrid', `HTTP ${response.status}`, {
+          status: response.status,
+          context: { body: errorBody },
+        });
       }
 
       // Success (202 Accepted is the normal success code for SendGrid)
