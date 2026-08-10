@@ -175,7 +175,9 @@ export class RealtyIngestionService {
         businessId,
         {
           whatsappPhone: row.phone,
-          source: row.source || LeadSource.CSV,
+          // `normalizeCsvRows` already defaults a blank source column to CSV,
+          // so `row.source` is always populated by the time it reaches here.
+          source: row.source as LeadSource,
           subSource: row.subSource,
           listingRef: row.listingRef,
           name: row.name,
