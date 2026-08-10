@@ -51,6 +51,8 @@ import { SlaRepository } from './sla/sla.repository';
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
 const OTHER_BUSINESS_ID = '00000000-0000-4000-a000-000000000002';
 const RECORD_ID = '00000000-0000-4000-b000-000000000001';
+/** Second record id, for mutators that operate on a pair of rows. */
+const SECOND_RECORD_ID = '00000000-0000-4000-b000-000000000002';
 
 /**
  * A Prisma double that records every call. Any model/operation is accepted;
@@ -67,9 +69,20 @@ function makeRecordingPrisma(): {
     id: RECORD_ID,
     business_id: BUSINESS_ID,
     tags: [],
+    profile: {},
     created_at: new Date(),
     updated_at: new Date(),
     deleted_at: null,
+    // Columns a repository reads back off the row it just fetched. Omitting
+    // them makes the method throw before its later writes, which is silently
+    // read as "this mutator emitted no unscoped write".
+    name: null,
+    email: null,
+    phone: null,
+    avatar_url: null,
+    total_orders: 0,
+    total_spent: { toNumber: () => 0 },
+    last_interaction_at: null,
   };
 
   const modelProxy = (model: string) =>
@@ -392,6 +405,15 @@ const CASES: Case[] = [
     name: 'SlaRepository.markEscalated',
     repo: SlaRepository,
     run: (r: SlaRepository, b, id) => r.markEscalated(b, id, new Date(0)),
+  },
+  {
+    // Nine writes across six tables inside one transaction. The six relation
+    // moves were scoped; the two `clients.update` calls that finish the merge
+    // were bare primary-key writes, so a merge driven with a foreign primary id
+    // rewrote and then soft-deleted another business's client record.
+    name: 'ClientIntelligenceRepository.mergeClients',
+    repo: ClientIntelligenceRepository,
+    run: (r: ClientIntelligenceRepository, b, id) => r.mergeClients(b, id, SECOND_RECORD_ID),
   },
 ];
 

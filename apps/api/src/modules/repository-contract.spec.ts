@@ -190,19 +190,40 @@ interface PrismaCall {
   args: Record<string, unknown>;
 }
 
+/** Stands in for a `Prisma.Decimal` column on a read row. */
+function decimalLike(value: number): { toNumber(): number; toString(): string } {
+  return { toNumber: () => value, toString: () => String(value) };
+}
+
 function makeRecordingPrisma(): { prisma: PrismaService; calls: PrismaCall[] } {
   const calls: PrismaCall[] = [];
 
-  const row = {
+  const row: Record<string, unknown> = {
     id: RECORD_ID,
     business_id: BUSINESS_ID,
     tags: [],
     metadata: {},
+    profile: {},
     amount_paise: 0,
     created_at: new Date(0),
     updated_at: new Date(0),
     deleted_at: null,
+    // Columns that repositories dereference on the row they just read. Without
+    // these the method throws part-way and every query it would have made
+    // afterwards goes unrecorded — an unscoped write hiding behind an
+    // `undefined.toNumber()`. See the "drives every method to completion" test.
+    name: null,
+    email: null,
+    phone: null,
+    avatar_url: null,
+    total_orders: 0,
+    total_spent: decimalLike(0),
+    first_seen_at: new Date(0),
+    last_interaction_at: null,
   };
+  // A `include: { client: true }` read hands back a row whose relation is
+  // itself a row; self-reference keeps that true to any depth.
+  row['client'] = row;
 
   const modelProxy = (model: string) =>
     new Proxy(
@@ -336,6 +357,18 @@ function dataObject(): Record<string, unknown> {
     metadata: {},
     filter: {},
     isActive: true,
+    // Money and score fields get fed to `new Prisma.Decimal(...)`, which throws
+    // on undefined and takes the method down before it reaches its query.
+    amountRupees: 100,
+    subtotal: 100,
+    total: 100,
+    taxAmount: 0,
+    discountAmount: 0,
+    responseSpeedScore: 0,
+    showupIntegrityScore: 0,
+    splitHonoringScore: 0,
+    documentationHygieneScore: 0,
+    compositeScore: 0,
   };
 }
 
@@ -387,6 +420,7 @@ type DataMode = 'full' | 'empty';
 function valueForParameter(name: string, dataMode: DataMode = 'full'): unknown {
   if (/^_?(business|tenant)_?id$/i.test(name)) return BUSINESS_ID;
   if (isDataParameter(name)) return dataMode === 'empty' ? {} : dataObject();
+  if (/range$/i.test(name)) return { from: new Date(0), to: new Date(1) };
   if (/(filters?|options?|opts|query|params|criteria|where)$/i.test(name)) return {};
   if (/(ids|list)$/i.test(name)) return [RECORD_ID];
   if (/(limit|offset|page|size|count|days|hours|minutes|score|index|n)$/i.test(name)) return 20;
@@ -453,7 +487,20 @@ function whereCarriesTenant(where: unknown, depth = 0): boolean {
   );
 }
 
-const READ_OPS = new Set(['findFirst', 'findMany', 'count', 'aggregate', 'groupBy']);
+const READ_OPS = new Set([
+  'findFirst',
+  'findFirstOrThrow',
+  'findMany',
+  'count',
+  'aggregate',
+  'groupBy',
+  // `findUnique` is as much a read as `findFirst`, and its `where` takes only a
+  // unique key — so on a table whose unique key is `id` it cannot be scoped at
+  // all, and the call has to become a `findFirst`. Leaving these two out let
+  // `findUniqueOrThrow({ where: { id } })` read any tenant's row unchallenged.
+  'findUnique',
+  'findUniqueOrThrow',
+]);
 const WRITE_OPS = new Set(['update', 'updateMany', 'delete', 'deleteMany']);
 const CREATE_OPS = new Set(['create', 'createMany', 'upsert']);
 
@@ -479,6 +526,30 @@ describe('Repository discovery', () => {
     expect(TENANT_MODELS.has('payments')).toBe(true);
     // `businesses` is the tenant itself, keyed by `id`, not `business_id`.
     expect(TENANT_MODELS.has('businesses')).toBe(false);
+  });
+
+  it('drives every method to completion, not just to its first query', async () => {
+    // A method that throws part-way still records the queries it managed to
+    // make, so the isolation assertions below pass on a partial trace — the
+    // queries after the throw are simply invisible. `mergeClients` was exactly
+    // this: it died on `undefined.toNumber()` reading a row the double did not
+    // model, three lines before two unscoped `clients.update` calls.
+    //
+    // Any new entry here is a repository method whose later queries are no
+    // longer being checked. Model whatever the double is missing rather than
+    // adding to a waiver list.
+    const runs = await Promise.all(
+      METHOD_CASES.map(async ([label, repo, method]) => ({
+        label,
+        error: (await runMethod(repo, method)).error,
+      })),
+    );
+
+    const failed = runs
+      .filter((r) => r.error)
+      .map((r) => `${r.label}: ${r.error?.message}`);
+
+    expect(failed).toEqual([]);
   });
 
   it('drives most repository methods to a real query', () => {

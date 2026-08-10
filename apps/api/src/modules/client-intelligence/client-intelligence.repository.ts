@@ -190,8 +190,8 @@ export class ClientIntelligenceRepository {
         },
       });
 
-      const result = await tx.clients.findUniqueOrThrow({
-        where: { id: client.id },
+      const result = await tx.clients.findFirstOrThrow({
+        where: { id: client.id, business_id: businessId },
         include: this.clientIncludes,
       });
 
@@ -438,7 +438,7 @@ export class ClientIntelligenceRepository {
 
       // Update primary with merged data
       await tx.clients.update({
-        where: { id: primaryId },
+        where: { id: primaryId, business_id: businessId },
         data: {
           total_orders: mergedTotalOrders,
           total_spent: mergedTotalSpent,
@@ -454,13 +454,13 @@ export class ClientIntelligenceRepository {
 
       // Soft-delete secondary
       await tx.clients.update({
-        where: { id: secondaryId },
+        where: { id: secondaryId, business_id: businessId },
         data: { deleted_at: new Date() },
       });
 
       // Return the updated primary
-      const result = await tx.clients.findUniqueOrThrow({
-        where: { id: primaryId },
+      const result = await tx.clients.findFirstOrThrow({
+        where: { id: primaryId, business_id: businessId },
         include: this.clientIncludes,
       });
 
