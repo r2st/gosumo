@@ -7,7 +7,6 @@ import {
   IsInt,
   IsEmail,
   IsArray,
-  IsDateString,
   ValidateNested,
   ArrayMinSize,
   Length,
@@ -18,6 +17,7 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaymentStatus, PaymentGateway, InvoiceStatus } from '@gosumo/shared';
+import { IsCalendarDateString } from '../../../common/validators/is-calendar-date.validator';
 
 // ─────────────────────────────────────────────
 // Command DTOs
@@ -309,7 +309,7 @@ export class CreateInvoiceDto {
 
   @ApiPropertyOptional({ description: 'Due date (ISO 8601)' })
   @IsOptional()
-  @IsDateString()
+  @IsCalendarDateString()
   dueAt?: string;
 }
 

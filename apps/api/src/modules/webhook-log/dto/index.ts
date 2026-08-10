@@ -1,6 +1,7 @@
-import { IsOptional, IsString, IsBoolean, IsInt, Min, Max, IsISO8601 } from 'class-validator';
+import { IsOptional, IsString, IsBoolean, IsInt, Min, Max } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsCalendarDateString } from '../../../common/validators/is-calendar-date.validator';
 
 export class ListWebhookEventsQueryDto {
   @ApiPropertyOptional({ description: 'e.g. "WHATSAPP", "RAZORPAY"' })
@@ -27,12 +28,12 @@ export class ListWebhookEventsQueryDto {
 
   @ApiPropertyOptional({ description: 'Received-at lower bound (ISO-8601)' })
   @IsOptional()
-  @IsISO8601()
+  @IsCalendarDateString()
   from?: string;
 
   @ApiPropertyOptional({ description: 'Received-at upper bound (ISO-8601)' })
   @IsOptional()
-  @IsISO8601()
+  @IsCalendarDateString()
   to?: string;
 
   @ApiPropertyOptional({ minimum: 1, default: 1 })
@@ -54,12 +55,12 @@ export class ListWebhookEventsQueryDto {
 export class WebhookStatsQueryDto {
   @ApiPropertyOptional({ description: 'Range start (ISO-8601). Defaults to 7 days ago.' })
   @IsOptional()
-  @IsISO8601()
+  @IsCalendarDateString()
   from?: string;
 
   @ApiPropertyOptional({ description: 'Range end (ISO-8601). Defaults to now.' })
   @IsOptional()
-  @IsISO8601()
+  @IsCalendarDateString()
   to?: string;
 }
 

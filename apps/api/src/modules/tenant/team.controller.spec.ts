@@ -1,4 +1,6 @@
+import { ForbiddenException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { TeamMemberRole } from '@gosumo/database';
 import { TeamController } from './team.controller';
 import { TenantService } from './tenant.service';
 import { PrismaService } from '../../common/services/prisma.service';
@@ -13,11 +15,19 @@ function makeMember(overrides: Record<string, any> = {}) {
 describe('TeamController', () => {
   let controller: TeamController;
   let tenantService: { getMembers: jest.Mock; inviteMember: jest.Mock; removeMember: jest.Mock };
-  let prisma: { team_members: { update: jest.Mock } };
+  let prisma: {
+    team_members: {
+      update: jest.Mock;
+      findFirst: jest.Mock;
+      count: jest.Mock;
+    };
+  };
 
   beforeEach(async () => {
     tenantService = { getMembers: jest.fn(), inviteMember: jest.fn(), removeMember: jest.fn() };
-    prisma = { team_members: { update: jest.fn() } };
+    prisma = {
+      team_members: { update: jest.fn(), findFirst: jest.fn(), count: jest.fn() },
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [TeamController],
@@ -73,15 +83,121 @@ describe('TeamController', () => {
   });
 
   describe('updateRole', () => {
-    it('should update role and return updated member', async () => {
-      prisma.team_members.update.mockResolvedValue({ id: MEMBER_ID, role: 'ADMIN', status: 'ACTIVE' });
-      const result = await controller.updateRole(TENANT_ID, MEMBER_ID, { role: 'ADMIN' });
+    const OWNER_ID = '44444444-4444-4444-4444-444444444444';
+
+    /** The acting user, as `@CurrentUser()` would supply them. */
+    function actor(sub: string) {
+      return { sub, businessId: TENANT_ID, role: 'OWNER' } as any;
+    }
+
+    /** Queue up the actor lookup, then the demotion-target lookup. */
+    function withLookups(actorRole: string | null, targetRole?: string) {
+      prisma.team_members.findFirst
+        .mockResolvedValueOnce(actorRole === null ? null : { id: OWNER_ID, role: actorRole })
+        .mockResolvedValueOnce(targetRole === undefined ? null : { role: targetRole });
+    }
+
+    it('updates the role when an owner makes the change', async () => {
+      withLookups(TeamMemberRole.OWNER, TeamMemberRole.STAFF);
+      prisma.team_members.update.mockResolvedValue({
+        id: MEMBER_ID,
+        role: TeamMemberRole.MANAGER,
+        status: 'ACTIVE',
+      });
+
+      const result = await controller.updateRole(TENANT_ID, actor(OWNER_ID), MEMBER_ID, {
+        role: TeamMemberRole.MANAGER,
+      });
+
       expect(result.id).toBe(MEMBER_ID);
-      expect(result.role).toBe('ADMIN');
+      expect(result.role).toBe(TeamMemberRole.MANAGER);
       expect(prisma.team_members.update).toHaveBeenCalledWith({
         where: { id: MEMBER_ID, business_id: TENANT_ID },
-        data: { role: 'ADMIN' },
+        data: { role: TeamMemberRole.MANAGER },
       });
+    });
+
+    it('refuses a non-owner, so a member cannot promote themselves', async () => {
+      // The route is reachable by any authenticated member of the tenant. If
+      // the actor's own role is not checked, a STAFF user PATCHes their own id
+      // and becomes OWNER.
+      withLookups(TeamMemberRole.STAFF);
+
+      await expect(
+        controller.updateRole(TENANT_ID, actor(MEMBER_ID), MEMBER_ID, {
+          role: TeamMemberRole.OWNER,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(prisma.team_members.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses when the actor is not a member of the tenant at all', async () => {
+      withLookups(null);
+
+      await expect(
+        controller.updateRole(TENANT_ID, actor(OWNER_ID), MEMBER_ID, {
+          role: TeamMemberRole.MANAGER,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(prisma.team_members.update).not.toHaveBeenCalled();
+    });
+
+    it('scopes the actor lookup to the calling tenant', async () => {
+      // An owner of business A must not be recognised as an owner of B.
+      withLookups(TeamMemberRole.OWNER, TeamMemberRole.STAFF);
+      prisma.team_members.update.mockResolvedValue({ id: MEMBER_ID, role: TeamMemberRole.STAFF });
+
+      await controller.updateRole(TENANT_ID, actor(OWNER_ID), MEMBER_ID, {
+        role: TeamMemberRole.STAFF,
+      });
+
+      expect(prisma.team_members.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: OWNER_ID, business_id: TENANT_ID }),
+        }),
+      );
+    });
+
+    it('refuses to demote the last remaining owner', async () => {
+      // Demoting the only owner leaves nobody who can grant roles, invite
+      // members, or manage billing — the business cannot recover on its own.
+      withLookups(TeamMemberRole.OWNER, TeamMemberRole.OWNER);
+      prisma.team_members.count.mockResolvedValue(1);
+
+      await expect(
+        controller.updateRole(TENANT_ID, actor(OWNER_ID), MEMBER_ID, {
+          role: TeamMemberRole.MANAGER,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(prisma.team_members.update).not.toHaveBeenCalled();
+    });
+
+    it('allows demoting an owner while another owner remains', async () => {
+      withLookups(TeamMemberRole.OWNER, TeamMemberRole.OWNER);
+      prisma.team_members.count.mockResolvedValue(2);
+      prisma.team_members.update.mockResolvedValue({ id: MEMBER_ID, role: TeamMemberRole.MANAGER });
+
+      const result = await controller.updateRole(TENANT_ID, actor(OWNER_ID), MEMBER_ID, {
+        role: TeamMemberRole.MANAGER,
+      });
+
+      expect(result.role).toBe(TeamMemberRole.MANAGER);
+    });
+
+    it('does not count owners when the change is a promotion to owner', async () => {
+      // Promoting someone to OWNER can never reduce the owner count, so the
+      // guard must not spend a query on it.
+      withLookups(TeamMemberRole.OWNER);
+      prisma.team_members.update.mockResolvedValue({ id: MEMBER_ID, role: TeamMemberRole.OWNER });
+
+      await controller.updateRole(TENANT_ID, actor(OWNER_ID), MEMBER_ID, {
+        role: TeamMemberRole.OWNER,
+      });
+
+      expect(prisma.team_members.count).not.toHaveBeenCalled();
     });
   });
 

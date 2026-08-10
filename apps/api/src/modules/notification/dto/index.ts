@@ -8,7 +8,6 @@ import {
   IsArray,
   IsBoolean,
   IsObject,
-  IsDateString,
   Min,
   Max,
   MaxLength,
@@ -22,6 +21,7 @@ import {
   NotificationCategory,
   NotificationStatus,
 } from '@prisma/client';
+import { IsCalendarDateString } from '../../../common/validators/is-calendar-date.validator';
 
 // ─────────────────────────────────────────────
 // Template content (matches TemplateContent in template-renderer.ts)
@@ -98,7 +98,7 @@ export class DispatchNotificationDto {
 
   @ApiPropertyOptional({ description: 'ISO-8601 time to deliver (future = scheduled)' })
   @IsOptional()
-  @IsDateString()
+  @IsCalendarDateString()
   scheduledAt?: string;
 
   @ApiPropertyOptional({ description: 'Idempotency key; a repeat send is skipped' })
@@ -175,7 +175,7 @@ export class DispatchBatchDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsDateString()
+  @IsCalendarDateString()
   scheduledAt?: string;
 
   @ApiPropertyOptional()
@@ -441,12 +441,12 @@ export class ListNotificationsQueryDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsDateString()
+  @IsCalendarDateString()
   from?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsDateString()
+  @IsCalendarDateString()
   to?: string;
 
   @ApiPropertyOptional({ default: 1, minimum: 1 })

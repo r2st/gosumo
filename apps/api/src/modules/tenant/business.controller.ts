@@ -5,6 +5,7 @@ import { SubscriptionService } from './services/subscription.service';
 import { PrismaService } from '../../common/services/prisma.service';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { UpdateBusinessDto } from './dto/update-business.dto';
+import { UpdateBusinessSettingsDto } from './dto/update-business-settings.dto';
 
 @ApiTags('business')
 @Controller('business')
@@ -53,11 +54,11 @@ export class BusinessController {
   @Patch('settings')
   @ApiOperation({ summary: 'Update combined business settings' })
   @ApiResponse({ status: 200 })
-  async updateSettings(@TenantId() businessId: string, @Body() body: Record<string, any>) {
+  async updateSettings(@TenantId() businessId: string, @Body() dto: UpdateBusinessSettingsDto) {
     const biz = await this.prisma.businesses.findUniqueOrThrow({ where: { id: businessId } });
     const profile = (biz.profile ?? {}) as Record<string, any>;
     const settings = profile.settings ?? {};
-    const merged = { ...settings, ...body };
+    const merged = { ...settings, ...dto };
     await this.prisma.businesses.update({
       where: { id: businessId },
       data: { profile: { ...profile, settings: merged } as any },

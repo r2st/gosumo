@@ -1,15 +1,16 @@
-import { IsOptional, IsISO8601 } from 'class-validator';
+import { IsOptional } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsCalendarDateString } from '../../../common/validators/is-calendar-date.validator';
 
 export class AgentPerformanceQueryDto {
   @ApiPropertyOptional({ description: 'Range start (ISO-8601). Defaults to 30 days ago.' })
   @IsOptional()
-  @IsISO8601()
+  @IsCalendarDateString()
   from?: string;
 
   @ApiPropertyOptional({ description: 'Range end (ISO-8601). Defaults to now.' })
   @IsOptional()
-  @IsISO8601()
+  @IsCalendarDateString()
   to?: string;
 }
 

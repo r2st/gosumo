@@ -359,19 +359,36 @@ describe('Date fields require a parseable ISO-8601 instant', () => {
     await expectRejected(SnoozeConversationDto, { snoozeUntil: 'tomorrow' });
   });
 
-  it('lets an impossible calendar date through, which JS rolls forward', async () => {
-    // Documenting a real gap rather than asserting a fix: @IsDateString()
-    // checks ISO-8601 *format*, not calendar validity, so 31 February is
-    // accepted and `new Date()` rolls it to 3 March. Callers that build a
-    // Date from this field get a silently different day. Closing it would
-    // need a custom calendar-aware validator applied across every date
-    // field; pinned here so the behaviour is at least known and a future
-    // fix has a test to flip.
-    const dto = await validate<SnoozeConversationDto>(SnoozeConversationDto, {
+  it('rejects an impossible calendar date instead of rolling it forward', async () => {
+    // Previously @IsDateString() checked ISO-8601 *format* only, so 31 February
+    // was accepted and `new Date()` rolled it to 3 March — the conversation
+    // woke on a day the client never asked for. @IsCalendarDateString() now
+    // requires the components to survive a Date round-trip.
+    const messages = await expectRejected(SnoozeConversationDto, {
       snoozeUntil: '2026-02-31T00:00:00Z',
     });
-    expect(dto.snoozeUntil).toBe('2026-02-31T00:00:00Z');
-    expect(new Date(dto.snoozeUntil).getUTCMonth()).toBe(2); // March, not February
+    expect(messages).toContain('snoozeUntil must be a date that exists on the calendar');
+  });
+
+  it('rejects 29 February outside a leap year', async () => {
+    await expectRejected(SnoozeConversationDto, { snoozeUntil: '2026-02-29T00:00:00Z' });
+  });
+
+  it('still accepts 29 February in a leap year', async () => {
+    const dto = await validate<SnoozeConversationDto>(SnoozeConversationDto, {
+      snoozeUntil: '2028-02-29T00:00:00.000Z',
+    });
+    expect(dto.snoozeUntil).toBe('2028-02-29T00:00:00.000Z');
+  });
+
+  it('rejects an impossible booking date across the same validator', async () => {
+    // The fix has to hold on every date field, not just the one it was
+    // written for — a rolled booking start double-books a staff member.
+    await expectRejected(CreateBookingDto, {
+      clientId: CLIENT_ID,
+      startAt: '2026-04-31T10:00:00Z',
+      durationMinutes: 30,
+    });
   });
 
   it('rejects a numeric epoch in a date-string field', async () => {

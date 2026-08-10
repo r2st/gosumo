@@ -26,6 +26,7 @@ import {
   IngestResultDto,
   SearchKnowledgeQueryDto,
   KnowledgeEntryDto,
+  UpdateConfidenceThresholdsDto,
 } from './dto';
 
 /**
@@ -135,9 +136,9 @@ export class AiEngineController {
   @ApiResponse({ status: 200 })
   async updateThresholds(
     @TenantId() tenantId: string,
-    @Body() body: { autoExecute?: number; draftReview?: number },
+    @Body() dto: UpdateConfidenceThresholdsDto,
   ) {
-    return this.aiEngine.updateConfidenceThresholds(tenantId, body);
+    return this.aiEngine.updateConfidenceThresholds(tenantId, dto);
   }
 
   // ───────────────────────────────────────────────────────────────────

@@ -1,7 +1,6 @@
 import {
   IsOptional,
   IsEnum,
-  IsISO8601,
   IsString,
   IsInt,
   Min,
@@ -10,6 +9,7 @@ import {
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { ChannelType } from '@gosumo/shared';
+import { IsCalendarDateString } from '../../../common/validators/is-calendar-date.validator';
 
 // ─────────────────────────────────────────────
 // Enums (application layer)
@@ -56,7 +56,7 @@ export class AnalyticsRangeQueryDto {
     example: '2026-06-01T00:00:00.000Z',
   })
   @IsOptional()
-  @IsISO8601()
+  @IsCalendarDateString()
   from?: string;
 
   @ApiPropertyOptional({
@@ -64,7 +64,7 @@ export class AnalyticsRangeQueryDto {
     example: '2026-06-27T00:00:00.000Z',
   })
   @IsOptional()
-  @IsISO8601()
+  @IsCalendarDateString()
   to?: string;
 
   @ApiPropertyOptional({

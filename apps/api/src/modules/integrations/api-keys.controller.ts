@@ -7,6 +7,7 @@ import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../common/services/prisma.service';
 import { randomBytes, createHash } from 'crypto';
+import { CreateApiKeyDto } from './dto/create-api-key.dto';
 
 @ApiTags('api-keys')
 @Controller('api-keys')
@@ -48,20 +49,20 @@ export class ApiKeysController {
   async create(
     @TenantId() tenantId: string,
     @CurrentUser() user: AuthenticatedUser,
-    @Body() body: { name: string; expiresInDays?: number },
+    @Body() dto: CreateApiKeyDto,
   ) {
     const raw = `gs_${randomBytes(32).toString('hex')}`;
     const prefix = raw.slice(0, 10) + '…';
     const hash = createHash('sha256').update(raw).digest('hex');
-    const expiresAt = body.expiresInDays
-      ? new Date(Date.now() + body.expiresInDays * 86400000).toISOString()
+    const expiresAt = dto.expiresInDays
+      ? new Date(Date.now() + dto.expiresInDays * 86400000).toISOString()
       : null;
 
     try {
       await this.prisma.$executeRawUnsafe(
         `INSERT INTO api_keys (id, business_id, name, prefix, key_hash, created_by, expires_at)
          VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6::timestamptz)`,
-        tenantId, body.name, prefix, hash, user.sub, expiresAt,
+        tenantId, dto.name, prefix, hash, user.sub, expiresAt,
       );
     } catch (e: any) {
       // Table may not exist — create it
@@ -82,7 +83,7 @@ export class ApiKeysController {
         await this.prisma.$executeRawUnsafe(
           `INSERT INTO api_keys (id, business_id, name, prefix, key_hash, created_by, expires_at)
            VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6::timestamptz)`,
-          tenantId, body.name, prefix, hash, user.sub, expiresAt,
+          tenantId, dto.name, prefix, hash, user.sub, expiresAt,
         );
       } else {
         throw e;
@@ -90,7 +91,7 @@ export class ApiKeysController {
     }
 
     return {
-      name: body.name,
+      name: dto.name,
       prefix,
       key: raw,
       expiresAt,

@@ -153,11 +153,13 @@ export class ConfidenceScoringInputDto {
   @ApiPropertyOptional({ description: 'Refund amount requested (paise), if any' })
   @IsOptional()
   @IsInt()
+  @Min(0)
   refundAmountPaise?: number;
 
   @ApiPropertyOptional({ description: 'Configured max auto-refund (paise)' })
   @IsOptional()
   @IsInt()
+  @Min(0)
   maxRefundAmountPaise?: number;
 
   @ApiPropertyOptional({ description: 'Sentiment score in range -1..1' })
@@ -343,4 +345,40 @@ export class AIDecisionDto {
 
   @ApiPropertyOptional({ description: 'Timestamp when the decision was executed (null if pending)' })
   executedAt!: Date | null;
+}
+
+/**
+ * Confidence-threshold update.
+ *
+ * These two numbers are the human-in-the-loop safety gate described in
+ * CLAUDE.md: at or above `autoExecute` the AI acts on its own, between
+ * `draftReview` and `autoExecute` a human approves the draft, and below
+ * `draftReview` the conversation escalates. The endpoint previously took an
+ * inline `{ autoExecute?: number; draftReview?: number }`, which the global
+ * ValidationPipe cannot whitelist or bound — so any number was writable,
+ * including a zero or negative `autoExecute` that makes every AI decision
+ * auto-execute and silently removes human review from the whole tenant.
+ */
+export class UpdateConfidenceThresholdsDto {
+  @ApiPropertyOptional({
+    description: 'Confidence at or above which the AI acts without review (percent)',
+    minimum: 0,
+    maximum: 100,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  autoExecute?: number;
+
+  @ApiPropertyOptional({
+    description: 'Confidence at or above which the AI drafts for human review (percent)',
+    minimum: 0,
+    maximum: 100,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  draftReview?: number;
 }

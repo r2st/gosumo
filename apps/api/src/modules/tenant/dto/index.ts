@@ -1,4 +1,6 @@
 export { UpdateBusinessDto } from './update-business.dto';
+export { UpdateBusinessSettingsDto } from './update-business-settings.dto';
+export { UpdateMemberRoleDto } from './update-member-role.dto';
 export { UpdateAIConfigDto } from './ai-config.dto';
 export type { AIConfigResponse } from './ai-config.dto';
 export { ConnectChannelDto } from './connect-channel.dto';

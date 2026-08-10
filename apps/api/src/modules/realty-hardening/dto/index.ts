@@ -57,11 +57,13 @@ export class ValidateBltcDto {
   @ApiPropertyOptional({ description: 'Budget floor in paise' })
   @IsOptional()
   @IsInt()
+  @Min(0)
   budgetMinPaise?: number | null;
 
   @ApiPropertyOptional({ description: 'Budget ceiling in paise' })
   @IsOptional()
   @IsInt()
+  @Min(0)
   budgetMaxPaise?: number | null;
 
   @ApiPropertyOptional({ type: [String] })

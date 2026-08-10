@@ -6,7 +6,6 @@ import {
   IsEnum,
   IsInt,
   IsArray,
-  IsDateString,
   ValidateNested,
   Min,
   Max,
@@ -16,6 +15,7 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { OrderStatus, PaymentMethod } from '@gosumo/shared';
+import { IsCalendarDateString } from '../../../common/validators/is-calendar-date.validator';
 
 export * from './coupon.dto';
 export * from './cart.dto';
@@ -163,7 +163,7 @@ export class CreateShipmentDto {
 
   @ApiPropertyOptional({ description: 'Estimated delivery date (ISO-8601)' })
   @IsOptional()
-  @IsDateString()
+  @IsCalendarDateString()
   estimatedDeliveryAt?: string;
 }
 
@@ -219,12 +219,12 @@ export class ListOrdersQueryDto {
 
   @ApiPropertyOptional({ description: 'Filter orders placed on or after this date (ISO-8601)' })
   @IsOptional()
-  @IsDateString()
+  @IsCalendarDateString()
   dateFrom?: string;
 
   @ApiPropertyOptional({ description: 'Filter orders placed on or before this date (ISO-8601)' })
   @IsOptional()
-  @IsDateString()
+  @IsCalendarDateString()
   dateTo?: string;
 }
 

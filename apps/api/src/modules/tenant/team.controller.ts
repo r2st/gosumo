@@ -1,6 +1,6 @@
 import {
   Controller, Get, Post, Patch, Delete, Body, Param, Query,
-  Logger, HttpCode, HttpStatus,
+  Logger, HttpCode, HttpStatus, ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { TenantService } from './tenant.service';
@@ -8,6 +8,8 @@ import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
 import { InviteMemberDto } from './dto/invite-member.dto';
+import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
+import { TeamMemberRole } from '@gosumo/database';
 import { PrismaService } from '../../common/services/prisma.service';
 import { PlanLimit } from '../billing/plan.decorator';
 
@@ -40,10 +42,46 @@ export class TeamController {
   @Patch(':id/role')
   @ApiOperation({ summary: 'Update member role' })
   @ApiParam({ name: 'id' })
-  async updateRole(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) memberId: string, @Body() body: { role: string }) {
+  @ApiResponse({ status: 403, description: 'Only an owner may grant or revoke roles' })
+  async updateRole(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', UuidValidationPipe) memberId: string,
+    @Body() dto: UpdateMemberRoleDto,
+  ) {
+    // Without this check the endpoint is a self-service promotion: any
+    // authenticated member of the tenant could PATCH their own id and become
+    // OWNER. Role changes are an owner-only operation.
+    const actor = await this.prisma.team_members.findFirst({
+      where: { id: user.sub, business_id: tenantId, deleted_at: null },
+      select: { id: true, role: true },
+    });
+
+    if (!actor || actor.role !== TeamMemberRole.OWNER) {
+      throw new ForbiddenException('Only an owner may change team member roles');
+    }
+
+    // Demoting the last owner leaves the business with nobody who can grant
+    // roles, invite members, or manage billing — an unrecoverable state.
+    if (dto.role !== TeamMemberRole.OWNER) {
+      const target = await this.prisma.team_members.findFirst({
+        where: { id: memberId, business_id: tenantId, deleted_at: null },
+        select: { role: true },
+      });
+
+      if (target?.role === TeamMemberRole.OWNER) {
+        const owners = await this.prisma.team_members.count({
+          where: { business_id: tenantId, role: TeamMemberRole.OWNER, deleted_at: null },
+        });
+        if (owners <= 1) {
+          throw new ForbiddenException('A business must always have at least one owner');
+        }
+      }
+    }
+
     const updated = await this.prisma.team_members.update({
       where: { id: memberId, business_id: tenantId },
-      data: { role: body.role as any },
+      data: { role: dto.role },
     });
     return { id: updated.id, role: updated.role, status: (updated as any).status ?? 'ACTIVE' };
   }

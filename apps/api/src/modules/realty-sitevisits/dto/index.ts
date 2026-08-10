@@ -5,7 +5,6 @@ import {
   IsEnum,
   IsInt,
   IsBoolean,
-  IsISO8601,
   Min,
   Max,
   MaxLength,
@@ -13,6 +12,7 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { SiteVisitStatus, SiteVisitOutcome } from '@gosumo/shared';
+import { IsCalendarDateString } from '../../../common/validators/is-calendar-date.validator';
 
 // ─────────────────────────────────────────────
 // BOOK
@@ -33,7 +33,7 @@ export class BookVisitDto {
   unitId?: string;
 
   @ApiProperty({ description: 'Scheduled start time (ISO-8601 UTC)', example: '2026-07-10T05:30:00.000Z' })
-  @IsISO8601()
+  @IsCalendarDateString()
   scheduledAt!: string;
 
   @ApiPropertyOptional({ description: 'Visit duration in minutes', default: 45 })
@@ -72,7 +72,7 @@ export class BookVisitDto {
 
 export class RescheduleVisitDto {
   @ApiProperty({ description: 'New scheduled start time (ISO-8601 UTC)' })
-  @IsISO8601()
+  @IsCalendarDateString()
   newScheduledAt!: string;
 
   @ApiPropertyOptional({ description: 'New duration in minutes' })
@@ -125,12 +125,12 @@ export class ListVisitsQueryDto {
 
   @ApiPropertyOptional({ description: 'Range start (ISO-8601)' })
   @IsOptional()
-  @IsISO8601()
+  @IsCalendarDateString()
   from?: string;
 
   @ApiPropertyOptional({ description: 'Range end (ISO-8601)' })
   @IsOptional()
-  @IsISO8601()
+  @IsCalendarDateString()
   to?: string;
 
   @ApiPropertyOptional({ description: 'Only future, non-terminal visits', default: false })
@@ -157,10 +157,10 @@ export class ListVisitsQueryDto {
 
 export class CalendarQueryDto {
   @ApiProperty({ description: 'Range start (ISO-8601)' })
-  @IsISO8601()
+  @IsCalendarDateString()
   from!: string;
 
   @ApiProperty({ description: 'Range end (ISO-8601)' })
-  @IsISO8601()
+  @IsCalendarDateString()
   to!: string;
 }

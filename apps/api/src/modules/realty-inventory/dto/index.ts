@@ -9,7 +9,6 @@ import {
   IsNotEmpty,
   Min,
   MaxLength,
-  IsDateString,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -19,6 +18,7 @@ import {
   NetworkVisibility,
   RealtyAssetType,
 } from '@gosumo/shared';
+import { IsCalendarDateString } from '../../../common/validators/is-calendar-date.validator';
 
 // ─────────────────────────────────────────────
 // PROJECT DTOs
@@ -51,7 +51,7 @@ export class CreateProjectDto {
 
   @ApiPropertyOptional({ description: 'Possession date (ISO-8601)' })
   @IsOptional()
-  @IsDateString()
+  @IsCalendarDateString()
   possessionDate?: string;
 
   @ApiPropertyOptional({ enum: ProjectStatus, default: ProjectStatus.UC })
@@ -115,7 +115,7 @@ export class UpdateProjectDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsDateString()
+  @IsCalendarDateString()
   possessionDate?: string;
 
   @ApiPropertyOptional({ enum: ProjectStatus })

@@ -7,7 +7,6 @@ import {
   IsInt,
   IsArray,
   IsBoolean,
-  IsDateString,
   IsUrl,
   ValidateNested,
   Min,
@@ -23,6 +22,7 @@ import {
   BookingActor,
   RecurrenceFrequency,
 } from '@gosumo/shared';
+import { IsCalendarDateString } from '../../../common/validators/is-calendar-date.validator';
 
 // ─────────────────────────────────────────────
 // Availability DTOs
@@ -107,11 +107,11 @@ export class SetAvailabilityDto {
 /** Query for available slots over a date range. */
 export class GetSlotsQueryDto {
   @ApiProperty({ description: 'Range start (inclusive), ISO-8601' })
-  @IsDateString()
+  @IsCalendarDateString()
   from!: string;
 
   @ApiProperty({ description: 'Range end (exclusive), ISO-8601' })
-  @IsDateString()
+  @IsCalendarDateString()
   to!: string;
 
   @ApiProperty({ description: 'Required slot duration in minutes', minimum: 5 })
@@ -135,11 +135,11 @@ export class GetSlotsQueryDto {
 /** Block a time range so no bookings can be made in it. */
 export class BlockSlotDto {
   @ApiProperty({ description: 'Block start, ISO-8601' })
-  @IsDateString()
+  @IsCalendarDateString()
   startAt!: string;
 
   @ApiProperty({ description: 'Block end, ISO-8601' })
-  @IsDateString()
+  @IsCalendarDateString()
   endAt!: string;
 
   @ApiPropertyOptional({ description: 'Restrict the block to one staff member' })
@@ -164,7 +164,7 @@ export class CreateBookingDto {
   clientId!: string;
 
   @ApiProperty({ description: 'Appointment start instant, ISO-8601 (UTC)' })
-  @IsDateString()
+  @IsCalendarDateString()
   startAt!: string;
 
   @ApiProperty({ description: 'Appointment duration in minutes', minimum: 5 })
@@ -260,7 +260,7 @@ export class RecurrenceRuleDto {
 
   @ApiPropertyOptional({ description: 'Stop generating after this instant, ISO-8601' })
   @IsOptional()
-  @IsDateString()
+  @IsCalendarDateString()
   until?: string;
 
   @ApiPropertyOptional({ description: 'For WEEKLY: weekdays to repeat on (0=Sun..6=Sat)', type: [Number] })
@@ -280,7 +280,7 @@ export class CreateRecurringBookingDto extends CreateBookingDto {
 
 export class RescheduleBookingDto {
   @ApiProperty({ description: 'New start instant, ISO-8601 (UTC)' })
-  @IsDateString()
+  @IsCalendarDateString()
   newStartAt!: string;
 
   @ApiPropertyOptional({ description: 'New duration in minutes (defaults to the existing duration)' })
@@ -368,12 +368,12 @@ export class ListBookingsQueryDto {
 
   @ApiPropertyOptional({ description: 'Bookings starting on or after this instant, ISO-8601' })
   @IsOptional()
-  @IsDateString()
+  @IsCalendarDateString()
   from?: string;
 
   @ApiPropertyOptional({ description: 'Bookings starting on or before this instant, ISO-8601' })
   @IsOptional()
-  @IsDateString()
+  @IsCalendarDateString()
   to?: string;
 
   @ApiPropertyOptional({ description: 'Page number (1-based)', default: 1 })

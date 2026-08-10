@@ -1,5 +1,5 @@
 import { PrismaService } from '../../common/services/prisma.service';
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import {
@@ -680,13 +680,38 @@ export class AiEngineService {
     } catch { return { autoExecute: 90, draftReview: 70 }; }
   }
 
-  async updateConfidenceThresholds(businessId: string, body: { autoExecute?: number; draftReview?: number }) {
+  /**
+   * Updates the confidence routing thresholds for a tenant.
+   *
+   * These two numbers *are* the human-in-the-loop gate. The DTO bounds each to
+   * 0–100, but bounds alone are not enough: `autoExecute` below `draftReview`
+   * inverts the bands so the review window is empty and everything the model
+   * would have drafted for a human is auto-executed instead. Because each
+   * field is optional and the other is read from stored settings, the ordering
+   * has to be checked against the *merged* result, not the request body.
+   */
+  async updateConfidenceThresholds(
+    businessId: string,
+    body: { autoExecute?: number; draftReview?: number },
+  ) {
     const biz = await this.prisma.businesses.findUniqueOrThrow({ where: { id: businessId } });
     const s = { ...((biz.ai_settings ?? {}) as Record<string, any>) };
-    if (body.autoExecute !== undefined) s.autoExecuteThreshold = body.autoExecute;
-    if (body.draftReview !== undefined) s.reviewThreshold = body.draftReview;
+
+    const autoExecute = body.autoExecute ?? s.autoExecuteThreshold ?? 90;
+    const draftReview = body.draftReview ?? s.reviewThreshold ?? 70;
+
+    if (autoExecute < draftReview) {
+      throw new BadRequestException(
+        `autoExecute (${autoExecute}) must be greater than or equal to draftReview ` +
+          `(${draftReview}); an inverted pair would auto-execute decisions meant for human review`,
+      );
+    }
+
+    s.autoExecuteThreshold = autoExecute;
+    s.reviewThreshold = draftReview;
+
     await this.prisma.businesses.update({ where: { id: businessId }, data: { ai_settings: s as any } });
-    return { autoExecute: s.autoExecuteThreshold ?? 90, draftReview: s.reviewThreshold ?? 70 };
+    return { autoExecute, draftReview };
   }
 
 

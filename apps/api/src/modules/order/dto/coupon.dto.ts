@@ -6,7 +6,6 @@ import {
   IsInt,
   IsNumber,
   IsBoolean,
-  IsDateString,
   IsUUID,
   Min,
   Max,
@@ -16,6 +15,7 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { DiscountType } from '@gosumo/shared';
+import { IsCalendarDateString } from '../../../common/validators/is-calendar-date.validator';
 
 // ─────────────────────────────────────────────
 // Command DTOs
@@ -78,12 +78,12 @@ export class CreateCouponDto {
 
   @ApiPropertyOptional({ description: 'Coupon valid from (ISO-8601)' })
   @IsOptional()
-  @IsDateString()
+  @IsCalendarDateString()
   validFrom?: string;
 
   @ApiPropertyOptional({ description: 'Coupon valid until (ISO-8601)' })
   @IsOptional()
-  @IsDateString()
+  @IsCalendarDateString()
   validUntil?: string;
 }
 
@@ -134,12 +134,12 @@ export class UpdateCouponDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsDateString()
+  @IsCalendarDateString()
   validFrom?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsDateString()
+  @IsCalendarDateString()
   validUntil?: string;
 
   @ApiPropertyOptional()

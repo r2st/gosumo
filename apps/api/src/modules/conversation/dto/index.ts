@@ -6,7 +6,6 @@ import {
   IsBoolean,
   IsString,
   IsArray,
-  IsDateString,
   Min,
   Max,
   IsNotEmpty,
@@ -18,6 +17,7 @@ import { Type, Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ChannelType, ConversationStatus } from '@gosumo/shared';
 import { AutoAssignStrategy } from '../conversation.constants';
+import { IsCalendarDateString } from '../../../common/validators/is-calendar-date.validator';
 
 // ─────────────────────────────────────────────
 // Query / Command DTOs
@@ -89,12 +89,12 @@ export class ListConversationsQueryDto {
 
   @ApiPropertyOptional({ description: 'Created-at lower bound (ISO-8601)' })
   @IsOptional()
-  @IsDateString()
+  @IsCalendarDateString()
   dateFrom?: string;
 
   @ApiPropertyOptional({ description: 'Created-at upper bound (ISO-8601)' })
   @IsOptional()
-  @IsDateString()
+  @IsCalendarDateString()
   dateTo?: string;
 
   @ApiPropertyOptional({ description: 'Page number (1-based)', default: 1 })
@@ -162,7 +162,7 @@ export class ResolveConversationDto {
 /** Snooze a conversation until a future time (max 7 days out). */
 export class SnoozeConversationDto {
   @ApiProperty({ description: 'ISO-8601 time to wake the conversation' })
-  @IsDateString()
+  @IsCalendarDateString()
   snoozeUntil!: string;
 
   @ApiPropertyOptional({ description: 'Acting team member UUID' })

@@ -8,7 +8,6 @@ import {
   IsNumber,
   IsInt,
   IsNotEmpty,
-  IsDateString,
   IsArray,
   MaxLength,
   Min,
@@ -18,6 +17,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { ChannelType, MessageStatus, MessageDirection } from '@gosumo/shared';
 import { NotificationTemplateChannel } from '@prisma/client';
+import { IsCalendarDateString } from '../../../common/validators/is-calendar-date.validator';
 
 // ─────────────────────────────────────────────
 // StoreInboundMessageDto
@@ -176,12 +176,12 @@ export class MessageSearchQueryDto {
 
   @ApiPropertyOptional({ description: 'Filter by start date (ISO-8601)' })
   @IsOptional()
-  @IsDateString()
+  @IsCalendarDateString()
   dateFrom?: string;
 
   @ApiPropertyOptional({ description: 'Filter by end date (ISO-8601)' })
   @IsOptional()
-  @IsDateString()
+  @IsCalendarDateString()
   dateTo?: string;
 }
 
@@ -196,17 +196,17 @@ export class UpdateDeliveryStatusDto {
 
   @ApiPropertyOptional({ description: 'Timestamp when message was delivered' })
   @IsOptional()
-  @IsDateString()
+  @IsCalendarDateString()
   deliveredAt?: string;
 
   @ApiPropertyOptional({ description: 'Timestamp when message was read' })
   @IsOptional()
-  @IsDateString()
+  @IsCalendarDateString()
   readAt?: string;
 
   @ApiPropertyOptional({ description: 'Timestamp when message delivery failed' })
   @IsOptional()
-  @IsDateString()
+  @IsCalendarDateString()
   failedAt?: string;
 
   @ApiPropertyOptional({ description: 'Reason for delivery failure' })
