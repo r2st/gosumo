@@ -6,6 +6,8 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
+import { InjectQueue } from '@nestjs/bull';
+import type { Queue } from 'bull';
 import type { conversations } from '@prisma/client';
 import {
   ConversationStatus,
@@ -40,7 +42,10 @@ import {
   ESCALATION_REASON,
   SLA_FIRST_RESPONSE_TARGET_SECONDS,
   SLA_RESOLUTION_TARGET_SECONDS,
+  CONVERSATION_QUEUE,
+  CONVERSATION_JOBS,
   type EscalationReason,
+  type SnoozeWakeJobData,
 } from './conversation.constants';
 
 // ─────────────────────────────────────────────
@@ -139,6 +144,7 @@ export class ConversationService {
     private readonly repository: ConversationRepository,
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
+    @InjectQueue(CONVERSATION_QUEUE) private readonly queue: Queue<SnoozeWakeJobData>,
   ) {}
 
   // ─────────────────────────────────────────────
@@ -413,6 +419,21 @@ export class ConversationService {
       currentStatus,
       ConversationStatus.SNOOZED,
       actorId,
+    );
+
+    // Schedule the wake-up: a delayed job is the only thing that reopens a
+    // SNOOZED conversation when the customer never replies before the
+    // window elapses. jobId is deterministic per (conversation, deadline)
+    // so re-snoozing to the same time is a no-op rather than a duplicate.
+    await this.queue.add(
+      CONVERSATION_JOBS.SNOOZE_WAKE,
+      { businessId, conversationId: id },
+      {
+        delay: delta,
+        jobId: `${CONVERSATION_JOBS.SNOOZE_WAKE}:${id}:${snoozeUntil.getTime()}`,
+        removeOnComplete: true,
+        removeOnFail: true,
+      },
     );
 
     this.logger.log(
@@ -803,8 +824,15 @@ export class ConversationService {
 
       await this.repository.updateLastMessageAt(conversation.id, new Date());
 
-      // A resolved conversation auto-reopens when the client messages again.
-      if (conversation.status === ConversationStatus.RESOLVED) {
+      // A resolved or snoozed conversation auto-reopens when the client
+      // messages again — a reply during a snooze window means the human
+      // reason to wait no longer applies, and this is the only reopen path
+      // that fires before the scheduled snooze-wake job is due.
+      if (
+        conversation.status === ConversationStatus.RESOLVED ||
+        conversation.status === ConversationStatus.SNOOZED
+      ) {
+        const previousStatus = conversation.status as ConversationStatus;
         await this.repository
           .updateStatus(event.businessId, conversation.id, ConversationStatus.OPEN)
           .then(() =>
@@ -812,7 +840,7 @@ export class ConversationService {
               event.businessId,
               conversation.id,
               conversation.client_id,
-              ConversationStatus.RESOLVED,
+              previousStatus,
               ConversationStatus.OPEN,
               RESOLVED_BY.SYSTEM,
             ),

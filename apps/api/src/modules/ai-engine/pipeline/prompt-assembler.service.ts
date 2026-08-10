@@ -3,6 +3,7 @@ import { IntentType, MessageDirection } from '@gosumo/shared';
 import { messages, business_rules } from '@gosumo/database';
 import { EnrichedContext } from './context-loader.service';
 import { buildSystemPrompt, buildUserPrompt, SystemPromptVars } from '../prompts/system.prompt';
+import { MAX_HISTORY_MESSAGE_CHARS } from '../ai-engine.constants';
 
 /**
  * PromptAssemblerService — composes the final system + user prompts from the
@@ -85,9 +86,14 @@ export class PromptAssemblerService {
       .map((m) => {
         const speaker = m.direction === MessageDirection.INBOUND ? 'Customer' : 'Agent';
         const text = m.text_content ?? this.contentPreview(m);
-        return `[${speaker}] ${text}`;
+        return `[${speaker}] ${this.truncate(text)}`;
       })
       .join('\n');
+  }
+
+  private truncate(text: string): string {
+    if (text.length <= MAX_HISTORY_MESSAGE_CHARS) return text;
+    return `${text.slice(0, MAX_HISTORY_MESSAGE_CHARS)}… [truncated, ${text.length} chars total]`;
   }
 
   private contentPreview(message: messages): string {

@@ -74,3 +74,19 @@ export const ESCALATION_REASON = {
 
 export type EscalationReason =
   (typeof ESCALATION_REASON)[keyof typeof ESCALATION_REASON];
+
+/**
+ * Bull queue that carries the delayed snooze-wake job. Registered in
+ * ConversationModule; consumed by ConversationProcessor.
+ */
+export const CONVERSATION_QUEUE = 'conversation';
+
+export const CONVERSATION_JOBS = {
+  /** Fires when a snoozed conversation's snooze window elapses. */
+  SNOOZE_WAKE: 'snooze-wake',
+} as const;
+
+export interface SnoozeWakeJobData {
+  businessId: string;
+  conversationId: string;
+}

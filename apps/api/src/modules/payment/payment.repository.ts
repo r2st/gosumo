@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
-import { PaymentStatus } from '@gosumo/shared';
+import { PaymentStatus, RefundStatus, currencyToPaise } from '@gosumo/shared';
 import { Prisma } from '@prisma/client';
 import type { payments, refunds, invoices } from '@prisma/client';
 
@@ -302,6 +302,25 @@ export class PaymentRepository {
     });
   }
 
+  /**
+   * Sum COMPLETED refund amounts (rupees) for a payment — used to decide
+   * whether a payment should flip to REFUNDED (fully) or PARTIALLY_REFUNDED.
+   */
+  async sumCompletedRefundsForPayment(
+    businessId: string,
+    paymentId: string,
+  ): Promise<number> {
+    const result = await this.prisma.refunds.aggregate({
+      where: {
+        business_id: businessId,
+        payment_id: paymentId,
+        status: 'COMPLETED',
+      },
+      _sum: { amount: true },
+    });
+    return Number(result._sum.amount ?? 0);
+  }
+
   // ─────────────────────────────────────────────
   // Refunds
   // ─────────────────────────────────────────────
@@ -324,6 +343,19 @@ export class PaymentRepository {
         gateway_response: data.gatewayResponse
           ? (data.gatewayResponse as Prisma.InputJsonValue)
           : Prisma.JsonNull,
+      },
+    });
+  }
+
+  /**
+   * Find a refund by its gateway refund ID (used for webhook processing).
+   * Not scoped by business — webhook processing looks up the refund globally
+   * and then uses the refund's business_id for further operations.
+   */
+  async findRefundByGatewayId(gatewayRefundId: string): Promise<refunds | null> {
+    return this.prisma.refunds.findFirst({
+      where: {
+        gateway_refund_id: gatewayRefundId,
       },
     });
   }
@@ -754,28 +786,56 @@ export class PaymentRepository {
   }
 
 
+  /**
+   * Aggregate payment stats for the dashboard. `payments.amount` is stored in
+   * rupees (Decimal(14,2)), not paise, so every amount is converted via
+   * `currencyToPaise()` — do not read a non-existent `amount_paise` column.
+   * Refunded amounts come from the `refunds` table (status COMPLETED) rather
+   * than the payment row, since a payment only records its own gross amount.
+   */
   async getPaymentStats(
     businessId: string,
     params: { from?: string; to?: string },
   ) {
-    const where: any = { business_id: businessId };
+    const where: Prisma.paymentsWhereInput = { business_id: businessId };
     if (params.from || params.to) {
       where.created_at = {};
       if (params.from) where.created_at.gte = new Date(params.from);
       if (params.to) where.created_at.lte = new Date(params.to);
     }
-    const payments = await this.prisma.payments.findMany({ where });
-    const captured = payments.filter((p: any) => p.status === 'CAPTURED' || p.status === 'SUCCESS');
-    const refunded = payments.filter((p: any) => p.status === 'REFUNDED' || p.status === 'PARTIALLY_REFUNDED');
-    const totalRevenue = captured.reduce((s: number, p: any) => s + (p.amount_paise ?? 0), 0);
-    const refundedAmt = refunded.reduce((s: number, p: any) => s + (p.refund_amount_paise ?? p.amount_paise ?? 0), 0);
+    const payments = await this.prisma.payments.findMany({
+      where,
+      select: { id: true, status: true, amount: true },
+    });
+    const successful = payments.filter((p) => p.status === PaymentStatus.SUCCESS);
+    const totalRevenue = successful.reduce(
+      (s, p) => s + currencyToPaise(Number(p.amount)),
+      0,
+    );
+
+    const paymentIds = payments.map((p) => p.id);
+    let refundedAmt = 0;
+    let refundCount = 0;
+    if (paymentIds.length > 0) {
+      const refunds = await this.prisma.refunds.findMany({
+        where: {
+          business_id: businessId,
+          payment_id: { in: paymentIds },
+          status: RefundStatus.COMPLETED,
+        },
+        select: { amount: true },
+      });
+      refundedAmt = refunds.reduce((s, r) => s + currencyToPaise(Number(r.amount)), 0);
+      refundCount = refunds.length;
+    }
+
     return {
       totalRevenue,
       totalTransactions: payments.length,
-      successRate: payments.length > 0 ? Math.round((captured.length / payments.length) * 100) / 100 : 0,
-      avgTransactionValue: captured.length > 0 ? Math.round(totalRevenue / captured.length) : 0,
+      successRate: payments.length > 0 ? Math.round((successful.length / payments.length) * 100) / 100 : 0,
+      avgTransactionValue: successful.length > 0 ? Math.round(totalRevenue / successful.length) : 0,
       refundedAmount: refundedAmt,
-      refundCount: refunded.length,
+      refundCount,
     };
   }
 

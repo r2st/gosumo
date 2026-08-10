@@ -14,6 +14,7 @@
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { getQueueToken } from '@nestjs/bull';
 import {
   NotFoundException,
   BadRequestException,
@@ -29,7 +30,7 @@ import {
 import { ConversationService } from './conversation.service';
 import { ConversationRepository } from './conversation.repository';
 import { PrismaService } from '../../common/services/prisma.service';
-import { AutoAssignStrategy } from './conversation.constants';
+import { AutoAssignStrategy, CONVERSATION_QUEUE } from './conversation.constants';
 
 const BUSINESS_ID = '11111111-1111-1111-1111-111111111111';
 const CLIENT_ID = '22222222-2222-2222-2222-222222222222';
@@ -98,11 +99,13 @@ describe('ConversationService — lifecycle & features', () => {
   let repository: ReturnType<typeof createMockRepository>;
   let prisma: ReturnType<typeof createMockPrisma>;
   let eventEmitter: { emit: jest.Mock };
+  let queue: { add: jest.Mock };
 
   beforeEach(async () => {
     repository = createMockRepository();
     prisma = createMockPrisma();
     eventEmitter = { emit: jest.fn() };
+    queue = { add: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -110,6 +113,7 @@ describe('ConversationService — lifecycle & features', () => {
         { provide: ConversationRepository, useValue: repository },
         { provide: PrismaService, useValue: prisma },
         { provide: EventEmitter2, useValue: eventEmitter },
+        { provide: getQueueToken(CONVERSATION_QUEUE), useValue: queue },
       ],
     }).compile();
 

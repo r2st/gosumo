@@ -1,37 +1,27 @@
+import { PaymentRepository } from './payment.repository';
+
 /**
- * Tests for the payment stats endpoint added to fix the
- * "Something went wrong" error on the payments dashboard.
+ * Tests for PaymentRepository.getPaymentStats, exercised against the real
+ * repository implementation. `payments.amount` / `refunds.amount` are
+ * Decimal(14,2) rupee columns — there is no `amount_paise` column on either
+ * table, so every mock row here mimics a Prisma Decimal (toString() only,
+ * matching how `Number(decimal)` actually resolves it at runtime).
  */
 describe('PaymentRepository.getPaymentStats', () => {
-  let prisma: { payments: { findMany: jest.Mock } };
-  let repository: any;
+  let prisma: {
+    payments: { findMany: jest.Mock };
+    refunds: { findMany: jest.Mock };
+  };
+  let repository: PaymentRepository;
+
+  const decimal = (rupees: number) => ({ toString: () => rupees.toFixed(2) });
 
   beforeEach(() => {
-    prisma = { payments: { findMany: jest.fn() } };
-    // Directly test the logic rather than instantiating the full repository
-    repository = {
-      async getPaymentStats(businessId: string, params: { from?: string; to?: string }) {
-        const where: any = { business_id: businessId };
-        if (params.from || params.to) {
-          where.created_at = {};
-          if (params.from) where.created_at.gte = new Date(params.from);
-          if (params.to) where.created_at.lte = new Date(params.to);
-        }
-        const payments = await prisma.payments.findMany({ where });
-        const captured = payments.filter((p: any) => p.status === 'CAPTURED' || p.status === 'SUCCESS');
-        const refunded = payments.filter((p: any) => p.status === 'REFUNDED' || p.status === 'PARTIALLY_REFUNDED');
-        const totalRevenue = captured.reduce((s: number, p: any) => s + (p.amount_paise ?? 0), 0);
-        const refundedAmt = refunded.reduce((s: number, p: any) => s + (p.refund_amount_paise ?? p.amount_paise ?? 0), 0);
-        return {
-          totalRevenue,
-          totalTransactions: payments.length,
-          successRate: payments.length > 0 ? Math.round((captured.length / payments.length) * 100) / 100 : 0,
-          avgTransactionValue: captured.length > 0 ? Math.round(totalRevenue / captured.length) : 0,
-          refundedAmount: refundedAmt,
-          refundCount: refunded.length,
-        };
-      },
+    prisma = {
+      payments: { findMany: jest.fn() },
+      refunds: { findMany: jest.fn() },
     };
+    repository = new PaymentRepository(prisma as never);
   });
 
   it('should return zero stats for no payments', async () => {
@@ -45,39 +35,55 @@ describe('PaymentRepository.getPaymentStats', () => {
     expect(stats.avgTransactionValue).toBe(0);
     expect(stats.refundedAmount).toBe(0);
     expect(stats.refundCount).toBe(0);
+    expect(prisma.refunds.findMany).not.toHaveBeenCalled();
   });
 
-  it('should calculate revenue from CAPTURED and SUCCESS payments', async () => {
+  it('should calculate revenue in paise from SUCCESS payments only', async () => {
     prisma.payments.findMany.mockResolvedValue([
-      { status: 'CAPTURED', amount_paise: 10000 },
-      { status: 'SUCCESS', amount_paise: 20000 },
-      { status: 'FAILED', amount_paise: 5000 },
+      { id: 'p1', status: 'SUCCESS', amount: decimal(100) },
+      { id: 'p2', status: 'SUCCESS', amount: decimal(200) },
+      { id: 'p3', status: 'FAILED', amount: decimal(50) },
     ]);
+    prisma.refunds.findMany.mockResolvedValue([]);
 
     const stats = await repository.getPaymentStats('biz-1', {});
 
-    expect(stats.totalRevenue).toBe(30000);
+    expect(stats.totalRevenue).toBe(30000); // paise
     expect(stats.totalTransactions).toBe(3);
     expect(stats.avgTransactionValue).toBe(15000);
     // 2 successful / 3 total = 0.67
     expect(stats.successRate).toBe(0.67);
   });
 
-  it('should track refunded amounts separately', async () => {
+  it('should sum refunded amounts from the refunds table, not the payment row', async () => {
     prisma.payments.findMany.mockResolvedValue([
-      { status: 'CAPTURED', amount_paise: 50000 },
-      { status: 'REFUNDED', amount_paise: 20000, refund_amount_paise: 20000 },
-      { status: 'PARTIALLY_REFUNDED', amount_paise: 30000, refund_amount_paise: 10000 },
+      { id: 'p1', status: 'SUCCESS', amount: decimal(500) },
+      { id: 'p2', status: 'REFUNDED', amount: decimal(200) },
+      { id: 'p3', status: 'PARTIALLY_REFUNDED', amount: decimal(300) },
+    ]);
+    prisma.refunds.findMany.mockResolvedValue([
+      { amount: decimal(200) },
+      { amount: decimal(100) },
     ]);
 
     const stats = await repository.getPaymentStats('biz-1', {});
 
+    // Only the SUCCESS payment counts toward revenue.
     expect(stats.totalRevenue).toBe(50000);
     expect(stats.refundedAmount).toBe(30000);
     expect(stats.refundCount).toBe(2);
+    expect(prisma.refunds.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          business_id: 'biz-1',
+          payment_id: { in: ['p1', 'p2', 'p3'] },
+          status: 'COMPLETED',
+        }),
+      }),
+    );
   });
 
-  it('should apply date filters to the query', async () => {
+  it('should apply date filters to the payments query', async () => {
     prisma.payments.findMany.mockResolvedValue([]);
 
     await repository.getPaymentStats('biz-1', { from: '2024-01-01', to: '2024-12-31' });
@@ -90,16 +96,7 @@ describe('PaymentRepository.getPaymentStats', () => {
           lte: new Date('2024-12-31'),
         },
       },
+      select: { id: true, status: true, amount: true },
     });
-  });
-
-  it('should fall back to amount_paise for refunds without refund_amount_paise', async () => {
-    prisma.payments.findMany.mockResolvedValue([
-      { status: 'REFUNDED', amount_paise: 15000 },
-    ]);
-
-    const stats = await repository.getPaymentStats('biz-1', {});
-
-    expect(stats.refundedAmount).toBe(15000);
   });
 });

@@ -22,6 +22,7 @@
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { getQueueToken } from '@nestjs/bull';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import {
   ChannelType,
@@ -32,6 +33,7 @@ import {
 import { ConversationService } from './conversation.service';
 import { ConversationRepository } from './conversation.repository';
 import { PrismaService } from '../../common/services/prisma.service';
+import { CONVERSATION_QUEUE, CONVERSATION_JOBS } from './conversation.constants';
 
 // ─────────────────────────────────────────────
 // Test fixtures
@@ -96,6 +98,7 @@ function createMockRepository() {
     findById: jest.fn(),
     findActiveByClientAndChannel: jest.fn(),
     create: jest.fn(),
+    update: jest.fn(),
     updateStatus: jest.fn(),
     list: jest.fn(),
     updateLastMessageAt: jest.fn(),
@@ -111,6 +114,12 @@ function createMockPrisma() {
   };
 }
 
+function createMockQueue() {
+  return {
+    add: jest.fn(),
+  };
+}
+
 // ─────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────
@@ -120,11 +129,13 @@ describe('ConversationService', () => {
   let repository: ReturnType<typeof createMockRepository>;
   let prisma: ReturnType<typeof createMockPrisma>;
   let eventEmitter: { emit: jest.Mock };
+  let queue: ReturnType<typeof createMockQueue>;
 
   beforeEach(async () => {
     repository = createMockRepository();
     prisma = createMockPrisma();
     eventEmitter = { emit: jest.fn() };
+    queue = createMockQueue();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -132,6 +143,7 @@ describe('ConversationService', () => {
         { provide: ConversationRepository, useValue: repository },
         { provide: PrismaService, useValue: prisma },
         { provide: EventEmitter2, useValue: eventEmitter },
+        { provide: getQueueToken(CONVERSATION_QUEUE), useValue: queue },
       ],
     }).compile();
 
@@ -563,6 +575,85 @@ describe('ConversationService', () => {
 
       expect(repository.findActiveByClientAndChannel).not.toHaveBeenCalled();
       expect(repository.updateLastMessageAt).not.toHaveBeenCalled();
+    });
+
+    it('should reopen a SNOOZED conversation when the client replies', async () => {
+      const snoozed = makeConversation({
+        status: ConversationStatus.SNOOZED,
+        snoozed_until: new Date(Date.now() + 3_600_000),
+      });
+      repository.findActiveByClientAndChannel.mockResolvedValue(snoozed);
+      repository.updateLastMessageAt.mockResolvedValue(snoozed);
+      repository.updateStatus.mockResolvedValue(
+        makeConversation({ status: ConversationStatus.OPEN }),
+      );
+
+      const event: MessageReceivedEvent = {
+        type: 'message.received',
+        id: '77777777-7777-7777-7777-777777777777',
+        timestamp: new Date().toISOString(),
+        businessId: BUSINESS_ID,
+        correlationId: 'gs-test-corr',
+        messageId: MESSAGE_ID,
+        conversationId: CONVERSATION_ID,
+        channelAccountId: CHANNEL_ACCOUNT_ID,
+        channel: ChannelType.WHATSAPP,
+        senderExternalId: '919876543210',
+        clientId: CLIENT_ID,
+      };
+
+      await service.handleMessageReceived(event);
+
+      expect(repository.updateStatus).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        CONVERSATION_ID,
+        ConversationStatus.OPEN,
+      );
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'conversation.status.changed',
+        expect.objectContaining({
+          previousStatus: ConversationStatus.SNOOZED,
+          newStatus: ConversationStatus.OPEN,
+        }),
+      );
+    });
+  });
+
+  // ─── snoozeConversation ──────────────────────
+
+  describe('snoozeConversation', () => {
+    it('should schedule a delayed snooze-wake job with the correct delay and a deterministic jobId', async () => {
+      const conversation = makeConversation({ status: ConversationStatus.OPEN });
+      repository.findById.mockResolvedValue(conversation);
+      repository.update.mockResolvedValue(
+        makeConversation({ status: ConversationStatus.SNOOZED }),
+      );
+
+      const snoozeUntil = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2h out
+      await service.snoozeConversation(BUSINESS_ID, CONVERSATION_ID, snoozeUntil);
+
+      expect(queue.add).toHaveBeenCalledWith(
+        CONVERSATION_JOBS.SNOOZE_WAKE,
+        { businessId: BUSINESS_ID, conversationId: CONVERSATION_ID },
+        expect.objectContaining({
+          jobId: `${CONVERSATION_JOBS.SNOOZE_WAKE}:${CONVERSATION_ID}:${snoozeUntil.getTime()}`,
+        }),
+      );
+      const delayArg = queue.add.mock.calls[0][2].delay;
+      expect(delayArg).toBeGreaterThan(0);
+      expect(delayArg).toBeLessThanOrEqual(2 * 60 * 60 * 1000);
+    });
+
+    it('should reject a snooze duration beyond the 7-day maximum', async () => {
+      const conversation = makeConversation({ status: ConversationStatus.OPEN });
+      repository.findById.mockResolvedValue(conversation);
+
+      const tooFar = new Date(Date.now() + 8 * 24 * 60 * 60 * 1000);
+      await expect(
+        service.snoozeConversation(BUSINESS_ID, CONVERSATION_ID, tooFar),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(queue.add).not.toHaveBeenCalled();
     });
   });
 });

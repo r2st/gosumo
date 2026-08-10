@@ -35,6 +35,14 @@ export const WEIGHT_POLICY_CLARITY = 0.5;
 
 /** Number of recent messages loaded as conversation history. */
 export const CONTEXT_MESSAGE_WINDOW = 20;
+/**
+ * Max characters kept per message when rendering conversation history into
+ * the prompt. WhatsApp/web-chat text can run to tens of thousands of
+ * characters; without a cap, one oversized message stays in the window for
+ * up to CONTEXT_MESSAGE_WINDOW turns and can crowd out RAG context or blow
+ * the free-tier model's context limit.
+ */
+export const MAX_HISTORY_MESSAGE_CHARS = 500;
 /** Maximum RAG chunks injected into the prompt. */
 export const MAX_RAG_CHUNKS = 5;
 /** Qdrant similarity floor — chunks below this are discarded. */

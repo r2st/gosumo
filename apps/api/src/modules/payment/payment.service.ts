@@ -1240,6 +1240,11 @@ export class PaymentService {
     );
   }
 
+  /**
+   * Razorpay `refund.processed` → mark our refund record COMPLETED and roll
+   * the parent payment to REFUNDED (fully) or PARTIALLY_REFUNDED, mirroring
+   * what `getPaymentSummaryForOrder` / `getPaymentStats` expect to find.
+   */
   private async handleRefundProcessed(
     webhookData: RazorpayWebhookPayload,
   ): Promise<void> {
@@ -1250,12 +1255,67 @@ export class PaymentService {
       return;
     }
 
-    // This is a notification from Razorpay that the refund is complete.
-    // We need to find the refund record by gateway refund ID and update it.
-    // Since we don't have a dedicated query for this, log and skip for now.
-    // The refund was already initiated via our API and the record exists.
+    const refund = await this.repository.findRefundByGatewayId(refundEntity.id);
+
+    if (!refund) {
+      this.logger.warn(
+        `No refund found for gateway refund ${refundEntity.id} (payment ${refundEntity.payment_id})`,
+      );
+      return;
+    }
+
+    if (refund.status === RefundStatus.COMPLETED) {
+      this.logger.debug(
+        `Refund ${refund.id} already COMPLETED — skipping refund.processed webhook`,
+      );
+      return;
+    }
+
+    await this.repository.updateRefundStatus(refund.business_id, refund.id, {
+      status: RefundStatus.COMPLETED,
+      gatewayResponse: webhookData.payload as unknown as Record<string, unknown>,
+      completedAt: new Date(),
+    });
+
+    const payment = await this.repository.getPayment(refund.business_id, refund.payment_id);
+    if (payment) {
+      const originalAmountPaise = currencyToPaise(Number(payment.amount));
+      const totalRefundedRupees = await this.repository.sumCompletedRefundsForPayment(
+        refund.business_id,
+        refund.payment_id,
+      );
+      const totalRefundedPaise = currencyToPaise(totalRefundedRupees);
+      const newPaymentStatus =
+        totalRefundedPaise >= originalAmountPaise
+          ? PaymentStatus.REFUNDED
+          : PaymentStatus.PARTIALLY_REFUNDED;
+
+      if (payment.status !== newPaymentStatus) {
+        await this.repository.updatePaymentStatus(refund.business_id, payment.id, {
+          status: newPaymentStatus,
+        });
+      }
+    }
+
+    const event: PaymentRefundEvent = {
+      type: 'payment.refund.completed',
+      id: generateId(),
+      timestamp: new Date().toISOString(),
+      businessId: refund.business_id,
+      correlationId: generateCorrelationId(),
+      refundId: refund.id,
+      paymentId: refund.payment_id,
+      orderId: refund.order_id ?? undefined,
+      clientId: payment?.client_id ?? '',
+      amountPaise: currencyToPaise(Number(refund.amount)),
+      currency: refund.currency,
+      reason: refund.reason ?? undefined,
+    };
+
+    this.eventEmitter.emit('payment.refund.completed', event);
+
     this.logger.log(
-      `Razorpay refund processed: ${refundEntity.id} for payment ${refundEntity.payment_id}`,
+      `Refund ${refund.id} marked COMPLETED via Razorpay refund.processed webhook (gateway: ${refundEntity.id})`,
     );
   }
 

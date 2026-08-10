@@ -110,6 +110,8 @@ describe('PaymentService', () => {
       getRefund: jest.fn(),
       listRefunds: jest.fn(),
       updateRefundStatus: jest.fn(),
+      findRefundByGatewayId: jest.fn(),
+      sumCompletedRefundsForPayment: jest.fn(),
       getPaymentSummaryForOrder: jest.fn(),
       recordWebhookEvent: jest.fn(),
       markWebhookProcessed: jest.fn(),
@@ -395,6 +397,150 @@ describe('PaymentService', () => {
           type: 'payment.failed',
           reason: 'Insufficient funds',
         }),
+      );
+    });
+
+    it('should complete the refund and mark payment REFUNDED on refund.processed (full refund)', async () => {
+      const refundPayload = JSON.stringify({
+        entity: 'event',
+        account_id: 'acc_test',
+        event: 'refund.processed',
+        contains: ['refund'],
+        payload: {
+          refund: {
+            entity: {
+              id: 'rfnd_test123',
+              payment_id: 'pay_test456',
+              amount: 50000,
+              status: 'processed',
+            },
+          },
+        },
+      });
+
+      razorpay.verifyWebhookSignature.mockReturnValue(true);
+      repository.recordWebhookEvent.mockResolvedValue({ id: 'wh_3' });
+      repository.findRefundByGatewayId.mockResolvedValue(
+        createMockRefund({ gateway_refund_id: 'rfnd_test123' }) as never,
+      );
+      repository.getPayment.mockResolvedValue(createMockPayment() as never);
+      repository.sumCompletedRefundsForPayment.mockResolvedValue(500);
+
+      await service.handleRazorpayWebhook(refundPayload, 'valid_sig');
+
+      expect(repository.updateRefundStatus).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        REFUND_ID,
+        expect.objectContaining({ status: 'COMPLETED' }),
+      );
+      expect(repository.updatePaymentStatus).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        PAYMENT_ID,
+        expect.objectContaining({ status: PaymentStatus.REFUNDED }),
+      );
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'payment.refund.completed',
+        expect.objectContaining({
+          type: 'payment.refund.completed',
+          refundId: REFUND_ID,
+          paymentId: PAYMENT_ID,
+        }),
+      );
+    });
+
+    it('should mark payment PARTIALLY_REFUNDED when refunded total is less than payment amount', async () => {
+      const refundPayload = JSON.stringify({
+        entity: 'event',
+        account_id: 'acc_test',
+        event: 'refund.processed',
+        contains: ['refund'],
+        payload: {
+          refund: {
+            entity: {
+              id: 'rfnd_partial',
+              payment_id: 'pay_test456',
+              amount: 25000,
+              status: 'processed',
+            },
+          },
+        },
+      });
+
+      razorpay.verifyWebhookSignature.mockReturnValue(true);
+      repository.recordWebhookEvent.mockResolvedValue({ id: 'wh_4' });
+      repository.findRefundByGatewayId.mockResolvedValue(
+        createMockRefund({ gateway_refund_id: 'rfnd_partial' }) as never,
+      );
+      repository.getPayment.mockResolvedValue(createMockPayment() as never);
+      repository.sumCompletedRefundsForPayment.mockResolvedValue(250);
+
+      await service.handleRazorpayWebhook(refundPayload, 'valid_sig');
+
+      expect(repository.updatePaymentStatus).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        PAYMENT_ID,
+        expect.objectContaining({ status: PaymentStatus.PARTIALLY_REFUNDED }),
+      );
+    });
+
+    it('should skip already-COMPLETED refunds on redelivered refund.processed webhooks', async () => {
+      const refundPayload = JSON.stringify({
+        entity: 'event',
+        account_id: 'acc_test',
+        event: 'refund.processed',
+        contains: ['refund'],
+        payload: {
+          refund: {
+            entity: {
+              id: 'rfnd_done',
+              payment_id: 'pay_test456',
+              amount: 50000,
+              status: 'processed',
+            },
+          },
+        },
+      });
+
+      razorpay.verifyWebhookSignature.mockReturnValue(true);
+      repository.recordWebhookEvent.mockResolvedValue({ id: 'wh_5' });
+      repository.findRefundByGatewayId.mockResolvedValue(
+        createMockRefund({ gateway_refund_id: 'rfnd_done', status: 'COMPLETED' }) as never,
+      );
+
+      await service.handleRazorpayWebhook(refundPayload, 'valid_sig');
+
+      expect(repository.updateRefundStatus).not.toHaveBeenCalled();
+      expect(repository.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it('should log and skip refund.processed when no matching refund record exists', async () => {
+      const refundPayload = JSON.stringify({
+        entity: 'event',
+        account_id: 'acc_test',
+        event: 'refund.processed',
+        contains: ['refund'],
+        payload: {
+          refund: {
+            entity: {
+              id: 'rfnd_unknown',
+              payment_id: 'pay_unknown',
+              amount: 50000,
+              status: 'processed',
+            },
+          },
+        },
+      });
+
+      razorpay.verifyWebhookSignature.mockReturnValue(true);
+      repository.recordWebhookEvent.mockResolvedValue({ id: 'wh_6' });
+      repository.findRefundByGatewayId.mockResolvedValue(null);
+
+      await service.handleRazorpayWebhook(refundPayload, 'valid_sig');
+
+      expect(repository.updateRefundStatus).not.toHaveBeenCalled();
+      expect(eventEmitter.emit).not.toHaveBeenCalledWith(
+        'payment.refund.completed',
+        expect.anything(),
       );
     });
   });
