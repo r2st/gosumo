@@ -809,39 +809,50 @@ export class PaymentRepository {
       if (params.from) where.created_at.gte = new Date(params.from);
       if (params.to) where.created_at.lte = new Date(params.to);
     }
-    const payments = await this.prisma.payments.findMany({
-      where,
-      select: { id: true, status: true, amount: true },
-    });
-    const successful = payments.filter((p) => p.status === PaymentStatus.SUCCESS);
-    const totalRevenue = successful.reduce(
-      (s, p) => s + currencyToPaise(Number(p.amount)),
-      0,
-    );
 
-    const paymentIds = payments.map((p) => p.id);
-    let refundedAmt = 0;
-    let refundCount = 0;
-    if (paymentIds.length > 0) {
-      const refunds = await this.prisma.refunds.findMany({
+    // Counts and sums are computed in the database. Reading the rows to add
+    // them up in JS meant the whole payment history of a tenant landed in
+    // memory for what is a dashboard tile, and the refund lookup that followed
+    // built an `IN (...)` holding every payment id — which stops working long
+    // before the memory does. The refunds side is scoped through the payment
+    // relation instead, so it inherits the same tenant + date window without
+    // needing the id list.
+    const [byStatus, refundAgg] = await Promise.all([
+      this.prisma.payments.groupBy({
+        by: ['status'],
+        where,
+        _count: { _all: true },
+        _sum: { amount: true },
+      }),
+      this.prisma.refunds.aggregate({
         where: {
           business_id: businessId,
-          payment_id: { in: paymentIds },
           status: RefundStatus.COMPLETED,
+          payment: where,
         },
-        select: { amount: true },
-      });
-      refundedAmt = refunds.reduce((s, r) => s + currencyToPaise(Number(r.amount)), 0);
-      refundCount = refunds.length;
-    }
+        _count: { _all: true },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    const totalTransactions = byStatus.reduce((s, row) => s + row._count._all, 0);
+    const successRow = byStatus.find((row) => row.status === PaymentStatus.SUCCESS);
+    const successfulCount = successRow?._count._all ?? 0;
+    // Decimal(14,2) rupees → paise. Rounding the sum is exact here because each
+    // row already has at most two decimal places.
+    const totalRevenue = currencyToPaise(Number(successRow?._sum.amount ?? 0));
 
     return {
       totalRevenue,
-      totalTransactions: payments.length,
-      successRate: payments.length > 0 ? Math.round((successful.length / payments.length) * 100) / 100 : 0,
-      avgTransactionValue: successful.length > 0 ? Math.round(totalRevenue / successful.length) : 0,
-      refundedAmount: refundedAmt,
-      refundCount,
+      totalTransactions,
+      successRate:
+        totalTransactions > 0
+          ? Math.round((successfulCount / totalTransactions) * 100) / 100
+          : 0,
+      avgTransactionValue:
+        successfulCount > 0 ? Math.round(totalRevenue / successfulCount) : 0,
+      refundedAmount: currencyToPaise(Number(refundAgg._sum.amount ?? 0)),
+      refundCount: refundAgg._count._all,
     };
   }
 

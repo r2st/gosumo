@@ -33,6 +33,7 @@ type PrismaMock = {
     findMany: jest.Mock;
     count: jest.Mock;
     update: jest.Mock;
+    groupBy: jest.Mock;
   };
   refunds: {
     create: jest.Mock;
@@ -64,6 +65,7 @@ describe('PaymentRepository', () => {
         findMany: jest.fn().mockResolvedValue([]),
         count: jest.fn().mockResolvedValue(0),
         update: jest.fn().mockResolvedValue({ id: PAYMENT_ID }),
+        groupBy: jest.fn().mockResolvedValue([]),
       },
       refunds: {
         create: jest.fn().mockResolvedValue({ id: REFUND_ID }),
@@ -71,7 +73,9 @@ describe('PaymentRepository', () => {
         findMany: jest.fn().mockResolvedValue([]),
         count: jest.fn().mockResolvedValue(0),
         update: jest.fn().mockResolvedValue({ id: REFUND_ID }),
-        aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }),
+        aggregate: jest
+          .fn()
+          .mockResolvedValue({ _count: { _all: 0 }, _sum: { amount: null } }),
       },
       invoices: {
         create: jest.fn().mockResolvedValue({ id: INVOICE_ID }),
@@ -902,7 +906,7 @@ describe('PaymentRepository', () => {
     it('omits the created_at filter entirely when no window is given', async () => {
       await repository.getPaymentStats(BUSINESS_ID, {});
 
-      expect(prisma.payments.findMany.mock.calls[0][0].where).toEqual({
+      expect(prisma.payments.groupBy.mock.calls[0][0].where).toEqual({
         business_id: BUSINESS_ID,
       });
     });
@@ -910,7 +914,7 @@ describe('PaymentRepository', () => {
     it('applies a lower bound only', async () => {
       await repository.getPaymentStats(BUSINESS_ID, { from: '2026-01-01' });
 
-      expect(prisma.payments.findMany.mock.calls[0][0].where.created_at).toEqual({
+      expect(prisma.payments.groupBy.mock.calls[0][0].where.created_at).toEqual({
         gte: new Date('2026-01-01'),
       });
     });
@@ -918,7 +922,7 @@ describe('PaymentRepository', () => {
     it('applies an upper bound only', async () => {
       await repository.getPaymentStats(BUSINESS_ID, { to: '2026-02-01' });
 
-      expect(prisma.payments.findMany.mock.calls[0][0].where.created_at).toEqual({
+      expect(prisma.payments.groupBy.mock.calls[0][0].where.created_at).toEqual({
         lte: new Date('2026-02-01'),
       });
     });
@@ -929,7 +933,7 @@ describe('PaymentRepository', () => {
         to: '2026-02-01',
       });
 
-      expect(prisma.payments.findMany.mock.calls[0][0].where.created_at).toEqual({
+      expect(prisma.payments.groupBy.mock.calls[0][0].where.created_at).toEqual({
         gte: new Date('2026-01-01'),
         lte: new Date('2026-02-01'),
       });
