@@ -1324,11 +1324,9 @@ describe('CatalogService', () => {
     });
 
     it('decrements a variant and emits stock.out when the variant hits zero', async () => {
-      const before = makeItem({ variants: [makeVariant({ stock_quantity: 1 })] });
-      const after = makeItem({ variants: [makeVariant({ stock_quantity: 0 })] });
-      repository.findItemById
-        .mockResolvedValueOnce(before as never)
-        .mockResolvedValueOnce(after as never);
+      repository.findItemById.mockResolvedValue(
+        makeItem({ variants: [makeVariant({ stock_quantity: 1 })] }) as never,
+      );
       repository.updateVariantStock.mockResolvedValue({ stock_quantity: 0 } as never);
 
       await service.handleOrderCreated({
@@ -1351,14 +1349,12 @@ describe('CatalogService', () => {
     });
 
     it('emits stock.low when a variant decrement lands on the threshold', async () => {
-      const before = makeItem({ variants: [makeVariant({ stock_quantity: 12 })] });
-      const after = makeItem({
-        low_stock_threshold: 10,
-        variants: [makeVariant({ stock_quantity: 8 })],
-      });
-      repository.findItemById
-        .mockResolvedValueOnce(before as never)
-        .mockResolvedValueOnce(after as never);
+      repository.findItemById.mockResolvedValue(
+        makeItem({
+          low_stock_threshold: 10,
+          variants: [makeVariant({ stock_quantity: 12 })],
+        }) as never,
+      );
       repository.updateVariantStock.mockResolvedValue({ stock_quantity: 8 } as never);
 
       await service.handleOrderCreated({
@@ -1376,10 +1372,13 @@ describe('CatalogService', () => {
       expect(low?.[1]).toMatchObject({ currentStock: 8, threshold: 10 });
     });
 
-    it('stops after the decrement when the item vanishes mid-flight', async () => {
-      repository.findItemById
-        .mockResolvedValueOnce(makeItem() as never)
-        .mockResolvedValueOnce(null as never);
+    /**
+     * The stock writers return the updated row, so the post-decrement level
+     * needs no second read. This runs once per line of every order — a third
+     * query per line is pure overhead on the hottest catalog path.
+     */
+    it('reads the item once per line item and takes the new stock from the write', async () => {
+      repository.findItemById.mockResolvedValue(makeItem() as never);
       repository.updateItemStock.mockResolvedValue({ stock_quantity: 0 } as never);
 
       await service.handleOrderCreated({
@@ -1393,7 +1392,34 @@ describe('CatalogService', () => {
         lineItems: [{ itemId: ITEM_ID, quantity: 1 }],
       } as never);
 
-      expect(eventEmitter.emit).not.toHaveBeenCalled();
+      expect(repository.findItemById).toHaveBeenCalledTimes(1);
+      // stock_quantity 0 comes from the update's return value, not a re-read.
+      expect(eventEmitter.emit.mock.calls.map((c) => c[0])).toContain(
+        'catalog.stock.out',
+      );
+    });
+
+    /** Two lines, two reads — the count must scale with lines, not queries. */
+    it('does not re-read per line beyond the one lookup each needs', async () => {
+      repository.findItemById.mockResolvedValue(makeItem() as never);
+      repository.updateItemStock.mockResolvedValue({ stock_quantity: 40 } as never);
+
+      await service.handleOrderCreated({
+        id: 'evt',
+        type: 'order.created',
+        timestamp: new Date().toISOString(),
+        businessId: BUSINESS_ID,
+        correlationId: 'corr',
+        orderId: ORDER_ID,
+        clientId: CLIENT_ID,
+        lineItems: [
+          { itemId: ITEM_ID, quantity: 1 },
+          { itemId: ITEM_ID, quantity: 2 },
+        ],
+      } as never);
+
+      expect(repository.findItemById).toHaveBeenCalledTimes(2);
+      expect(repository.updateItemStock).toHaveBeenCalledTimes(2);
     });
 
     it('restocks a specific variant on cancellation', async () => {

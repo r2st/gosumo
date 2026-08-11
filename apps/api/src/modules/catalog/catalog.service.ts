@@ -763,20 +763,17 @@ export class CatalogService {
     const item = await this.repository.findItemById(businessId, itemId);
     if (!item || !item.track_inventory) return;
 
-    if (variantId) {
-      await this.repository.updateVariantStock(businessId, variantId, -quantity);
-    } else {
-      await this.repository.updateItemStock(businessId, itemId, -quantity);
-    }
+    // Both stock writers return the updated row, so the post-decrement level is
+    // already in hand — re-reading the item here cost a third query per line
+    // item, on an event handler that runs once per line of every order.
+    // `low_stock_threshold` is not touched by a stock write, so the value read
+    // above is still current.
+    const updated = variantId
+      ? await this.repository.updateVariantStock(businessId, variantId, -quantity)
+      : await this.repository.updateItemStock(businessId, itemId, -quantity);
 
-    // Check stock levels after decrement
-    const refreshed = await this.repository.findItemById(businessId, itemId);
-    if (!refreshed) return;
-
-    const stock = variantId
-      ? refreshed.variants.find((v) => v.id === variantId)?.stock_quantity ?? 0
-      : refreshed.stock_quantity ?? 0;
-    const threshold = refreshed.low_stock_threshold ?? 0;
+    const stock = updated.stock_quantity ?? 0;
+    const threshold = item.low_stock_threshold ?? 0;
 
     if (stock <= 0) {
       this.eventEmitter.emit('catalog.stock.out', {
