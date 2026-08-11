@@ -15,6 +15,7 @@ import { BookingService } from './booking.service';
 import { BookingRepository } from './booking.repository';
 import { PrismaService } from '../../common/services/prisma.service';
 import { GoogleCalendarService } from './google-calendar.service';
+import { TenantService } from '../tenant/tenant.service';
 import { BOOKING_QUEUE, STAFF_ROSTER_LIMIT } from './booking.constants';
 import { BookingStatus, BookingActor, RecurrenceFrequency } from '@gosumo/shared';
 import type { PaymentSuccessEvent } from '@gosumo/shared';
@@ -123,6 +124,7 @@ describe('BookingService — branch coverage', () => {
   let googleCalendar: jest.Mocked<GoogleCalendarService>;
   let queue: { add: jest.Mock };
   let teamMembers: { findMany: jest.Mock };
+  let tenantService: { assertTeamMember: jest.Mock };
 
   beforeEach(async () => {
     const mockRepository = {
@@ -166,6 +168,7 @@ describe('BookingService — branch coverage', () => {
 
     queue = { add: jest.fn().mockResolvedValue(undefined) };
     teamMembers = { findMany: jest.fn().mockResolvedValue([]) };
+    tenantService = { assertTeamMember: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -175,6 +178,7 @@ describe('BookingService — branch coverage', () => {
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
         { provide: GoogleCalendarService, useValue: mockGoogle },
         { provide: getQueueToken(BOOKING_QUEUE), useValue: queue },
+        { provide: TenantService, useValue: tenantService },
       ],
     }).compile();
 
@@ -200,6 +204,118 @@ describe('BookingService — branch coverage', () => {
   });
 
   // ─── createBooking / validation guards ───────
+
+  // ─── staffId tenant guard ────────────────────
+
+  /**
+   * `staffId` arrives in the request body, so @TenantId() does not scope it.
+   * `bookings.staff_id` is satisfied by any real member row, and the
+   * availability/block/connection tables key on it with no tenant join — every
+   * write path that accepts one must reject a member of another business, and
+   * must do so before any row is written or any external call is made.
+   */
+  describe('staffId tenant guard', () => {
+    const denied = new BadRequestException(
+      `Team member ${STAFF_ID} does not belong to this business`,
+    );
+
+    beforeEach(() => {
+      tenantService.assertTeamMember.mockRejectedValue(denied);
+    });
+
+    it('rejects a foreign staffId on createBooking', async () => {
+      await expect(
+        service.createBooking(BUSINESS_ID, {
+          clientId: CLIENT_ID,
+          startAt: FUTURE_START,
+          durationMinutes: 30,
+          staffId: STAFF_ID,
+        } as never),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(tenantService.assertTeamMember).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        STAFF_ID,
+      );
+      expect(repository.createBookingAtomic).not.toHaveBeenCalled();
+    });
+
+    it('rejects a foreign staffId on createRecurringBooking', async () => {
+      await expect(
+        service.createRecurringBooking(BUSINESS_ID, {
+          clientId: CLIENT_ID,
+          startAt: FUTURE_START,
+          durationMinutes: 30,
+          staffId: STAFF_ID,
+          frequency: RecurrenceFrequency.WEEKLY,
+          count: 3,
+        } as never),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(repository.createRecurrence).not.toHaveBeenCalled();
+    });
+
+    it('rejects a foreign staffId on rescheduleBooking', async () => {
+      await expect(
+        service.rescheduleBooking(BUSINESS_ID, BOOKING_ID, {
+          newStartAt: FUTURE_START,
+          staffId: STAFF_ID,
+        } as never),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(repository.updateBooking).not.toHaveBeenCalled();
+    });
+
+    it('rejects a foreign staffId on setAvailability', async () => {
+      await expect(
+        service.setAvailability(BUSINESS_ID, {
+          staffId: STAFF_ID,
+          weeklyHours: [{ dayOfWeek: 1, startMinute: 540, endMinute: 600 }],
+        } as never),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(repository.upsertAvailability).not.toHaveBeenCalled();
+    });
+
+    it('rejects a foreign staffId on blockSlot', async () => {
+      await expect(
+        service.blockSlot(BUSINESS_ID, {
+          staffId: STAFF_ID,
+          startAt: FUTURE_START,
+          endAt: '2030-06-27T10:00:00.000Z',
+          reason: 'Leave',
+        } as never),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(repository.createBlock).not.toHaveBeenCalled();
+    });
+
+    /** The OAuth code is single-use — a rejected staffId must not burn it. */
+    it('rejects a foreign staffId before exchanging the OAuth code', async () => {
+      await expect(
+        service.connectGoogleCalendar(BUSINESS_ID, {
+          authCode: 'code-1',
+          redirectUri: 'https://app/cb',
+          staffId: STAFF_ID,
+        } as never),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(googleCalendar.exchangeCode).not.toHaveBeenCalled();
+      expect(repository.upsertConnection).not.toHaveBeenCalled();
+    });
+  });
+
+  /** Business-wide rows carry no staff member, so the guard must stay out. */
+  it('does not consult the tenant guard when staffId is omitted', async () => {
+    await service.createBooking(BUSINESS_ID, {
+      clientId: CLIENT_ID,
+      startAt: FUTURE_START,
+      durationMinutes: 30,
+    } as never);
+
+    expect(tenantService.assertTeamMember).not.toHaveBeenCalled();
+    expect(repository.createBookingAtomic).toHaveBeenCalled();
+  });
 
   describe('createBooking validation', () => {
     it('rejects an unparseable startAt', async () => {

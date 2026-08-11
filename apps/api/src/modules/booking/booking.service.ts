@@ -32,6 +32,7 @@ import { ConfigurationError } from '@gosumo/shared';
 import { BookingRepository } from './booking.repository';
 import { PrismaService } from '../../common/services/prisma.service';
 import { GoogleCalendarService } from './google-calendar.service';
+import { TenantService } from '../tenant/tenant.service';
 import {
   IST_TIMEZONE,
   utcToZonedParts,
@@ -132,6 +133,7 @@ export class BookingService {
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
     private readonly googleCalendar: GoogleCalendarService,
+    private readonly tenantService: TenantService,
     @InjectQueue(BOOKING_QUEUE) private readonly queue: Queue,
   ) {}
 
@@ -147,10 +149,30 @@ export class BookingService {
    * PENDING bookings get a 24h auto-cancel job; confirmed bookings get reminder
    * jobs and are pushed to Google Calendar (best-effort).
    */
+  /**
+   * Reject a `staffId` that is not this tenant's team member.
+   *
+   * `@TenantId()` scopes the row being written, but `staffId` arrives in the
+   * request body as a second, unscoped reference. `bookings.staff_id` is
+   * satisfied by any real member row, and the availability, block and calendar
+   * tables key on it without a tenant join — so without this a business can
+   * pin its own rows to another business's staff member. Omitting `staffId`
+   * (business-wide, no specific staff) is always valid.
+   */
+  private async assertStaffMember(
+    businessId: string,
+    staffId?: string | null,
+  ): Promise<void> {
+    if (!staffId) return;
+    await this.tenantService.assertTeamMember(businessId, staffId);
+  }
+
   async createBooking(
     businessId: string,
     dto: CreateBookingDto,
   ): Promise<BookingDto> {
+    await this.assertStaffMember(businessId, dto.staffId);
+
     const startAt = this.parseInstant(dto.startAt, 'startAt');
     const endAt = new Date(startAt.getTime() + dto.durationMinutes * 60_000);
     const timezone = dto.timezone ?? IST_TIMEZONE;
@@ -195,6 +217,8 @@ export class BookingService {
     businessId: string,
     dto: CreateRecurringBookingDto,
   ): Promise<RecurringBookingResultDto> {
+    await this.assertStaffMember(businessId, dto.staffId);
+
     const startAt = this.parseInstant(dto.startAt, 'startAt');
     const timezone = dto.timezone ?? IST_TIMEZONE;
 
@@ -540,6 +564,8 @@ export class BookingService {
     bookingId: string,
     dto: RescheduleBookingDto,
   ): Promise<BookingDto> {
+    await this.assertStaffMember(businessId, dto.staffId);
+
     const booking = await this.requireBooking(businessId, bookingId);
     const current = booking.status as BookingStatus;
 
@@ -655,6 +681,8 @@ export class BookingService {
     businessId: string,
     dto: SetAvailabilityDto,
   ): Promise<AvailabilityDto> {
+    await this.assertStaffMember(businessId, dto.staffId);
+
     for (const w of dto.weeklyHours) {
       if (w.endMinute <= w.startMinute) {
         throw new BadRequestException(
@@ -819,6 +847,8 @@ export class BookingService {
   // ════════════════════════════════════════════
 
   async blockSlot(businessId: string, dto: BlockSlotDto): Promise<BlockedSlotDto> {
+    await this.assertStaffMember(businessId, dto.staffId);
+
     const startAt = this.parseInstant(dto.startAt, 'startAt');
     const endAt = this.parseInstant(dto.endAt, 'endAt');
     if (endAt <= startAt) {
@@ -867,6 +897,10 @@ export class BookingService {
     businessId: string,
     dto: ConnectGoogleCalendarDto,
   ): Promise<CalendarConnectionDto> {
+    // Checked before the code exchange: a rejected staffId must not burn the
+    // single-use OAuth authorization code.
+    await this.assertStaffMember(businessId, dto.staffId);
+
     const tokens = await this.googleCalendar.exchangeCode(dto.authCode, dto.redirectUri);
 
     if (!tokens.refreshToken) {

@@ -6,6 +6,7 @@ import { BookingService } from './booking.service';
 import { BookingRepository } from './booking.repository';
 import { PrismaService } from '../../common/services/prisma.service';
 import { GoogleCalendarService } from './google-calendar.service';
+import { TenantService } from '../tenant/tenant.service';
 import { BOOKING_QUEUE, BOOKING_JOBS } from './booking.constants';
 import { BookingStatus, BookingActor, RecurrenceFrequency } from '@gosumo/shared';
 import type { PaymentSuccessEvent } from '@gosumo/shared';
@@ -118,6 +119,7 @@ describe('BookingService', () => {
   let eventEmitter: jest.Mocked<EventEmitter2>;
   let googleCalendar: jest.Mocked<GoogleCalendarService>;
   let queue: { add: jest.Mock };
+  let tenantService: { assertTeamMember: jest.Mock };
 
   beforeEach(async () => {
     const mockRepository = {
@@ -154,6 +156,7 @@ describe('BookingService', () => {
     };
 
     queue = { add: jest.fn().mockResolvedValue(undefined) };
+    tenantService = { assertTeamMember: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -163,6 +166,7 @@ describe('BookingService', () => {
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
         { provide: GoogleCalendarService, useValue: mockGoogle },
         { provide: getQueueToken(BOOKING_QUEUE), useValue: queue },
+        { provide: TenantService, useValue: tenantService },
       ],
     }).compile();
 

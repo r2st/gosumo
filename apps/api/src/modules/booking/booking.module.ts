@@ -6,6 +6,7 @@ import { BookingService } from './booking.service';
 import { BookingRepository } from './booking.repository';
 import { BookingProcessor } from './booking.processor';
 import { GoogleCalendarService } from './google-calendar.service';
+import { TenantModule } from '../tenant/tenant.module';
 import { BOOKING_QUEUE } from './booking.constants';
 
 /**
@@ -17,7 +18,11 @@ import { BOOKING_QUEUE } from './booking.constants';
  * app.module.ts via BullModule.forRootAsync).
  */
 @Module({
-  imports: [BullModule.registerQueue({ name: BOOKING_QUEUE })],
+  imports: [
+    BullModule.registerQueue({ name: BOOKING_QUEUE }),
+    // Tenant-scoped team-member read for the `staffId` guard.
+    TenantModule,
+  ],
   controllers: [BookingController],
   providers: [
     BookingService,
