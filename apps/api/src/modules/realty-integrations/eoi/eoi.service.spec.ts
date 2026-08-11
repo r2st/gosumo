@@ -8,7 +8,8 @@
  */
 
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { ConflictException, BadRequestException } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
+import { ConflictError, ErrorCode } from '@gosumo/shared';
 import { Prisma, RealtyEoiStatus } from '@prisma/client';
 import type { realty_eoi_requests } from '@prisma/client';
 import { LeadStage } from '@gosumo/shared';
@@ -150,9 +151,37 @@ describe('EoiService', () => {
     it('refuses to approve anything that is not PENDING_APPROVAL', async () => {
       repo.findEoi.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.PAID }));
       await expect(service.approveEoi(BUSINESS_ID, EOI_ID, 'b')).rejects.toBeInstanceOf(
-        ConflictException,
+        ConflictError,
       );
       expect(razorpay.createPaymentLink).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The taxonomy exists so callers branch on `code` and queue consumers on
+     * `retryable`. A wrong-state EOI will be wrong-state on every retry, so
+     * re-running it must never look worth attempting again.
+     */
+    it('carries the conflict taxonomy: 409, CONFLICT, not retryable', async () => {
+      repo.findEoi.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.PAID }));
+
+      let err: ConflictError | undefined;
+      try {
+        await service.approveEoi(BUSINESS_ID, EOI_ID, 'b');
+      } catch (e: unknown) {
+        err = e as ConflictError;
+      }
+
+      if (!err) throw new Error('expected approveEoi to reject');
+      expect(err.code).toBe(ErrorCode.CONFLICT);
+      expect(err.httpStatus).toBe(409);
+      expect(err.retryable).toBe(false);
+      // Ids belong in `context`, which the filter logs and never serialises.
+      expect(err.context).toMatchObject({
+        businessId: BUSINESS_ID,
+        eoiId: EOI_ID,
+        status: RealtyEoiStatus.PAID,
+        action: 'approve',
+      });
     });
   });
 
@@ -551,7 +580,7 @@ describe('EoiService', () => {
 
       await expect(
         service.rejectEoi(BUSINESS_ID, EOI_ID, 'user-1', 'duplicate'),
-      ).rejects.toBeInstanceOf(ConflictException);
+      ).rejects.toBeInstanceOf(ConflictError);
       expect(repo.updateEoi).not.toHaveBeenCalled();
     });
 

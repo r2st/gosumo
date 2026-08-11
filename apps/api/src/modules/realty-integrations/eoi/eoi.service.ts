@@ -3,12 +3,16 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
-  ConflictException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma, RealtyEoiStatus } from '@prisma/client';
 import type { realty_eoi_requests } from '@prisma/client';
-import { generateId, generateCorrelationId, LeadStage } from '@gosumo/shared';
+import {
+  generateId,
+  generateCorrelationId,
+  LeadStage,
+  ConflictError,
+} from '@gosumo/shared';
 import { RealtyLeadsService } from '../../realty-leads/realty-leads.service';
 import { RazorpayService } from '../../payment/razorpay.service';
 import { RealtyIntegrationsRepository } from '../realty-integrations.repository';
@@ -127,8 +131,9 @@ export class EoiService {
   ): Promise<EoiResponseDto> {
     const eoi = await this.mustFind(businessId, eoiId);
     if (eoi.status !== RealtyEoiStatus.PENDING_APPROVAL) {
-      throw new ConflictException(
+      throw new ConflictError(
         `EOI ${eoiId} is ${eoi.status}, only a PENDING_APPROVAL request can be approved`,
+        { context: { businessId, eoiId, status: eoi.status, action: 'approve' } },
       );
     }
 
@@ -187,8 +192,9 @@ export class EoiService {
   ): Promise<EoiResponseDto> {
     const eoi = await this.mustFind(businessId, eoiId);
     if (eoi.status !== RealtyEoiStatus.PENDING_APPROVAL) {
-      throw new ConflictException(
+      throw new ConflictError(
         `EOI ${eoiId} is ${eoi.status}, only a PENDING_APPROVAL request can be rejected`,
+        { context: { businessId, eoiId, status: eoi.status, action: 'reject' } },
       );
     }
     const updated = await this.repository.updateEoi(businessId, eoiId, {

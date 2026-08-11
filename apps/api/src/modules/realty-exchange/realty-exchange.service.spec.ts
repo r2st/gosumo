@@ -16,7 +16,8 @@
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { ForbiddenActionError, ErrorCode } from '@gosumo/shared';
 import { Prisma } from '@prisma/client';
 import { SyndicationState, SettlementState, ResaleListingStatus } from '@gosumo/shared';
 
@@ -163,8 +164,34 @@ describe('RealtyExchangeService', () => {
 
     it('refuses to syndicate a lead without buyer share consent', async () => {
       leads.getLead.mockResolvedValue(leadWith({ shareConsent: false }));
-      await expect(service.createSyndication(FROM, dto as never)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.createSyndication(FROM, dto as never)).rejects.toBeInstanceOf(ForbiddenActionError);
       expect(repo.createSyndication).not.toHaveBeenCalled();
+    });
+
+    /**
+     * A missing consent is a settled fact, not a transient failure — the queue
+     * must not re-offer the lead, and the tenant ids belong in `context`, which
+     * the exception filter logs but never serialises into the response.
+     */
+    it('carries the forbidden taxonomy: 403, FORBIDDEN, not retryable', async () => {
+      leads.getLead.mockResolvedValue(leadWith({ shareConsent: false }));
+
+      let err: ForbiddenActionError | undefined;
+      try {
+        await service.createSyndication(FROM, dto as never);
+      } catch (e: unknown) {
+        err = e as ForbiddenActionError;
+      }
+
+      if (!err) throw new Error('expected createSyndication to reject');
+      expect(err.code).toBe(ErrorCode.FORBIDDEN);
+      expect(err.httpStatus).toBe(403);
+      expect(err.retryable).toBe(false);
+      expect(err.context).toMatchObject({
+        leadId: LEAD,
+        fromBusinessId: FROM,
+        toBusinessId: TO,
+      });
     });
 
     it('rejects a split that does not sum to 100', async () => {
@@ -310,7 +337,7 @@ describe('RealtyExchangeService', () => {
       repo.findSyndicationById.mockResolvedValue(makeSyndication());
       // A non-party can still resolve the row via the visibility check in a real DB,
       // but the party check inside rateSyndication rejects them.
-      await expect(service.rateSyndication(SYND, OTHER, { showedUp: true })).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.rateSyndication(SYND, OTHER, { showedUp: true })).rejects.toBeInstanceOf(ForbiddenActionError);
     });
   });
 
@@ -359,7 +386,7 @@ describe('RealtyExchangeService', () => {
 
       await expect(
         service.calculateReliabilityScore(TO, STRANGER),
-      ).rejects.toThrow(ForbiddenException);
+      ).rejects.toThrow(ForbiddenActionError);
       expect(repo.upsertReliabilityScore).not.toHaveBeenCalled();
     });
 

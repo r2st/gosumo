@@ -3,7 +3,6 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
-  ForbiddenException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
@@ -14,6 +13,7 @@ import {
   SyndicationState,
   SettlementState,
   ResaleListingStatus,
+  ForbiddenActionError,
 } from '@gosumo/shared';
 import type {
   SplitTerms,
@@ -156,8 +156,9 @@ export class RealtyExchangeService {
     // Buyer-consent gate — read the lead in the originator's tenant scope.
     const lead = await this.leadsService.getLead(fromBusinessId, dto.leadId);
     if (!lead.shareConsent) {
-      throw new ForbiddenException(
+      throw new ForbiddenActionError(
         'Buyer has not consented to share this lead across the exchange',
+        { context: { leadId: dto.leadId, fromBusinessId, toBusinessId: dto.toBusinessId } },
       );
     }
 
@@ -355,8 +356,9 @@ export class RealtyExchangeService {
           r.to_business_id === requestedByBusinessId,
       );
       if (!isCounterparty) {
-        throw new ForbiddenException(
+        throw new ForbiddenActionError(
           'You may only recompute reliability for yourself or a member you have transacted with',
+          { context: { requestedByBusinessId, targetBusinessId } },
         );
       }
     }
@@ -587,7 +589,10 @@ export class RealtyExchangeService {
   private otherParty(syndication: realty_syndications, actor: string): string {
     if (actor === syndication.from_business_id) return syndication.to_business_id;
     if (actor === syndication.to_business_id) return syndication.from_business_id;
-    throw new ForbiddenException('Rating business is not a party to this syndication');
+    throw new ForbiddenActionError(
+      'Rating business is not a party to this syndication',
+      { context: { syndicationId: syndication.id, actor } },
+    );
   }
 
   private buildSignals(
