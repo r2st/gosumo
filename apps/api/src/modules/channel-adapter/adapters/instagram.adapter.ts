@@ -279,8 +279,10 @@ export class InstagramAdapter extends BaseChannelAdapter {
     const payload = req.body as IgWebhookPayload;
 
     if (payload.object !== 'instagram') {
-      throw new Error(
+      throw new PayloadParseError(
+        'Instagram',
         `Unexpected webhook object type: "${payload.object}" — expected "instagram"`,
+        { context: { object: payload.object } },
       );
     }
 
@@ -531,7 +533,10 @@ export class InstagramAdapter extends BaseChannelAdapter {
       case 'story_mention':
       case 'share': {
         const url = attachment.payload.url;
-        if (!url) throw new Error(`Instagram ${attachment.type} attachment missing payload.url`);
+        if (!url)
+          throw new PayloadParseError('Instagram', `${attachment.type} attachment missing payload.url`, {
+            context: { attachmentType: attachment.type },
+          });
         return {
           type: MessageContentType.IMAGE,
           url,
@@ -544,7 +549,10 @@ export class InstagramAdapter extends BaseChannelAdapter {
       case 'audio':
       case 'file': {
         const url = attachment.payload.url;
-        if (!url) throw new Error(`Instagram ${attachment.type} attachment missing payload.url`);
+        if (!url)
+          throw new PayloadParseError('Instagram', `${attachment.type} attachment missing payload.url`, {
+            context: { attachmentType: attachment.type },
+          });
         // No dedicated audio/video content type — store as IMAGE-style media ref
         return {
           type: MessageContentType.IMAGE,
@@ -555,7 +563,10 @@ export class InstagramAdapter extends BaseChannelAdapter {
 
       case 'location': {
         const coords = attachment.payload.coordinates;
-        if (!coords) throw new Error('Instagram location attachment missing coordinates');
+        if (!coords)
+          throw new PayloadParseError('Instagram', 'location attachment missing coordinates', {
+            context: { attachmentType: attachment.type },
+          });
         return {
           type: MessageContentType.LOCATION,
           latitude: coords.lat,
@@ -611,9 +622,10 @@ export class InstagramAdapter extends BaseChannelAdapter {
       case MessageContentType.INTERACTIVE:
       case MessageContentType.TEMPLATE:
       case MessageContentType.PAYMENT_LINK:
-        throw new Error(
+        throw new UnsupportedOperationError(
           `Use sendInteractive() for interactive content; Instagram does not support ` +
             `content type: ${content.type}`,
+          { context: { contentType: content.type } },
         );
 
       case MessageContentType.LOCATION:
@@ -665,23 +677,36 @@ export class InstagramAdapter extends BaseChannelAdapter {
     });
 
     if (!response.ok) {
-      let errorMessage = `Meta API returned ${response.status}`;
+      // `detail` deliberately omits the provider name — ExternalServiceError
+      // prefixes it — while `errorMessage` keeps the historical flat shape
+      // that callers and `message.failed` consumers already read.
+      let detail = `returned ${response.status}`;
+      let errorCode: number | undefined;
       try {
         const errBody = (await response.json()) as { error?: { message?: string; code?: number } };
         if (errBody.error?.message) {
-          errorMessage = `Meta API error ${errBody.error.code ?? response.status}: ${errBody.error.message}`;
+          errorCode = errBody.error.code;
+          detail = `error ${errorCode ?? response.status}: ${errBody.error.message}`;
         }
       } catch {
         // Body not JSON — use the status-only message
       }
 
-      // 4xx are non-retryable (invalid recipient, token, outside 24h window, etc.)
-      // 5xx are retried by sendWithRetry.
-      if (response.status >= 500) {
-        throw new Error(errorMessage);
+      const failure = new ExternalServiceError('Meta API', detail, {
+        status: response.status,
+        context: { errorCode },
+      });
+
+      // Retryability is the taxonomy's call, not a hand-rolled `>= 500`: that
+      // test silently gave up on 429 (rate limit) and 408, both of which are
+      // exactly the cases a backoff exists for. Everything else — invalid
+      // recipient, bad token, outside the 24h window — is terminal and comes
+      // back as a failed result rather than a throw.
+      if (failure.retryable) {
+        throw failure;
       }
 
-      return { success: false, error: errorMessage };
+      return { success: false, error: `Meta API ${detail}` };
     }
 
     const json = (await response.json()) as IgSendMessageResponse;

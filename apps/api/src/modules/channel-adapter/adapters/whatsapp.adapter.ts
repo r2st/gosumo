@@ -309,8 +309,10 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
     const payload = req.body as MetaWebhookPayload;
 
     if (payload.object !== 'whatsapp_business_account') {
-      throw new Error(
+      throw new PayloadParseError(
+        'WhatsApp',
         `Unexpected webhook object type: "${payload.object}" — expected "whatsapp_business_account"`,
+        { context: { object: payload.object } },
       );
     }
 
@@ -562,14 +564,20 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
   private parseMessageContent(msg: MetaMessage): NormalizedMessage['content'] {
     switch (msg.type) {
       case 'text':
-        if (!msg.text) throw new Error(`Message ${msg.id}: type=text but no text field`);
+        if (!msg.text)
+          throw new PayloadParseError('WhatsApp', 'type=text but no text field', {
+            context: { messageId: msg.id, messageType: msg.type },
+          });
         return {
           type: MessageContentType.TEXT,
           text: msg.text.body,
         };
 
       case 'image':
-        if (!msg.image) throw new Error(`Message ${msg.id}: type=image but no image field`);
+        if (!msg.image)
+          throw new PayloadParseError('WhatsApp', 'type=image but no image field', {
+            context: { messageId: msg.id, messageType: msg.type },
+          });
         return {
           type: MessageContentType.IMAGE,
           // URL must be resolved later via downloadMedia(msg.image.id)
@@ -579,7 +587,10 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
         };
 
       case 'document':
-        if (!msg.document) throw new Error(`Message ${msg.id}: type=document but no document field`);
+        if (!msg.document)
+          throw new PayloadParseError('WhatsApp', 'type=document but no document field', {
+            context: { messageId: msg.id, messageType: msg.type },
+          });
         return {
           type: MessageContentType.DOCUMENT,
           url: `whatsapp-media://${msg.document.id}`,
@@ -588,7 +599,10 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
         };
 
       case 'location':
-        if (!msg.location) throw new Error(`Message ${msg.id}: type=location but no location field`);
+        if (!msg.location)
+          throw new PayloadParseError('WhatsApp', 'type=location but no location field', {
+            context: { messageId: msg.id, messageType: msg.type },
+          });
         return {
           type: MessageContentType.LOCATION,
           latitude: msg.location.latitude,
@@ -598,12 +612,18 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
         };
 
       case 'interactive':
-        if (!msg.interactive) throw new Error(`Message ${msg.id}: type=interactive but no interactive field`);
+        if (!msg.interactive)
+          throw new PayloadParseError('WhatsApp', 'type=interactive but no interactive field', {
+            context: { messageId: msg.id, messageType: msg.type },
+          });
         return this.parseInteractiveContent(msg.interactive);
 
       case 'button':
         // Quick-reply button tap (from a template message)
-        if (!msg.button) throw new Error(`Message ${msg.id}: type=button but no button field`);
+        if (!msg.button)
+          throw new PayloadParseError('WhatsApp', 'type=button but no button field', {
+            context: { messageId: msg.id, messageType: msg.type },
+          });
         return {
           type: MessageContentType.INTERACTIVE,
           interactiveType: 'button_reply',
@@ -636,9 +656,9 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
 
       case 'unknown':
       default:
-        throw new Error(
-          `Unsupported WhatsApp message type: "${msg.type}" on message ${msg.id}`,
-        );
+        throw new PayloadParseError('WhatsApp', `Unsupported message type "${msg.type}"`, {
+          context: { messageId: msg.id, messageType: msg.type },
+        });
     }
   }
 
@@ -736,8 +756,9 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
       case MessageContentType.INTERACTIVE:
       case MessageContentType.PAYMENT_LINK:
         // These require the caller to use sendInteractive / buildPaymentLinkMessage instead
-        throw new Error(
+        throw new UnsupportedOperationError(
           `Use sendInteractive() or sendTemplate() for content type: ${content.type}`,
+          { context: { contentType: content.type } },
         );
 
       default: {
@@ -786,23 +807,34 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
     });
 
     if (!response.ok) {
-      let errorMessage = `Meta API returned ${response.status}`;
+      // `detail` omits the provider name (ExternalServiceError prefixes it);
+      // the returned string keeps the historical flat shape.
+      let detail = `returned ${response.status}`;
+      let errorCode: number | undefined;
       try {
         const errBody = await response.json() as { error?: { message?: string; code?: number } };
         if (errBody.error?.message) {
-          errorMessage = `Meta API error ${errBody.error.code ?? response.status}: ${errBody.error.message}`;
+          errorCode = errBody.error.code;
+          detail = `error ${errorCode ?? response.status}: ${errBody.error.message}`;
         }
       } catch {
         // Body not JSON — use the status-only message
       }
 
-      // 4xx are non-retryable (invalid recipient, token, etc.) — return failed result
-      // 5xx will be retried by sendWithRetry if the caller uses it
-      if (response.status >= 500) {
-        throw new Error(errorMessage); // Let sendWithRetry handle retries
+      const failure = new ExternalServiceError('Meta API', detail, {
+        status: response.status,
+        context: { errorCode },
+      });
+
+      // The taxonomy decides what is worth another attempt. The previous
+      // `>= 500` test excluded 429, which matters here specifically: WhatsApp
+      // caps a number at 80 msg/sec, so a rate-limit reply is the most likely
+      // transient failure this adapter sees and it was never being retried.
+      if (failure.retryable) {
+        throw failure;
       }
 
-      return { success: false, error: errorMessage };
+      return { success: false, error: `Meta API ${detail}` };
     }
 
     const json = await response.json() as MetaSendMessageResponse;

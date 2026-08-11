@@ -541,6 +541,9 @@ describe('InstagramAdapter — outbound body construction', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/does not support content type/);
+    // Instagram will not start supporting this content type between attempts,
+    // so the send must not consume its retry budget or the backoff sleeps.
+    expect(result.attempts).toBe(1);
   });
 
   it('refuses to send a location', async () => {
@@ -554,6 +557,7 @@ describe('InstagramAdapter — outbound body construction', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/does not support sending location/);
+    expect(result.attempts).toBe(1);
   });
 });
 
@@ -738,6 +742,33 @@ describe('InstagramAdapter — Graph API responses', () => {
 
     expect(result.success).toBe(false);
     expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it('retries a 429 instead of dropping the send', async () => {
+    const fetchSpy = stubFetch({
+      ok: false,
+      status: 429,
+      json: async () => ({ error: { message: 'Rate limit', code: 4 } }),
+    });
+
+    const result = await adapter.sendMessage(textMessage);
+
+    expect(result.success).toBe(false);
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it('gives up on a 403 after a single attempt', async () => {
+    const fetchSpy = stubFetch({
+      ok: false,
+      status: 403,
+      json: async () => ({ error: { message: 'Forbidden', code: 403 } }),
+    });
+
+    const result = await adapter.sendMessage(textMessage);
+
+    // A revoked token is not a transient condition.
+    expect(result).toMatchObject({ success: false, attempts: 1 });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });
 

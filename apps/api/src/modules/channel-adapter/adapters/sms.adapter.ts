@@ -13,7 +13,7 @@ import {
   InteractiveMessage,
   RawRequest,
 } from "@gosumo/shared";
-import { generateId } from "@gosumo/shared";
+import { generateId, ExternalServiceError } from "@gosumo/shared";
 import { BaseChannelAdapter } from "./base.adapter";
 import { allowUnverifiedWebhook, isProductionEnv } from "../../../common/utils/webhook-verification.util";
 
@@ -184,18 +184,27 @@ export class SmsAdapter extends BaseChannelAdapter {
       });
 
       if (!response.ok) {
+        // Twilio's two message shapes differ, so the flat string is built
+        // separately from the taxonomy detail rather than derived from it.
         let errorMessage = "Twilio API returned " + response.status;
+        let detail = "API returned " + response.status;
         try {
           const errBody = (await response.json()) as { message?: string };
           if (errBody.message) {
             errorMessage = "Twilio error: " + errBody.message;
+            detail = errBody.message;
           }
         } catch {
           // ignore
         }
 
-        if (response.status >= 500) {
-          throw new Error(errorMessage);
+        const failure = new ExternalServiceError("Twilio", detail, {
+          status: response.status,
+        });
+
+        // 408/429/5xx are worth another attempt; a bad To number never is.
+        if (failure.retryable) {
+          throw failure;
         }
         return { success: false, error: errorMessage };
       }

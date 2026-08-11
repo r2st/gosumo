@@ -6,7 +6,7 @@
  * series' local timezone, so the local time-of-day is preserved across DST
  * transitions (a 9:00am weekly slot stays 9:00am local year-round).
  */
-import { RecurrenceFrequency } from '@gosumo/shared';
+import { RecurrenceFrequency, ValidationError } from '@gosumo/shared';
 import { utcToZonedParts, zonedTimeToUtc, ZonedParts } from './timezone.util';
 
 export interface RecurrenceRule {
@@ -39,25 +39,25 @@ export const MAX_OCCURRENCES = 366;
 export function validateRecurrenceRule(rule: RecurrenceRule): void {
   const interval = rule.interval ?? 1;
   if (!Number.isInteger(interval) || interval < 1) {
-    throw new Error('Recurrence interval must be a positive integer');
+    throw new ValidationError('Recurrence interval must be a positive integer');
   }
   if (rule.count !== undefined && (!Number.isInteger(rule.count) || rule.count < 1)) {
-    throw new Error('Recurrence count must be a positive integer');
+    throw new ValidationError('Recurrence count must be a positive integer');
   }
   if (rule.count === undefined && rule.until === undefined) {
-    throw new Error('Recurrence must be bounded by either count or until');
+    throw new ValidationError('Recurrence must be bounded by either count or until');
   }
   if (rule.until !== undefined && Number.isNaN(Date.parse(rule.until))) {
-    throw new Error('Recurrence until must be a valid ISO-8601 date');
+    throw new ValidationError('Recurrence until must be a valid ISO-8601 date');
   }
   if (
     rule.byWeekday &&
     rule.byWeekday.some((d) => !Number.isInteger(d) || d < 0 || d > 6)
   ) {
-    throw new Error('Recurrence byWeekday entries must be 0-6 (0=Sunday)');
+    throw new ValidationError('Recurrence byWeekday entries must be 0-6 (0=Sunday)');
   }
   if (!Object.values(RecurrenceFrequency).includes(rule.frequency)) {
-    throw new Error(`Unsupported recurrence frequency: ${rule.frequency}`);
+    throw new ValidationError(`Unsupported recurrence frequency: ${rule.frequency}`);
   }
 }
 

@@ -1,4 +1,5 @@
 import { RealtyPlan } from '@prisma/client';
+import { ValidationError } from '@gosumo/shared';
 
 /**
  * GoSumo Realty pricing tiers (business plan §9). Money in paise (integer).
@@ -78,7 +79,9 @@ export const PLAN_DEFINITIONS: Record<RealtyPlan, PlanDefinition> = {
 export function planDefinition(plan: RealtyPlan): PlanDefinition {
   const def = PLAN_DEFINITIONS[plan];
   if (!def) {
-    throw new Error(`Unknown realty plan: ${plan}`);
+    throw new ValidationError(`Unknown realty plan: ${plan}`, {
+      context: { plan },
+    });
   }
   return def;
 }

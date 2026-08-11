@@ -454,6 +454,17 @@ describe('SmsAdapter — sendMessage', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(3);
   }, 15000);
 
+  it('retries a 429 rather than treating a rate limit as terminal', async () => {
+    // Twilio answers 429 when the account's send rate is exceeded; backing off
+    // is the whole remedy. The previous `>= 500` check dropped it instead.
+    stubFetch({ ok: false, status: 429, json: async () => ({ message: 'Too many requests' }) });
+
+    const result = await configuredAdapter().sendMessage(TEXT_MESSAGE);
+
+    expect(result.success).toBe(false);
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  }, 15000);
+
   it('accepts a success response that carries no sid', async () => {
     stubFetch({ ok: true, json: async () => ({}) });
 

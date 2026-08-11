@@ -535,6 +535,9 @@ export class MessageService {
       const parsed = JSON.parse(decoded) as PaginationCursor;
 
       if (!parsed.createdAt || !parsed.id) {
+        // Deliberately a bare Error: it is a local sentinel that the catch
+        // below turns into the BadRequestException callers actually see, and
+        // it never escapes this function.
         throw new Error('Missing cursor fields');
       }
 

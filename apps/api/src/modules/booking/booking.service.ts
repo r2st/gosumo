@@ -28,6 +28,7 @@ import type {
   TaskCreatedEvent,
   PaymentSuccessEvent,
 } from '@gosumo/shared';
+import { ConfigurationError } from '@gosumo/shared';
 import { BookingRepository } from './booking.repository';
 import { PrismaService } from '../../common/services/prisma.service';
 import { GoogleCalendarService } from './google-calendar.service';
@@ -1218,7 +1219,14 @@ export class BookingService {
       return connection.access_token;
     }
     if (!connection.refresh_token) {
-      throw new Error('No refresh token available for Google Calendar connection');
+      // The access token has expired and there is nothing to renew it with, so
+      // the connection is unusable until the business re-authorises offline
+      // access. Not the caller's fault, hence a configuration fault, not a 4xx.
+      throw new ConfigurationError(
+        'google.refreshToken',
+        'No refresh token available for Google Calendar connection',
+        { context: { businessId: connection.business_id, connectionId: connection.id } },
+      );
     }
 
     const refreshed = await this.googleCalendar.refreshAccessToken(

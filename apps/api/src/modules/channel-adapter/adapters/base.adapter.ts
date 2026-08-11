@@ -9,6 +9,8 @@ import {
   InteractiveMessage,
   RawRequest,
   ChannelType,
+  isRetryableError,
+  UnsupportedOperationError,
 } from '@gosumo/shared';
 
 /**
@@ -80,7 +82,10 @@ export abstract class BaseChannelAdapter implements ChannelAdapter {
    * Override in adapters that support media.
    */
   async downloadMedia(_mediaId: string): Promise<Buffer> {
-    throw new Error(`${this.channelType} adapter does not support downloadMedia`);
+    throw new UnsupportedOperationError(
+      `${this.channelType} adapter does not support downloadMedia`,
+      { context: { channelType: this.channelType, operation: 'downloadMedia' } },
+    );
   }
 
   /**
@@ -88,7 +93,10 @@ export abstract class BaseChannelAdapter implements ChannelAdapter {
    * Override in adapters that support media.
    */
   async uploadMedia(_buffer: Buffer, _mimeType: string): Promise<string> {
-    throw new Error(`${this.channelType} adapter does not support uploadMedia`);
+    throw new UnsupportedOperationError(
+      `${this.channelType} adapter does not support uploadMedia`,
+      { context: { channelType: this.channelType, operation: 'uploadMedia' } },
+    );
   }
 
   // ─────────────────────────────────────────────
@@ -98,9 +106,12 @@ export abstract class BaseChannelAdapter implements ChannelAdapter {
   /**
    * Execute an async operation with exponential-backoff retries.
    *
-   * Only retries on network/server errors (5xx-style).  Business errors
-   * (e.g. invalid recipient) are surfaced immediately as failed SendResults
-   * without retrying.
+   * Only retries what could plausibly succeed on a re-run. A failure arrives
+   * either as a `success: false` result or as a throw; both are surfaced
+   * immediately when non-retryable, and for a throw that verdict comes from
+   * the error taxonomy's `retryable` flag. An unclassified throwable is
+   * treated as retryable — a caller that asked for retries should not lose
+   * them to an error we could not classify.
    *
    * @param operation - The async function to execute
    * @param label     - Human-readable label for logging (e.g. "sendMessage")
@@ -127,6 +138,20 @@ export abstract class BaseChannelAdapter implements ChannelAdapter {
         return { ...result, attempts: attempt };
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
+
+        // A thrown error used to burn the whole attempt budget regardless of
+        // what it was, so a "this channel can't send locations" failure slept
+        // through two backoffs before surfacing. The taxonomy answers this
+        // directly; anything unclassified stays retryable, as before.
+        if (!isRetryableError(err)) {
+          this.logger.warn(`${label} failed (non-retryable): ${lastError.message}`);
+          return {
+            success: false,
+            attempts: attempt,
+            error: lastError.message,
+          };
+        }
+
         const isLastAttempt = attempt === this.maxAttempts;
 
         if (isLastAttempt) {

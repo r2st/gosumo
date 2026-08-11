@@ -20,6 +20,7 @@ import {
   MessageDirection,
   RawRequest,
   ExternalServiceError,
+  PayloadParseError,
 } from '@gosumo/shared';
 import type { OutboundMessage } from '@gosumo/shared';
 
@@ -404,11 +405,31 @@ describe('WhatsAppAdapter', () => {
       ['interactive', 'type=interactive but no interactive field'],
       ['button', 'type=button but no button field'],
     ])('throws when a %s message carries no %s payload', (type, message) => {
+      expect(() => parse({ type })).toThrow(PayloadParseError);
       expect(() => parse({ type })).toThrow(message);
     });
 
     it.each(['unknown', 'order', 'system'])('throws for the unsupported type %s', (type) => {
-      expect(() => parse({ type })).toThrow(/Unsupported WhatsApp message type/);
+      expect(() => parse({ type })).toThrow(`Unsupported message type "${type}"`);
+    });
+
+    it('carries the provider message id on a parse failure', () => {
+      let caught: unknown;
+      try {
+        parse({ type: 'text' });
+      } catch (err) {
+        caught = err;
+      }
+
+      // The id is the only handle on the offending payload once it is in the
+      // DLQ, and it belongs in context rather than in the message.
+      expect(caught).toBeInstanceOf(PayloadParseError);
+      expect((caught as PayloadParseError).retryable).toBe(false);
+      expect((caught as PayloadParseError).context).toMatchObject({
+        source: 'WhatsApp',
+        messageType: 'text',
+      });
+      expect((caught as PayloadParseError).context['messageId']).toBeDefined();
     });
   });
 
@@ -771,6 +792,45 @@ describe('WhatsAppAdapter', () => {
       // maxAttempts is 3 for this adapter.
       expect(fetchMock).toHaveBeenCalledTimes(3);
     }, 15000);
+
+    it('retries a 429, the rate limit this adapter is most likely to hit', async () => {
+      // WhatsApp caps a number at 80 msg/sec. The old `status >= 500` test
+      // classified that as terminal, so a burst was dropped rather than
+      // backed off — the one transient failure the retry loop exists for.
+      const fetchMock = stubFetch({
+        ok: false,
+        status: 429,
+        json: { error: { message: 'Too many requests', code: 130429 } },
+      });
+
+      const result = await configured().sendMessage({
+        recipientExternalId: '919812345678',
+        content: { type: MessageContentType.TEXT, text: 'Hi' },
+      } as OutboundMessage);
+
+      expect(result.success).toBe(false);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    }, 15000);
+
+    it('does not retry a 4xx that is the request’s own fault', async () => {
+      const fetchMock = stubFetch({
+        ok: false,
+        status: 400,
+        json: { error: { message: 'Invalid recipient', code: 131026 } },
+      });
+
+      const result = await configured().sendMessage({
+        recipientExternalId: '919812345678',
+        content: { type: MessageContentType.TEXT, text: 'Hi' },
+      } as OutboundMessage);
+
+      expect(result).toMatchObject({
+        success: false,
+        error: 'Meta API error 131026: Invalid recipient',
+        attempts: 1,
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
   });
 
   // ── Media ────────────────────────────────────
