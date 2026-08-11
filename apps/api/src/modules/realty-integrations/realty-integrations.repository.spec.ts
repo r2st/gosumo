@@ -23,6 +23,7 @@
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma, RealtyIntegrationProvider } from '@prisma/client';
+import { ResourceNotFoundError } from '@gosumo/shared';
 
 import { RealtyIntegrationsRepository } from './realty-integrations.repository';
 import { PrismaService } from '../../common/services/prisma.service';
@@ -509,9 +510,22 @@ describe('RealtyIntegrationsRepository', () => {
       // there would let the webhook report a payment it never recorded.
       prisma.realty_eoi_requests.findFirst.mockResolvedValue(null);
 
-      await expect(
-        repository.updateEoi(BUSINESS_ID, EOI_ID, { status: 'PAID' as never }),
-      ).rejects.toThrow(/not found after update/);
+      const error = await repository
+        .updateEoi(BUSINESS_ID, EOI_ID, { status: 'PAID' as never })
+        .then(
+          () => null,
+          (err: unknown) => err,
+        );
+
+      // `stage` is what separates this from an ordinary "no such EOI" read —
+      // it says the write itself matched nothing.
+      expect(error).toBeInstanceOf(ResourceNotFoundError);
+      expect((error as ResourceNotFoundError).context).toEqual({
+        resource: 'EOI',
+        resourceId: EOI_ID,
+        businessId: BUSINESS_ID,
+        stage: 'after-update',
+      });
     });
   });
 });

@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
+import { ExternalServiceError } from '@gosumo/shared';
 import { GoogleCalendarService } from './google-calendar.service';
 
 const CONFIG: Record<string, string> = {
@@ -151,9 +152,19 @@ describe('GoogleCalendarService', () => {
 
     it('throws on an API error', async () => {
       mockFetchOnce({ error: 'notFound' }, { ok: false, status: 404 });
-      await expect(
-        service.deleteEvent('at-1', 'primary', 'missing'),
-      ).rejects.toThrow(/Google Calendar API error/);
+      const error = await service.deleteEvent('at-1', 'primary', 'missing').then(
+        () => null,
+        (err: unknown) => err,
+      );
+
+      // A 404 from Calendar is permanent — deleting again won't find it either.
+      expect(error).toBeInstanceOf(ExternalServiceError);
+      expect((error as ExternalServiceError).message).toBe('Google Calendar: API error 404');
+      expect((error as ExternalServiceError).retryable).toBe(false);
+      expect((error as ExternalServiceError).context).toMatchObject({
+        service: 'Google Calendar',
+        status: 404,
+      });
     });
   });
 });

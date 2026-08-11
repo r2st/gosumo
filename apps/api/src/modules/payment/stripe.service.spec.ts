@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { createHmac } from 'crypto';
+import { ExternalServiceError } from '@gosumo/shared';
 import { StripeService } from './stripe.service';
 
 const SECRET_KEY = 'sk_test_dummy';
@@ -139,9 +140,20 @@ describe('StripeService', () => {
     it('should throw on a non-OK Stripe response', async () => {
       mockFetchOnce({ error: 'bad' }, false, 400);
 
-      await expect(
-        service.createCheckoutSession({ amountMinor: 100, currency: 'USD' }),
-      ).rejects.toThrow('Stripe API error');
+      const error = await service.createCheckoutSession({ amountMinor: 100, currency: 'USD' }).then(
+        () => null,
+        (err: unknown) => err,
+      );
+
+      // A 400 means Stripe rejected the request itself — replaying it is
+      // pointless, so the queue must not retry.
+      expect(error).toBeInstanceOf(ExternalServiceError);
+      expect((error as ExternalServiceError).message).toBe('Stripe: API error Error');
+      expect((error as ExternalServiceError).retryable).toBe(false);
+      expect((error as ExternalServiceError).context).toMatchObject({
+        service: 'Stripe',
+        status: 400,
+      });
     });
   });
 

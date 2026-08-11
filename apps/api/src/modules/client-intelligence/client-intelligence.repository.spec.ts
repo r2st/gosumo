@@ -17,7 +17,7 @@
  */
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { ChannelType } from '@gosumo/shared';
+import { ChannelType, ResourceNotFoundError } from '@gosumo/shared';
 
 import { ClientIntelligenceRepository } from './client-intelligence.repository';
 import { PrismaService } from '../../common/services/prisma.service';
@@ -219,9 +219,20 @@ describe('ClientIntelligenceRepository', () => {
     it('throws when the client is not in this business', async () => {
       prisma.clients.findFirst.mockResolvedValue(null);
 
-      await expect(
-        repository.updateClientProfile(BUSINESS_ID, CLIENT_ID, { name: 'x' }),
-      ).rejects.toThrow(/not found for business/);
+      const error = await repository
+        .updateClientProfile(BUSINESS_ID, CLIENT_ID, { name: 'x' })
+        .then(
+          () => null,
+          (err: unknown) => err,
+        );
+
+      expect(error).toBeInstanceOf(ResourceNotFoundError);
+      expect((error as ResourceNotFoundError).message).toBe('Client not found');
+      expect((error as ResourceNotFoundError).context).toEqual({
+        resource: 'Client',
+        resourceId: CLIENT_ID,
+        businessId: BUSINESS_ID,
+      });
       expect(prisma.clients.update).not.toHaveBeenCalled();
     });
 
@@ -434,9 +445,20 @@ describe('ClientIntelligenceRepository', () => {
     it('throws when the primary is not in this business', async () => {
       prisma.clients.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'x' });
 
-      await expect(
-        repository.mergeClients(BUSINESS_ID, CLIENT_ID, OTHER_CLIENT_ID),
-      ).rejects.toThrow(/Primary client .* not found/);
+      const error = await repository.mergeClients(BUSINESS_ID, CLIENT_ID, OTHER_CLIENT_ID).then(
+        () => null,
+        (err: unknown) => err,
+      );
+
+      // Both sides carry the same message, so `resourceId`/`role` is the only
+      // thing that says the *primary* was the missing one.
+      expect(error).toBeInstanceOf(ResourceNotFoundError);
+      expect((error as ResourceNotFoundError).context).toEqual({
+        resource: 'Client',
+        resourceId: CLIENT_ID,
+        businessId: BUSINESS_ID,
+        role: 'primary',
+      });
       expect(prisma.clients.update).not.toHaveBeenCalled();
     });
 
@@ -445,9 +467,18 @@ describe('ClientIntelligenceRepository', () => {
         .mockResolvedValueOnce({ id: CLIENT_ID })
         .mockResolvedValueOnce(null);
 
-      await expect(
-        repository.mergeClients(BUSINESS_ID, CLIENT_ID, OTHER_CLIENT_ID),
-      ).rejects.toThrow(/Secondary client .* not found/);
+      const error = await repository.mergeClients(BUSINESS_ID, CLIENT_ID, OTHER_CLIENT_ID).then(
+        () => null,
+        (err: unknown) => err,
+      );
+
+      expect(error).toBeInstanceOf(ResourceNotFoundError);
+      expect((error as ResourceNotFoundError).context).toEqual({
+        resource: 'Client',
+        resourceId: OTHER_CLIENT_ID,
+        businessId: BUSINESS_ID,
+        role: 'secondary',
+      });
       expect(prisma.clients.update).not.toHaveBeenCalled();
     });
 
@@ -570,9 +601,19 @@ describe('ClientIntelligenceRepository', () => {
     it('throws when the client is not in this business', async () => {
       prisma.clients.findFirst.mockResolvedValue(null);
 
-      await expect(
-        repository.updateIntelligenceScores(BUSINESS_ID, CLIENT_ID, { ltvScore: 1 }),
-      ).rejects.toThrow(/not found for business/);
+      const error = await repository
+        .updateIntelligenceScores(BUSINESS_ID, CLIENT_ID, { ltvScore: 1 })
+        .then(
+          () => null,
+          (err: unknown) => err,
+        );
+
+      expect(error).toBeInstanceOf(ResourceNotFoundError);
+      expect((error as ResourceNotFoundError).context).toEqual({
+        resource: 'Client',
+        resourceId: CLIENT_ID,
+        businessId: BUSINESS_ID,
+      });
     });
 
     it('always stamps scores_updated_at, even with nothing to write', async () => {
@@ -711,9 +752,17 @@ describe('ClientIntelligenceRepository', () => {
     it('throws when the client is not in this business', async () => {
       prisma.clients.findFirst.mockResolvedValue(null);
 
-      await expect(repository.getClientRFMData(BUSINESS_ID, CLIENT_ID)).rejects.toThrow(
-        /not found for business/,
+      const error = await repository.getClientRFMData(BUSINESS_ID, CLIENT_ID).then(
+        () => null,
+        (err: unknown) => err,
       );
+
+      expect(error).toBeInstanceOf(ResourceNotFoundError);
+      expect((error as ResourceNotFoundError).context).toEqual({
+        resource: 'Client',
+        resourceId: CLIENT_ID,
+        businessId: BUSINESS_ID,
+      });
     });
 
     it('reports the latest order date alongside the client aggregates', async () => {

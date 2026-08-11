@@ -381,15 +381,17 @@ export class ClientIntelligenceRepository {
         }),
       ]);
 
+      // Both sides report the same message; `resourceId` in the context is
+      // what says which of the two was missing.
       if (!primary) {
         throw new ResourceNotFoundError('Client', primaryId, {
-        context: { businessId },
-      });
+          context: { businessId, role: 'primary' },
+        });
       }
       if (!secondary) {
         throw new ResourceNotFoundError('Client', secondaryId, {
-        context: { businessId },
-      });
+          context: { businessId, role: 'secondary' },
+        });
       }
 
       // Move channel_contacts from secondary to primary

@@ -19,6 +19,7 @@ import {
   MessageContentType,
   MessageDirection,
   RawRequest,
+  ExternalServiceError,
 } from '@gosumo/shared';
 import type { OutboundMessage } from '@gosumo/shared';
 
@@ -795,9 +796,19 @@ describe('WhatsAppAdapter', () => {
     it('throws when the media metadata lookup fails', async () => {
       stubFetch({ ok: false, status: 404, statusText: 'Not Found' });
 
-      await expect(configured().downloadMedia('gone')).rejects.toThrow(
-        'Media URL fetch failed: 404 Not Found',
+      const error = await configured().downloadMedia('gone').then(
+        () => null,
+        (err: unknown) => err,
       );
+
+      expect(error).toBeInstanceOf(ExternalServiceError);
+      expect((error as ExternalServiceError).message).toBe('WhatsApp Media: URL fetch failed');
+      expect((error as ExternalServiceError).retryable).toBe(false);
+      expect((error as ExternalServiceError).context).toEqual({
+        service: 'WhatsApp Media',
+        status: 404,
+        statusText: 'Not Found',
+      });
     });
 
     it('throws when the CDN download fails', async () => {
@@ -807,9 +818,19 @@ describe('WhatsAppAdapter', () => {
         .mockResolvedValueOnce({ ok: false, status: 410, statusText: 'Gone' });
       global.fetch = fetchMock as unknown as typeof fetch;
 
-      await expect(configured().downloadMedia('media_1')).rejects.toThrow(
-        'Media download failed: 410 Gone',
+      const error = await configured().downloadMedia('media_1').then(
+        () => null,
+        (err: unknown) => err,
       );
+
+      expect(error).toBeInstanceOf(ExternalServiceError);
+      expect((error as ExternalServiceError).message).toBe('WhatsApp Media: download failed');
+      expect((error as ExternalServiceError).retryable).toBe(false);
+      expect((error as ExternalServiceError).context).toEqual({
+        service: 'WhatsApp Media',
+        status: 410,
+        statusText: 'Gone',
+      });
     });
   });
 
@@ -827,9 +848,20 @@ describe('WhatsAppAdapter', () => {
     it('surfaces the response body when the upload is rejected', async () => {
       stubFetch({ ok: false, status: 413, text: 'file too large' });
 
-      await expect(
-        configured().uploadMedia(Buffer.from('hello'), 'image/png'),
-      ).rejects.toThrow('Media upload failed: 413 — file too large');
+      const error = await configured().uploadMedia(Buffer.from('hello'), 'image/png').then(
+        () => null,
+        (err: unknown) => err,
+      );
+
+      // The provider's body is log-only context now — it can echo customer
+      // content, so it must not reach an HTTP response.
+      expect(error).toBeInstanceOf(ExternalServiceError);
+      expect((error as ExternalServiceError).message).toBe('WhatsApp Media: upload failed');
+      expect((error as ExternalServiceError).context).toEqual({
+        service: 'WhatsApp Media',
+        status: 413,
+        body: 'file too large',
+      });
     });
   });
 });

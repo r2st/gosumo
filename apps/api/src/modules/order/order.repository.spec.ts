@@ -16,7 +16,7 @@
  */
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { OrderStatus } from '@gosumo/shared';
+import { OrderStatus, ResourceNotFoundError } from '@gosumo/shared';
 
 import { OrderRepository, type CreateOrderData } from './order.repository';
 import { PrismaService } from '../../common/services/prisma.service';
@@ -343,10 +343,22 @@ describe('OrderRepository', () => {
       // would be mutated by the update below.
       prisma.orders.findFirst.mockResolvedValue(null);
 
-      await expect(
-        repository.updateOrderStatus(OTHER_BUSINESS, ORDER_ID, OrderStatus.CANCELLED),
-      ).rejects.toThrow(`Order ${ORDER_ID} not found for business ${OTHER_BUSINESS}`);
+      const error = await repository
+        .updateOrderStatus(OTHER_BUSINESS, ORDER_ID, OrderStatus.CANCELLED)
+        .then(
+          () => null,
+          (err: unknown) => err,
+        );
 
+      // The order id and the tenant that asked for it live in log-only
+      // context; the message itself stays free of both.
+      expect(error).toBeInstanceOf(ResourceNotFoundError);
+      expect((error as ResourceNotFoundError).message).toBe('Order not found');
+      expect((error as ResourceNotFoundError).context).toEqual({
+        resource: 'Order',
+        resourceId: ORDER_ID,
+        businessId: OTHER_BUSINESS,
+      });
       expect(prisma.orders.update).not.toHaveBeenCalled();
     });
 

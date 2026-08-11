@@ -568,6 +568,7 @@ export class InstagramAdapter extends BaseChannelAdapter {
         throw new PayloadParseError(
           'Instagram',
           `Unsupported attachment type "${attachment.type}"`,
+          { context: { attachmentType: attachment.type } },
         );
     }
   }

@@ -19,6 +19,8 @@ import {
   RawRequest,
   OutboundMessage,
   InteractiveMessage,
+  ExternalServiceError,
+  PayloadParseError,
 } from '@gosumo/shared';
 
 import {
@@ -220,15 +222,31 @@ describe('InstagramAdapter — attachment parsing', () => {
   });
 
   it('rejects an attachment type Instagram has not documented to us', () => {
-    expect(() =>
+    const parse = (): unknown =>
       adapter.parseInbound(
         request(
           makeWebhookPayload([
             makeAttachmentEvent({ type: 'hologram', payload: { url: 'x' } }),
           ]),
         ),
-      ),
-    ).toThrow(/Unsupported Instagram attachment type: "hologram"/);
+      );
+
+    // A parse error is never retryable — the same bytes fail forever, so the
+    // consumer must DLQ rather than burn its attempt budget.
+    expect(parse).toThrow(PayloadParseError);
+    expect(parse).toThrow('Unsupported attachment type "hologram"');
+
+    let caught: unknown;
+    try {
+      parse();
+    } catch (err) {
+      caught = err;
+    }
+    expect((caught as PayloadParseError).retryable).toBe(false);
+    expect((caught as PayloadParseError).context).toEqual({
+      source: 'Instagram',
+      attachmentType: 'hologram',
+    });
   });
 
   it('rejects a message carrying neither text nor an attachment', () => {
@@ -245,7 +263,37 @@ describe('InstagramAdapter — attachment parsing', () => {
           ]),
         ),
       ),
-    ).toThrow(/no text or attachment/);
+    ).toThrow(PayloadParseError);
+  });
+
+  it('reports the offending mid when a message has no renderable content', () => {
+    let caught: unknown;
+    try {
+      adapter.parseInbound(
+        request(
+          makeWebhookPayload([
+            {
+              sender: { id: SENDER_IGSID },
+              recipient: { id: IG_BUSINESS_ID },
+              timestamp: 1700000000000,
+              message: { mid: 'mid.EMPTY' },
+            },
+          ]),
+        ),
+      );
+    } catch (err) {
+      caught = err;
+    }
+
+    // The mid is what makes the DLQ entry actionable against Instagram's logs.
+    expect(caught).toBeInstanceOf(PayloadParseError);
+    expect((caught as PayloadParseError).message).toBe(
+      'Message carries neither text nor an attachment',
+    );
+    expect((caught as PayloadParseError).context).toEqual({
+      source: 'Instagram',
+      mid: 'mid.EMPTY',
+    });
   });
 
   it('carries story-reply context into the message metadata', () => {
@@ -726,8 +774,19 @@ describe('InstagramAdapter — downloadMedia', () => {
   it('throws when the CDN url has expired', async () => {
     stubFetch({ ok: false, status: 410, statusText: 'Gone' });
 
-    await expect(adapter.downloadMedia('https://cdn/expired.jpg')).rejects.toThrow(
-      'Media download failed: 410 Gone',
+    const error = await adapter.downloadMedia('https://cdn/expired.jpg').then(
+      () => null,
+      (err: unknown) => err,
     );
+
+    // 410 is terminal — the CDN link is dead, not briefly unavailable.
+    expect(error).toBeInstanceOf(ExternalServiceError);
+    expect((error as ExternalServiceError).message).toBe('Instagram Media: download failed');
+    expect((error as ExternalServiceError).retryable).toBe(false);
+    expect((error as ExternalServiceError).context).toEqual({
+      service: 'Instagram Media',
+      status: 410,
+      statusText: 'Gone',
+    });
   });
 });

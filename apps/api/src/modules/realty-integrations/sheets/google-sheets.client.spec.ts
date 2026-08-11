@@ -29,6 +29,7 @@
  */
 
 import { ConfigService } from '@nestjs/config';
+import { ExternalServiceError } from '@gosumo/shared';
 
 const generateAuthUrl = jest.fn(
   (_opts: Record<string, unknown>) => 'https://accounts.google.com/o/oauth2/v2/auth?mock=1',
@@ -245,9 +246,19 @@ describe('GoogleSheetsClient.ensureSpreadsheet', () => {
     // `writeSheet`, where it reads as a permissions problem instead.
     spreadsheetsCreate.mockResolvedValue({ data: {} });
 
-    await expect(makeClient().ensureSpreadsheet(CREDS, 'Export')).rejects.toThrow(
-      /did not return a spreadsheetId/,
+    const error = await makeClient()
+      .ensureSpreadsheet(CREDS, 'Export')
+      .then(
+        () => null,
+        (err: unknown) => err,
+      );
+
+    // Not retryable: creating again would just make a second orphan sheet.
+    expect(error).toBeInstanceOf(ExternalServiceError);
+    expect((error as ExternalServiceError).message).toBe(
+      'Google Sheets: create returned no spreadsheetId',
     );
+    expect((error as ExternalServiceError).retryable).toBe(false);
   });
 
   it('authenticates with the credentials it was handed', async () => {

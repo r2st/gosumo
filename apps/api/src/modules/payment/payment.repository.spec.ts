@@ -13,6 +13,7 @@
  */
 
 import { Prisma } from '@prisma/client';
+import { ErrorCode, ResourceNotFoundError } from '@gosumo/shared';
 import { PaymentRepository } from './payment.repository';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
@@ -287,11 +288,23 @@ describe('PaymentRepository', () => {
     it('throws when the payment is not visible to the business', async () => {
       prisma.payments.findFirst.mockResolvedValue(null);
 
-      await expect(
-        repository.updatePaymentStatus(OTHER_BUSINESS_ID, PAYMENT_ID, {
-          status: 'SUCCESS',
-        }),
-      ).rejects.toThrow(`Payment ${PAYMENT_ID} not found for business ${OTHER_BUSINESS_ID}`);
+      const error = await repository
+        .updatePaymentStatus(OTHER_BUSINESS_ID, PAYMENT_ID, { status: 'SUCCESS' })
+        .then(
+          () => null,
+          (err: unknown) => err,
+        );
+
+      // The message stays tenant-agnostic — the discriminating detail is
+      // log-only context, so a caller can't confirm the id exists elsewhere.
+      expect(error).toBeInstanceOf(ResourceNotFoundError);
+      expect((error as ResourceNotFoundError).code).toBe(ErrorCode.RESOURCE_NOT_FOUND);
+      expect((error as ResourceNotFoundError).message).toBe('Payment not found');
+      expect((error as ResourceNotFoundError).context).toEqual({
+        resource: 'Payment',
+        resourceId: PAYMENT_ID,
+        businessId: OTHER_BUSINESS_ID,
+      });
       expect(prisma.payments.update).not.toHaveBeenCalled();
     });
 
@@ -480,11 +493,20 @@ describe('PaymentRepository', () => {
     it('throws when the refund is not visible to the business', async () => {
       prisma.refunds.findFirst.mockResolvedValue(null);
 
-      await expect(
-        repository.updateRefundStatus(OTHER_BUSINESS_ID, REFUND_ID, {
-          status: 'COMPLETED',
-        }),
-      ).rejects.toThrow(`Refund ${REFUND_ID} not found for business ${OTHER_BUSINESS_ID}`);
+      const error = await repository
+        .updateRefundStatus(OTHER_BUSINESS_ID, REFUND_ID, { status: 'COMPLETED' })
+        .then(
+          () => null,
+          (err: unknown) => err,
+        );
+
+      expect(error).toBeInstanceOf(ResourceNotFoundError);
+      expect((error as ResourceNotFoundError).message).toBe('Refund not found');
+      expect((error as ResourceNotFoundError).context).toEqual({
+        resource: 'Refund',
+        resourceId: REFUND_ID,
+        businessId: OTHER_BUSINESS_ID,
+      });
       expect(prisma.refunds.update).not.toHaveBeenCalled();
     });
 
@@ -806,9 +828,20 @@ describe('PaymentRepository', () => {
     it('throws when the invoice is not visible to the business', async () => {
       prisma.invoices.findFirst.mockResolvedValue(null);
 
-      await expect(
-        repository.updateInvoiceStatus(OTHER_BUSINESS_ID, INVOICE_ID, { status: 'PAID' }),
-      ).rejects.toThrow(`Invoice ${INVOICE_ID} not found for business ${OTHER_BUSINESS_ID}`);
+      const error = await repository
+        .updateInvoiceStatus(OTHER_BUSINESS_ID, INVOICE_ID, { status: 'PAID' })
+        .then(
+          () => null,
+          (err: unknown) => err,
+        );
+
+      expect(error).toBeInstanceOf(ResourceNotFoundError);
+      expect((error as ResourceNotFoundError).message).toBe('Invoice not found');
+      expect((error as ResourceNotFoundError).context).toEqual({
+        resource: 'Invoice',
+        resourceId: INVOICE_ID,
+        businessId: OTHER_BUSINESS_ID,
+      });
       expect(prisma.invoices.update).not.toHaveBeenCalled();
     });
 

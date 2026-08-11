@@ -15,6 +15,7 @@
 import { createHmac } from 'crypto';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ExternalServiceError } from '@gosumo/shared';
 
 import { RazorpayService } from './razorpay.service';
 
@@ -358,9 +359,20 @@ describe('RazorpayService', () => {
         text: () => Promise.resolve('{"error":"invalid amount"}'),
       });
 
-      await expect(
-        service.createPaymentLink({ amountPaise: -1, currency: 'INR' }),
-      ).rejects.toThrow('Razorpay API error: 400 Bad Request');
+      const error = await service.createPaymentLink({ amountPaise: -1, currency: 'INR' }).then(
+        () => null,
+        (err: unknown) => err,
+      );
+
+      // The status moved from the message into the context, and with it the
+      // retry decision: a 400 will fail identically forever.
+      expect(error).toBeInstanceOf(ExternalServiceError);
+      expect((error as ExternalServiceError).message).toBe('Razorpay: API error Bad Request');
+      expect((error as ExternalServiceError).retryable).toBe(false);
+      expect((error as ExternalServiceError).context).toMatchObject({
+        service: 'Razorpay',
+        status: 400,
+      });
     });
 
     it('logs the gateway error body', async () => {

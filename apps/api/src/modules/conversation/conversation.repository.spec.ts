@@ -12,7 +12,7 @@
  */
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { ChannelType, ConversationStatus } from '@gosumo/shared';
+import { ChannelType, ConversationStatus, ResourceNotFoundError } from '@gosumo/shared';
 
 import { ConversationRepository } from './conversation.repository';
 import type { ConversationListFilters } from './conversation.repository';
@@ -140,9 +140,18 @@ describe('ConversationRepository', () => {
     it('refuses to write to a conversation outside the business', async () => {
       prisma.conversations.findFirst.mockResolvedValue(null);
 
-      await expect(
-        repository.update(BUSINESS_ID, CONVERSATION_ID, { subject: 'x' }),
-      ).rejects.toThrow(/not found for business/);
+      const error = await repository.update(BUSINESS_ID, CONVERSATION_ID, { subject: 'x' }).then(
+        () => null,
+        (err: unknown) => err,
+      );
+
+      expect(error).toBeInstanceOf(ResourceNotFoundError);
+      expect((error as ResourceNotFoundError).message).toBe('Conversation not found');
+      expect((error as ResourceNotFoundError).context).toEqual({
+        resource: 'Conversation',
+        resourceId: CONVERSATION_ID,
+        businessId: BUSINESS_ID,
+      });
       expect(prisma.conversations.update).not.toHaveBeenCalled();
     });
 
