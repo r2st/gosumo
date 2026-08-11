@@ -3,6 +3,7 @@ import { PrismaService } from '../../common/services/prisma.service';
 import { TaskStatus, TaskType, TaskPriority, ResourceNotFoundError } from '@gosumo/shared';
 import type { tasks } from '@prisma/client';
 import { Prisma } from '@prisma/client';
+import { OVERDUE_TASK_SWEEP_BATCH_SIZE } from './hitl.constants';
 
 // ─────────────────────────────────────────────
 // Data interfaces
@@ -287,8 +288,16 @@ export class HitlRepository {
   /**
    * Find tasks that are overdue: due_at has passed, status is still
    * PENDING or IN_PROGRESS, and sla_breached has not yet been flagged.
+   *
+   * Returns an oldest-due-first batch capped at `limit`. Each row is hydrated
+   * with the full task include, so the read is bounded rather than
+   * proportional to the backlog; a sweep drains the queue across ticks.
+   * This mirrors `sla.findOverdueUnmetTrackers`.
    */
-  async findOverdueTasks(businessId: string): Promise<tasks[]> {
+  async findOverdueTasks(
+    businessId: string,
+    limit: number = OVERDUE_TASK_SWEEP_BATCH_SIZE,
+  ): Promise<tasks[]> {
     return this.prisma.tasks.findMany({
       where: {
         business_id: businessId,
@@ -297,6 +306,8 @@ export class HitlRepository {
         sla_breached: false,
       },
       include: this.taskIncludes,
+      orderBy: { due_at: 'asc' },
+      take: limit,
     });
   }
 

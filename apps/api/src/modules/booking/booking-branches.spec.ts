@@ -15,7 +15,7 @@ import { BookingService } from './booking.service';
 import { BookingRepository } from './booking.repository';
 import { PrismaService } from '../../common/services/prisma.service';
 import { GoogleCalendarService } from './google-calendar.service';
-import { BOOKING_QUEUE } from './booking.constants';
+import { BOOKING_QUEUE, STAFF_ROSTER_LIMIT } from './booking.constants';
 import { BookingStatus, BookingActor, RecurrenceFrequency } from '@gosumo/shared';
 import type { PaymentSuccessEvent } from '@gosumo/shared';
 
@@ -1080,8 +1080,36 @@ describe('BookingService — branch coverage', () => {
         { id: 'm3', name: 'Staff', email: null, role: 'OWNER', avatarUrl: null },
       ]);
       expect(teamMembers.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { business_id: BUSINESS_ID } }),
+        expect.objectContaining({
+          where: { business_id: BUSINESS_ID, deleted_at: null },
+        }),
       );
+    });
+
+    /** A removed staff member must not stay assignable in the picker. */
+    it('excludes soft-deleted members', async () => {
+      teamMembers.findMany.mockResolvedValue([]);
+
+      await service.getStaffMembers(BUSINESS_ID);
+
+      const where = teamMembers.findMany.mock.calls.at(-1)![0].where as {
+        deleted_at: null;
+      };
+      expect(where.deleted_at).toBeNull();
+    });
+
+    /** The picker is a dropdown; the read must not scale with the tenant. */
+    it('bounds and orders the roster', async () => {
+      teamMembers.findMany.mockResolvedValue([]);
+
+      await service.getStaffMembers(BUSINESS_ID);
+
+      const args = teamMembers.findMany.mock.calls.at(-1)![0] as {
+        take: number;
+        orderBy: Array<Record<string, string>>;
+      };
+      expect(args.take).toBe(STAFF_ROSTER_LIMIT);
+      expect(args.orderBy).toEqual([{ name: 'asc' }, { id: 'asc' }]);
     });
 
     it('degrades to an empty roster when the query fails', async () => {

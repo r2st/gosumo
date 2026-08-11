@@ -49,6 +49,7 @@ import {
   BOOKING_JOBS,
   DEFAULT_REMINDER_OFFSETS_MINUTES,
   AUTO_CANCEL_PENDING_HOURS,
+  STAFF_ROSTER_LIMIT,
   ReminderJobData,
   AutoCancelJobData,
 } from './booking.constants';
@@ -1389,12 +1390,18 @@ export class BookingService {
    *
    * Best-effort: a failed read degrades to an empty roster rather than breaking
    * the bookings page, which is usable without staff assignment.
+   *
+   * Bounded at {@link STAFF_ROSTER_LIMIT} and ordered by name so the dropdown is
+   * stable across reloads. Soft-deleted members are excluded — a removed staff
+   * member must not remain assignable.
    */
   async getStaffMembers(businessId: string): Promise<{ staff: StaffMemberDto[] }> {
     try {
       const members = await this.prisma.team_members.findMany({
-        where: { business_id: businessId },
+        where: { business_id: businessId, deleted_at: null },
         select: { id: true, name: true, email: true, role: true, avatar_url: true },
+        orderBy: [{ name: 'asc' }, { id: 'asc' }],
+        take: STAFF_ROSTER_LIMIT,
       });
       return {
         staff: (members ?? []).map((m) => ({

@@ -21,6 +21,7 @@ import { Prisma } from '@prisma/client';
 
 import { HitlRepository } from './hitl.repository';
 import { PrismaService } from '../../common/services/prisma.service';
+import { OVERDUE_TASK_SWEEP_BATCH_SIZE } from './hitl.constants';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
 const OTHER_BUSINESS = '00000000-0000-4000-a000-0000000000ff';
@@ -373,21 +374,55 @@ describe('HitlRepository', () => {
     });
   });
 
-  /** Already-flagged breaches are excluded so the sweeper does not re-fire. */
-  it('finds only unflagged, still-open, past-due tasks', async () => {
-    await repository.findOverdueTasks(BUSINESS_ID);
+  describe('findOverdueTasks', () => {
+    /** Already-flagged breaches are excluded so the sweeper does not re-fire. */
+    it('finds only unflagged, still-open, past-due tasks', async () => {
+      await repository.findOverdueTasks(BUSINESS_ID);
 
-    const where = lastWhere(prisma.tasks.findMany) as {
-      due_at: { not: null; lt: Date };
-      status: { in: string[] };
-      sla_breached: boolean;
-      business_id: string;
-    };
-    expect(where.business_id).toBe(BUSINESS_ID);
-    expect(where.status).toEqual({ in: ['PENDING', 'IN_PROGRESS'] });
-    expect(where.sla_breached).toBe(false);
-    expect(where.due_at.not).toBeNull();
-    expect(where.due_at.lt).toBeInstanceOf(Date);
+      const where = lastWhere(prisma.tasks.findMany) as {
+        due_at: { not: null; lt: Date };
+        status: { in: string[] };
+        sla_breached: boolean;
+        business_id: string;
+      };
+      expect(where.business_id).toBe(BUSINESS_ID);
+      expect(where.status).toEqual({ in: ['PENDING', 'IN_PROGRESS'] });
+      expect(where.sla_breached).toBe(false);
+      expect(where.due_at.not).toBeNull();
+      expect(where.due_at.lt).toBeInstanceOf(Date);
+    });
+
+    /**
+     * Every row is hydrated with the full task include. Unbounded, one sweep
+     * over a backlog pulls an arbitrary number of joined rows into memory.
+     */
+    it('takes a bounded batch by default', async () => {
+      await repository.findOverdueTasks(BUSINESS_ID);
+
+      const args = prisma.tasks.findMany.mock.calls.at(-1)![0] as {
+        take: number;
+      };
+      expect(args.take).toBe(OVERDUE_TASK_SWEEP_BATCH_SIZE);
+    });
+
+    /** Oldest-due first: the longest-breached task is never starved. */
+    it('orders oldest due date first', async () => {
+      await repository.findOverdueTasks(BUSINESS_ID);
+
+      const args = prisma.tasks.findMany.mock.calls.at(-1)![0] as {
+        orderBy: { due_at: string };
+      };
+      expect(args.orderBy).toEqual({ due_at: 'asc' });
+    });
+
+    it('honours an explicit batch size', async () => {
+      await repository.findOverdueTasks(BUSINESS_ID, 25);
+
+      const args = prisma.tasks.findMany.mock.calls.at(-1)![0] as {
+        take: number;
+      };
+      expect(args.take).toBe(25);
+    });
   });
 
   it('counts breached tasks within the tenant', async () => {
