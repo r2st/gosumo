@@ -30,6 +30,7 @@ import {
 import { ConversationService } from './conversation.service';
 import { ConversationRepository } from './conversation.repository';
 import { PrismaService } from '../../common/services/prisma.service';
+import { TenantService } from '../tenant/tenant.service';
 import { AutoAssignStrategy, CONVERSATION_QUEUE } from './conversation.constants';
 
 const BUSINESS_ID = '11111111-1111-1111-1111-111111111111';
@@ -100,12 +101,14 @@ describe('ConversationService — lifecycle & features', () => {
   let prisma: ReturnType<typeof createMockPrisma>;
   let eventEmitter: { emit: jest.Mock };
   let queue: { add: jest.Mock };
+  let tenantService: { assertTeamMember: jest.Mock };
 
   beforeEach(async () => {
     repository = createMockRepository();
     prisma = createMockPrisma();
     eventEmitter = { emit: jest.fn() };
     queue = { add: jest.fn() };
+    tenantService = { assertTeamMember: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -114,6 +117,7 @@ describe('ConversationService — lifecycle & features', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: EventEmitter2, useValue: eventEmitter },
         { provide: getQueueToken(CONVERSATION_QUEUE), useValue: queue },
+        { provide: TenantService, useValue: tenantService },
       ],
     }).compile();
 
@@ -278,6 +282,35 @@ describe('ConversationService — lifecycle & features', () => {
           taskId: 'task-1',
         }),
       );
+    });
+
+    /** The escalation target is the same unscoped body reference as assign. */
+    it('rejects a routing target outside the tenant before writing', async () => {
+      tenantService.assertTeamMember.mockRejectedValue(
+        new BadRequestException('Team member does not belong to this business'),
+      );
+
+      await expect(
+        service.escalateConversation(BUSINESS_ID, CONVERSATION_ID, {
+          assignedToMemberId: AGENT_A,
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(repository.update).not.toHaveBeenCalled();
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
+    });
+
+    /** Escalating without a target is the common case and must stay open. */
+    it('does not consult the tenant guard when no target is supplied', async () => {
+      repository.findById.mockResolvedValue(makeConversation());
+      repository.update.mockResolvedValue(
+        makeConversation({ status: ConversationStatus.ESCALATED }),
+      );
+
+      await service.escalateConversation(BUSINESS_ID, CONVERSATION_ID, {});
+
+      expect(tenantService.assertTeamMember).not.toHaveBeenCalled();
+      expect(repository.update).toHaveBeenCalled();
     });
   });
 

@@ -33,6 +33,7 @@ import {
 import { ConversationService } from './conversation.service';
 import { ConversationRepository } from './conversation.repository';
 import { PrismaService } from '../../common/services/prisma.service';
+import { TenantService } from '../tenant/tenant.service';
 import { CONVERSATION_QUEUE, CONVERSATION_JOBS } from './conversation.constants';
 
 // ─────────────────────────────────────────────
@@ -130,12 +131,14 @@ describe('ConversationService', () => {
   let prisma: ReturnType<typeof createMockPrisma>;
   let eventEmitter: { emit: jest.Mock };
   let queue: ReturnType<typeof createMockQueue>;
+  let tenantService: { assertTeamMember: jest.Mock };
 
   beforeEach(async () => {
     repository = createMockRepository();
     prisma = createMockPrisma();
     eventEmitter = { emit: jest.fn() };
     queue = createMockQueue();
+    tenantService = { assertTeamMember: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -144,6 +147,7 @@ describe('ConversationService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: EventEmitter2, useValue: eventEmitter },
         { provide: getQueueToken(CONVERSATION_QUEUE), useValue: queue },
+        { provide: TenantService, useValue: tenantService },
       ],
     }).compile();
 
@@ -510,6 +514,27 @@ describe('ConversationService', () => {
           assigneeId: ASSIGNEE_ID,
         }),
       );
+    });
+
+    /**
+     * `conversations.assigned_to` is satisfied by any real member row, so the
+     * database will not catch another tenant's member id arriving in the body.
+     */
+    it('rejects an assignee outside the tenant before writing', async () => {
+      tenantService.assertTeamMember.mockRejectedValue(
+        new BadRequestException('Team member does not belong to this business'),
+      );
+
+      await expect(
+        service.assignConversation(BUSINESS_ID, CONVERSATION_ID, ASSIGNEE_ID),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(tenantService.assertTeamMember).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        ASSIGNEE_ID,
+      );
+      expect(repository.assign).not.toHaveBeenCalled();
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException for missing conversation', async () => {

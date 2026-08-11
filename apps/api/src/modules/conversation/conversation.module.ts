@@ -5,6 +5,7 @@ import { ConversationController } from './conversation.controller';
 import { ConversationService } from './conversation.service';
 import { ConversationRepository } from './conversation.repository';
 import { ConversationProcessor } from './conversation.processor';
+import { TenantModule } from '../tenant/tenant.module';
 import { CONVERSATION_QUEUE } from './conversation.constants';
 
 /**
@@ -13,7 +14,11 @@ import { CONVERSATION_QUEUE } from './conversation.constants';
  * app.module.ts via BullModule.forRootAsync).
  */
 @Module({
-  imports: [BullModule.registerQueue({ name: CONVERSATION_QUEUE })],
+  imports: [
+    BullModule.registerQueue({ name: CONVERSATION_QUEUE }),
+    // Tenant-scoped team-member read for the assignee guard.
+    TenantModule,
+  ],
   controllers: [ConversationController],
   providers: [
     ConversationService,

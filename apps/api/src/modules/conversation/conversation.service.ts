@@ -25,6 +25,7 @@ import {
   AIResponseApprovedEvent,
 } from '@gosumo/shared';
 import { PrismaService } from '../../common/services/prisma.service';
+import { TenantService } from '../tenant/tenant.service';
 import {
   ConversationRepository,
   ConversationListFilters,
@@ -144,8 +145,26 @@ export class ConversationService {
     private readonly repository: ConversationRepository,
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly tenantService: TenantService,
     @InjectQueue(CONVERSATION_QUEUE) private readonly queue: Queue<SnoozeWakeJobData>,
   ) {}
+
+  /**
+   * Reject an assignee that is not this tenant's team member.
+   *
+   * `@TenantId()` scopes the conversation being written, but the assignee id
+   * arrives in the request body as a second, unscoped reference. The
+   * `conversations.assigned_to` foreign key is satisfied by *any* real member
+   * row, so without this the database happily accepts another business's
+   * member id. Omitting the assignee is fine — only a supplied one is checked.
+   */
+  private async assertAssignee(
+    businessId: string,
+    assigneeId?: string | null,
+  ): Promise<void> {
+    if (!assigneeId) return;
+    await this.tenantService.assertTeamMember(businessId, assigneeId);
+  }
 
   // ─────────────────────────────────────────────
   // Lifecycle: create / read / list
@@ -453,6 +472,8 @@ export class ConversationService {
     id: string,
     options: EscalateOptions = {},
   ): Promise<conversations> {
+    await this.assertAssignee(businessId, options.assignedToMemberId);
+
     const conversation = await this.requireConversation(businessId, id);
     const currentStatus = conversation.status as ConversationStatus;
     this.assertTransition(currentStatus, ConversationStatus.ESCALATED);
@@ -505,6 +526,8 @@ export class ConversationService {
     id: string,
     assigneeId: string,
   ): Promise<conversations> {
+    await this.assertAssignee(businessId, assigneeId);
+
     const conversation = await this.requireConversation(businessId, id);
     const previousAssigneeId = conversation.assigned_to ?? undefined;
 

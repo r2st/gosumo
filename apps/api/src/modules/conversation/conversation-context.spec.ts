@@ -24,6 +24,7 @@ import {
 import { ConversationService } from './conversation.service';
 import { ConversationRepository } from './conversation.repository';
 import { PrismaService } from '../../common/services/prisma.service';
+import { TenantService } from '../tenant/tenant.service';
 import { CONVERSATION_QUEUE } from './conversation.constants';
 
 const BUSINESS_ID = '11111111-1111-1111-1111-111111111111';
@@ -86,6 +87,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
   };
   let eventEmitter: { emit: jest.Mock };
   let queue: { add: jest.Mock };
+  let tenantService: { assertTeamMember: jest.Mock };
   let errorSpy: jest.SpyInstance;
   let debugSpy: jest.SpyInstance;
 
@@ -111,6 +113,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
     };
     eventEmitter = { emit: jest.fn() };
     queue = { add: jest.fn() };
+    tenantService = { assertTeamMember: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -119,6 +122,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
         { provide: PrismaService, useValue: prisma },
         { provide: EventEmitter2, useValue: eventEmitter },
         { provide: getQueueToken(CONVERSATION_QUEUE), useValue: queue },
+        { provide: TenantService, useValue: tenantService },
       ],
     }).compile();
 
