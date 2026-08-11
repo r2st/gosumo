@@ -2,7 +2,7 @@ import {
   Controller, Get, Post, Put, Delete,
   Body, Param, Logger, HttpCode, HttpStatus,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../common/services/prisma.service';
@@ -17,6 +17,7 @@ export class IntegrationsController {
 
   @Get('google-calendar')
   @ApiOperation({ summary: 'Get Google Calendar integration status' })
+  @ApiResponse({ status: 200, description: 'Paginated google calendar list for this business' })
   async getCalendar(@TenantId() tenantId: string) {
     return {
       connected: false,
@@ -29,6 +30,7 @@ export class IntegrationsController {
 
   @Post('google-calendar/connect')
   @ApiOperation({ summary: 'Start Google Calendar OAuth flow' })
+  @ApiResponse({ status: 201, description: 'Result of the connect action' })
   async connectCalendar(@TenantId() tenantId: string) {
     // Placeholder — would redirect to Google OAuth consent screen
     return { authUrl: null, message: 'Google Calendar integration is not configured yet. Please set up OAuth credentials in the admin panel.' };
@@ -37,6 +39,7 @@ export class IntegrationsController {
   @Delete('google-calendar')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Disconnect Google Calendar' })
+  @ApiResponse({ status: 204, description: 'Deleted; no content returned' })
   async disconnectCalendar(@TenantId() tenantId: string) {
     this.logger.log(`Disconnect calendar for tenant ${tenantId}`);
   }
@@ -45,6 +48,7 @@ export class IntegrationsController {
 
   @Get('credentials')
   @ApiOperation({ summary: 'List saved integration credentials' })
+  @ApiResponse({ status: 200, description: 'Paginated credential list for this business' })
   async listCredentials(@TenantId() tenantId: string) {
     // Return empty list — no integrations configured yet
     return { integrations: [] };
@@ -52,6 +56,8 @@ export class IntegrationsController {
 
   @Put('credentials/:provider')
   @ApiOperation({ summary: 'Save credentials for a provider' })
+  @ApiResponse({ status: 200, description: 'The updated credential' })
+  @ApiParam({ name: 'provider', description: 'Provider' })
   async saveCredentials(
     @TenantId() tenantId: string,
     @Param('provider') provider: string,
@@ -67,6 +73,8 @@ export class IntegrationsController {
 
   @Post('credentials/:provider/test')
   @ApiOperation({ summary: 'Test connection for a provider' })
+  @ApiResponse({ status: 201, description: 'Result of the test action' })
+  @ApiParam({ name: 'provider', description: 'Provider' })
   async testCredentials(
     @TenantId() tenantId: string,
     @Param('provider') provider: string,

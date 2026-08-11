@@ -47,6 +47,7 @@ export class MessageController {
 
   @Get('conversations/:conversationId/messages')
   @ApiOperation({ summary: 'Get paginated messages for a conversation' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'conversationId', description: 'Conversation UUID' })
   @ApiQuery({ name: 'limit', required: false, description: 'Page size (1-100, default 20)' })
   @ApiQuery({ name: 'cursor', required: false, description: 'Base64 pagination cursor' })
@@ -65,6 +66,7 @@ export class MessageController {
 
   @Get('conversations/:conversationId/messages/stats')
   @ApiOperation({ summary: 'Aggregate message counts for a conversation' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'conversationId', description: 'Conversation UUID' })
   @ApiResponse({ status: 200, description: 'Message statistics' })
   async getStats(
@@ -107,6 +109,7 @@ export class MessageController {
 
   @Get('messages/:id/thread')
   @ApiOperation({ summary: 'Get a message with its direct replies' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Message UUID' })
   @ApiResponse({ status: 200, description: 'Message thread' })
   async getThread(
@@ -132,6 +135,7 @@ export class MessageController {
   @Post('messages/:id/ai-metadata')
   @HttpCode(200)
   @ApiOperation({ summary: 'Attach AI metadata to a message' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Message UUID' })
   @ApiResponse({ status: 200, description: 'Metadata attached' })
   async attachAIMetadata(
@@ -147,6 +151,7 @@ export class MessageController {
   @Post('messages/:id/media')
   @HttpCode(201)
   @ApiOperation({ summary: 'Attach an S3-backed media file to a message' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Message UUID' })
   @ApiResponse({ status: 201, description: 'Media attached' })
   async attachMedia(
@@ -159,6 +164,7 @@ export class MessageController {
 
   @Get('messages/:id/media')
   @ApiOperation({ summary: 'List media attached to a message' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Message UUID' })
   @ApiResponse({ status: 200, description: 'Media files' })
   async getMedia(
@@ -173,6 +179,7 @@ export class MessageController {
   @Post('messages/:id/reactions')
   @HttpCode(200)
   @ApiOperation({ summary: 'Add a reaction to a message' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Message UUID' })
   @ApiResponse({ status: 200, description: 'Reaction added' })
   async addReaction(
@@ -185,6 +192,7 @@ export class MessageController {
 
   @Delete('messages/:id/reactions/:senderId')
   @ApiOperation({ summary: 'Remove a sender reaction from a message' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Message UUID' })
   @ApiParam({ name: 'senderId', description: 'Reacting sender UUID' })
   @ApiResponse({ status: 200, description: 'Reaction removed' })

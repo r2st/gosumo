@@ -29,6 +29,7 @@ export class RealtyCrmController {
 
   @Get()
   @ApiOperation({ summary: 'List connected CRMs and their sync status' })
+  @ApiResponse({ status: 200, description: 'Paginated crm list for this business' })
   async list(@TenantId() tenantId: string) {
     return this.crm.listConnections(tenantId);
   }
@@ -44,7 +45,8 @@ export class RealtyCrmController {
   @Post(':provider/test')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify a connected CRM credential' })
-  @ApiParam({ name: 'provider', enum: RealtyIntegrationProvider })
+  @ApiResponse({ status: 200, description: 'Result of the test action' })
+  @ApiParam({ name: 'provider', enum: RealtyIntegrationProvider, description: 'Provider' })
   async test(
     @TenantId() tenantId: string,
     @Param('provider') provider: RealtyIntegrationProvider,
@@ -55,6 +57,8 @@ export class RealtyCrmController {
   @Post('leads/:leadId/resync')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Manually push a lead to all connected CRMs' })
+  @ApiResponse({ status: 200, description: 'Result of the resync action' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'leadId', description: 'Lead UUID' })
   async resync(
     @TenantId() tenantId: string,
@@ -67,7 +71,8 @@ export class RealtyCrmController {
   @Delete(':provider')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Disconnect a CRM' })
-  @ApiParam({ name: 'provider', enum: RealtyIntegrationProvider })
+  @ApiResponse({ status: 204, description: 'Deleted; no content returned' })
+  @ApiParam({ name: 'provider', enum: RealtyIntegrationProvider, description: 'Provider' })
   async disconnect(
     @TenantId() tenantId: string,
     @Param('provider') provider: RealtyIntegrationProvider,

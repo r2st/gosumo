@@ -29,12 +29,14 @@ export class SlaController {
 
   @Get('policies')
   @ApiOperation({ summary: 'List SLA policies, highest priority first' })
+  @ApiResponse({ status: 200, description: 'Paginated policy list for this business' })
   async listPolicies(@TenantId() tenantId: string) {
     return this.slaService.listPolicies(tenantId);
   }
 
   @Get('policies/:id')
   @ApiOperation({ summary: 'Get an SLA policy by ID' })
+  @ApiResponse({ status: 200, description: 'The requested policy' })
   @ApiParam({ name: 'id', description: 'Policy UUID' })
   @ApiResponse({ status: 404, description: 'Policy not found' })
   async getPolicy(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) id: string) {
@@ -43,6 +45,7 @@ export class SlaController {
 
   @Patch('policies/:id')
   @ApiOperation({ summary: 'Update an SLA policy' })
+  @ApiResponse({ status: 200, description: 'The updated policy' })
   @ApiParam({ name: 'id', description: 'Policy UUID' })
   @ApiResponse({ status: 404, description: 'Policy not found' })
   async updatePolicy(
@@ -69,12 +72,15 @@ export class SlaController {
 
   @Get('breaches')
   @ApiOperation({ summary: 'List SLA breach trackers' })
+  @ApiResponse({ status: 200, description: 'Paginated breach list for this business' })
   async listBreaches(@TenantId() tenantId: string, @Query() query: ListBreachesQueryDto) {
     return this.slaService.listBreaches(tenantId, query);
   }
 
   @Get('breaches/conversation/:conversationId')
   @ApiOperation({ summary: 'Get SLA trackers for a single conversation' })
+  @ApiResponse({ status: 200, description: 'The requested conversation' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'conversationId', description: 'Conversation UUID' })
   async getBreachesForConversation(
     @TenantId() tenantId: string,
@@ -87,12 +93,14 @@ export class SlaController {
   @ApiOperation({
     summary: 'Sweep overdue SLA trackers with no triggering event yet, marking + escalating breaches',
   })
+  @ApiResponse({ status: 201, description: 'Result of the sweep action' })
   async sweepBreaches(@TenantId() tenantId: string) {
     return this.slaService.sweepOverdueBreaches(tenantId);
   }
 
   @Get('compliance')
   @ApiOperation({ summary: 'SLA compliance rate for a date range (defaults to trailing 30 days)' })
+  @ApiResponse({ status: 200, description: 'Paginated compliance list for this business' })
   async getCompliance(@TenantId() tenantId: string, @Query() query: ComplianceQueryDto) {
     return this.slaService.getComplianceSummary(tenantId, query.from, query.to);
   }

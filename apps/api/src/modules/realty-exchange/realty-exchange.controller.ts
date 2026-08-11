@@ -46,12 +46,14 @@ export class RealtyExchangeController {
 
   @Get('syndications')
   @ApiOperation({ summary: 'List syndications the tenant is party to' })
+  @ApiResponse({ status: 200, description: 'Paginated syndication list for this business' })
   async listSyndications(@TenantId() tenantId: string, @Query() query: ListSyndicationsQueryDto) {
     return this.exchange.listSyndications(tenantId, { state: query.state, role: query.role });
   }
 
   @Get('syndications/:id')
   @ApiOperation({ summary: 'Get a syndication' })
+  @ApiResponse({ status: 200, description: 'The requested syndication' })
   @ApiParam({ name: 'id', description: 'Syndication UUID' })
   @ApiResponse({ status: 404, description: 'Not found' })
   async getSyndication(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) id: string) {
@@ -61,6 +63,8 @@ export class RealtyExchangeController {
   @Post('syndications/:id/accept')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Accept an offered syndication (→ ACCEPTED)' })
+  @ApiResponse({ status: 200, description: 'Result of the accept action' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Syndication UUID' })
   async acceptSyndication(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) id: string) {
     return this.exchange.acceptSyndication(tenantId, id);
@@ -69,6 +73,8 @@ export class RealtyExchangeController {
   @Post('syndications/:id/visit')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Record that the buyer visited (→ VISIT)' })
+  @ApiResponse({ status: 200, description: 'The syndication advanced to VISIT' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Syndication UUID' })
   async recordVisit(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) id: string) {
     return this.exchange.recordVisit(tenantId, id);
@@ -77,6 +83,8 @@ export class RealtyExchangeController {
   @Post('syndications/:id/close')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Close a syndicated deal; books pool + platform fee (→ CLOSED)' })
+  @ApiResponse({ status: 200, description: 'Result of the close action' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Syndication UUID' })
   async closeSyndication(
     @TenantId() tenantId: string,
@@ -89,6 +97,8 @@ export class RealtyExchangeController {
   @Post('syndications/:id/expire')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Expire a lapsed syndication (→ EXPIRED)' })
+  @ApiResponse({ status: 200, description: 'Result of the expire action' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Syndication UUID' })
   async expireSyndication(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) id: string) {
     return this.exchange.expireSyndication(tenantId, id);
@@ -97,6 +107,8 @@ export class RealtyExchangeController {
   @Post('syndications/:id/dispute')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Dispute a syndication (→ DISPUTED, unwinds settlement)' })
+  @ApiResponse({ status: 200, description: 'Result of the dispute action' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Syndication UUID' })
   async disputeSyndication(
     @TenantId() tenantId: string,
@@ -109,6 +121,8 @@ export class RealtyExchangeController {
   @Post('syndications/:id/rate')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Rate the counterparty post-deal; recomputes their reliability' })
+  @ApiResponse({ status: 200, description: "The counterparty's recomputed reliability" })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Syndication UUID' })
   async rateSyndication(
     @TenantId() tenantId: string,
@@ -121,6 +135,8 @@ export class RealtyExchangeController {
   // ── Matching ──
   @Get('leads/:leadId/match')
   @ApiOperation({ summary: 'Match a lead against network supply (fit × reliability)' })
+  @ApiResponse({ status: 200, description: 'Result of the match action' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'leadId', description: 'Lead UUID' })
   async matchLead(
     @TenantId() tenantId: string,
@@ -136,6 +152,7 @@ export class RealtyExchangeController {
   // ── Reliability ──
   @Get('reliability')
   @ApiOperation({ summary: 'List reliability scores the tenant holds for counterparties' })
+  @ApiResponse({ status: 200, description: 'Paginated reliability list for this business' })
   async listReliability(@TenantId() tenantId: string) {
     return this.exchange.listReliabilityScores(tenantId);
   }
@@ -143,6 +160,7 @@ export class RealtyExchangeController {
   @Post('reliability/:targetBusinessId/recompute')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Recompute a member's composite reliability score" })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'targetBusinessId', description: 'Member business UUID to score' })
   @ApiResponse({ status: 200, description: 'Recomputed reliability breakdown' })
   @ApiResponse({
@@ -159,12 +177,14 @@ export class RealtyExchangeController {
   // ── Resale listings ──
   @Post('resale-listings')
   @ApiOperation({ summary: 'Create a resale listing (exchange supply)' })
+  @ApiResponse({ status: 201, description: 'The created resale listing' })
   async createResale(@TenantId() tenantId: string, @Body() dto: CreateResaleListingDto) {
     return this.exchange.createResaleListing(tenantId, dto);
   }
 
   @Get('resale-listings')
   @ApiOperation({ summary: "List the tenant's resale listings" })
+  @ApiResponse({ status: 200, description: 'Paginated resale listing list for this business' })
   async listResale(@TenantId() tenantId: string, @Query() query: ListResaleListingsQueryDto) {
     return this.exchange.listResaleListings(tenantId, {
       status: query.status,
@@ -174,6 +194,8 @@ export class RealtyExchangeController {
 
   @Get('resale-listings/:id')
   @ApiOperation({ summary: 'Get a resale listing' })
+  @ApiResponse({ status: 200, description: 'The requested resale listing' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Resale listing UUID' })
   async getResale(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) id: string) {
     return this.exchange.getResaleListing(tenantId, id);
@@ -181,6 +203,8 @@ export class RealtyExchangeController {
 
   @Patch('resale-listings/:id')
   @ApiOperation({ summary: 'Update a resale listing' })
+  @ApiResponse({ status: 200, description: 'The updated resale listing' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Resale listing UUID' })
   async updateResale(
     @TenantId() tenantId: string,
@@ -193,6 +217,8 @@ export class RealtyExchangeController {
   @Delete('resale-listings/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Soft-delete a resale listing' })
+  @ApiResponse({ status: 204, description: 'Deleted; no content returned' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Resale listing UUID' })
   async deleteResale(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) id: string) {
     await this.exchange.deleteResaleListing(tenantId, id);

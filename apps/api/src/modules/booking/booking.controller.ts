@@ -77,6 +77,8 @@ export class BookingController {
   @Delete('blocks/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Remove a blocked time range' })
+  @ApiResponse({ status: 204, description: 'Deleted; no content returned' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Blocked slot UUID' })
   async unblockSlot(
     @TenantId() tenantId: string,
@@ -133,6 +135,7 @@ export class BookingController {
   @Delete('calendar/google')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Disconnect Google Calendar' })
+  @ApiResponse({ status: 204, description: 'Deleted; no content returned' })
   async disconnectGoogle(
     @TenantId() tenantId: string,
     @Query('staffId') staffId?: string,
@@ -182,7 +185,7 @@ export class BookingController {
 
   @Get('calendar')
   @ApiOperation({ summary: 'Get bookings as calendar events' })
-  @ApiResponse({ status: 200 })
+  @ApiResponse({ status: 200, description: 'Bookings in the requested calendar window' })
   async getCalendar(
     @TenantId() tenantId: string,
     @Query('from') from?: string,
@@ -209,13 +212,14 @@ export class BookingController {
 
   @Get('staff')
   @ApiOperation({ summary: 'List staff for booking assignments' })
-  @ApiResponse({ status: 200 })
+  @ApiResponse({ status: 200, description: 'Bookable staff for this business' })
   async getStaff(@TenantId() tenantId: string) {
     return this.bookingService.getStaffMembers(tenantId);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a single booking' })
+  @ApiResponse({ status: 200, description: 'The requested booking' })
   @ApiParam({ name: 'id', description: 'Booking UUID' })
   @ApiResponse({ status: 404, description: 'Booking not found' })
   async getBooking(
@@ -227,6 +231,8 @@ export class BookingController {
 
   @Patch(':id/confirm')
   @ApiOperation({ summary: 'Confirm a pending booking' })
+  @ApiResponse({ status: 200, description: 'Result of the confirm action' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Booking UUID' })
   async confirmBooking(
     @TenantId() tenantId: string,
@@ -237,6 +243,8 @@ export class BookingController {
 
   @Patch(':id/reschedule')
   @ApiOperation({ summary: 'Reschedule a booking to a new time' })
+  @ApiResponse({ status: 200, description: 'Result of the reschedule action' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Booking UUID' })
   @ApiResponse({ status: 400, description: 'Slot unavailable or invalid state' })
   async rescheduleBooking(
@@ -249,6 +257,8 @@ export class BookingController {
 
   @Patch(':id/cancel')
   @ApiOperation({ summary: 'Cancel a booking (optionally the whole series)' })
+  @ApiResponse({ status: 200, description: 'Result of the cancel action' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Booking UUID' })
   async cancelBooking(
     @TenantId() tenantId: string,
@@ -260,6 +270,8 @@ export class BookingController {
 
   @Patch(':id/complete')
   @ApiOperation({ summary: 'Mark a booking as completed' })
+  @ApiResponse({ status: 200, description: 'Result of the complete action' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Booking UUID' })
   async completeBooking(
     @TenantId() tenantId: string,
@@ -270,6 +282,8 @@ export class BookingController {
 
   @Patch(':id/no-show')
   @ApiOperation({ summary: 'Mark a booking as a no-show' })
+  @ApiResponse({ status: 200, description: 'Result of the no show action' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Booking UUID' })
   async markNoShow(
     @TenantId() tenantId: string,

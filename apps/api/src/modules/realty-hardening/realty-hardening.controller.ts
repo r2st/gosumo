@@ -84,6 +84,7 @@ export class RealtyHardeningController {
   @RealtyRateLimit('dlq-replay')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Re-execute a dead-lettered operation via its replayer' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Dead-letter UUID' })
   @ApiResponse({ status: 200, description: 'Replay outcome (status REPLAYED / still PENDING)' })
   async replayDeadLetter(
@@ -96,6 +97,7 @@ export class RealtyHardeningController {
   @Post('dlq/:id/resolve')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Mark a dead letter RESOLVED or DISCARDED' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Dead-letter UUID' })
   @ApiResponse({ status: 200, description: 'Updated dead letter' })
   async resolveDeadLetter(

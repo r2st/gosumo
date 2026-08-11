@@ -61,12 +61,15 @@ export class RealtyCadenceController {
 
   @Get('templates')
   @ApiOperation({ summary: 'List templates' })
+  @ApiResponse({ status: 200, description: 'Paginated template list for this business' })
   async listTemplates(@TenantId() tenantId: string, @Query() query: ListTemplatesQueryDto) {
     return this.cadenceService.listTemplates(tenantId, query);
   }
 
   @Get('templates/:id')
   @ApiOperation({ summary: 'Get a template' })
+  @ApiResponse({ status: 200, description: 'The requested template' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Template UUID' })
   async getTemplate(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) id: string) {
     return this.cadenceService.getTemplate(tenantId, id);
@@ -74,6 +77,8 @@ export class RealtyCadenceController {
 
   @Patch('templates/:id')
   @ApiOperation({ summary: 'Update a template (content change re-opens approval)' })
+  @ApiResponse({ status: 200, description: 'The updated template' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Template UUID' })
   async updateTemplate(
     @TenantId() tenantId: string,
@@ -85,6 +90,8 @@ export class RealtyCadenceController {
 
   @Post('templates/:id/approval')
   @ApiOperation({ summary: 'Set a template approval status (PENDING/APPROVED/REJECTED)' })
+  @ApiResponse({ status: 200, description: 'The template with its new approval status' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Template UUID' })
   @HttpCode(HttpStatus.OK)
   async setApproval(
@@ -98,6 +105,8 @@ export class RealtyCadenceController {
   @Delete('templates/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Soft-delete a template' })
+  @ApiResponse({ status: 204, description: 'Deleted; no content returned' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Template UUID' })
   async deleteTemplate(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) id: string) {
     await this.cadenceService.deleteTemplate(tenantId, id);
@@ -114,12 +123,15 @@ export class RealtyCadenceController {
 
   @Get('cadences')
   @ApiOperation({ summary: 'List cadences' })
+  @ApiResponse({ status: 200, description: 'Paginated cadence list for this business' })
   async listCadences(@TenantId() tenantId: string, @Query() query: ListCadencesQueryDto) {
     return this.cadenceService.listCadences(tenantId, query);
   }
 
   @Get('cadences/:id')
   @ApiOperation({ summary: 'Get a cadence with its steps' })
+  @ApiResponse({ status: 200, description: 'The requested cadence' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Cadence UUID' })
   async getCadence(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) id: string) {
     return this.cadenceService.getCadence(tenantId, id);
@@ -127,6 +139,8 @@ export class RealtyCadenceController {
 
   @Patch('cadences/:id')
   @ApiOperation({ summary: 'Update a cadence (steps replace the full list when present)' })
+  @ApiResponse({ status: 200, description: 'The updated cadence' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Cadence UUID' })
   async updateCadence(
     @TenantId() tenantId: string,
@@ -139,6 +153,8 @@ export class RealtyCadenceController {
   @Delete('cadences/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Soft-delete a cadence' })
+  @ApiResponse({ status: 204, description: 'Deleted; no content returned' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Cadence UUID' })
   async deleteCadence(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) id: string) {
     await this.cadenceService.deleteCadence(tenantId, id);
@@ -148,6 +164,7 @@ export class RealtyCadenceController {
 
   @Get('enrollments')
   @ApiOperation({ summary: 'List cadence enrollments' })
+  @ApiResponse({ status: 200, description: 'Paginated enrollment list for this business' })
   async listEnrollments(@TenantId() tenantId: string, @Query() query: ListEnrollmentsQueryDto) {
     return this.cadenceService.listEnrollments(tenantId, query);
   }

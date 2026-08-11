@@ -76,6 +76,7 @@ export class OrderController {
 
   @Get('client/:clientId')
   @ApiOperation({ summary: 'Get orders for a specific client' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'clientId', description: 'Client UUID' })
   @ApiResponse({ status: 200, description: 'List of orders for client' })
   async getOrdersForClient(
@@ -87,6 +88,7 @@ export class OrderController {
 
   @Get('client/:clientId/status')
   @ApiOperation({ summary: 'Get AI-friendly order status summary for a client' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'clientId', description: 'Client UUID' })
   @ApiResponse({ status: 200, description: 'Order status summary' })
   async getOrderStatusForClient(

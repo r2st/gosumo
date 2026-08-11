@@ -1,5 +1,5 @@
 import { Controller, Get, Post, HttpCode, HttpStatus } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { ParserHealthService } from './parser-health.service';
 
 /**
@@ -14,6 +14,7 @@ export class ParserHealthController {
 
   @Get()
   @ApiOperation({ summary: 'Latest health report per portal parser' })
+  @ApiResponse({ status: 200, description: 'Paginated parser health list for this business' })
   async latest() {
     return this.health.getLatestReports();
   }
@@ -21,6 +22,7 @@ export class ParserHealthController {
   @Post('check')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Run the portal-parser health check now' })
+  @ApiResponse({ status: 200, description: 'Per-portal parser health, freshly sampled' })
   async runNow() {
     return this.health.runCheck();
   }

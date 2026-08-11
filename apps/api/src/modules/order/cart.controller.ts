@@ -43,6 +43,7 @@ export class CartController {
 
   @Get(':clientId')
   @ApiOperation({ summary: 'Get (or create) the active cart for a client' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'clientId', description: 'Client UUID' })
   @ApiResponse({ status: 200, description: 'Active cart' })
   async getCart(
@@ -54,6 +55,7 @@ export class CartController {
 
   @Post(':clientId/items')
   @ApiOperation({ summary: 'Add an item to the cart' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'clientId', description: 'Client UUID' })
   @ApiResponse({ status: 201, description: 'Item added' })
   @ApiResponse({ status: 400, description: 'Catalog item not found or inactive' })
@@ -97,6 +99,7 @@ export class CartController {
 
   @Delete(':clientId/items')
   @ApiOperation({ summary: 'Clear the cart (remove all items and coupon)' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'clientId', description: 'Client UUID' })
   @ApiResponse({ status: 200, description: 'Cart cleared' })
   async clearCart(
@@ -108,6 +111,7 @@ export class CartController {
 
   @Post(':clientId/coupon')
   @ApiOperation({ summary: 'Apply a coupon to the cart' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'clientId', description: 'Client UUID' })
   @ApiResponse({ status: 201, description: 'Coupon applied' })
   @ApiResponse({ status: 400, description: 'Coupon invalid or not applicable' })
@@ -122,6 +126,7 @@ export class CartController {
 
   @Delete(':clientId/coupon')
   @ApiOperation({ summary: 'Remove the coupon from the cart' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'clientId', description: 'Client UUID' })
   @ApiResponse({ status: 200, description: 'Coupon removed' })
   async removeCoupon(
@@ -133,6 +138,7 @@ export class CartController {
 
   @Post(':clientId/checkout')
   @ApiOperation({ summary: 'Check out the cart and create an order' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'clientId', description: 'Client UUID' })
   @ApiResponse({ status: 201, description: 'Order created from cart' })
   @ApiResponse({ status: 400, description: 'Empty cart or validation error' })

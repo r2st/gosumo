@@ -30,13 +30,15 @@ export class CannedResponseController {
 
   @Get()
   @ApiOperation({ summary: 'List canned responses with search and filters' })
+  @ApiResponse({ status: 200, description: 'Paginated canned response list for this business' })
   async list(@TenantId() tenantId: string, @Query() query: ListCannedResponsesQueryDto) {
     return this.cannedResponseService.list(tenantId, query);
   }
 
   @Get('shortcut/:shortcut')
   @ApiOperation({ summary: 'Look up a canned response by its shortcut' })
-  @ApiParam({ name: 'shortcut' })
+  @ApiResponse({ status: 200, description: 'The requested shortcut' })
+  @ApiParam({ name: 'shortcut', description: 'Shortcut' })
   @ApiResponse({ status: 404, description: 'No canned response with this shortcut' })
   async getByShortcut(@TenantId() tenantId: string, @Param('shortcut') shortcut: string) {
     return this.cannedResponseService.getByShortcut(tenantId, shortcut);
@@ -44,6 +46,7 @@ export class CannedResponseController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a canned response by ID' })
+  @ApiResponse({ status: 200, description: 'The requested canned response' })
   @ApiParam({ name: 'id', description: 'Canned response UUID' })
   @ApiResponse({ status: 404, description: 'Canned response not found' })
   async get(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) id: string) {
@@ -52,6 +55,7 @@ export class CannedResponseController {
 
   @Patch(':id')
   @ApiOperation({ summary: 'Update a canned response' })
+  @ApiResponse({ status: 200, description: 'The updated canned response' })
   @ApiParam({ name: 'id', description: 'Canned response UUID' })
   @ApiResponse({ status: 404, description: 'Canned response not found' })
   async update(
@@ -74,6 +78,7 @@ export class CannedResponseController {
 
   @Post(':id/usage')
   @ApiOperation({ summary: 'Record that a canned response was used (increments usage_count)' })
+  @ApiResponse({ status: 201, description: 'The updated usage counters' })
   @ApiParam({ name: 'id', description: 'Canned response UUID' })
   @ApiResponse({ status: 404, description: 'Canned response not found' })
   async recordUsage(

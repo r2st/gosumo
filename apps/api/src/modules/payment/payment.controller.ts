@@ -76,7 +76,7 @@ export class PaymentController {
 
   @Get('payments/stats')
   @ApiOperation({ summary: 'Get payment statistics' })
-  @ApiResponse({ status: 200 })
+  @ApiResponse({ status: 200, description: 'Collected, pending and failed payment totals' })
   async getPaymentStats(
     @TenantId() tenantId: string,
     @Query('from') from?: string,
@@ -299,6 +299,7 @@ export class PaymentController {
 
   @Get('payments/invoices/:id/text')
   @ApiOperation({ summary: 'Render a plain-text invoice for sharing' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Invoice UUID' })
   @ApiResponse({ status: 200, description: 'Plain-text invoice' })
   async getInvoiceText(
@@ -312,6 +313,7 @@ export class PaymentController {
   @Post('payments/invoices/:id/issue')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Issue a draft invoice' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Invoice UUID' })
   @ApiResponse({ status: 200, description: 'Invoice issued' })
   @ApiResponse({ status: 400, description: 'Invoice not in DRAFT state' })
@@ -328,6 +330,7 @@ export class PaymentController {
 
   @Get('payments/orders/:orderId/summary')
   @ApiOperation({ summary: 'Get payment summary for an order' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'orderId', description: 'Order UUID' })
   @ApiResponse({ status: 200, description: 'Payment summary' })
   async getPaymentSummary(

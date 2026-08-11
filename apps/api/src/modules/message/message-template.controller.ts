@@ -97,6 +97,7 @@ export class MessageTemplateController {
   @Post(':id/render')
   @HttpCode(200)
   @ApiOperation({ summary: 'Render a template with variables' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Template UUID' })
   @ApiResponse({ status: 200, description: 'Rendered template' })
   async render(
@@ -109,6 +110,7 @@ export class MessageTemplateController {
 
   @Delete(':id')
   @ApiOperation({ summary: 'Soft-delete a template' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Template UUID' })
   @ApiResponse({ status: 200, description: 'Template deleted' })
   async remove(

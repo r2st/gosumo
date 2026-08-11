@@ -69,6 +69,7 @@ export class RealtyLeadsController {
 
   @Patch(':id')
   @ApiOperation({ summary: 'Update basic lead fields' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Lead UUID' })
   @ApiResponse({ status: 200, description: 'Lead updated' })
   async update(
@@ -81,6 +82,7 @@ export class RealtyLeadsController {
 
   @Post(':id/bltc')
   @ApiOperation({ summary: 'Apply a BLTC qualification update (merge + rescore)' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Lead UUID' })
   @ApiResponse({ status: 200, description: 'Updated lead + contradictions + score' })
   @HttpCode(HttpStatus.OK)
@@ -94,6 +96,7 @@ export class RealtyLeadsController {
 
   @Post(':id/stage')
   @ApiOperation({ summary: 'Transition a lead to a new pipeline stage' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Lead UUID' })
   @ApiResponse({ status: 200, description: 'Lead updated' })
   @HttpCode(HttpStatus.OK)
@@ -107,6 +110,7 @@ export class RealtyLeadsController {
 
   @Post(':id/memory')
   @ApiOperation({ summary: 'Append facts / objections / promises to lead memory' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Lead UUID' })
   @ApiResponse({ status: 200, description: 'Lead updated' })
   @HttpCode(HttpStatus.OK)
@@ -120,6 +124,7 @@ export class RealtyLeadsController {
 
   @Post(':id/assign')
   @ApiOperation({ summary: 'Assign the lead to an agent' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Lead UUID' })
   @ApiResponse({ status: 200, description: 'Lead updated' })
   @HttpCode(HttpStatus.OK)
@@ -133,6 +138,7 @@ export class RealtyLeadsController {
 
   @Post(':id/opt-out')
   @ApiOperation({ summary: 'Honor a buyer opt-out — halts all automation' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Lead UUID' })
   @ApiResponse({ status: 200, description: 'Lead updated' })
   @HttpCode(HttpStatus.OK)
@@ -143,6 +149,7 @@ export class RealtyLeadsController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Soft-delete a lead' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Lead UUID' })
   @ApiResponse({ status: 204, description: 'Lead deleted' })
   async remove(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) id: string) {

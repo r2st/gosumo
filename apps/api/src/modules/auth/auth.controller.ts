@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ConfigService } from '@nestjs/config';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -109,6 +109,7 @@ export class AuthController {
   @Get('google')
   @UseGuards(AuthGuard('google'))
   @ApiOperation({ summary: 'Begin Google OAuth login (redirects to Google)' })
+  @ApiResponse({ status: 200, description: 'Paginated google list for this business' })
   googleAuth(): void {
     // Passport redirects to Google's consent screen; this body never runs.
   }
@@ -117,6 +118,7 @@ export class AuthController {
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
   @ApiOperation({ summary: 'Google OAuth callback — issues tokens and redirects to the dashboard' })
+  @ApiResponse({ status: 200, description: 'Paginated callback list for this business' })
   async googleCallback(@Req() req: Request, @Res() res: Response): Promise<void> {
     const profile = req.user as GoogleProfile;
     const tokens = await this.authService.handleGoogleLogin(profile, this.sessionMeta(req));
@@ -196,6 +198,8 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Revoke a specific session' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
+  @ApiParam({ name: 'sessionId', description: 'Session UUID' })
   @ApiResponse({ status: 200, description: 'Session revoked' })
   async revokeSession(
     @CurrentUser() user: AuthenticatedUser,

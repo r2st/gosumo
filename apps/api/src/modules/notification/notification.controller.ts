@@ -69,12 +69,14 @@ export class NotificationController {
 
   @Get()
   @ApiOperation({ summary: 'List notification history with filters' })
+  @ApiResponse({ status: 200, description: 'Paginated notification list for this business' })
   async list(@TenantId() tenantId: string, @Query() query: ListNotificationsQueryDto) {
     return this.service.listNotifications(tenantId, query);
   }
 
   @Get('stats')
   @ApiOperation({ summary: 'Delivery stats (counts, delivery/failure rate)' })
+  @ApiResponse({ status: 200, description: 'The delivery statistics for this business' })
   @ApiQuery({ name: 'from', required: false })
   @ApiQuery({ name: 'to', required: false })
   async stats(
@@ -87,7 +89,9 @@ export class NotificationController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get one notification by id' })
-  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'The requested notification' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'Record UUID' })
   async get(
     @TenantId() tenantId: string,
     @Param('id', UuidValidationPipe) id: string,
@@ -98,7 +102,9 @@ export class NotificationController {
   @Post(':id/retry')
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({ summary: 'Re-queue a failed notification' })
-  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 202, description: 'Accepted; the work continues asynchronously' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'Record UUID' })
   async retry(
     @TenantId() tenantId: string,
     @Param('id', UuidValidationPipe) id: string,
@@ -108,7 +114,9 @@ export class NotificationController {
 
   @Patch(':id/status')
   @ApiOperation({ summary: 'Apply a provider delivery receipt (delivered/read/failed)' })
-  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'The notification with the receipt applied' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'Record UUID' })
   async updateStatus(
     @TenantId() tenantId: string,
     @Param('id', UuidValidationPipe) id: string,
@@ -122,12 +130,14 @@ export class NotificationController {
   @Post('templates')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create a notification template' })
+  @ApiResponse({ status: 201, description: 'The created template' })
   async createTemplate(@TenantId() tenantId: string, @Body() dto: CreateTemplateDto) {
     return this.service.createTemplate(tenantId, dto);
   }
 
   @Get('templates')
   @ApiOperation({ summary: 'List templates (optionally by channel)' })
+  @ApiResponse({ status: 200, description: 'Paginated template list for this business' })
   @ApiQuery({ name: 'channel', required: false, enum: NotificationTemplateChannel })
   async listTemplates(
     @TenantId() tenantId: string,
@@ -138,7 +148,9 @@ export class NotificationController {
 
   @Get('templates/:id')
   @ApiOperation({ summary: 'Get one template' })
-  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'The requested template' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'Record UUID' })
   async getTemplate(
     @TenantId() tenantId: string,
     @Param('id', UuidValidationPipe) id: string,
@@ -148,7 +160,9 @@ export class NotificationController {
 
   @Put('templates/:id')
   @ApiOperation({ summary: 'Update a template' })
-  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'The updated template' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'Record UUID' })
   async updateTemplate(
     @TenantId() tenantId: string,
     @Param('id', UuidValidationPipe) id: string,
@@ -159,7 +173,9 @@ export class NotificationController {
 
   @Post('templates/:id/preview')
   @ApiOperation({ summary: 'Render a template against sample data (no send)' })
-  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 201, description: 'Result of the preview action' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'Record UUID' })
   async previewTemplate(
     @TenantId() tenantId: string,
     @Param('id', UuidValidationPipe) id: string,
@@ -170,7 +186,9 @@ export class NotificationController {
 
   @Post('templates/:id/approve')
   @ApiOperation({ summary: 'Mark a template approved (e.g. Meta approved the WhatsApp submission)' })
-  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 201, description: 'Result of the approve action' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'Record UUID' })
   async approveTemplate(
     @TenantId() tenantId: string,
     @Param('id', UuidValidationPipe) id: string,
@@ -180,7 +198,9 @@ export class NotificationController {
 
   @Post('templates/:id/reject')
   @ApiOperation({ summary: 'Mark a template rejected' })
-  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 201, description: 'Result of the reject action' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'Record UUID' })
   async rejectTemplate(
     @TenantId() tenantId: string,
     @Param('id', UuidValidationPipe) id: string,
@@ -192,7 +212,9 @@ export class NotificationController {
   @Delete('templates/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Soft-delete a template' })
-  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Deleted; no content returned' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'Record UUID' })
   async deleteTemplate(
     @TenantId() tenantId: string,
     @Param('id', UuidValidationPipe) id: string,
@@ -204,13 +226,16 @@ export class NotificationController {
 
   @Put('preferences')
   @ApiOperation({ summary: 'Set a client opt-in/opt-out preference' })
+  @ApiResponse({ status: 200, description: 'The updated notification preferences' })
   async setPreference(@TenantId() tenantId: string, @Body() dto: SetPreferenceDto) {
     return this.service.setPreference(tenantId, dto);
   }
 
   @Get('preferences/:clientId')
   @ApiOperation({ summary: 'List a client preferences' })
-  @ApiParam({ name: 'clientId', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'The notification preferences for this business' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
+  @ApiParam({ name: 'clientId', format: 'uuid', description: 'Client UUID' })
   async getPreferences(
     @TenantId() tenantId: string,
     @Param('clientId', UuidValidationPipe) clientId: string,
@@ -223,12 +248,14 @@ export class NotificationController {
   @Post('triggers')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create an event-driven trigger' })
+  @ApiResponse({ status: 201, description: 'The created trigger' })
   async createTrigger(@TenantId() tenantId: string, @Body() dto: CreateTriggerDto) {
     return this.service.createTrigger(tenantId, dto);
   }
 
   @Get('triggers')
   @ApiOperation({ summary: 'List triggers (optionally by event type)' })
+  @ApiResponse({ status: 200, description: 'Paginated trigger list for this business' })
   @ApiQuery({ name: 'eventType', required: false })
   async listTriggers(
     @TenantId() tenantId: string,
@@ -239,7 +266,9 @@ export class NotificationController {
 
   @Put('triggers/:id')
   @ApiOperation({ summary: 'Update a trigger' })
-  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'The updated trigger' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'Record UUID' })
   async updateTrigger(
     @TenantId() tenantId: string,
     @Param('id', UuidValidationPipe) id: string,
@@ -251,7 +280,9 @@ export class NotificationController {
   @Delete('triggers/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Soft-delete a trigger' })
-  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Deleted; no content returned' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'Record UUID' })
   async deleteTrigger(
     @TenantId() tenantId: string,
     @Param('id', UuidValidationPipe) id: string,

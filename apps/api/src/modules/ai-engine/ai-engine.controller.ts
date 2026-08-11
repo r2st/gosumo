@@ -126,14 +126,14 @@ export class AiEngineController {
 
   @Get('confidence/thresholds')
   @ApiOperation({ summary: 'Get AI confidence thresholds' })
-  @ApiResponse({ status: 200 })
+  @ApiResponse({ status: 200, description: 'The confidence thresholds routing auto-execute, HITL and escalation' })
   async getThresholds(@TenantId() tenantId: string) {
     return this.aiEngine.getConfidenceThresholds(tenantId);
   }
 
   @Patch('confidence/thresholds')
   @ApiOperation({ summary: 'Update AI confidence thresholds' })
-  @ApiResponse({ status: 200 })
+  @ApiResponse({ status: 200, description: 'The updated confidence thresholds' })
   async updateThresholds(
     @TenantId() tenantId: string,
     @Body() dto: UpdateConfidenceThresholdsDto,

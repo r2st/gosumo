@@ -80,7 +80,7 @@ export class TenantController {
 
   @Post('suspend')
   @ApiOperation({ summary: 'Suspend the current business' })
-  @ApiResponse({ status: 200, description: 'Business suspended' })
+  @ApiResponse({ status: 201, description: 'Business suspended' })
   @ApiResponse({ status: 404, description: 'Business not found' })
   async suspend(
     @TenantId() businessId: string,
@@ -91,7 +91,7 @@ export class TenantController {
 
   @Post('activate')
   @ApiOperation({ summary: 'Activate the current business' })
-  @ApiResponse({ status: 200, description: 'Business activated' })
+  @ApiResponse({ status: 201, description: 'Business activated' })
   @ApiResponse({ status: 400, description: 'No connected channel' })
   @ApiResponse({ status: 404, description: 'Business not found' })
   async activate(@TenantId() businessId: string) {
@@ -271,6 +271,7 @@ export class TenantController {
 
   @Post('subscription/change')
   @ApiOperation({ summary: 'Change subscription tier (upgrade/downgrade)' })
+  @ApiResponse({ status: 201, description: 'The subscription after the tier change' })
   @ApiResponse({ status: 200, description: 'Plan changed' })
   @ApiResponse({ status: 400, description: 'Downgrade blocked by current usage' })
   async changePlan(
@@ -304,7 +305,8 @@ export class TenantController {
 
   @Post('onboarding/:step/complete')
   @ApiOperation({ summary: 'Mark an onboarding step complete' })
-  @ApiParam({ name: 'step', enum: OnboardingStep })
+  @ApiResponse({ status: 201, description: 'Result of the complete action' })
+  @ApiParam({ name: 'step', enum: OnboardingStep, description: 'Step' })
   @ApiResponse({ status: 200, description: 'Step completed' })
   @ApiResponse({ status: 400, description: 'Invalid or out-of-order step' })
   async completeOnboardingStep(

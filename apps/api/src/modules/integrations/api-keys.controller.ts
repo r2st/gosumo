@@ -2,7 +2,7 @@ import {
   Controller, Get, Post, Delete,
   Body, Param, Query, Logger, HttpCode, HttpStatus, NotFoundException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../common/services/prisma.service';
@@ -35,6 +35,7 @@ export class ApiKeysController {
 
   @Get()
   @ApiOperation({ summary: 'List API keys' })
+  @ApiResponse({ status: 200, description: 'Paginated api key list for this business' })
   async list(@TenantId() tenantId: string, @Query('limit') limit?: string) {
     const take = parseLimit(limit);
 
@@ -69,6 +70,7 @@ export class ApiKeysController {
 
   @Post()
   @ApiOperation({ summary: 'Create a new API key' })
+  @ApiResponse({ status: 201, description: 'The created api key' })
   async create(
     @TenantId() tenantId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -114,6 +116,9 @@ export class ApiKeysController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Revoke an API key' })
+  @ApiResponse({ status: 204, description: 'Deleted; no content returned' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
+  @ApiParam({ name: 'id', description: 'Record UUID' })
   async revoke(
     @TenantId() tenantId: string,
     @Param('id', UuidValidationPipe) id: string,

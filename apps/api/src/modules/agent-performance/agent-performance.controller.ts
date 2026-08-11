@@ -12,12 +12,14 @@ export class AgentPerformanceController {
 
   @Get()
   @ApiOperation({ summary: 'Leaderboard of per-agent performance metrics for a date range' })
+  @ApiResponse({ status: 200, description: 'Paginated agent performance list for this business' })
   async list(@TenantId() tenantId: string, @Query() query: AgentPerformanceQueryDto) {
     return this.agentPerformanceService.listAgentPerformance(tenantId, query.from, query.to);
   }
 
   @Get(':memberId')
   @ApiOperation({ summary: 'Performance metrics for a single agent' })
+  @ApiResponse({ status: 200, description: 'The requested agent performance' })
   @ApiParam({ name: 'memberId', description: 'Team member UUID' })
   @ApiResponse({ status: 404, description: 'Team member not found' })
   async get(

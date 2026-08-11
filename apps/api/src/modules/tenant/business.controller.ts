@@ -21,21 +21,21 @@ export class BusinessController {
 
   @Get('me')
   @ApiOperation({ summary: 'Get current business profile' })
-  @ApiResponse({ status: 200 })
+  @ApiResponse({ status: 200, description: 'The business profile for the authenticated user' })
   async getMe(@TenantId() businessId: string) {
     return this.tenantService.getBusinessById(businessId);
   }
 
   @Patch('me')
   @ApiOperation({ summary: 'Update current business profile' })
-  @ApiResponse({ status: 200 })
+  @ApiResponse({ status: 200, description: 'The updated business profile' })
   async updateMe(@TenantId() businessId: string, @Body() dto: UpdateBusinessDto) {
     return this.tenantService.updateBusiness(businessId, dto);
   }
 
   @Get('settings')
   @ApiOperation({ summary: 'Get combined business settings' })
-  @ApiResponse({ status: 200 })
+  @ApiResponse({ status: 200, description: 'The business settings' })
   async getSettings(@TenantId() businessId: string) {
     const biz = await this.prisma.businesses.findUniqueOrThrow({ where: { id: businessId } });
     const aiSettings = (biz.ai_settings ?? {}) as Record<string, unknown>;
@@ -54,7 +54,7 @@ export class BusinessController {
 
   @Patch('settings')
   @ApiOperation({ summary: 'Update combined business settings' })
-  @ApiResponse({ status: 200 })
+  @ApiResponse({ status: 200, description: 'The updated business settings' })
   async updateSettings(@TenantId() businessId: string, @Body() dto: UpdateBusinessSettingsDto) {
     const biz = await this.prisma.businesses.findUniqueOrThrow({ where: { id: businessId } });
     const profile = (biz.profile ?? {}) as Record<string, unknown>;
@@ -69,7 +69,7 @@ export class BusinessController {
 
   @Get('subscription')
   @ApiOperation({ summary: 'Get current subscription' })
-  @ApiResponse({ status: 200 })
+  @ApiResponse({ status: 200, description: 'The current subscription, tier and renewal date' })
   async getSubscription(@TenantId() businessId: string) {
     try {
       const sub = await this.subscriptionService.getSubscription(businessId);

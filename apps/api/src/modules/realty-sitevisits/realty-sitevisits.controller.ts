@@ -64,6 +64,8 @@ export class RealtyVisitsController {
   @Post(':id/confirm')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Confirm buyer attendance' })
+  @ApiResponse({ status: 200, description: 'Result of the confirm action' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Visit UUID' })
   async confirm(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) id: string) {
     return this.visitsService.confirmVisit(tenantId, id);
@@ -72,6 +74,8 @@ export class RealtyVisitsController {
   @Post(':id/reschedule')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Reschedule a site visit to a new time' })
+  @ApiResponse({ status: 200, description: 'Result of the reschedule action' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Visit UUID' })
   async reschedule(
     @TenantId() tenantId: string,
@@ -84,6 +88,8 @@ export class RealtyVisitsController {
   @Post(':id/cancel')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Cancel a site visit' })
+  @ApiResponse({ status: 200, description: 'Result of the cancel action' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Visit UUID' })
   async cancel(
     @TenantId() tenantId: string,
@@ -96,6 +102,8 @@ export class RealtyVisitsController {
   @Post(':id/complete')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Mark a visit completed with feedback + outcome' })
+  @ApiResponse({ status: 200, description: 'Result of the complete action' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Visit UUID' })
   async complete(
     @TenantId() tenantId: string,
@@ -108,6 +116,8 @@ export class RealtyVisitsController {
   @Post(':id/no-show')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Mark a visit as a no-show' })
+  @ApiResponse({ status: 200, description: 'Result of the no show action' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Visit UUID' })
   async noShow(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) id: string) {
     return this.visitsService.markNoShow(tenantId, id);
@@ -116,6 +126,7 @@ export class RealtyVisitsController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Soft-delete a site visit' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Visit UUID' })
   @ApiResponse({ status: 204, description: 'Visit deleted' })
   async remove(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) id: string) {

@@ -38,12 +38,14 @@ export class ContactController {
 
   @Get('segments')
   @ApiOperation({ summary: 'List contact segments' })
+  @ApiResponse({ status: 200, description: 'Paginated segment list for this business' })
   async listSegments(@TenantId() tenantId: string) {
     return this.contactService.listSegments(tenantId);
   }
 
   @Get('segments/:id')
   @ApiOperation({ summary: 'Get a segment by ID' })
+  @ApiResponse({ status: 200, description: 'The requested segment' })
   @ApiParam({ name: 'id', description: 'Segment UUID' })
   @ApiResponse({ status: 404, description: 'Segment not found' })
   async getSegment(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) id: string) {
@@ -52,6 +54,7 @@ export class ContactController {
 
   @Patch('segments/:id')
   @ApiOperation({ summary: 'Update a segment' })
+  @ApiResponse({ status: 200, description: 'The updated segment' })
   @ApiParam({ name: 'id', description: 'Segment UUID' })
   @ApiResponse({ status: 404, description: 'Segment not found' })
   @ApiResponse({ status: 409, description: 'Segment name already in use' })
@@ -75,6 +78,7 @@ export class ContactController {
 
   @Get('segments/:id/members')
   @ApiOperation({ summary: 'List contacts currently matching a segment filter' })
+  @ApiResponse({ status: 200, description: 'The requested member' })
   @ApiParam({ name: 'id', description: 'Segment UUID' })
   @ApiResponse({ status: 404, description: 'Segment not found' })
   async getSegmentMembers(
@@ -91,12 +95,14 @@ export class ContactController {
 
   @Get()
   @ApiOperation({ summary: 'List contacts with search and filters' })
+  @ApiResponse({ status: 200, description: 'Paginated contact list for this business' })
   async listContacts(@TenantId() tenantId: string, @Query() query: ListContactsQueryDto) {
     return this.contactService.listContacts(tenantId, query);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a single contact by ID' })
+  @ApiResponse({ status: 200, description: 'The requested contact' })
   @ApiParam({ name: 'id', description: 'Contact (client) UUID' })
   @ApiResponse({ status: 404, description: 'Contact not found' })
   async getContact(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) id: string) {
@@ -105,6 +111,7 @@ export class ContactController {
 
   @Patch(':id')
   @ApiOperation({ summary: 'Update a contact\'s basic details' })
+  @ApiResponse({ status: 200, description: 'The updated contact' })
   @ApiParam({ name: 'id', description: 'Contact (client) UUID' })
   @ApiResponse({ status: 404, description: 'Contact not found' })
   @ApiResponse({ status: 409, description: 'Email or phone already in use' })
@@ -118,6 +125,7 @@ export class ContactController {
 
   @Post(':id/tags')
   @ApiOperation({ summary: 'Add tags to a contact' })
+  @ApiResponse({ status: 201, description: 'The created tag' })
   @ApiParam({ name: 'id', description: 'Contact (client) UUID' })
   @ApiResponse({ status: 404, description: 'Contact not found' })
   async addTags(
@@ -130,6 +138,7 @@ export class ContactController {
 
   @Delete(':id/tags')
   @ApiOperation({ summary: 'Remove tags from a contact' })
+  @ApiResponse({ status: 200, description: 'Deletion result for the tag' })
   @ApiParam({ name: 'id', description: 'Contact (client) UUID' })
   @ApiResponse({ status: 404, description: 'Contact not found' })
   async removeTags(

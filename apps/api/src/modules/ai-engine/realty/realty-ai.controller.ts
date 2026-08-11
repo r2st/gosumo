@@ -1,5 +1,5 @@
 import { Body, Controller, Post } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiTags, ApiResponse } from '@nestjs/swagger';
 import { TenantId } from '../../../common/decorators/tenant-id.decorator';
 import { RealtyAiService } from './realty-ai.service';
 import { RealtyTurnDto, RealtyClassifyDto } from './dto';
@@ -15,12 +15,14 @@ export class RealtyAiController {
 
   @Post('turn')
   @ApiOperation({ summary: 'Run one grounded realty AI turn for a lead' })
+  @ApiResponse({ status: 201, description: 'The AI turn: reply text, confidence and routing decision' })
   async turn(@TenantId() businessId: string, @Body() dto: RealtyTurnDto) {
     return this.service.processTurn(businessId, dto);
   }
 
   @Post('classify')
   @ApiOperation({ summary: 'Classify a single realty message into one of the 14 intents' })
+  @ApiResponse({ status: 201, description: 'Result of the classify action' })
   async classify(@Body() dto: RealtyClassifyDto) {
     return this.service.classify(dto.text);
   }

@@ -32,12 +32,14 @@ export class RealtySheetsController {
 
   @Get('status')
   @ApiOperation({ summary: 'Google Sheets connection status' })
+  @ApiResponse({ status: 200, description: 'The status for this business' })
   async status(@TenantId() tenantId: string) {
     return this.sheets.getStatus(tenantId);
   }
 
   @Get('connect')
   @ApiOperation({ summary: 'Get the Google OAuth consent URL to connect Sheets' })
+  @ApiResponse({ status: 200, description: 'Paginated connect list for this business' })
   async connect(@TenantId() tenantId: string) {
     return { authUrl: this.sheets.getAuthUrl(tenantId) };
   }
@@ -45,6 +47,7 @@ export class RealtySheetsController {
   @Public()
   @Get('callback')
   @ApiOperation({ summary: 'Google OAuth redirect callback (browser)' })
+  @ApiResponse({ status: 200, description: 'Paginated callback list for this business' })
   @ApiQuery({ name: 'code', required: true })
   @ApiQuery({
     name: 'state',
@@ -74,6 +77,7 @@ export class RealtySheetsController {
   @Post('export')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'One-click export of leads + inventory to Google Sheets' })
+  @ApiResponse({ status: 200, description: 'Result of the export action' })
   async exportNow(@TenantId() tenantId: string) {
     return this.sheets.exportForBusiness(tenantId, false);
   }
@@ -81,6 +85,7 @@ export class RealtySheetsController {
   @Delete()
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Disconnect Google Sheets' })
+  @ApiResponse({ status: 204, description: 'Deleted; no content returned' })
   async disconnect(@TenantId() tenantId: string): Promise<void> {
     await this.sheets.disconnect(tenantId);
   }

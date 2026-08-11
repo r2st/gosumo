@@ -43,6 +43,7 @@ export class RealtyInventoryController {
 
   @Get('projects')
   @ApiOperation({ summary: 'List projects' })
+  @ApiResponse({ status: 200, description: 'Paginated project list for this business' })
   @ApiQuery({ name: 'locality', required: false })
   @ApiQuery({ name: 'status', required: false })
   async listProjects(
@@ -55,6 +56,7 @@ export class RealtyInventoryController {
 
   @Get('projects/:id')
   @ApiOperation({ summary: 'Get a project' })
+  @ApiResponse({ status: 200, description: 'The requested project' })
   @ApiParam({ name: 'id', description: 'Project UUID' })
   @ApiResponse({ status: 404, description: 'Project not found' })
   async getProject(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) id: string) {
@@ -63,6 +65,8 @@ export class RealtyInventoryController {
 
   @Patch('projects/:id')
   @ApiOperation({ summary: 'Update a project' })
+  @ApiResponse({ status: 200, description: 'The updated project' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Project UUID' })
   async updateProject(
     @TenantId() tenantId: string,
@@ -75,6 +79,8 @@ export class RealtyInventoryController {
   @Delete('projects/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Soft-delete a project' })
+  @ApiResponse({ status: 204, description: 'Deleted; no content returned' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Project UUID' })
   async deleteProject(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) id: string) {
     await this.inventory.deleteProject(tenantId, id);
@@ -83,6 +89,8 @@ export class RealtyInventoryController {
   // ── Units ──
   @Post('projects/:projectId/units')
   @ApiOperation({ summary: 'Add a unit to a project' })
+  @ApiResponse({ status: 201, description: 'The created unit' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'projectId', description: 'Project UUID' })
   async createUnit(
     @TenantId() tenantId: string,
@@ -94,6 +102,8 @@ export class RealtyInventoryController {
 
   @Get('projects/:projectId/units')
   @ApiOperation({ summary: 'List a project’s units' })
+  @ApiResponse({ status: 200, description: 'The requested unit' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'projectId', description: 'Project UUID' })
   async listUnits(
     @TenantId() tenantId: string,
@@ -104,6 +114,8 @@ export class RealtyInventoryController {
 
   @Patch('units/:unitId')
   @ApiOperation({ summary: 'Update a unit' })
+  @ApiResponse({ status: 200, description: 'The updated unit' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'unitId', description: 'Unit UUID' })
   async updateUnit(
     @TenantId() tenantId: string,
@@ -116,6 +128,8 @@ export class RealtyInventoryController {
   @Post('units/:unitId/availability')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Set unit availability (re-stamps verified_at)' })
+  @ApiResponse({ status: 200, description: 'The unit with new availability and a re-stamped verified_at' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'unitId', description: 'Unit UUID' })
   async setAvailability(
     @TenantId() tenantId: string,
@@ -128,6 +142,8 @@ export class RealtyInventoryController {
   @Delete('units/:unitId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Soft-delete a unit' })
+  @ApiResponse({ status: 204, description: 'Deleted; no content returned' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'unitId', description: 'Unit UUID' })
   async deleteUnit(
     @TenantId() tenantId: string,
@@ -139,6 +155,8 @@ export class RealtyInventoryController {
   // ── Assets ──
   @Post('projects/:projectId/assets')
   @ApiOperation({ summary: 'Publish a verified asset (auto-versions, supersedes prior)' })
+  @ApiResponse({ status: 201, description: 'The created asset' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'projectId', description: 'Project UUID' })
   async publishAsset(
     @TenantId() tenantId: string,
@@ -150,6 +168,8 @@ export class RealtyInventoryController {
 
   @Get('projects/:projectId/assets')
   @ApiOperation({ summary: 'List a project’s assets' })
+  @ApiResponse({ status: 200, description: 'The requested asset' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'projectId', description: 'Project UUID' })
   async listAssets(
     @TenantId() tenantId: string,
@@ -161,6 +181,7 @@ export class RealtyInventoryController {
   // ── Matching ──
   @Get('match')
   @ApiOperation({ summary: 'Match ad-hoc BLTC criteria against fresh AVAILABLE units' })
+  @ApiResponse({ status: 200, description: 'Paginated match list for this business' })
   async match(@TenantId() tenantId: string, @Query() query: MatchQueryDto) {
     return this.inventory.match(tenantId, query);
   }
@@ -168,6 +189,8 @@ export class RealtyInventoryController {
   @Post('leads/:leadId/match')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Match a lead’s BLTC profile and record matched units' })
+  @ApiResponse({ status: 200, description: 'Result of the match action' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'leadId', description: 'Lead UUID' })
   async matchForLead(
     @TenantId() tenantId: string,

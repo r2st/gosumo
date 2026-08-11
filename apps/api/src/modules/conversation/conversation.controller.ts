@@ -138,6 +138,7 @@ export class ConversationController {
   @Post(':id/resolve')
   @HttpCode(200)
   @ApiOperation({ summary: 'Resolve a conversation' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Conversation UUID' })
   @ApiResponse({ status: 200, description: 'Conversation resolved' })
   @ApiResponse({ status: 409, description: 'Open HITL tasks exist' })
@@ -152,6 +153,7 @@ export class ConversationController {
   @Post(':id/close')
   @HttpCode(200)
   @ApiOperation({ summary: 'Close a conversation (resolve by human)' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Conversation UUID' })
   @ApiResponse({ status: 200, description: 'Conversation closed' })
   async close(
@@ -165,6 +167,7 @@ export class ConversationController {
   @Post(':id/reopen')
   @HttpCode(200)
   @ApiOperation({ summary: 'Reopen a resolved or snoozed conversation' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Conversation UUID' })
   @ApiResponse({ status: 200, description: 'Conversation reopened' })
   async reopen(
@@ -178,6 +181,7 @@ export class ConversationController {
   @Post(':id/snooze')
   @HttpCode(200)
   @ApiOperation({ summary: 'Snooze a conversation until a future time' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Conversation UUID' })
   @ApiResponse({ status: 200, description: 'Conversation snoozed' })
   @ApiResponse({ status: 400, description: 'Invalid snooze duration' })
@@ -197,6 +201,7 @@ export class ConversationController {
   @Post(':id/escalate')
   @HttpCode(200)
   @ApiOperation({ summary: 'Escalate a conversation to a human agent' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Conversation UUID' })
   @ApiResponse({ status: 200, description: 'Conversation escalated' })
   async escalate(
@@ -229,6 +234,7 @@ export class ConversationController {
   @Post(':id/auto-assign')
   @HttpCode(200)
   @ApiOperation({ summary: 'Auto-assign a conversation using a strategy' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Conversation UUID' })
   @ApiResponse({ status: 200, description: 'Conversation auto-assigned' })
   @ApiResponse({ status: 400, description: 'Missing candidate agents' })
@@ -248,6 +254,7 @@ export class ConversationController {
   @Post(':id/tags')
   @HttpCode(200)
   @ApiOperation({ summary: 'Add a tag to a conversation' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Conversation UUID' })
   @ApiResponse({ status: 200, description: 'Tag added' })
   async addTag(
@@ -260,6 +267,7 @@ export class ConversationController {
 
   @Put(':id/tags')
   @ApiOperation({ summary: 'Replace the full tag set' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Conversation UUID' })
   @ApiResponse({ status: 200, description: 'Tags replaced' })
   async setTags(
@@ -272,6 +280,7 @@ export class ConversationController {
 
   @Delete(':id/tags/:tag')
   @ApiOperation({ summary: 'Remove a tag from a conversation' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Conversation UUID' })
   @ApiParam({ name: 'tag', description: 'Tag to remove' })
   @ApiResponse({ status: 200, description: 'Tag removed' })
@@ -285,6 +294,7 @@ export class ConversationController {
 
   @Patch(':id/note')
   @ApiOperation({ summary: 'Update the internal note' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Conversation UUID' })
   @ApiResponse({ status: 200, description: 'Note updated' })
   async updateNote(

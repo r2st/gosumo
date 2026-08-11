@@ -21,6 +21,7 @@ export class TeamController {
 
   @Get()
   @ApiOperation({ summary: 'List team members' })
+  @ApiResponse({ status: 200, description: 'Paginated team list for this business' })
   async listTeam(@TenantId() tenantId: string, @Query('limit') limit?: string) {
     const members = await this.tenantService.getMembers(tenantId);
     const mapped = (members ?? []).map((m) => ({
@@ -40,6 +41,7 @@ export class TeamController {
   @Post('invite')
   @PlanLimit('seats')
   @ApiOperation({ summary: 'Invite a team member' })
+  @ApiResponse({ status: 201, description: 'Result of the invite action' })
   @ApiResponse({ status: 403, description: 'Seat limit reached — upgrade required' })
   async inviteMember(@TenantId() tenantId: string, @CurrentUser() user: AuthenticatedUser, @Body() dto: InviteMemberDto) {
     return this.tenantService.inviteMember(tenantId, dto, user.sub);
@@ -47,7 +49,9 @@ export class TeamController {
 
   @Patch(':id/role')
   @ApiOperation({ summary: 'Update member role' })
-  @ApiParam({ name: 'id' })
+  @ApiResponse({ status: 200, description: 'The team member with the new role' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
+  @ApiParam({ name: 'id', description: 'Record UUID' })
   @ApiResponse({ status: 403, description: 'Only an owner may grant or revoke roles' })
   async updateRole(
     @TenantId() tenantId: string,
@@ -95,7 +99,9 @@ export class TeamController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Remove a team member' })
-  @ApiParam({ name: 'id' })
+  @ApiResponse({ status: 204, description: 'Deleted; no content returned' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
+  @ApiParam({ name: 'id', description: 'Record UUID' })
   async removeMember(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) memberId: string) {
     await this.tenantService.removeMember(tenantId, memberId);
   }

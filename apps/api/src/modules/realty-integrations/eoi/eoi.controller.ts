@@ -49,6 +49,7 @@ export class RealtyEoiController {
 
   @Get()
   @ApiOperation({ summary: 'List EOI token requests' })
+  @ApiResponse({ status: 200, description: 'Paginated eoi list for this business' })
   @ApiQuery({ name: 'leadId', required: false })
   @ApiQuery({ name: 'status', required: false, enum: RealtyEoiStatus })
   async list(
@@ -61,6 +62,8 @@ export class RealtyEoiController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get an EOI token request' })
+  @ApiResponse({ status: 200, description: 'The requested eoi' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'EOI UUID' })
   async get(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) id: string) {
     return this.eoi.getEoi(tenantId, id);
@@ -69,6 +72,8 @@ export class RealtyEoiController {
   @Post(':id/approve')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Broker approves the token → generates + sends the payment link' })
+  @ApiResponse({ status: 200, description: 'Result of the approve action' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'EOI UUID' })
   async approve(
     @TenantId() tenantId: string,
@@ -82,6 +87,8 @@ export class RealtyEoiController {
   @Post(':id/reject')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Broker rejects the token request' })
+  @ApiResponse({ status: 200, description: 'Result of the reject action' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'EOI UUID' })
   async reject(
     @TenantId() tenantId: string,
@@ -95,6 +102,8 @@ export class RealtyEoiController {
   @Post(':id/reconcile')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Poll Razorpay and settle the EOI if the link was paid' })
+  @ApiResponse({ status: 200, description: 'Result of the reconcile action' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'EOI UUID' })
   async reconcile(
     @TenantId() tenantId: string,
@@ -107,6 +116,7 @@ export class RealtyEoiController {
   @Post('webhook/razorpay')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Razorpay payment_link.paid webhook (HMAC-verified)' })
+  @ApiResponse({ status: 200, description: 'Webhook acknowledged; the EOI is reconciled' })
   async webhook(
     @Req() req: RawBodyRequest,
     @Headers('x-razorpay-signature') signature: string,

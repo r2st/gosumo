@@ -92,6 +92,7 @@ export class RealtyIngestionController {
   @Public()
   @Get('webhooks/realty/meta-leadgen')
   @ApiOperation({ summary: 'Meta Leadgen webhook verification challenge' })
+  @ApiResponse({ status: 200, description: 'Paginated meta leadgen list for this business' })
   @ApiQuery({ name: 'hub.mode', required: true })
   @ApiQuery({ name: 'hub.challenge', required: true })
   @ApiQuery({ name: 'hub.verify_token', required: false })

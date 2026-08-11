@@ -141,6 +141,7 @@ export class HitlController {
 
   @Post('tasks/:id/approve')
   @ApiOperation({ summary: 'Approve an AI-generated draft response' })
+  @ApiResponse({ status: 201, description: 'Result of the approve action' })
   @ApiParam({ name: 'id', description: 'Task UUID' })
   @ApiResponse({ status: 200, description: 'Draft approved and sent' })
   @ApiResponse({ status: 404, description: 'Task not found' })
@@ -155,6 +156,7 @@ export class HitlController {
 
   @Post('tasks/:id/reject')
   @ApiOperation({ summary: 'Reject an AI-generated draft response' })
+  @ApiResponse({ status: 201, description: 'Result of the reject action' })
   @ApiParam({ name: 'id', description: 'Task UUID' })
   @ApiResponse({ status: 200, description: 'Draft rejected' })
   @ApiResponse({ status: 404, description: 'Task not found' })
@@ -169,6 +171,7 @@ export class HitlController {
 
   @Post('tasks/:id/edit-send')
   @ApiOperation({ summary: 'Edit an AI draft and send it' })
+  @ApiResponse({ status: 201, description: 'Result of the edit send action' })
   @ApiParam({ name: 'id', description: 'Task UUID' })
   @ApiResponse({ status: 200, description: 'Edited draft sent' })
   @ApiResponse({ status: 404, description: 'Task not found' })
@@ -183,6 +186,7 @@ export class HitlController {
 
   @Post('tasks/:id/escalate')
   @ApiOperation({ summary: 'Escalate a task to a higher priority or team' })
+  @ApiResponse({ status: 201, description: 'Result of the escalate action' })
   @ApiParam({ name: 'id', description: 'Task UUID' })
   @ApiResponse({ status: 200, description: 'Task escalated' })
   @ApiResponse({ status: 404, description: 'Task not found' })
