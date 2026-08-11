@@ -45,13 +45,6 @@ export enum ConversationStatus {
   SNOOZED = 'SNOOZED',
 }
 
-export enum ConversationPriority {
-  LOW = 'LOW',
-  MEDIUM = 'MEDIUM',
-  HIGH = 'HIGH',
-  URGENT = 'URGENT',
-}
-
 // ─────────────────────────────────────────────
 // TASKS (HITL)
 // ─────────────────────────────────────────────
@@ -241,18 +234,6 @@ export enum RefundStatus {
   REJECTED = 'REJECTED',
 }
 
-export enum RefundType {
-  FULL = 'FULL',
-  PARTIAL = 'PARTIAL',
-  DEPOSIT_ONLY = 'DEPOSIT_ONLY',
-}
-
-export enum RefundMethod {
-  ORIGINAL_PAYMENT = 'ORIGINAL_PAYMENT',
-  STORE_CREDIT = 'STORE_CREDIT',
-  MANUAL_TRANSFER = 'MANUAL_TRANSFER',
-}
-
 // ─────────────────────────────────────────────
 // INVOICES
 // ─────────────────────────────────────────────
@@ -366,15 +347,6 @@ export enum FinancingStatus {
   CASH = 'CASH',
   PREAPPROVED = 'PREAPPROVED',
   NEEDS_LOAN = 'NEEDS_LOAN',
-}
-
-/** A lead's participation state in the co-broking exchange (L2). */
-export enum LeadExchangeStatus {
-  NONE = 'NONE',
-  ELIGIBLE = 'ELIGIBLE', // qualified but unmatched to own inventory
-  OFFERED = 'OFFERED',
-  SYNDICATED = 'SYNDICATED',
-  CLOSED = 'CLOSED',
 }
 
 // ─────────────────────────────────────────────

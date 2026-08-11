@@ -10,14 +10,6 @@ export declare function generateId(): string;
  */
 export declare function generateCorrelationId(): string;
 /**
- * Convert a monetary amount in paise (smallest INR unit) to a
- * human-readable currency string.
- *
- * @param paise - Integer amount in paise (e.g. 10050 = ₹100.50)
- * @returns Formatted string, e.g. "₹100.50"
- */
-export declare function paiseToCurrency(paise: number): string;
-/**
  * Convert a decimal rupee amount to paise (integer).
  * Rounds to the nearest paise to handle floating-point drift.
  *

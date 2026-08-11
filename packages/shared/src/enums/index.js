@@ -3,8 +3,8 @@
 // CHANNEL & MESSAGING
 // ─────────────────────────────────────────────
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RealtyPlan = exports.TemplateApprovalStatus = exports.TemplateCategory = exports.CadenceEnrollmentStatus = exports.CadenceStopOn = exports.CadenceTrigger = exports.RealtyRoutePolicy = exports.RealtyIntent = exports.RealtyPortal = exports.SiteVisitOutcome = exports.SiteVisitStatus = exports.RealtyAssetType = exports.NetworkVisibility = exports.UnitAvailability = exports.ProjectStatus = exports.LeadExchangeStatus = exports.FinancingStatus = exports.LeadPurpose = exports.LeadStage = exports.LeadTemperature = exports.LeadSource = exports.CartStatus = exports.DiscountType = exports.CatalogItemType = exports.CampaignType = exports.InvoiceStatus = exports.RefundMethod = exports.RefundType = exports.RefundStatus = exports.PaymentGateway = exports.TeamRole = exports.ShipmentStatus = exports.RecurrenceFrequency = exports.BookingActor = exports.BookingLocationType = exports.BookingStatus = exports.PaymentMethod = exports.PaymentStatus = exports.OrderStatus = exports.ConfidenceMode = exports.IntentType = exports.TaskPriority = exports.TaskType = exports.TaskStatus = exports.ConversationPriority = exports.ConversationStatus = exports.MessageStatus = exports.MessageContentType = exports.MessageDirection = exports.ChannelType = void 0;
-exports.ResaleListingStatus = exports.SettlementState = exports.SyndicationState = exports.IntelligenceMetricType = exports.LaunchCheckStatus = exports.LaunchGateStatus = exports.NoShipKind = exports.AutonomyActorType = exports.AutonomyDirection = exports.MigrationStatus = exports.MigrationKind = exports.BrokerAlertType = exports.ConversationOwner = exports.AutonomyLevel = exports.ApprovalStatus = exports.ConsentType = void 0;
+exports.ConversationOwner = exports.AutonomyLevel = exports.ApprovalStatus = exports.ConsentType = exports.RealtyPlan = exports.TemplateApprovalStatus = exports.TemplateCategory = exports.CadenceEnrollmentStatus = exports.CadenceStopOn = exports.CadenceTrigger = exports.RealtyRoutePolicy = exports.RealtyIntent = exports.RealtyPortal = exports.SiteVisitOutcome = exports.SiteVisitStatus = exports.RealtyAssetType = exports.NetworkVisibility = exports.UnitAvailability = exports.ProjectStatus = exports.FinancingStatus = exports.LeadPurpose = exports.LeadStage = exports.LeadTemperature = exports.LeadSource = exports.CartStatus = exports.DiscountType = exports.CatalogItemType = exports.CampaignType = exports.InvoiceStatus = exports.RefundStatus = exports.PaymentGateway = exports.TeamRole = exports.ShipmentStatus = exports.RecurrenceFrequency = exports.BookingActor = exports.BookingLocationType = exports.BookingStatus = exports.PaymentMethod = exports.PaymentStatus = exports.OrderStatus = exports.ConfidenceMode = exports.IntentType = exports.TaskPriority = exports.TaskType = exports.TaskStatus = exports.ConversationStatus = exports.MessageStatus = exports.MessageContentType = exports.MessageDirection = exports.ChannelType = void 0;
+exports.ResaleListingStatus = exports.SettlementState = exports.SyndicationState = exports.IntelligenceMetricType = exports.LaunchCheckStatus = exports.LaunchGateStatus = exports.NoShipKind = exports.AutonomyActorType = exports.AutonomyDirection = exports.MigrationStatus = exports.MigrationKind = exports.BrokerAlertType = void 0;
 var ChannelType;
 (function (ChannelType) {
     ChannelType["WHATSAPP"] = "WHATSAPP";
@@ -47,13 +47,6 @@ var ConversationStatus;
     ConversationStatus["RESOLVED"] = "RESOLVED";
     ConversationStatus["SNOOZED"] = "SNOOZED";
 })(ConversationStatus || (exports.ConversationStatus = ConversationStatus = {}));
-var ConversationPriority;
-(function (ConversationPriority) {
-    ConversationPriority["LOW"] = "LOW";
-    ConversationPriority["MEDIUM"] = "MEDIUM";
-    ConversationPriority["HIGH"] = "HIGH";
-    ConversationPriority["URGENT"] = "URGENT";
-})(ConversationPriority || (exports.ConversationPriority = ConversationPriority = {}));
 // ─────────────────────────────────────────────
 // TASKS (HITL)
 // ─────────────────────────────────────────────
@@ -234,18 +227,6 @@ var RefundStatus;
     RefundStatus["FAILED"] = "FAILED";
     RefundStatus["REJECTED"] = "REJECTED";
 })(RefundStatus || (exports.RefundStatus = RefundStatus = {}));
-var RefundType;
-(function (RefundType) {
-    RefundType["FULL"] = "FULL";
-    RefundType["PARTIAL"] = "PARTIAL";
-    RefundType["DEPOSIT_ONLY"] = "DEPOSIT_ONLY";
-})(RefundType || (exports.RefundType = RefundType = {}));
-var RefundMethod;
-(function (RefundMethod) {
-    RefundMethod["ORIGINAL_PAYMENT"] = "ORIGINAL_PAYMENT";
-    RefundMethod["STORE_CREDIT"] = "STORE_CREDIT";
-    RefundMethod["MANUAL_TRANSFER"] = "MANUAL_TRANSFER";
-})(RefundMethod || (exports.RefundMethod = RefundMethod = {}));
 // ─────────────────────────────────────────────
 // INVOICES
 // ─────────────────────────────────────────────
@@ -357,15 +338,6 @@ var FinancingStatus;
     FinancingStatus["PREAPPROVED"] = "PREAPPROVED";
     FinancingStatus["NEEDS_LOAN"] = "NEEDS_LOAN";
 })(FinancingStatus || (exports.FinancingStatus = FinancingStatus = {}));
-/** A lead's participation state in the co-broking exchange (L2). */
-var LeadExchangeStatus;
-(function (LeadExchangeStatus) {
-    LeadExchangeStatus["NONE"] = "NONE";
-    LeadExchangeStatus["ELIGIBLE"] = "ELIGIBLE";
-    LeadExchangeStatus["OFFERED"] = "OFFERED";
-    LeadExchangeStatus["SYNDICATED"] = "SYNDICATED";
-    LeadExchangeStatus["CLOSED"] = "CLOSED";
-})(LeadExchangeStatus || (exports.LeadExchangeStatus = LeadExchangeStatus = {}));
 // ─────────────────────────────────────────────
 // REALTY — INVENTORY (grounding layer)
 // ─────────────────────────────────────────────

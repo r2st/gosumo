@@ -1,4 +1,4 @@
-import { ChannelType, MessageDirection, MessageContentType, IntentType, ConfidenceMode } from '../enums';
+import { ChannelType, MessageDirection, MessageContentType, ConfidenceMode } from '../enums';
 export type MessageContent = {
     type: MessageContentType.TEXT;
     text: string;
@@ -118,32 +118,6 @@ export interface ConfidenceOverride {
     /** Score penalty applied (0.0–1.0, subtracted from composite) */
     penalty: number;
 }
-/**
- * Structured output returned by the AI engine after processing
- * an inbound message. Consumed by the routing engine.
- */
-export interface AIResponse {
-    /** The message text to send to the client (may be null for action-only responses) */
-    responseText: string | null;
-    confidenceScore: ConfidenceScore;
-    intent: IntentType;
-    /** Chain-of-thought reasoning from the LLM (for audit and precedent logging) */
-    reasoning: string;
-    /** Concrete actions the system should take (e.g. create_order, send_payment_link) */
-    suggestedActions: SuggestedAction[];
-    /** Profile fields the AI wants to update based on this interaction */
-    profileUpdates: Record<string, unknown>;
-    /** Model version used */
-    modelId: string;
-    /** Token usage for cost tracking */
-    usage: {
-        promptTokens: number;
-        completionTokens: number;
-        totalTokens: number;
-    };
-    /** End-to-end latency from message received to response generated (ms) */
-    latencyMs: number;
-}
 export interface SuggestedAction {
     /** Unique action type understood by the action executor */
     type: string;
@@ -252,15 +226,6 @@ export interface BltcProfile {
 export type LeadPurposeValue = 'END_USE' | 'INVEST';
 /** String-literal mirror of the FinancingStatus enum. */
 export type FinancingStatusValue = 'CASH' | 'PREAPPROVED' | 'NEEDS_LOAN';
-/** Which BLTC slots remain UNKNOWN — the state-machine's working set. */
-export interface BltcSlotState {
-    budget: boolean;
-    location: boolean;
-    timeline: boolean;
-    config: boolean;
-    purpose: boolean;
-    financing: boolean;
-}
 /**
  * A single memory fact the AI must never lose (blueprint §5.1):
  * an extracted fact ("wife wants east-facing"), an objection, or a promise.
@@ -465,10 +430,6 @@ export interface RealtyConfidence {
     mode: RealtyRouteMode;
     overrides: RealtyOverride[];
 }
-/** String-literal mirrors of the cadence enums (shared has no runtime dep). */
-export type CadenceTriggerValue = 'NO_RESPONSE' | 'POST_VISIT' | 'DORMANT';
-export type CadenceStopOnValue = 'REPLY' | 'OPTOUT' | 'STAGE_CHANGE';
-export type TemplateCategoryValue = 'UTILITY' | 'MARKETING';
 /**
  * An optional guard on a cadence step — the step only fires when the lead still
  * matches. Any field left undefined is not checked.
@@ -482,19 +443,6 @@ export interface CadenceStepCondition {
     minQualScore?: number;
     /** Only fire at/below this qualification score. */
     maxQualScore?: number;
-}
-/** A declarative step in a cadence definition (day-offset scheduling). */
-export interface CadenceStepDefinition {
-    /** 0-based execution order within the cadence. */
-    order: number;
-    /** Days after enrolment to fire this step. */
-    dayOffset: number;
-    /** The WhatsApp template to send at this step. */
-    templateId: string;
-    /** Optional guard; the step is skipped (not stopped) when unmet. */
-    condition?: CadenceStepCondition;
-    /** Signals that abort the whole cadence at/after this step. */
-    stopOn: CadenceStopOnValue[];
 }
 /**
  * The verdict of the WhatsApp compliance gate for a single outbound send

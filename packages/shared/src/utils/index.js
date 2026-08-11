@@ -2,7 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateId = generateId;
 exports.generateCorrelationId = generateCorrelationId;
-exports.paiseToCurrency = paiseToCurrency;
 exports.currencyToPaise = currencyToPaise;
 exports.normalizeIndianPhone = normalizeIndianPhone;
 const crypto_1 = require("crypto");
@@ -22,17 +21,6 @@ function generateCorrelationId() {
     const ts = Date.now().toString(16);
     const uid = (0, crypto_1.randomUUID)().replace(/-/g, '').slice(0, 8);
     return `gs-${ts}-${uid}`;
-}
-/**
- * Convert a monetary amount in paise (smallest INR unit) to a
- * human-readable currency string.
- *
- * @param paise - Integer amount in paise (e.g. 10050 = ₹100.50)
- * @returns Formatted string, e.g. "₹100.50"
- */
-function paiseToCurrency(paise) {
-    const rupees = paise / 100;
-    return `₹${rupees.toFixed(2)}`;
 }
 /**
  * Convert a decimal rupee amount to paise (integer).

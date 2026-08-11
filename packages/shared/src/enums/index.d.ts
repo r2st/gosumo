@@ -32,12 +32,6 @@ export declare enum ConversationStatus {
     RESOLVED = "RESOLVED",
     SNOOZED = "SNOOZED"
 }
-export declare enum ConversationPriority {
-    LOW = "LOW",
-    MEDIUM = "MEDIUM",
-    HIGH = "HIGH",
-    URGENT = "URGENT"
-}
 export declare enum TaskStatus {
     PENDING = "PENDING",
     IN_PROGRESS = "IN_PROGRESS",
@@ -175,16 +169,6 @@ export declare enum RefundStatus {
     FAILED = "FAILED",
     REJECTED = "REJECTED"
 }
-export declare enum RefundType {
-    FULL = "FULL",
-    PARTIAL = "PARTIAL",
-    DEPOSIT_ONLY = "DEPOSIT_ONLY"
-}
-export declare enum RefundMethod {
-    ORIGINAL_PAYMENT = "ORIGINAL_PAYMENT",
-    STORE_CREDIT = "STORE_CREDIT",
-    MANUAL_TRANSFER = "MANUAL_TRANSFER"
-}
 export declare enum InvoiceStatus {
     DRAFT = "DRAFT",
     ISSUED = "ISSUED",
@@ -273,14 +257,6 @@ export declare enum FinancingStatus {
     CASH = "CASH",
     PREAPPROVED = "PREAPPROVED",
     NEEDS_LOAN = "NEEDS_LOAN"
-}
-/** A lead's participation state in the co-broking exchange (L2). */
-export declare enum LeadExchangeStatus {
-    NONE = "NONE",
-    ELIGIBLE = "ELIGIBLE",// qualified but unmatched to own inventory
-    OFFERED = "OFFERED",
-    SYNDICATED = "SYNDICATED",
-    CLOSED = "CLOSED"
 }
 /** Construction / sale status of a project. */
 export declare enum ProjectStatus {
