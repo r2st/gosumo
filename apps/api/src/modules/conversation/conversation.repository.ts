@@ -3,6 +3,7 @@ import { PrismaService } from '../../common/services/prisma.service';
 import { ConversationStatus, ChannelType, ResourceNotFoundError } from '@gosumo/shared';
 import { Prisma } from '@prisma/client';
 import type { conversations } from '@prisma/client';
+import { SNOOZE_WAKE_BATCH_SIZE } from './conversation.constants';
 
 // ─────────────────────────────────────────────
 // Filter & pagination types
@@ -404,39 +405,47 @@ export class ConversationRepository {
    * average duration from first_message_at to resolved_at (in seconds).
    */
   async getResolutionStats(businessId: string): Promise<ResolutionStats> {
-    const resolved = await this.prisma.conversations.findMany({
-      where: {
-        business_id: businessId,
-        status: ConversationStatus.RESOLVED,
-        resolved_at: { not: null },
-        first_message_at: { not: null },
-        deleted_at: null,
-      },
-      select: { first_message_at: true, resolved_at: true },
-    });
+    // The count and the average are computed in the database. Reading every
+    // resolved conversation back just to average two timestamps meant this
+    // dashboard tile grew a full table scan's worth of memory for the tenant's
+    // entire history — the older the tenant, the slower its dashboard.
+    const [row] = await this.prisma.$queryRaw<
+      { resolved_count: number; avg_resolution_seconds: number | null }[]
+    >`
+      SELECT COUNT(*)::int AS resolved_count,
+             AVG(EXTRACT(EPOCH FROM (resolved_at - first_message_at))) AS avg_resolution_seconds
+      FROM conversations
+      WHERE business_id = ${businessId}::uuid
+        AND status = ${ConversationStatus.RESOLVED}::"ConversationStatus"
+        AND resolved_at IS NOT NULL
+        AND first_message_at IS NOT NULL
+        AND deleted_at IS NULL
+    `;
 
-    if (resolved.length === 0) {
+    if (!row || row.resolved_count === 0) {
       return { resolvedCount: 0, avgResolutionSeconds: 0 };
     }
 
-    let totalMs = 0;
-    for (const row of resolved) {
-      const start = row.first_message_at as Date;
-      const end = row.resolved_at as Date;
-      totalMs += end.getTime() - start.getTime();
-    }
-
     return {
-      resolvedCount: resolved.length,
-      avgResolutionSeconds: Math.round(totalMs / resolved.length / 1000),
+      resolvedCount: row.resolved_count,
+      avgResolutionSeconds: Math.round(Number(row.avg_resolution_seconds ?? 0)),
     };
   }
 
   /**
    * Find SNOOZED conversations whose snoozed_until has elapsed.
    * Used by the snooze-wake job to re-open them.
+   *
+   * Bounded: each row is hydrated with the full conversation include, so an
+   * unbounded read here would let a backlog (a worker outage, a clock jump)
+   * pull an arbitrary number of joined rows into the job in one go. The wake
+   * job is periodic, so a capped batch drains across ticks instead.
    */
-  async findSnoozedDue(businessId: string, now: Date): Promise<conversations[]> {
+  async findSnoozedDue(
+    businessId: string,
+    now: Date,
+    limit: number = SNOOZE_WAKE_BATCH_SIZE,
+  ): Promise<conversations[]> {
     return this.prisma.conversations.findMany({
       where: {
         business_id: businessId,
@@ -445,6 +454,8 @@ export class ConversationRepository {
         deleted_at: null,
       },
       include: CONVERSATION_INCLUDE,
+      orderBy: { snoozed_until: 'asc' },
+      take: limit,
     });
   }
 }

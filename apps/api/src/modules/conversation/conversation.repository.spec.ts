@@ -17,6 +17,7 @@ import { ChannelType, ConversationStatus, ResourceNotFoundError } from '@gosumo/
 import { ConversationRepository } from './conversation.repository';
 import type { ConversationListFilters } from './conversation.repository';
 import { PrismaService } from '../../common/services/prisma.service';
+import { SNOOZE_WAKE_BATCH_SIZE } from './conversation.constants';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
 const CONVERSATION_ID = '00000000-0000-4000-b000-000000000001';
@@ -31,6 +32,7 @@ describe('ConversationRepository', () => {
       'findFirst' | 'findMany' | 'count' | 'groupBy' | 'create' | 'update',
       jest.Mock
     >;
+    $queryRaw: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -43,6 +45,9 @@ describe('ConversationRepository', () => {
         create: jest.fn().mockResolvedValue({ id: CONVERSATION_ID }),
         update: jest.fn().mockResolvedValue({ id: CONVERSATION_ID }),
       },
+      $queryRaw: jest
+        .fn()
+        .mockResolvedValue([{ resolved_count: 0, avg_resolution_seconds: null }]),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -394,7 +399,9 @@ describe('ConversationRepository', () => {
 
   describe('getResolutionStats', () => {
     it('reports zeroes when nothing has been resolved', async () => {
-      prisma.conversations.findMany.mockResolvedValue([]);
+      prisma.$queryRaw.mockResolvedValue([
+        { resolved_count: 0, avg_resolution_seconds: null },
+      ]);
 
       await expect(repository.getResolutionStats(BUSINESS_ID)).resolves.toEqual({
         resolvedCount: 0,
@@ -402,16 +409,18 @@ describe('ConversationRepository', () => {
       });
     });
 
-    it('averages first-message → resolved across the resolved set', async () => {
-      prisma.conversations.findMany.mockResolvedValue([
-        {
-          first_message_at: new Date('2026-08-01T00:00:00Z'),
-          resolved_at: new Date('2026-08-01T00:10:00Z'), // 600s
-        },
-        {
-          first_message_at: new Date('2026-08-02T00:00:00Z'),
-          resolved_at: new Date('2026-08-02T00:30:00Z'), // 1800s
-        },
+    it('reports zeroes when the aggregate returns no row at all', async () => {
+      prisma.$queryRaw.mockResolvedValue([]);
+
+      await expect(repository.getResolutionStats(BUSINESS_ID)).resolves.toEqual({
+        resolvedCount: 0,
+        avgResolutionSeconds: 0,
+      });
+    });
+
+    it('returns the database-computed count and average', async () => {
+      prisma.$queryRaw.mockResolvedValue([
+        { resolved_count: 2, avg_resolution_seconds: 1200 },
       ]);
 
       await expect(repository.getResolutionStats(BUSINESS_ID)).resolves.toEqual({
@@ -419,18 +428,63 @@ describe('ConversationRepository', () => {
         avgResolutionSeconds: 1200,
       });
     });
+
+    it('rounds a fractional average to whole seconds', async () => {
+      prisma.$queryRaw.mockResolvedValue([
+        { resolved_count: 3, avg_resolution_seconds: 1200.6 },
+      ]);
+
+      const stats = await repository.getResolutionStats(BUSINESS_ID);
+
+      expect(stats.avgResolutionSeconds).toBe(1201);
+    });
+
+    it('aggregates in the database rather than reading the resolved rows', async () => {
+      prisma.$queryRaw.mockResolvedValue([
+        { resolved_count: 1, avg_resolution_seconds: 60 },
+      ]);
+
+      await repository.getResolutionStats(BUSINESS_ID);
+
+      expect(prisma.conversations.findMany).not.toHaveBeenCalled();
+      // The tenant and the status are bound parameters, never interpolated
+      // into the SQL text.
+      expect(prisma.$queryRaw.mock.calls[0]?.slice(1)).toEqual([
+        BUSINESS_ID,
+        ConversationStatus.RESOLVED,
+      ]);
+      const sql = (prisma.$queryRaw.mock.calls[0]?.[0] as string[]).join('?');
+      expect(sql).toContain('business_id =');
+      expect(sql).not.toContain(BUSINESS_ID);
+    });
   });
 
-  it('finds snoozed conversations whose wake time has passed', async () => {
-    const now = new Date('2026-08-10T12:00:00Z');
+  describe('findSnoozedDue', () => {
+    it('finds snoozed conversations whose wake time has passed', async () => {
+      const now = new Date('2026-08-10T12:00:00Z');
 
-    await repository.findSnoozedDue(BUSINESS_ID, now);
+      await repository.findSnoozedDue(BUSINESS_ID, now);
 
-    expect(prisma.conversations.findMany.mock.calls[0]![0].where).toEqual({
-      business_id: BUSINESS_ID,
-      status: ConversationStatus.SNOOZED,
-      snoozed_until: { not: null, lte: now },
-      deleted_at: null,
+      expect(prisma.conversations.findMany.mock.calls[0]![0].where).toEqual({
+        business_id: BUSINESS_ID,
+        status: ConversationStatus.SNOOZED,
+        snoozed_until: { not: null, lte: now },
+        deleted_at: null,
+      });
+    });
+
+    it('claims a bounded batch, oldest wake time first', async () => {
+      await repository.findSnoozedDue(BUSINESS_ID, new Date());
+
+      const call = prisma.conversations.findMany.mock.calls[0]![0];
+      expect(call.take).toBe(SNOOZE_WAKE_BATCH_SIZE);
+      expect(call.orderBy).toEqual({ snoozed_until: 'asc' });
+    });
+
+    it('honours a caller-supplied batch size', async () => {
+      await repository.findSnoozedDue(BUSINESS_ID, new Date(), 25);
+
+      expect(prisma.conversations.findMany.mock.calls[0]![0].take).toBe(25);
     });
   });
 });

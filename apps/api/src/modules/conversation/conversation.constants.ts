@@ -13,6 +13,13 @@ export const MAX_SNOOZE_DAYS = 7;
 export const MAX_SNOOZE_MS = MAX_SNOOZE_DAYS * 24 * 60 * 60 * 1000;
 
 /**
+ * How many due-to-wake conversations the snooze-wake job claims per tick.
+ * Each row is hydrated with the full conversation include, so the batch is
+ * capped; a backlog drains across ticks rather than in one oversized read.
+ */
+export const SNOOZE_WAKE_BATCH_SIZE = 200;
+
+/**
  * SLA targets (in seconds). Used to flag breaches in getSlaMetrics().
  * These mirror the defaults documented in the sprint plan; per-business
  * overrides would live in business_rules but are out of scope here.
