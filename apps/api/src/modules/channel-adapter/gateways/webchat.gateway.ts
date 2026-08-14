@@ -59,11 +59,29 @@ export class WebChatGateway implements OnGatewayConnection, OnGatewayDisconnect 
 
   handleDisconnect(client: Socket): void {
     const sessionId = this.socketToSession.get(client.id);
+    this.socketToSession.delete(client.id);
+
     if (sessionId) {
-      this.sessions.delete(sessionId);
-      this.socketToSession.delete(client.id);
-      this.sessionContext.delete(sessionId);
-      this.logger.log("WebChat session cleaned up: " + sessionId);
+      // Only tear the session down if this socket is still the one holding it.
+      //
+      // The widget persists its sessionId and reconnects with it, and Socket.IO
+      // does not notice the old socket is gone until pingTimeout elapses — so
+      // the reconnect's `chat:init` regularly lands *before* the old socket's
+      // disconnect. Deleting unconditionally then wiped the live socket and the
+      // context that had just replaced it, and every `chat:message` after that
+      // answered `received: false` and dropped the visitor's text on the floor
+      // until they reloaded the page. Nothing surfaced: the widget had a
+      // sessionId, the socket was open, and the messages simply went nowhere.
+      if (this.sessions.get(sessionId) !== client) {
+        this.logger.log(
+          "WebChat socket " + client.id + " disconnected after session " + sessionId +
+          " moved to a newer socket — keeping the live session",
+        );
+      } else {
+        this.sessions.delete(sessionId);
+        this.sessionContext.delete(sessionId);
+        this.logger.log("WebChat session cleaned up: " + sessionId);
+      }
     }
     this.logger.log("WebChat client disconnected: " + client.id);
   }
@@ -115,7 +133,13 @@ export class WebChatGateway implements OnGatewayConnection, OnGatewayDisconnect 
     };
     this.sessionContext.set(sessionId, ctx);
 
-    // Register session
+    // Register session. A reconnect re-inits with the stored sessionId, so the
+    // previous socket's reverse mapping has to go with it — left behind, it
+    // would name a session it no longer owns.
+    const previous = this.sessions.get(sessionId);
+    if (previous && previous.id !== client.id) {
+      this.socketToSession.delete(previous.id);
+    }
     this.sessions.set(sessionId, client);
     this.socketToSession.set(client.id, sessionId);
 

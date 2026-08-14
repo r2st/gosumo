@@ -86,6 +86,65 @@ describe('WebChatGateway', () => {
       expect(gateway['sessionContext'].size).toBe(0);
     });
 
+    /**
+     * The widget stores its sessionId and reconnects with it, and Socket.IO
+     * only notices the old socket is gone once pingTimeout elapses — so the
+     * reconnect's `chat:init` routinely arrives before the old socket's
+     * disconnect. The teardown used to fire on the sessionId regardless of
+     * which socket owned it, wiping the socket and context that had just
+     * replaced it. The visitor kept an open connection and a sessionId, and
+     * every message after that was silently dropped.
+     */
+    it('keeps the live session when a superseded socket disconnects late', async () => {
+      const first = await initSession(gateway, prisma, 'socket-old', 'session-1');
+      const second = await initSession(gateway, prisma, 'socket-new', 'session-1');
+
+      // The blip finally registers, after the reconnect has already re-inited.
+      gateway.handleDisconnect(first);
+
+      // The reconnected socket still receives outbound replies...
+      expect(
+        gateway.sendToClient('session-1', {
+          id: 'm1',
+          text: 'still connected',
+          timestamp: new Date('2026-08-14T00:00:00Z'),
+        }),
+      ).toBe(true);
+      expect(second.emit).toHaveBeenCalledWith(
+        'chat:response',
+        expect.objectContaining({ text: 'still connected' }),
+      );
+
+      // ...and its inbound messages are still accepted.
+      prisma.messages.create.mockResolvedValue({ id: 'm2' });
+      const result = await gateway.handleMessage(second, {
+        sessionId: 'session-1',
+        text: 'hello again',
+      });
+      expect(result.received).toBe(true);
+    });
+
+    it('still tears the session down when the socket that owns it disconnects', async () => {
+      const first = await initSession(gateway, prisma, 'socket-old', 'session-1');
+      const second = await initSession(gateway, prisma, 'socket-new', 'session-1');
+
+      gateway.handleDisconnect(first);
+      gateway.handleDisconnect(second);
+
+      expect(
+        gateway.sendToClient('session-1', {
+          id: 'm1',
+          text: 'nobody home',
+          timestamp: new Date('2026-08-14T00:00:00Z'),
+        }),
+      ).toBe(false);
+      const result = await gateway.handleMessage(second, {
+        sessionId: 'session-1',
+        text: 'anyone?',
+      });
+      expect(result.received).toBe(false);
+    });
+
     it('is a no-op for a socket that never initialised a session', () => {
       gateway.handleDisconnect(makeSocket('socket-unknown'));
       expect(gateway['sessions'].size).toBe(0);
