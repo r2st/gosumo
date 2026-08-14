@@ -56,7 +56,12 @@ export class AuthThrottleGuard implements CanActivate {
 
     const decision = this.limiter.consume(bucket, {
       ip: clientIp(req),
-      subject: typeof rawSubject === 'string' ? rawSubject : null,
+      // Case-folded, because the only subject in use is an email address and
+      // the service treats addresses case-insensitively. Keying on the raw
+      // spelling would mean `Bob@acme.in` and `bob@acme.in` drew from separate
+      // windows against the same account — one victim mailed a reset link as
+      // often as an attacker cared to re-case the address.
+      subject: typeof rawSubject === 'string' ? rawSubject.trim().toLowerCase() : null,
     });
 
     const res = context.switchToHttp().getResponse<Response>();

@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
@@ -495,6 +496,125 @@ describe('AuthService — refresh, reset, throttling, sessions', () => {
       const stored = repo.updateTeamMember.mock.calls[0][2].password_hash as string;
       expect(stored).not.toContain('BrandNew123!');
       expect(bcrypt.compareSync('BrandNew123!', stored)).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════
+  // Email normalisation
+  // ═══════════════════════════════════════════
+
+  /**
+   * `AuthRepository` lowercases every address it looks up, so any address that
+   * reaches storage or a Redis key in its original case becomes a second,
+   * invisible identity for the same account.
+   */
+  describe('email case handling', () => {
+    it('locks out a guesser who re-cases the address between attempts', async () => {
+      // The lockout is the control that survives an attacker spreading across
+      // many IPs, where the per-IP ceiling does not bite. Keying it on the raw
+      // spelling handed them a fresh five-attempt budget per casing — 2^n
+      // budgets for an n-character address, against one account that never
+      // locked.
+      repo.findTeamMemberByEmail.mockResolvedValue(null);
+
+      for (const spelling of ['bob@acme.in', 'Bob@acme.in', 'BOB@ACME.IN', ' bob@acme.in ']) {
+        await expect(
+          service.login({ email: spelling, password: 'wrong' } as never),
+        ).rejects.toBeInstanceOf(UnauthorizedException);
+      }
+
+      // Every attempt landed in one bucket.
+      const keys = new Set(redis.incr.mock.calls.map((c) => c[0] as string));
+      expect(keys).toEqual(new Set(['gosumo:bob@acme.in:login_attempts']));
+    });
+
+    it('honours an existing lockout regardless of how the address is spelled', async () => {
+      redis.get.mockResolvedValue('5');
+      redis.ttl.mockResolvedValue(600);
+
+      await expect(
+        service.login({ email: 'BOB@Acme.IN', password: 'whatever' } as never),
+      ).rejects.toThrow(/Too many failed login attempts/);
+
+      expect(redis.get).toHaveBeenCalledWith('gosumo:bob@acme.in:login_attempts');
+      // Locked out before the password was ever checked.
+      expect(repo.findTeamMemberByEmail).not.toHaveBeenCalled();
+    });
+
+    it('clears the same bucket the failures went into', async () => {
+      repo.findTeamMemberByEmail.mockResolvedValue(buildTeamMember());
+
+      await service.login({ email: 'BOB@Acme.IN', password: PLAINTEXT_PASSWORD } as never);
+
+      expect(redis.del).toHaveBeenCalledWith('gosumo:bob@acme.in:login_attempts');
+    });
+
+    it('logs in an account registered in mixed case', async () => {
+      repo.findTeamMemberByEmail.mockResolvedValue(buildTeamMember());
+
+      await expect(
+        service.login({ email: 'Bob@Acme.IN', password: PLAINTEXT_PASSWORD } as never),
+      ).resolves.toBeDefined();
+
+      expect(repo.findTeamMemberByEmail).toHaveBeenCalledWith('bob@acme.in');
+    });
+
+    it('stores a new registration in the case every lookup searches for', async () => {
+      // Storing the raw case while searching lowercase produced an account
+      // that passed the duplicate check and could then never log in.
+      repo.findTeamMemberByEmail.mockResolvedValue(null);
+      repo.createTeamMemberWithBusiness.mockResolvedValue(buildTeamMember());
+
+      await service.register({
+        email: '  Bob@Acme.IN ',
+        password: PLAINTEXT_PASSWORD,
+        businessName: 'Acme Realty',
+      } as never);
+
+      expect(repo.createTeamMemberWithBusiness).toHaveBeenCalledWith(
+        'bob@acme.in',
+        expect.anything(),
+        expect.anything(),
+        'Acme Realty',
+        expect.anything(),
+      );
+    });
+
+    it('refuses a re-registration that differs only in case', async () => {
+      repo.findTeamMemberByEmail.mockResolvedValue(buildTeamMember());
+
+      await expect(
+        service.register({
+          email: 'BOB@ACME.IN',
+          password: PLAINTEXT_PASSWORD,
+          businessName: 'Acme Realty',
+        } as never),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('links a Google profile whose address comes back in a different case', async () => {
+      repo.findTeamMemberByGoogleId.mockResolvedValue(null);
+      repo.findTeamMemberByEmail.mockResolvedValue(buildTeamMember());
+      repo.linkGoogleAccount.mockResolvedValue(buildTeamMember());
+
+      await service.handleGoogleLogin({
+        email: 'Bob@Acme.IN',
+        googleId: 'g-1',
+        name: 'Bob',
+      } as never);
+
+      expect(repo.findTeamMemberByEmail).toHaveBeenCalledWith('bob@acme.in');
+      // Linked to the existing account rather than provisioning a duplicate.
+      expect(repo.linkGoogleAccount).toHaveBeenCalled();
+      expect(repo.createOAuthTeamMemberWithBusiness).not.toHaveBeenCalled();
+    });
+
+    it('resolves a reset request to the same account whatever the case', async () => {
+      repo.findTeamMemberByEmail.mockResolvedValue(buildTeamMember());
+
+      await service.requestPasswordReset('BOB@Acme.IN');
+
+      expect(repo.findTeamMemberByEmail).toHaveBeenCalledWith('bob@acme.in');
     });
   });
 

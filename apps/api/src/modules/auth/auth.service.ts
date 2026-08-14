@@ -53,6 +53,32 @@ const LOGIN_LOCKOUT_SECONDS = 15 * 60;
 /** Password-reset tokens live for one hour. */
 const PASSWORD_RESET_TTL_SECONDS = 60 * 60;
 
+/**
+ * The one spelling of an email address the auth layer works in.
+ *
+ * Every lookup in `AuthRepository` already lowercases what it is given, so an
+ * address that reaches storage or a Redis key in its original case is a second,
+ * invisible identity for the same account. That produced three separate
+ * defects:
+ *
+ *   - The login lockout keys on the address. `Bob@acme.in` and `bob@acme.in`
+ *     were different keys against the same account, so a guesser who varied the
+ *     case got a fresh five-attempt budget per spelling and the lockout — the
+ *     one control designed to survive an attacker spreading across many IPs —
+ *     never fired.
+ *   - `forgot-password`'s per-address ceiling keys on the same value, so the
+ *     same trick mailed one victim as often as the attacker liked.
+ *   - Registration *stored* the raw case while every lookup searched lowercase.
+ *     `Bob@acme.in` passed the duplicate check against an existing
+ *     `bob@acme.in` and then could never log in, because its own login lookup
+ *     searched for a row that did not exist.
+ *
+ * Normalising once, at the boundary, is what makes those three the same bug.
+ */
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
 const loginAttemptsKey = (email: string): string => `gosumo:${email}:login_attempts`;
 const passwordResetKey = (tokenHash: string): string => `gosumo:pwreset:${tokenHash}`;
 
@@ -73,7 +99,8 @@ export class AuthService {
   // ─────────────────────────────────────────────
 
   async register(dto: RegisterDto, meta: SessionMeta = {}): Promise<AuthTokensDto> {
-    const { email, password, businessName } = dto;
+    const { password, businessName } = dto;
+    const email = normalizeEmail(dto.email);
 
     const existing = await this.authRepository.findTeamMemberByEmail(email);
     if (existing) {
@@ -107,7 +134,8 @@ export class AuthService {
   // ─────────────────────────────────────────────
 
   async login(dto: LoginDto, meta: SessionMeta = {}): Promise<AuthTokensDto> {
-    const { email, password } = dto;
+    const { password } = dto;
+    const email = normalizeEmail(dto.email);
 
     await this.assertNotLockedOut(email);
 
@@ -146,7 +174,15 @@ export class AuthService {
   // Login / sign-up via Google OAuth
   // ─────────────────────────────────────────────
 
-  async handleGoogleLogin(profile: GoogleProfile, meta: SessionMeta = {}): Promise<AuthTokensDto> {
+  async handleGoogleLogin(
+    rawProfile: GoogleProfile,
+    meta: SessionMeta = {},
+  ): Promise<AuthTokensDto> {
+    // Google is free to echo back whatever case the user typed at the consent
+    // screen; linking to an existing local account depends on the address
+    // matching the one already stored.
+    const profile: GoogleProfile = { ...rawProfile, email: normalizeEmail(rawProfile.email) };
+
     // 1) Already linked to this Google account → straight login.
     let teamMember = await this.authRepository.findTeamMemberByGoogleId(profile.googleId);
 
@@ -346,7 +382,8 @@ export class AuthService {
    * the email exists, so the endpoint cannot be used to enumerate accounts.
    * In production the token is emailed; here it is stored (hashed) in Redis.
    */
-  async requestPasswordReset(email: string): Promise<void> {
+  async requestPasswordReset(rawEmail: string): Promise<void> {
+    const email = normalizeEmail(rawEmail);
     const teamMember = await this.authRepository.findTeamMemberByEmail(email);
     if (!teamMember || !teamMember.password_hash) {
       this.logger.debug(`Password reset requested for unknown/OAuth email ${email} — no-op`);

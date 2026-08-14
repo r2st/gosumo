@@ -219,6 +219,54 @@ describe('AuthThrottleGuard', () => {
       expect(guard.canActivate(ctx)).toBe(true);
     });
 
+    it('folds the case of the subject so re-casing cannot buy a fresh window', () => {
+      // The subject is an email address, and the service treats addresses
+      // case-insensitively. Keying the window on the raw spelling gave an
+      // attacker one full window per casing against the same victim — enough to
+      // mail a reset link at will. Each request also comes from a different IP,
+      // so only the subject dimension can be what stops it.
+      const spellings = ['v@x.com', 'V@x.com', 'v@X.COM', ' V@X.com '];
+
+      for (let i = 0; i < rule.subject!.limit; i += 1) {
+        const ctx = contextFor(
+          'forgot-password',
+          {
+            headers: { 'x-forwarded-for': `198.51.100.${i}` },
+            body: { email: spellings[i % spellings.length] },
+          },
+          res,
+        );
+        expect(guard.canActivate(ctx)).toBe(true);
+      }
+
+      const blocked = contextFor(
+        'forgot-password',
+        { headers: { 'x-forwarded-for': '198.51.100.99' }, body: { email: 'V@X.COM' } },
+        res,
+      );
+      expect(() => guard.canActivate(blocked)).toThrow(HttpException);
+    });
+
+    it('keeps genuinely different addresses in separate windows', () => {
+      for (let i = 0; i < rule.subject!.limit; i += 1) {
+        guard.canActivate(
+          contextFor(
+            'forgot-password',
+            { headers: { 'x-forwarded-for': `198.51.100.${i}` }, body: { email: 'v@x.com' } },
+            res,
+          ),
+        );
+      }
+
+      // A second victim's address must still have its own budget.
+      const other = contextFor(
+        'forgot-password',
+        { headers: { 'x-forwarded-for': '198.51.100.98' }, body: { email: 'w@x.com' } },
+        res,
+      );
+      expect(guard.canActivate(other)).toBe(true);
+    });
+
     it('ignores a non-string subject', () => {
       // `email: {...}` is what an injection attempt looks like before
       // ValidationPipe rejects it; it must not become a Map key.
