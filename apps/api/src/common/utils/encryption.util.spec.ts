@@ -8,9 +8,13 @@
  */
 
 import {
+  assertChannelEncryptionKey,
+  channelKeySource,
   encryptJson,
   decryptJson,
+  FALLBACK_CHANNEL_KEY,
   maskCredentialFields,
+  MIN_CHANNEL_KEY_LENGTH,
 } from './encryption.util';
 
 describe('encryptJson / decryptJson', () => {
@@ -91,5 +95,109 @@ describe('maskCredentialFields', () => {
     expect(masked.ACCESS_TOKEN).toEqual({ set: true, last4: 'cccc' });
     expect(masked.Password).toEqual({ set: true, last4: '2xyz' });
     expect(masked.refreshToken).toEqual({ set: true, last4: 'tttt' });
+  });
+});
+
+/**
+ * Key-source classification.
+ *
+ * `deriveKey` falls through three sources without saying which one it used, and
+ * two of the three are wrong for production. These assert the classification
+ * itself; `main.spec.ts` covers what the bootstrap does with the verdict.
+ */
+describe('channelKeySource', () => {
+  it('reports an explicitly configured key', () => {
+    expect(channelKeySource({ CHANNEL_ENCRYPTION_KEY: 'k', JWT_SECRET: 'j' })).toBe('explicit');
+  });
+
+  it('reports the JWT_SECRET fallback', () => {
+    expect(channelKeySource({ JWT_SECRET: 'j' })).toBe('jwt-secret');
+  });
+
+  it('reports the built-in constant when nothing is set', () => {
+    expect(channelKeySource({})).toBe('built-in-default');
+  });
+
+  it('treats an empty string as unset', () => {
+    // `FOO=` in an env file is the shape this actually arrives in, and the ||
+    // chain in deriveKey skips it — the classification has to agree, or the
+    // check would clear a deployment that is in fact using the fallback.
+    expect(channelKeySource({ CHANNEL_ENCRYPTION_KEY: '', JWT_SECRET: 'j' })).toBe('jwt-secret');
+    expect(channelKeySource({ CHANNEL_ENCRYPTION_KEY: '', JWT_SECRET: '' })).toBe(
+      'built-in-default',
+    );
+  });
+});
+
+describe('assertChannelEncryptionKey', () => {
+  const prod = (env: NodeJS.ProcessEnv) => assertChannelEncryptionKey(env, true);
+  const dev = (env: NodeJS.ProcessEnv) => assertChannelEncryptionKey(env, false);
+
+  it('is fatal in production when the built-in constant would be used', () => {
+    const check = prod({});
+    expect(check.severity).toBe('fatal');
+    expect(check.source).toBe('built-in-default');
+  });
+
+  it('quotes the constant so the reader can see it is not a secret', () => {
+    expect(prod({}).message).toContain(FALLBACK_CHANNEL_KEY);
+  });
+
+  it('warns — but does not block — on the JWT_SECRET fallback', () => {
+    // An existing deployment runs this way. Refusing to boot would take a
+    // working service down to fix a latent risk, which is the wrong trade.
+    const check = prod({ JWT_SECRET: 'j'.repeat(48) });
+    expect(check.severity).toBe('warn');
+    expect(check.source).toBe('jwt-secret');
+  });
+
+  it('warns on an explicit key with little entropy behind it', () => {
+    const check = prod({ CHANNEL_ENCRYPTION_KEY: 'x'.repeat(MIN_CHANNEL_KEY_LENGTH - 1) });
+    expect(check.severity).toBe('warn');
+    expect(check.source).toBe('explicit');
+  });
+
+  it('accepts an explicit key at exactly the minimum length', () => {
+    // The boundary is inclusive; a key of exactly the documented length must
+    // not warn, or the advice and the check disagree.
+    const check = prod({ CHANNEL_ENCRYPTION_KEY: 'x'.repeat(MIN_CHANNEL_KEY_LENGTH) });
+    expect(check).toEqual({ source: 'explicit', severity: 'ok', message: null });
+  });
+
+  it('says nothing outside production, whatever the key situation', () => {
+    for (const env of [{}, { JWT_SECRET: 'j' }, { CHANNEL_ENCRYPTION_KEY: 'k' }]) {
+      expect(dev(env).severity).toBe('ok');
+      expect(dev(env).message).toBeNull();
+    }
+  });
+
+  it('derives production from NODE_ENV when not told', () => {
+    expect(assertChannelEncryptionKey({ NODE_ENV: 'production' }).severity).toBe('fatal');
+    expect(assertChannelEncryptionKey({ NODE_ENV: 'development' }).severity).toBe('ok');
+    expect(assertChannelEncryptionKey({}).severity).toBe('ok');
+  });
+});
+
+/**
+ * The property that makes the warning above necessary: a key change is not an
+ * error, it is silence.
+ */
+describe('re-keying is undetectable at the decryption boundary', () => {
+  const originalKey = process.env.CHANNEL_ENCRYPTION_KEY;
+  afterEach(() => {
+    if (originalKey === undefined) delete process.env.CHANNEL_ENCRYPTION_KEY;
+    else process.env.CHANNEL_ENCRYPTION_KEY = originalKey;
+  });
+
+  it('returns an empty object rather than throwing when the key has changed', () => {
+    process.env.CHANNEL_ENCRYPTION_KEY = 'first-key-'.repeat(4);
+    const ciphertext = encryptJson({ accessToken: 'live-token' });
+
+    process.env.CHANNEL_ENCRYPTION_KEY = 'second-key-'.repeat(4);
+
+    // No exception, no signal — the credential simply reads back as absent.
+    // This is why rotating JWT_SECRET while it doubles as the channel key is
+    // worth a startup warning rather than a footnote.
+    expect(decryptJson(ciphertext)).toEqual({});
   });
 });

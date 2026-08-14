@@ -4,6 +4,7 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
+import { assertChannelEncryptionKey } from './common/utils/encryption.util';
 
 /** True when this process is running as production. */
 export function isProduction(): boolean {
@@ -41,8 +42,33 @@ export function swaggerEnabled(): boolean {
   return !isProduction() || process.env['ENABLE_SWAGGER'] === 'true';
 }
 
+/**
+ * Startup checks that must run before anything is served.
+ *
+ * Reported here rather than at the point of use, because the settings involved
+ * fail silently by construction: the thing they protect keeps working, just not
+ * in the way the operator believes. A boot-time line is the only moment anyone
+ * is looking.
+ */
+export function runStartupChecks(logger: Logger): void {
+  const keyCheck = assertChannelEncryptionKey();
+  if (keyCheck.severity === 'fatal') {
+    // Refusing to start is the point. Coming up and writing credentials under
+    // a key from the public source tree produces a database that looks
+    // encrypted and is not — and every row written before anyone notices has
+    // to be re-keyed by hand.
+    logger.error(keyCheck.message);
+    throw new Error(keyCheck.message ?? 'Channel encryption key is not configured');
+  }
+  if (keyCheck.severity === 'warn') {
+    logger.warn(keyCheck.message);
+  }
+}
+
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
+
+  runStartupChecks(logger);
 
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn', 'log', 'debug', 'verbose'],

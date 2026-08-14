@@ -45,12 +45,14 @@ jest.mock('./common/interceptors/logging.interceptor', () => ({
   LoggingInterceptor: class {},
 }));
 
+import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import {
   allowCredentials,
   isProduction,
   resolveCorsOrigin,
+  runStartupChecks,
   swaggerEnabled,
 } from './main';
 
@@ -173,6 +175,119 @@ describe('bootstrap (main.ts)', () => {
       process.env['NODE_ENV'] = 'development';
       process.env['ENABLE_SWAGGER'] = 'false';
       expect(swaggerEnabled()).toBe(true);
+    });
+  });
+});
+
+/**
+ * Startup checks.
+ *
+ * These exist because the settings they cover fail silently: the API comes up,
+ * serves traffic, and encrypts credentials — just not with the key the operator
+ * thinks. A boot-time line is the only moment anyone looks.
+ */
+describe('runStartupChecks', () => {
+  const originalEnv = { ...process.env };
+  let logger: Logger;
+  let error: jest.SpyInstance;
+  let warn: jest.SpyInstance;
+
+  beforeEach(() => {
+    logger = new Logger('test');
+    error = jest.spyOn(logger, 'error').mockImplementation(() => {});
+    warn = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    jest.restoreAllMocks();
+  });
+
+  describe('in production', () => {
+    beforeEach(() => {
+      process.env['NODE_ENV'] = 'production';
+    });
+
+    it('refuses to start when nothing supplies a key', () => {
+      // Booting here would write credentials under a constant that ships in
+      // this repository, producing a database that looks encrypted and is not.
+      delete process.env['CHANNEL_ENCRYPTION_KEY'];
+      delete process.env['JWT_SECRET'];
+
+      expect(() => runStartupChecks(logger)).toThrow(/CHANNEL_ENCRYPTION_KEY/);
+      expect(error).toHaveBeenCalled();
+    });
+
+    it('names the remedy in the failure, not just the problem', () => {
+      delete process.env['CHANNEL_ENCRYPTION_KEY'];
+      delete process.env['JWT_SECRET'];
+
+      expect(() => runStartupChecks(logger)).toThrow(/openssl rand/);
+    });
+
+    it('starts but warns when the key is derived from JWT_SECRET', () => {
+      // This is the live configuration on an existing deployment, so it must
+      // keep booting — the risk is real but it is not "stop the service" real.
+      delete process.env['CHANNEL_ENCRYPTION_KEY'];
+      process.env['JWT_SECRET'] = 'a'.repeat(48);
+
+      expect(() => runStartupChecks(logger)).not.toThrow();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('JWT_SECRET'));
+    });
+
+    it('warns that rotating JWT_SECRET would silently drop credentials', () => {
+      // The part a deployer cannot infer: decryptJson returns {} rather than
+      // throwing, so re-keying empties every stored credential with no error.
+      delete process.env['CHANNEL_ENCRYPTION_KEY'];
+      process.env['JWT_SECRET'] = 'a'.repeat(48);
+      runStartupChecks(logger);
+
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/rotating it|silently/i));
+    });
+
+    it('warns about a short explicit key without blocking it', () => {
+      process.env['CHANNEL_ENCRYPTION_KEY'] = 'short';
+
+      expect(() => runStartupChecks(logger)).not.toThrow();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('shorter than'));
+    });
+
+    it('says nothing when the key is set properly', () => {
+      process.env['CHANNEL_ENCRYPTION_KEY'] = 'x'.repeat(48);
+
+      expect(() => runStartupChecks(logger)).not.toThrow();
+      expect(warn).not.toHaveBeenCalled();
+      expect(error).not.toHaveBeenCalled();
+    });
+
+    it('prefers an explicit key over JWT_SECRET', () => {
+      process.env['CHANNEL_ENCRYPTION_KEY'] = 'x'.repeat(48);
+      process.env['JWT_SECRET'] = 'y'.repeat(48);
+
+      runStartupChecks(logger);
+      expect(warn).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('outside production', () => {
+    it('stays silent on a clean checkout', () => {
+      // `pnpm dev` on a fresh clone has neither variable and must still run.
+      process.env['NODE_ENV'] = 'development';
+      delete process.env['CHANNEL_ENCRYPTION_KEY'];
+      delete process.env['JWT_SECRET'];
+
+      expect(() => runStartupChecks(logger)).not.toThrow();
+      expect(warn).not.toHaveBeenCalled();
+      expect(error).not.toHaveBeenCalled();
+    });
+
+    it('stays silent when NODE_ENV is unset entirely', () => {
+      delete process.env['NODE_ENV'];
+      delete process.env['CHANNEL_ENCRYPTION_KEY'];
+      delete process.env['JWT_SECRET'];
+
+      expect(() => runStartupChecks(logger)).not.toThrow();
+      expect(warn).not.toHaveBeenCalled();
     });
   });
 });

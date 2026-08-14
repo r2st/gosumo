@@ -4,11 +4,111 @@ const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 16;
 const AUTH_TAG_LENGTH = 16;
 
+/**
+ * The last-resort key material. It is a literal in a source file, so it is
+ * known to anyone who can read this repository — which makes anything encrypted
+ * under it encrypted in name only.
+ *
+ * It exists so that `pnpm dev` works on a clean checkout. `assertChannelEncryptionKey`
+ * is what stops it reaching production.
+ */
+export const FALLBACK_CHANNEL_KEY = "gosumo-default-key-32b";
+
+/**
+ * Shorter than this and the SHA-256 below is stretching very little entropy
+ * across a 256-bit key. Not a hard failure — a deployer who set the variable
+ * has made a deliberate choice — but worth saying out loud.
+ */
+export const MIN_CHANNEL_KEY_LENGTH = 32;
+
+/** Where the key actually came from, in the order `deriveKey` tries them. */
+export type ChannelKeySource = "explicit" | "jwt-secret" | "built-in-default";
+
+export interface ChannelKeyCheck {
+  source: ChannelKeySource;
+  severity: "ok" | "warn" | "fatal";
+  /** Null when there is nothing to say. */
+  message: string | null;
+}
+
+/** Which of the three sources supplies the key, given an environment. */
+export function channelKeySource(
+  env: NodeJS.ProcessEnv = process.env,
+): ChannelKeySource {
+  if (env.CHANNEL_ENCRYPTION_KEY) return "explicit";
+  if (env.JWT_SECRET) return "jwt-secret";
+  return "built-in-default";
+}
+
+/**
+ * Judge the channel-encryption key at startup.
+ *
+ * `deriveKey` falls through three sources silently, and the two fallbacks fail
+ * in ways nothing downstream can detect: `decryptJson` returns `{}` rather than
+ * throwing when a key does not match, so credentials encrypted under one key
+ * simply read back as absent under another. A deployment can therefore be
+ * wrong — or become wrong — without a single error being logged.
+ *
+ * Which is why the `jwt-secret` case is a warning and not a shrug. Rotating
+ * `JWT_SECRET` is routine security hygiene, and doing it while the channel key
+ * is derived from it silently empties every stored channel credential in the
+ * database: no exception, no log line, just channels that quietly stop
+ * authenticating. Nothing about `JWT_SECRET` announces that it is load-bearing
+ * for anything but tokens.
+ *
+ * Outside production nothing is reported — a clean checkout is meant to run.
+ */
+export function assertChannelEncryptionKey(
+  env: NodeJS.ProcessEnv = process.env,
+  isProduction = (env.NODE_ENV ?? "development") === "production",
+): ChannelKeyCheck {
+  const source = channelKeySource(env);
+
+  if (!isProduction) return { source, severity: "ok", message: null };
+
+  if (source === "built-in-default") {
+    return {
+      source,
+      severity: "fatal",
+      message:
+        "CHANNEL_ENCRYPTION_KEY is not set and neither is JWT_SECRET, so stored channel " +
+        `credentials would be encrypted under the constant "${FALLBACK_CHANNEL_KEY}" that ships ` +
+        "in this repository — readable by anyone who can read the source. Set " +
+        "CHANNEL_ENCRYPTION_KEY to a random secret (openssl rand -base64 48) before starting.",
+    };
+  }
+
+  if (source === "jwt-secret") {
+    return {
+      source,
+      severity: "warn",
+      message:
+        "CHANNEL_ENCRYPTION_KEY is not set; the channel-credential key is being derived from " +
+        "JWT_SECRET. That works, but it makes JWT_SECRET undroppable: rotating it re-keys " +
+        "every stored credential, and because decryption failure returns an empty object " +
+        "rather than an error, those credentials would silently read back as absent instead " +
+        "of failing loudly. Set CHANNEL_ENCRYPTION_KEY explicitly.",
+    };
+  }
+
+  if ((env.CHANNEL_ENCRYPTION_KEY ?? "").length < MIN_CHANNEL_KEY_LENGTH) {
+    return {
+      source,
+      severity: "warn",
+      message:
+        `CHANNEL_ENCRYPTION_KEY is shorter than ${MIN_CHANNEL_KEY_LENGTH} characters. It is ` +
+        "hashed to 256 bits regardless, which hides how little entropy is actually behind it.",
+    };
+  }
+
+  return { source, severity: "ok", message: null };
+}
+
 function deriveKey(): Buffer {
   const raw =
     process.env.CHANNEL_ENCRYPTION_KEY ||
     process.env.JWT_SECRET ||
-    "gosumo-default-key-32b";
+    FALLBACK_CHANNEL_KEY;
   return crypto.createHash("sha256").update(raw).digest();
 }
 
