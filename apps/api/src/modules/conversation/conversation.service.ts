@@ -242,6 +242,37 @@ export class ConversationService {
   }
 
   /**
+   * Mark a conversation read, clearing its unread counter, and return the
+   * conversation with the cleared count.
+   *
+   * Called when an operator opens a thread. Only the counter moves — reading a
+   * conversation is not a status transition, so nothing is emitted and no
+   * lifecycle rule applies.
+   */
+  async markConversationRead(
+    businessId: string,
+    id: string,
+  ): Promise<{ conversation: conversations; cleared: number }> {
+    const conversation = await this.repository.findById(businessId, id);
+    if (!conversation) {
+      throw new NotFoundException(`Conversation not found: ${id}`);
+    }
+
+    const cleared = await this.repository.markRead(businessId, id);
+
+    return {
+      // Reflect the clear in the returned row without a second read: the caller
+      // renders this straight back into the inbox, where a stale non-zero count
+      // would flash the badge the operator just dismissed.
+      conversation: {
+        ...conversation,
+        unread_count: Math.max(0, conversation.unread_count - cleared),
+      },
+      cleared,
+    };
+  }
+
+  /**
    * List conversations with optional filters, paginated.
    */
   async listConversations(

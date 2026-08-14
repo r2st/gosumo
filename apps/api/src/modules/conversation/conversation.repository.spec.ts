@@ -29,7 +29,7 @@ describe('ConversationRepository', () => {
   let repository: ConversationRepository;
   let prisma: {
     conversations: Record<
-      'findFirst' | 'findMany' | 'count' | 'groupBy' | 'create' | 'update',
+      'findFirst' | 'findMany' | 'count' | 'groupBy' | 'create' | 'update' | 'updateMany',
       jest.Mock
     >;
     $queryRaw: jest.Mock;
@@ -44,6 +44,7 @@ describe('ConversationRepository', () => {
         groupBy: jest.fn().mockResolvedValue([]),
         create: jest.fn().mockResolvedValue({ id: CONVERSATION_ID }),
         update: jest.fn().mockResolvedValue({ id: CONVERSATION_ID }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       $queryRaw: jest
         .fn()
@@ -346,6 +347,100 @@ describe('ConversationRepository', () => {
     expect(prisma.conversations.update.mock.calls[0]![0]).toMatchObject({
       where: { id: CONVERSATION_ID, business_id: BUSINESS_ID },
       data: { last_message_at: when, message_count: { increment: 1 } },
+    });
+  });
+
+  it('raises the unread count in the same statement as last_message_at', async () => {
+    // An inbound message that bumps the timestamp but not the badge is how the
+    // inbox ends up showing "0 unread" on a thread with a waiting customer.
+    // Two statements would also let a crash between them leave the two apart.
+    await repository.updateLastMessageAt(
+      BUSINESS_ID,
+      CONVERSATION_ID,
+      new Date('2026-08-10T10:00:00Z'),
+    );
+
+    expect(prisma.conversations.update).toHaveBeenCalledTimes(1);
+    expect(prisma.conversations.update.mock.calls[0]![0].data).toMatchObject({
+      unread_count: { increment: 1 },
+    });
+  });
+
+  it('increments rather than assigns the unread count', async () => {
+    // A read-then-write would drop one of two messages arriving at once.
+    await repository.updateLastMessageAt(BUSINESS_ID, CONVERSATION_ID, new Date());
+
+    const { data } = prisma.conversations.update.mock.calls[0]![0];
+    expect(typeof data.unread_count).toBe('object');
+    expect(data.unread_count).toEqual({ increment: 1 });
+  });
+
+  // ── Unread counter: mark-read ────────────────
+
+  describe('markRead', () => {
+    it('subtracts exactly what it observed, guarded against going negative', async () => {
+      prisma.conversations.findFirst.mockResolvedValue({ unread_count: 3 });
+
+      await expect(repository.markRead(BUSINESS_ID, CONVERSATION_ID)).resolves.toBe(3);
+
+      expect(prisma.conversations.updateMany.mock.calls[0]![0]).toEqual({
+        where: {
+          id: CONVERSATION_ID,
+          business_id: BUSINESS_ID,
+          unread_count: { gte: 3 },
+        },
+        data: { unread_count: { decrement: 3 } },
+      });
+    });
+
+    it('does not assign zero, so a message arriving mid-read stays unread', async () => {
+      prisma.conversations.findFirst.mockResolvedValue({ unread_count: 2 });
+
+      await repository.markRead(BUSINESS_ID, CONVERSATION_ID);
+
+      // `set: 0` here would mark a third message seen by an operator who never
+      // saw it; `decrement: 2` against a counter that has since become 3
+      // leaves it at 1.
+      const { data } = prisma.conversations.updateMany.mock.calls[0]![0];
+      expect(data.unread_count).toEqual({ decrement: 2 });
+      expect(data.unread_count).not.toHaveProperty('set');
+    });
+
+    it('reports nothing cleared when a concurrent reader got there first', async () => {
+      // The guard matched no rows: the counter had already dropped below the
+      // observed value, so this call cleared nothing and must not claim it did.
+      prisma.conversations.findFirst.mockResolvedValue({ unread_count: 4 });
+      prisma.conversations.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(repository.markRead(BUSINESS_ID, CONVERSATION_ID)).resolves.toBe(0);
+    });
+
+    it('skips the write entirely on an already-read conversation', async () => {
+      prisma.conversations.findFirst.mockResolvedValue({ unread_count: 0 });
+
+      await expect(repository.markRead(BUSINESS_ID, CONVERSATION_ID)).resolves.toBe(0);
+      expect(prisma.conversations.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('scopes the lookup to the tenant and skips soft-deleted rows', async () => {
+      prisma.conversations.findFirst.mockResolvedValue({ unread_count: 1 });
+
+      await repository.markRead(BUSINESS_ID, CONVERSATION_ID);
+
+      expect(prisma.conversations.findFirst.mock.calls[0]![0].where).toEqual({
+        id: CONVERSATION_ID,
+        business_id: BUSINESS_ID,
+        deleted_at: null,
+      });
+    });
+
+    it('refuses to clear a conversation belonging to another business', async () => {
+      prisma.conversations.findFirst.mockResolvedValue(null);
+
+      await expect(repository.markRead(BUSINESS_ID, CONVERSATION_ID)).rejects.toThrow(
+        ResourceNotFoundError,
+      );
+      expect(prisma.conversations.updateMany).not.toHaveBeenCalled();
     });
   });
 

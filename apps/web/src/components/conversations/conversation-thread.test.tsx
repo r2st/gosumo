@@ -87,6 +87,7 @@ const state = {
   resolve: { mutate: vi.fn(), isPending: false },
   escalate: { mutate: vi.fn(), isPending: false },
   update: { mutate: vi.fn(), isPending: false },
+  markRead: { mutate: vi.fn(), isPending: false },
 };
 
 vi.mock('@/hooks/use-queries', () => ({
@@ -96,6 +97,7 @@ vi.mock('@/hooks/use-queries', () => ({
   useResolveConversation: () => state.resolve,
   useEscalateConversation: () => state.escalate,
   useUpdateConversation: () => state.update,
+  useMarkConversationRead: () => state.markRead,
   // The nested AiDraftPanel pulls these.
   useApproveTask: () => ({ mutate: vi.fn(), isPending: false, isError: false, error: null }),
   useRejectTask: () => ({ mutate: vi.fn(), isPending: false, isError: false, error: null }),
@@ -117,6 +119,7 @@ beforeEach(() => {
   state.resolve = { mutate: vi.fn(), isPending: false };
   state.escalate = { mutate: vi.fn(), isPending: false };
   state.update = { mutate: vi.fn(), isPending: false };
+  state.markRead = { mutate: vi.fn(), isPending: false };
   // jsdom has no layout, so the auto-scroll effect needs a stub.
   Element.prototype.scrollTo = vi.fn();
 });
@@ -476,5 +479,48 @@ describe('ConversationThread — role gating', () => {
     expect(screen.getByPlaceholderText(/Type a reply/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Resolve/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Escalate/ })).toBeInTheDocument();
+  });
+});
+
+describe('ConversationThread — mark read', () => {
+  it('clears the unread badge when the thread is opened', () => {
+    render(<ConversationThread conversationId="c1" />);
+
+    expect(state.markRead.mutate).toHaveBeenCalledWith('c1');
+  });
+
+  it('clears it again when a message arrives while the thread is open', () => {
+    const { rerender } = render(<ConversationThread conversationId="c1" />);
+    expect(state.markRead.mutate).toHaveBeenCalledTimes(1);
+
+    state.messages.data = { data: [makeMessage('m1', '2026-08-10T04:00:00.000Z', 'hello')] };
+    rerender(<ConversationThread conversationId="c1" />);
+
+    // The operator is looking at the thread, so the new message is read on
+    // arrival rather than badging a conversation already on screen.
+    expect(state.markRead.mutate).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not re-fire on an unrelated re-render', () => {
+    const { rerender } = render(<ConversationThread conversationId="c1" />);
+    rerender(<ConversationThread conversationId="c1" />);
+
+    expect(state.markRead.mutate).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks the newly opened thread when the operator switches conversations', () => {
+    const { rerender } = render(<ConversationThread conversationId="c1" />);
+    rerender(<ConversationThread conversationId="c2" />);
+
+    expect(state.markRead.mutate).toHaveBeenNthCalledWith(2, 'c2');
+  });
+
+  it('does not call it for a VIEWER', () => {
+    // A VIEWER is read-only across the API; firing this would only collect
+    // 403s, and the badge is shared team state rather than a per-viewer flag.
+    currentRole = 'VIEWER';
+    render(<ConversationThread conversationId="c1" />);
+
+    expect(state.markRead.mutate).not.toHaveBeenCalled();
   });
 });

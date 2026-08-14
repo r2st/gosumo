@@ -63,6 +63,25 @@ export function useMessages(conversationId: string | null) {
   });
 }
 
+/**
+ * Clear a conversation's unread badge once an operator has it open.
+ *
+ * Fire-and-forget on purpose: a VIEWER is read-only across the API and gets a
+ * 403 here, and a failed mark-read is not worth an error state over a thread
+ * the operator is already reading. The list is only refetched when the call
+ * actually cleared something, so an already-read thread costs no extra request.
+ */
+export function useMarkConversationRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.conversations.markRead(id),
+    onSuccess: (data) => {
+      if (data?.cleared) qc.invalidateQueries({ queryKey: ['conversations'] });
+    },
+    onError: () => {},
+  });
+}
+
 export function useSendMessage(conversationId: string) {
   const qc = useQueryClient();
   return useMutation({

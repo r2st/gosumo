@@ -114,6 +114,26 @@ export class ConversationController {
     return this.conversationService.getSlaMetrics(tenantId, id);
   }
 
+  @Post(':id/read')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Mark a conversation read, clearing its unread count' })
+  @ApiParam({ name: 'id', description: 'Conversation UUID' })
+  @ApiResponse({ status: 200, description: 'Unread count cleared' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
+  async markRead(
+    @TenantId() tenantId: string,
+    @Param('id', UuidValidationPipe) id: string,
+  ) {
+    const { conversation, cleared } = await this.conversationService.markConversationRead(
+      tenantId,
+      id,
+    );
+    return {
+      ...serializeConversationListItem(conversation as ConversationListRow),
+      cleared,
+    };
+  }
+
   // ─── Status / lifecycle ──────────────────────
 
   @Patch(':id/status')

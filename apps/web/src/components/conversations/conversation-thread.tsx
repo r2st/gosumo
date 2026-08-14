@@ -14,6 +14,7 @@ import { AiDraftPanel } from './ai-draft-panel';
 import {
   useConversation,
   useEscalateConversation,
+  useMarkConversationRead,
   useMessages,
   useResolveConversation,
   useSendMessage,
@@ -38,6 +39,7 @@ export function ConversationThread({ conversationId }: { conversationId: string 
   const resolve = useResolveConversation();
   const escalate = useEscalateConversation();
   const update = useUpdateConversation();
+  const markRead = useMarkConversationRead();
   // Resolving, escalating, snoozing and replying are all undecorated writes —
   // STAFF and above. The thread itself stays readable for a VIEWER.
   const { canWrite } = usePermissions();
@@ -64,6 +66,17 @@ export function ConversationThread({ conversationId }: { conversationId: string 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages.length]);
+
+  // Opening a thread clears its unread badge, and so does a message that
+  // arrives while it is still open — the operator is looking right at it.
+  // Skipped for a VIEWER, who is read-only across the API and would only
+  // collect 403s: the badge is shared team state, not a per-viewer flag.
+  const markReadRef = useRef(markRead.mutate);
+  markReadRef.current = markRead.mutate;
+  useEffect(() => {
+    if (!conversationId || !canWrite) return;
+    markReadRef.current(conversationId);
+  }, [conversationId, canWrite, messages.length]);
 
   const conversation = convQ.data;
   const pendingTask = (conversation as typeof conversation & { tasks?: HitlTask[] })?.tasks?.find(

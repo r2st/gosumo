@@ -291,6 +291,11 @@ export const api = {
       }),
     assign: (id: string, userId: string) =>
       request<Conversation>(`/conversations/${id}/assign`, { method: 'POST', body: { userId } }),
+    markRead: (id: string) =>
+      request<Conversation & { cleared: number }>(`/conversations/${id}/read`, {
+        method: 'POST',
+        body: {},
+      }),
     update: (id: string, body: { status?: ConversationStatus; assignedTo?: string | null; tags?: string[] }) =>
       request<Conversation>(`/conversations/${id}`, { method: 'PATCH', body }),
   },

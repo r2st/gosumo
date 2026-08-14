@@ -312,7 +312,13 @@ export class ConversationRepository {
   }
 
   /**
-   * Update last_message_at timestamp and increment message_count.
+   * Record an inbound message: bump last_message_at and the message and unread
+   * counters. Called once per `message.received`, so it only ever sees customer
+   * traffic — an agent's own reply must not make a thread look unread.
+   *
+   * All three writes go in one statement, and the counters use `increment`
+   * rather than a read-then-write, so two messages landing on the same
+   * conversation at once cannot lose an increment between them.
    */
   async updateLastMessageAt(
     businessId: string,
@@ -324,8 +330,50 @@ export class ConversationRepository {
       data: {
         last_message_at: timestamp,
         message_count: { increment: 1 },
+        unread_count: { increment: 1 },
       },
     });
+  }
+
+  /**
+   * Clear the unread counter for a conversation an operator has just opened,
+   * and report how many messages that cleared.
+   *
+   * Subtracts exactly the number of unread messages that were observed rather
+   * than assigning zero. The difference matters: a message that arrives between
+   * the read and the write survives as unread instead of being silently marked
+   * seen by an operator who never saw it.
+   *
+   * The `gte` guard is what makes a concurrent double-read safe — the second
+   * writer finds the counter already below what it meant to subtract, matches
+   * no rows, and leaves the counter alone instead of driving it negative.
+   */
+  async markRead(businessId: string, conversationId: string): Promise<number> {
+    const existing = await this.prisma.conversations.findFirst({
+      where: { id: conversationId, business_id: businessId, deleted_at: null },
+      select: { unread_count: true },
+    });
+    if (!existing) {
+      throw new ResourceNotFoundError('Conversation', conversationId, {
+        context: { businessId },
+      });
+    }
+
+    const seen = existing.unread_count;
+    if (seen <= 0) return 0;
+
+    const { count } = await this.prisma.conversations.updateMany({
+      where: {
+        id: conversationId,
+        business_id: businessId,
+        unread_count: { gte: seen },
+      },
+      data: { unread_count: { decrement: seen } },
+    });
+
+    // No rows matched: another reader got there first and already cleared what
+    // this call had observed. Nothing was cleared here, so report nothing.
+    return count === 0 ? 0 : seen;
   }
 
   /**
