@@ -15,6 +15,7 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CatalogItemType } from '@gosumo/shared';
+import { SEARCH_TERM_MAX_LENGTH } from '../../../common/validators/search-term.constants';
 
 // ─────────────────────────────────────────────
 // CATEGORY DTOs
@@ -383,6 +384,7 @@ export class ItemQueryDto {
   @ApiPropertyOptional({ description: 'Search term for name/description/SKU' })
   @IsOptional()
   @IsString()
+  @MaxLength(SEARCH_TERM_MAX_LENGTH)
   search?: string;
 
   @ApiPropertyOptional({ description: 'Filter by category UUID' })

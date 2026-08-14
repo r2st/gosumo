@@ -14,6 +14,7 @@ import {
 import { Type, Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ChannelType } from '@gosumo/shared';
+import { SEARCH_TERM_MAX_LENGTH } from '../../../common/validators/search-term.constants';
 
 const SHORTCUT_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,98}[a-z0-9])?$/;
 
@@ -100,6 +101,7 @@ export class ListCannedResponsesQueryDto {
   @ApiPropertyOptional({ description: 'Free-text search across title, content, shortcut' })
   @IsOptional()
   @IsString()
+  @MaxLength(SEARCH_TERM_MAX_LENGTH)
   search?: string;
 
   @ApiPropertyOptional()

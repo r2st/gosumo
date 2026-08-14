@@ -19,6 +19,7 @@ import { ChannelType, MessageStatus, MessageDirection } from '@gosumo/shared';
 import { NotificationTemplateChannel } from '@prisma/client';
 import { IsCalendarDateString } from '../../../common/validators/is-calendar-date.validator';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../message.constants';
+import { SEARCH_TERM_MAX_LENGTH } from '../../../common/validators/search-term.constants';
 
 // ─────────────────────────────────────────────
 // StoreInboundMessageDto
@@ -167,6 +168,7 @@ export class MessagePaginationQueryDto {
 export class MessageSearchQueryDto {
   @ApiProperty({ description: 'Search query string' })
   @IsString()
+  @MaxLength(SEARCH_TERM_MAX_LENGTH)
   @IsNotEmpty()
   q!: string;
 

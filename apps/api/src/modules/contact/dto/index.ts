@@ -17,6 +17,7 @@ import {
 import { Type, Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ChannelType } from '@gosumo/shared';
+import { SEARCH_TERM_MAX_LENGTH } from '../../../common/validators/search-term.constants';
 
 // ─────────────────────────────────────────────
 // Helpers
@@ -39,6 +40,7 @@ export class ListContactsQueryDto {
   @ApiPropertyOptional({ description: 'Free-text search across name, email, phone' })
   @IsOptional()
   @IsString()
+  @MaxLength(SEARCH_TERM_MAX_LENGTH)
   search?: string;
 
   @ApiPropertyOptional({ description: 'Match contacts with any of these tags', type: [String] })

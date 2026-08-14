@@ -21,6 +21,7 @@ import {
   LeadPurpose,
   FinancingStatus,
 } from '@gosumo/shared';
+import { SEARCH_TERM_MAX_LENGTH } from '../../../common/validators/search-term.constants';
 
 // ─────────────────────────────────────────────
 // CREATE / UPDATE
@@ -256,6 +257,7 @@ export class ListLeadsQueryDto {
   @ApiPropertyOptional({ description: 'Search name / phone / email' })
   @IsOptional()
   @IsString()
+  @MaxLength(SEARCH_TERM_MAX_LENGTH)
   search?: string;
 
   @ApiPropertyOptional({ default: 1 })

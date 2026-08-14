@@ -13,6 +13,7 @@ import {
 import { Type, Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ChannelType } from '@gosumo/shared';
+import { SEARCH_TERM_MAX_LENGTH } from '../../../common/validators/search-term.constants';
 
 // ─────────────────────────────────────────────
 // Churn risk level enum (application layer)
@@ -155,6 +156,7 @@ export class ListClientsQueryDto {
   @ApiPropertyOptional({ description: 'Search across name, email, phone' })
   @IsOptional()
   @IsString()
+  @MaxLength(SEARCH_TERM_MAX_LENGTH)
   search?: string;
 
   @ApiPropertyOptional({ enum: ChannelType, description: 'Filter by channel type' })
@@ -207,6 +209,7 @@ export class ListClientsQueryDto {
   @ApiPropertyOptional({ description: 'Search query' })
   @IsOptional()
   @IsString()
+  @MaxLength(SEARCH_TERM_MAX_LENGTH)
   q?: string;
 }
 

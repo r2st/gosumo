@@ -8,12 +8,14 @@ import {
   IsInt,
   IsNotEmpty,
   IsArray,
+  MaxLength,
   Min,
   Max,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IntentType, ConfidenceMode } from '@gosumo/shared';
+import { SEARCH_TERM_MAX_LENGTH } from '../../../common/validators/search-term.constants';
 
 // ─────────────────────────────────────────────
 // Command / Query DTOs
@@ -247,6 +249,7 @@ export class IngestResultDto {
 export class SearchKnowledgeQueryDto {
   @ApiProperty({ description: 'Search query text' })
   @IsString()
+  @MaxLength(SEARCH_TERM_MAX_LENGTH)
   @IsNotEmpty()
   q!: string;
 
