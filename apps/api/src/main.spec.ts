@@ -145,5 +145,22 @@ describe('bootstrap (main.ts)', () => {
       process.env['ENABLE_SWAGGER'] = '1';
       expect(swaggerEnabled()).toBe(false);
     });
+
+    /**
+     * The comparison is case-sensitive. Documented in `.env.example` and
+     * DEPLOYMENT.md §4.1 as "the literal true", so a deploy that sets `TRUE`
+     * gets the safe outcome rather than an accidental publish.
+     */
+    it('ignores an opt-in that differs only in case', () => {
+      process.env['NODE_ENV'] = 'production';
+      process.env['ENABLE_SWAGGER'] = 'TRUE';
+      expect(swaggerEnabled()).toBe(false);
+    });
+
+    it('leaves Swagger on in development regardless of the opt-in', () => {
+      process.env['NODE_ENV'] = 'development';
+      process.env['ENABLE_SWAGGER'] = 'false';
+      expect(swaggerEnabled()).toBe(true);
+    });
   });
 });

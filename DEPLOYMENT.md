@@ -249,8 +249,16 @@ manual approval step before prod.)
   logs. The compose file reads them via `env_file:`.
 - Required `.env.prod` keys (mirror `apps/api/.env.example` + infra):
   `DATABASE_URL`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `QDRANT_API_KEY`,
-  `CLOUDFLARE_TUNNEL_TOKEN`, `ANTHROPIC_API_KEY`, `JWT_SECRET`,
+  `CLOUDFLARE_TUNNEL_TOKEN`, `OPENROUTER_API_KEY`, `JWT_SECRET`,
   `WHATSAPP_*`, `RAZORPAY_*`, `S3_*` (R2).
+- `CORS_ORIGIN` must be set to the dashboard origin. Left unset the API falls
+  back to `*` **with credentials disabled** and logs a warning at boot — the
+  dashboard's authenticated calls will fail rather than be silently exposed.
+- `ENABLE_SWAGGER` is **not** set in production. Swagger UI (`GET /v1/docs`)
+  publishes every route, DTO and example, so it is left unmounted whenever
+  `NODE_ENV=production`. Set it to the literal `true` only for a deliberate,
+  temporary debugging window, and unset it afterwards; a 404 on `/v1/docs` in
+  prod is the expected, healthy state.
 - For stronger secret hygiene later: SOPS+age-encrypted `.env.prod` in the repo,
   decrypted on the box at deploy time; or Hetzner + HashiCorp Vault. Overkill for MVP.
 
