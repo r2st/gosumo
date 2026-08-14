@@ -21,6 +21,14 @@ export const CONFIDENCE_DRAFT_REVIEW = 0.7;
 export const CONFIDENCE_GUIDED = 0.5;
 /** Below GUIDED → ESCALATION (full hand-off to a human). */
 
+/**
+ * Floor on a tenant-configured auto-execute band. Below this the gate stops
+ * being a gate: every decision the model makes goes out unreviewed. A tenant
+ * asking for that has almost certainly mis-entered a number, so the resolver
+ * falls back to the defaults instead of honouring it.
+ */
+export const MIN_AUTO_EXECUTE_BAND = 0.5;
+
 // ─────────────────────────────────────────────
 // Confidence formula weights
 // confidence = (dataAvailability × W_DATA) + (policyClarity × W_POLICY)

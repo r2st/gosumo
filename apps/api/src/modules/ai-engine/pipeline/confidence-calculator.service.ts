@@ -4,6 +4,7 @@ import {
   CONFIDENCE_AUTO_EXECUTE,
   CONFIDENCE_DRAFT_REVIEW,
   CONFIDENCE_GUIDED,
+  MIN_AUTO_EXECUTE_BAND,
   WEIGHT_DATA_AVAILABILITY,
   WEIGHT_POLICY_CLARITY,
   SENTIMENT_CRITICAL_THRESHOLD,
@@ -43,6 +44,73 @@ export interface ConfidenceCalculationInput {
   repeatedIntentCount?: number;
   /** Operator/caller forced the escalation path. */
   forceEscalate?: boolean;
+  /**
+   * The tenant's own routing bands, in percent, as stored in
+   * `businesses.ai_settings`. Omitted (or unusable) falls back to the module
+   * defaults. See {@link resolveBands}.
+   */
+  thresholds?: { autoExecute?: number; draftReview?: number };
+}
+
+/** Routing band edges on the calculator's own 0–1 scale. */
+export interface ConfidenceBands {
+  autoExecute: number;
+  draftReview: number;
+  guided: number;
+}
+
+export const DEFAULT_BANDS: ConfidenceBands = {
+  autoExecute: CONFIDENCE_AUTO_EXECUTE,
+  draftReview: CONFIDENCE_DRAFT_REVIEW,
+  guided: CONFIDENCE_GUIDED,
+};
+
+/**
+ * Turn a tenant's stored thresholds into band edges the calculator can use.
+ *
+ * Two scales meet here and the conversion is the whole point: `ai_settings`
+ * holds percentages (90, 70) because that is what the settings page and the
+ * onboarding wizard collect, while every score in this file is 0–1. A missing
+ * conversion does not fail loudly — it silently sets the auto-execute gate to
+ * 90.0, which no score can reach, so nothing would ever auto-execute.
+ *
+ * Anything that would *widen* the auto-execute band beyond what a human
+ * configured is rejected rather than clamped. The update DTO bounds each field
+ * to 0–100 but permits `autoExecute: 0`, and settings written before that DTO
+ * existed were not bounded at all; a stored 0 would hand every decision to the
+ * AI and remove human review from the tenant entirely. A pair we cannot make
+ * sense of falls back to the defaults, which are safe by construction.
+ */
+export function resolveBands(thresholds?: {
+  autoExecute?: number;
+  draftReview?: number;
+}): ConfidenceBands {
+  const pct = (value: number | undefined, fallback: number): number | null => {
+    if (value === undefined) return fallback;
+    if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+    // Percent → fraction. Out of range is a corrupt setting, not a clamp case.
+    if (value < 0 || value > 100) return null;
+    return value / 100;
+  };
+
+  const autoExecute = pct(thresholds?.autoExecute, CONFIDENCE_AUTO_EXECUTE);
+  const draftReview = pct(thresholds?.draftReview, CONFIDENCE_DRAFT_REVIEW);
+
+  if (autoExecute === null || draftReview === null) return DEFAULT_BANDS;
+  // An inverted pair empties the review window: everything the model would
+  // have drafted for a human gets auto-executed instead.
+  if (draftReview > autoExecute) return DEFAULT_BANDS;
+  // A floor on the gate itself. `autoExecute: 0` passes every check above and
+  // every ordering check in the service, and means "never ask a human".
+  if (autoExecute < MIN_AUTO_EXECUTE_BAND) return DEFAULT_BANDS;
+
+  return {
+    autoExecute,
+    draftReview,
+    // GUIDED is not tenant-configurable, but it must never sit above the draft
+    // edge or the band ordering inverts and DRAFT becomes unreachable.
+    guided: Math.min(CONFIDENCE_GUIDED, draftReview),
+  };
 }
 
 export interface ScoredConfidence extends ConfidenceScore {
@@ -82,7 +150,8 @@ export class ConfidenceCalculatorService {
 
     const { finalScore, overrides, requiresEscalation } = this.applyOverrides(base, input);
 
-    const mode = this.toMode(finalScore);
+    const bands = resolveBands(input.thresholds);
+    const mode = this.toMode(finalScore, bands);
 
     return {
       dataAvailability,
@@ -91,18 +160,22 @@ export class ConfidenceCalculatorService {
       mode,
       overrides,
       // Anything that drops below the GUIDED floor is, by definition, a human hand-off.
-      requiresEscalation: requiresEscalation || finalScore < CONFIDENCE_GUIDED,
+      requiresEscalation: requiresEscalation || finalScore < bands.guided,
     };
   }
 
   /**
    * Map a final score to its routing mode. Public so the action router and
    * tests can reuse the exact band boundaries.
+   *
+   * `bands` defaults to the module constants, so callers that do not know the
+   * tenant (the standalone scoring helper's original form, and every existing
+   * test) keep the documented 0.90 / 0.70 / 0.50 behaviour.
    */
-  toMode(score: number): ConfidenceMode {
-    if (score >= CONFIDENCE_AUTO_EXECUTE) return ConfidenceMode.AUTO_PILOT;
-    if (score >= CONFIDENCE_DRAFT_REVIEW) return ConfidenceMode.DRAFT;
-    if (score >= CONFIDENCE_GUIDED) return ConfidenceMode.GUIDED;
+  toMode(score: number, bands: ConfidenceBands = DEFAULT_BANDS): ConfidenceMode {
+    if (score >= bands.autoExecute) return ConfidenceMode.AUTO_PILOT;
+    if (score >= bands.draftReview) return ConfidenceMode.DRAFT;
+    if (score >= bands.guided) return ConfidenceMode.GUIDED;
     return ConfidenceMode.ESCALATION;
   }
 

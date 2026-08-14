@@ -80,7 +80,7 @@ interface Harness {
   findEmbeddingMetadata: jest.Mock;
   deleteEmbeddingMetadata: jest.Mock;
   ingest: jest.Mock;
-  businesses: { findUniqueOrThrow: jest.Mock; update: jest.Mock };
+  businesses: { findUniqueOrThrow: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
 }
 
 function makeHarness(): Harness {
@@ -175,6 +175,7 @@ function makeHarness(): Harness {
 
   const businesses = {
     findUniqueOrThrow: jest.fn().mockResolvedValue({ ai_settings: {} }),
+    findUnique: jest.fn().mockResolvedValue({ ai_settings: {} }),
     update: jest.fn().mockResolvedValue({}),
   };
   const prisma = { businesses } as unknown as PrismaService;
@@ -369,6 +370,76 @@ describe('AiEngineService — message.received realty gating', () => {
   });
 });
 
+/**
+ * The tenant's configured bands reaching the routing gate.
+ *
+ * `ai_settings` is collected by the onboarding wizard, validated by the tenant
+ * module, and served back by `GET /confidence/thresholds` — but no code on the
+ * decision path read it, so `toMode` used the module defaults for every tenant.
+ * A business that raised its auto-execute gate to keep a human on the loop got
+ * exactly the same auto-executed replies as one that had never touched the
+ * setting. These drive the real pipeline so the wiring is covered, not just
+ * the calculator.
+ */
+describe('AiEngineService — tenant confidence thresholds', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  const withSettings = (aiSettings: Record<string, unknown>): EnrichedContext => {
+    const ctx = makeContext('kal 3 baje book karna hai');
+    return { ...ctx, business: { ...ctx.business, ai_settings: aiSettings } as never };
+  };
+
+  it('drafts for review what the default bands would have auto-executed', async () => {
+    const h = makeHarness();
+    h.context.value = withSettings({ autoExecuteThreshold: 99, reviewThreshold: 70 });
+
+    const result = await h.service.processMessage('b1', dto);
+
+    expect(result.confidence.mode).toBe('DRAFT');
+    expect(result.outcome).not.toBe('AUTO_EXECUTED');
+    // The gate moved, not the score — the same input still scores the same.
+    expect(result.confidence.finalScore).toBeGreaterThanOrEqual(0.9);
+    expect(h.createReviewTask).toHaveBeenCalled();
+  });
+
+  it('auto-executes what the default bands would have drafted, for a lowered gate', async () => {
+    // Thin RAG puts this turn at ~0.83 — DRAFT under the defaults, and
+    // AUTO_PILOT only if the tenant's 80 is actually read.
+    const h = makeHarness();
+    h.ragChunks.value = makeChunks(1);
+    h.context.value = withSettings({ autoExecuteThreshold: 80, reviewThreshold: 55 });
+
+    const result = await h.service.processMessage('b1', dto);
+
+    expect(result.confidence.finalScore).toBeLessThan(0.9);
+    expect(result.confidence.mode).toBe('AUTO_PILOT');
+    expect(h.sendMessage).toHaveBeenCalled();
+  });
+
+  it('ignores a stored pair that would remove human review entirely', async () => {
+    // `autoExecute: 0` clears every ordering check in `updateConfidenceThresholds`
+    // and means "never ask a human". Honouring it would silently disable HITL
+    // for the whole tenant, so the defaults win.
+    const h = makeHarness();
+    h.context.value = withSettings({ autoExecuteThreshold: 0, reviewThreshold: 0 });
+    h.ragChunks.value = makeChunks(0);
+
+    const result = await h.service.processMessage('b1', dto);
+
+    expect(result.confidence.mode).not.toBe('AUTO_PILOT');
+  });
+
+  it('falls back to the defaults when the tenant has no settings blob', async () => {
+    const h = makeHarness();
+    const ctx = makeContext('kal 3 baje book karna hai');
+    h.context.value = { ...ctx, business: { ...ctx.business, ai_settings: null } as never };
+
+    const result = await h.service.processMessage('b1', dto);
+
+    expect(result.confidence.mode).toBe('AUTO_PILOT');
+  });
+});
+
 describe('AiEngineService — standalone methods', () => {
   it('classifyIntent resolves a rule-based intent', async () => {
     const h = makeHarness();
@@ -377,9 +448,9 @@ describe('AiEngineService — standalone methods', () => {
     expect(result.tier).toBe(1);
   });
 
-  it('scoreConfidence returns a full breakdown', () => {
+  it('scoreConfidence returns a full breakdown', async () => {
     const h = makeHarness();
-    const result = h.service.scoreConfidence('b1', {
+    const result = await h.service.scoreConfidence('b1', {
       intent: 'BOOKING' as never,
       ragChunkCount: 3,
       clientKnown: true,
@@ -410,7 +481,7 @@ describe('AiEngineService — standalone methods', () => {
   it('scores confidence from explicit factors, with and without text', async () => {
     const h = makeHarness();
 
-    const withText = h.service.scoreConfidence('b1', {
+    const withText = await h.service.scoreConfidence('b1', {
       intent: IntentType.BOOKING,
       ragChunkCount: 3,
       catalogMatch: true,
@@ -419,7 +490,7 @@ describe('AiEngineService — standalone methods', () => {
       policyAmbiguous: false,
       text: 'kal book karna hai',
     } as never);
-    const withoutText = h.service.scoreConfidence('b1', {
+    const withoutText = await h.service.scoreConfidence('b1', {
       intent: IntentType.BOOKING,
       ragChunkCount: 3,
       catalogMatch: true,

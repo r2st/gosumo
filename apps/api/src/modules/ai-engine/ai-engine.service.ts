@@ -194,6 +194,10 @@ export class AiEngineService {
       policy: { policyDefined: context.businessRules.length > 0 },
       safety,
       forceEscalate: dto.forceEscalate === true,
+      // The tenant's own bands. `context.business` is already loaded, so this
+      // costs no extra read. Without it the routing gate ignored every value
+      // the settings page and the onboarding wizard collect.
+      thresholds: readStoredThresholds(context.business?.ai_settings),
       ...this.refundOverrideInputs(classification, context),
     });
 
@@ -556,10 +560,38 @@ export class AiEngineService {
     return this.intentClassifier.classify(text);
   }
 
-  /** Score confidence from explicit factors — used to test thresholds. */
-  scoreConfidence(_businessId: string, dto: ConfidenceScoringInputDto): ConfidenceScoreDto {
+  /**
+   * Score confidence from explicit factors — used to test thresholds.
+   *
+   * Reads the tenant's bands for the same reason `processMessage` does: a
+   * helper whose stated job is previewing where a score lands is worthless if
+   * it answers for the defaults while production routes on something else.
+   * Falls back to the defaults when the business cannot be read, matching
+   * `getConfidenceThresholds`.
+   */
+  async scoreConfidence(
+    businessId: string,
+    dto: ConfidenceScoringInputDto,
+  ): Promise<ConfidenceScoreDto> {
+    // try/catch rather than `.catch()`: the promise chain only covers a
+    // rejection, and "cannot be read" has to include the throw as well.
+    let aiSettings: unknown;
+    try {
+      const biz = await this.prisma.businesses.findUnique({
+        where: { id: businessId },
+        select: { ai_settings: true },
+      });
+      aiSettings = biz?.ai_settings;
+    } catch (err) {
+      this.logger.warn(
+        `Could not read confidence thresholds for business ${businessId}; ` +
+          `scoring against the defaults: ${errMessage(err)}`,
+      );
+    }
+
     const safety = dto.text ? this.guardrails.evaluate(dto.text) : undefined;
     const scored = this.confidence.calculate({
+      thresholds: readStoredThresholds(aiSettings),
       intent: dto.intent,
       data: { ragChunkCount: dto.ragChunkCount, catalogMatch: dto.catalogMatch, clientKnown: dto.clientKnown },
       policy: { policyDefined: dto.policyDefined, policyAmbiguous: dto.policyAmbiguous },
@@ -1079,4 +1111,23 @@ export class AiEngineService {
  */
 function numberOr(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+/**
+ * Pull the confidence thresholds out of a `businesses.ai_settings` blob.
+ *
+ * Left untyped rather than coerced: `resolveBands` is the one place that
+ * decides what an unusable stored pair means, and it needs to see the raw
+ * value to make that call. Handing it a silently-defaulted number would hide
+ * exactly the corruption it exists to catch.
+ */
+function readStoredThresholds(
+  aiSettings: unknown,
+): { autoExecute?: number; draftReview?: number } | undefined {
+  if (aiSettings === null || typeof aiSettings !== 'object') return undefined;
+  const s = aiSettings as Record<string, unknown>;
+  return {
+    autoExecute: s['autoExecuteThreshold'] as number | undefined,
+    draftReview: s['reviewThreshold'] as number | undefined,
+  };
 }

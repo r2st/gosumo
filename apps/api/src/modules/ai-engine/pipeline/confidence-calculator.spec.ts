@@ -1,5 +1,10 @@
 import { ConfidenceMode, IntentType } from '@gosumo/shared';
-import { ConfidenceCalculatorService } from './confidence-calculator.service';
+import {
+  ConfidenceCalculatorService,
+  DEFAULT_BANDS,
+  resolveBands,
+} from './confidence-calculator.service';
+import { CONFIDENCE_DRAFT_REVIEW } from '../ai-engine.constants';
 import { SafetySignals } from '../safety/guardrails.service';
 
 const noSafety: SafetySignals = {
@@ -322,5 +327,113 @@ describe('ConfidenceCalculatorService', () => {
       expect(service.toMode(0.5)).toBe(ConfidenceMode.GUIDED);
       expect(service.toMode(0.49)).toBe(ConfidenceMode.ESCALATION);
     });
+  });
+});
+
+// ─────────────────────────────────────────────
+// Tenant-configured routing bands
+// ─────────────────────────────────────────────
+
+/**
+ * The settings page and the onboarding wizard both collect these two numbers,
+ * the tenant module validates them, and `businesses.ai_settings` stores them —
+ * but nothing read them back on the routing path, so `toMode` answered with the
+ * module defaults no matter what a tenant configured. Raising the auto-execute
+ * gate to 95 to keep a human in the loop changed nothing at all.
+ *
+ * The scales differ on each side of the boundary: settings are percentages,
+ * scores are 0–1. That conversion is the part most likely to rot, so it is
+ * pinned from both directions.
+ */
+describe('resolveBands', () => {
+  it('converts stored percentages to the 0–1 scale', () => {
+    expect(resolveBands({ autoExecute: 95, draftReview: 80 })).toEqual({
+      autoExecute: 0.95,
+      draftReview: 0.8,
+      guided: 0.5,
+    });
+  });
+
+  it('falls back to the module defaults when nothing is stored', () => {
+    expect(resolveBands(undefined)).toEqual(DEFAULT_BANDS);
+    expect(resolveBands({})).toEqual(DEFAULT_BANDS);
+  });
+
+  it('fills in only the missing half', () => {
+    expect(resolveBands({ autoExecute: 95 })).toEqual({
+      autoExecute: 0.95,
+      draftReview: CONFIDENCE_DRAFT_REVIEW,
+      guided: 0.5,
+    });
+  });
+
+  it('pulls the GUIDED edge down so the bands cannot invert', () => {
+    // A tenant may set draftReview below the fixed GUIDED constant. Leaving
+    // GUIDED at 0.5 would put it above the draft edge, and `toMode` checks
+    // auto → draft → guided in order, so DRAFT would still win — but
+    // `requiresEscalation` reads the GUIDED floor directly and would flag a
+    // score the tenant explicitly said was good enough to draft.
+    expect(resolveBands({ autoExecute: 90, draftReview: 30 }).guided).toBe(0.3);
+  });
+
+  it.each([
+    ['an inverted pair', { autoExecute: 60, draftReview: 80 }],
+    ['a zero gate', { autoExecute: 0, draftReview: 0 }],
+    ['a gate below the safety floor', { autoExecute: 40, draftReview: 20 }],
+    ['a negative value', { autoExecute: -10, draftReview: 70 }],
+    ['a value above 100', { autoExecute: 900, draftReview: 70 }],
+    ['a non-finite value', { autoExecute: Number.NaN, draftReview: 70 }],
+    ['a value on the 0–1 scale by mistake', { autoExecute: 0.9, draftReview: 0.7 }],
+  ])('refuses to widen the gate for %s', (_label, stored) => {
+    // Each of these would open the auto-execute band wider than any human
+    // asked for — the 0.9 case most quietly of all, since it reads as correct
+    // right up until it is divided by 100 and becomes 0.009.
+    expect(resolveBands(stored)).toEqual(DEFAULT_BANDS);
+  });
+});
+
+describe('tenant bands drive the routing mode', () => {
+  let service: ConfidenceCalculatorService;
+  beforeEach(() => {
+    service = new ConfidenceCalculatorService();
+  });
+
+  const perfect = {
+    intent: IntentType.BOOKING,
+    data: { ragChunkCount: 1, catalogMatch: true, clientKnown: true },
+    policy: { policyDefined: true },
+  };
+
+  it('drafts a score that the default bands would have auto-executed', () => {
+    // 0.5·0.5 + 1·0.3 + 1·0.2 = 0.75 data, 1 policy → 0.875... check the band
+    // move rather than the arithmetic: same input, two tenants, two outcomes.
+    const lenient = service.calculate({ ...perfect, thresholds: { autoExecute: 80 } });
+    const strict = service.calculate({ ...perfect, thresholds: { autoExecute: 95 } });
+
+    expect(lenient.finalScore).toBe(strict.finalScore);
+    expect(lenient.mode).toBe(ConfidenceMode.AUTO_PILOT);
+    expect(strict.mode).toBe(ConfidenceMode.DRAFT);
+  });
+
+  it('keeps the documented defaults when the tenant has configured nothing', () => {
+    expect(service.calculate(perfect).mode).toBe(
+      service.calculate({ ...perfect, thresholds: {} }).mode,
+    );
+  });
+
+  it('honours a tenant band at its exact boundary', () => {
+    // `>=` at the edge: a score equal to the configured gate auto-executes.
+    expect(service.toMode(0.85, resolveBands({ autoExecute: 85 }))).toBe(
+      ConfidenceMode.AUTO_PILOT,
+    );
+    expect(service.toMode(0.8499, resolveBands({ autoExecute: 85 }))).toBe(
+      ConfidenceMode.DRAFT,
+    );
+  });
+
+  it('escalates below a raised draft edge', () => {
+    const bands = resolveBands({ autoExecute: 95, draftReview: 90 });
+    expect(service.toMode(0.92, bands)).toBe(ConfidenceMode.DRAFT);
+    expect(service.toMode(0.7, bands)).toBe(ConfidenceMode.GUIDED);
   });
 });

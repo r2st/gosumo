@@ -27,10 +27,14 @@ export interface RoutingDecision {
  * ActionRouterService — maps a scored confidence into a concrete routing
  * decision following the four bands in AI_ENGINE_DESIGN.md §4:
  *
- *   AUTO_PILOT  (≥0.90) → send immediately, no task.
- *   DRAFT       (≥0.70) → draft a reply, create a review task, hold the customer.
- *   GUIDED      (≥0.50) → ask a clarifying question, create a monitoring task.
- *   ESCALATION  (<0.50) → empathetic holding message, create an escalation task.
+ *   AUTO_PILOT  → send immediately, no task.
+ *   DRAFT       → draft a reply, create a review task, hold the customer.
+ *   GUIDED      → ask a clarifying question, create a monitoring task.
+ *   ESCALATION  → empathetic holding message, create an escalation task.
+ *
+ * The band edges default to 0.90 / 0.70 / 0.50 but are per-tenant: the
+ * calculator resolves them from `businesses.ai_settings` before assigning
+ * `scored.mode`, so this router reads the mode and never the thresholds.
  *
  * Pure and deterministic.
  */
