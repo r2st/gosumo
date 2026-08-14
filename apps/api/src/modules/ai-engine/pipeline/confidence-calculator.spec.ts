@@ -143,6 +143,107 @@ describe('ConfidenceCalculatorService', () => {
       expect(result.requiresEscalation).toBe(true);
     });
 
+    /**
+     * The two hard overrides nothing was driving.
+     *
+     * Both gate money and identity. `pii_risk_detected` is one of the three
+     * codes `action-router` treats as unconditionally escalating, so a
+     * regression here does not merely lower a score — it hands an Aadhaar or a
+     * card number to the auto-execute path.
+     */
+    it('escalates when the customer message carried sensitive PII', () => {
+      const result = service.calculate({
+        intent: IntentType.BOOKING,
+        // Deliberately the best possible base: full RAG, catalog hit, known
+        // client, clear policy. The override has to beat all of it.
+        data: { ragChunkCount: 3, catalogMatch: true, clientKnown: true },
+        policy: { policyDefined: true },
+        safety: safety({
+          pii: {
+            hasPii: true,
+            detected: [{ type: 'AADHAAR' }, { type: 'CREDIT_CARD' }],
+            redactedText: 'my number is [REDACTED_AADHAAR]',
+          },
+        }),
+      });
+
+      expect(result.finalScore).toBeLessThanOrEqual(0.1);
+      expect(result.requiresEscalation).toBe(true);
+      expect(result.mode).toBe(ConfidenceMode.ESCALATION);
+
+      const override = result.overrides.find((o) => o.code === 'pii_risk_detected');
+      expect(override).toBeDefined();
+      // Every detected type is named, so an operator reading the decision row
+      // knows what was exposed without re-scanning the message.
+      expect(override?.reason).toContain('AADHAAR');
+      expect(override?.reason).toContain('CREDIT_CARD');
+    });
+
+    /**
+     * An unknown payment amount caps confidence at 0.45 and escalates.
+     *
+     * Note the escalation is NOT coming from the override's own flag.
+     * `PAYMENT_AMOUNT_UNKNOWN` is the only entry in the table declared
+     * `escalate: false` — "stop auto-charging, but do not pull in a human" —
+     * and that flag cannot currently take effect: its `forceScore` of 0.45
+     * sits below `CONFIDENCE_GUIDED` (0.5), and `calculate` escalates anything
+     * under that floor regardless of the flag. Raising the cap to 0.5 would
+     * make the flag live and land these in GUIDED instead, which is a payment
+     * -routing decision, not a test's to make.
+     *
+     * This pins what the code actually does today so the discrepancy is
+     * visible rather than latent.
+     */
+    it('caps an unknown payment amount and escalates it via the GUIDED floor', () => {
+      const result = service.calculate({
+        intent: IntentType.PAYMENT,
+        data: { ragChunkCount: 3, catalogMatch: true, clientKnown: true },
+        policy: { policyDefined: true },
+        paymentAmountUnknown: true,
+      });
+
+      expect(result.finalScore).toBeLessThanOrEqual(0.45);
+      expect(result.overrides.map((o) => o.code)).toContain('payment_amount_unknown');
+      expect(result.mode).toBe(ConfidenceMode.ESCALATION);
+      expect(result.requiresEscalation).toBe(true);
+    });
+
+    it('routes an unknown payment amount at LOW urgency, unlike the safety overrides', () => {
+      // It escalates, but it is not a safety event: the action router's
+      // urgency ladder leaves it at the bottom, which is the one place the
+      // `escalate: false` intent still shows through.
+      const result = service.calculate({
+        intent: IntentType.PAYMENT,
+        data: { ragChunkCount: 3, catalogMatch: true, clientKnown: true },
+        policy: { policyDefined: true },
+        paymentAmountUnknown: true,
+      });
+
+      expect(result.overrides).toHaveLength(1);
+      expect(result.overrides[0]?.code).toBe('payment_amount_unknown');
+    });
+
+    it('takes the lowest ceiling when several overrides fire at once', () => {
+      // PII caps at 0.1, unknown-amount at 0.45. The strictest wins, and the
+      // escalating one still escalates even though it is not the last applied.
+      const result = service.calculate({
+        intent: IntentType.PAYMENT,
+        data: { ragChunkCount: 3, catalogMatch: true, clientKnown: true },
+        policy: { policyDefined: true },
+        paymentAmountUnknown: true,
+        safety: safety({
+          pii: { hasPii: true, detected: [{ type: 'PAN' }], redactedText: '' },
+        }),
+      });
+
+      expect(result.finalScore).toBeLessThanOrEqual(0.1);
+      expect(result.requiresEscalation).toBe(true);
+      expect(result.overrides.map((o) => o.code).sort()).toEqual([
+        'payment_amount_unknown',
+        'pii_risk_detected',
+      ]);
+    });
+
     it('an override only ever lowers confidence, never raises it', () => {
       // price_not_in_catalog caps at 0.49, but base is already lower here.
       const result = service.calculate({
@@ -152,6 +253,63 @@ describe('ConfidenceCalculatorService', () => {
         priceNotInCatalog: true,
       });
       expect(result.finalScore).toBeLessThanOrEqual(0.49);
+    });
+  });
+
+  describe('component scoring', () => {
+    /**
+     * "Defined but ambiguous" is its own rung, distinct from "not defined".
+     * A policy that exists and contradicts itself is more dangerous than a
+     * missing one — the AI has something to cite — so it must not score as a
+     * clear policy.
+     */
+    it('scores an ambiguous policy below a clear one and above a missing one', () => {
+      const base = {
+        intent: IntentType.PRICING,
+        data: { ragChunkCount: 3, catalogMatch: true, clientKnown: true },
+      } as const;
+
+      const clear = service.calculate({ ...base, policy: { policyDefined: true } });
+      const ambiguous = service.calculate({
+        ...base,
+        policy: { policyDefined: true, policyAmbiguous: true },
+      });
+      const missing = service.calculate({ ...base, policy: { policyDefined: false } });
+
+      expect(clear.policyClarity).toBe(1);
+      expect(ambiguous.policyClarity).toBe(0.6);
+      expect(missing.policyClarity).toBe(0.4);
+      expect(ambiguous.finalScore).toBeLessThan(clear.finalScore);
+      expect(ambiguous.finalScore).toBeGreaterThan(missing.finalScore);
+    });
+
+    /**
+     * `clientKnown` is tri-state and the middle state is not the average.
+     * Unknown (undefined) scores 0.6 — better than a client confirmed absent
+     * (0.4), because "we have not looked" is weaker evidence than "we looked
+     * and there is no history".
+     */
+    it('ranks an unchecked client above one confirmed unknown', () => {
+      const base = {
+        intent: IntentType.GENERAL_INQUIRY,
+        policy: { policyDefined: true },
+      } as const;
+
+      const known = service.calculate({
+        ...base,
+        data: { ragChunkCount: 3, catalogMatch: true, clientKnown: true },
+      });
+      const unchecked = service.calculate({
+        ...base,
+        data: { ragChunkCount: 3, catalogMatch: true },
+      });
+      const absent = service.calculate({
+        ...base,
+        data: { ragChunkCount: 3, catalogMatch: true, clientKnown: false },
+      });
+
+      expect(known.dataAvailability).toBeGreaterThan(unchecked.dataAvailability);
+      expect(unchecked.dataAvailability).toBeGreaterThan(absent.dataAvailability);
     });
   });
 
