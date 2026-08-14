@@ -27,11 +27,11 @@ function makeRequest(over: Partial<Request> = {}): Request {
 
 describe('ChannelAdapterController', () => {
   let controller: ChannelAdapterController;
-  let service: { handleInboundWebhook: jest.Mock };
+  let service: { handleInboundWebhook: jest.Mock; handleInboundWebhookBatch: jest.Mock };
   let error: jest.SpyInstance;
 
   beforeEach(() => {
-    service = { handleInboundWebhook: jest.fn() };
+    service = { handleInboundWebhook: jest.fn(), handleInboundWebhookBatch: jest.fn() };
     controller = new ChannelAdapterController(
       service as unknown as ChannelAdapterService,
       {} as WhatsAppAdapter,
@@ -195,6 +195,97 @@ describe('ChannelAdapterController', () => {
       const raw = await build({}, makeRequest({ query: { token: 't' } } as Partial<Request>));
       expect(raw.body).toEqual({ a: 1 });
       expect(raw.query).toEqual({ token: 't' });
+    });
+  });
+
+  /**
+   * The two Meta routes are the ones that receive batched payloads — a single
+   * POST can carry several `entry`/`changes`/`messages` items when a customer
+   * fires off messages in a row or Meta redelivers a backlog. They must go
+   * through the batch path; routing them at the single-message one drops
+   * everything after the first with no error anywhere.
+   *
+   * These routes had no direct coverage, which is why that was invisible: the
+   * handlers swallow every throw and answer 200 to stop a retry storm, so a
+   * broken call inside them looks exactly like a healthy one from outside.
+   */
+  describe('Meta webhook routes', () => {
+    const message = (id: string) => ({ externalId: id, sender: { externalId: '919876543210' } });
+
+    const metaBody = {
+      object: 'whatsapp_business_account',
+      entry: [{ id: 'waba', changes: [{ field: 'messages', value: { messages: [{ id: 'wamid.1' }] } }] }],
+    };
+
+    it('routes WhatsApp through the batch path', async () => {
+      service.handleInboundWebhookBatch.mockResolvedValue([message('wamid.1'), message('wamid.2')]);
+
+      await expect(
+        controller.handleWhatsAppWebhook(makeRequest(), {}, metaBody),
+      ).resolves.toEqual({ status: 'ok' });
+
+      expect(service.handleInboundWebhookBatch).toHaveBeenCalledWith(
+        ChannelType.WHATSAPP,
+        expect.anything(),
+        'unknown',
+      );
+      expect(service.handleInboundWebhook).not.toHaveBeenCalled();
+      expect(error).not.toHaveBeenCalled();
+    });
+
+    it('routes Instagram through the batch path', async () => {
+      service.handleInboundWebhookBatch.mockResolvedValue([message('ig-1')]);
+
+      await expect(
+        controller.handleInstagramWebhook(makeRequest(), {}, {
+          object: 'instagram',
+          entry: [{ messaging: [{ message: { mid: 'ig-1' } }] }],
+        }),
+      ).resolves.toEqual({ status: 'ok' });
+
+      expect(service.handleInboundWebhookBatch).toHaveBeenCalledWith(
+        ChannelType.INSTAGRAM,
+        expect.anything(),
+        'unknown',
+      );
+      expect(error).not.toHaveBeenCalled();
+    });
+
+    it('short-circuits a status-only WhatsApp payload without touching the service', async () => {
+      await expect(
+        controller.handleWhatsAppWebhook(makeRequest(), {}, {
+          object: 'whatsapp_business_account',
+          entry: [{ id: 'waba', changes: [{ field: 'statuses', value: { statuses: [{ id: 's1' }] } }] }],
+        }),
+      ).resolves.toEqual({ status: 'ok' });
+
+      expect(service.handleInboundWebhookBatch).not.toHaveBeenCalled();
+    });
+
+    it('still answers 200 when the WhatsApp batch throws', async () => {
+      service.handleInboundWebhookBatch.mockRejectedValue(new Error('adapter exploded'));
+
+      await expect(
+        controller.handleWhatsAppWebhook(makeRequest(), {}, metaBody),
+      ).resolves.toEqual({ status: 'ok' });
+
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('adapter exploded'));
+    });
+
+    it('passes the business id header through on the Meta routes', async () => {
+      service.handleInboundWebhookBatch.mockResolvedValue([message('wamid.1')]);
+
+      await controller.handleWhatsAppWebhook(
+        makeRequest(),
+        { 'x-business-id': BUSINESS_ID },
+        metaBody,
+      );
+
+      expect(service.handleInboundWebhookBatch).toHaveBeenCalledWith(
+        ChannelType.WHATSAPP,
+        expect.anything(),
+        BUSINESS_ID,
+      );
     });
   });
 });

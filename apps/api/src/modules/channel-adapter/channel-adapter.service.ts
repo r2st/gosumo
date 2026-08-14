@@ -22,8 +22,17 @@ import {
   MessageFailedEvent,
   MessageDirection,
 } from '@gosumo/shared';
-import { generateId, generateCorrelationId, normalizeIndianPhone } from '@gosumo/shared';
+import { generateId, generateCorrelationId, normalizeIndianPhone, PayloadParseError } from '@gosumo/shared';
 import { PrismaService } from '../../common/services/prisma.service';
+
+/**
+ * Adapters whose provider batches several messages into one webhook implement
+ * this alongside `ChannelAdapter`. It is not on the base interface because
+ * single-message channels (WebChat, SMS) have nothing to add.
+ */
+interface BatchParsingAdapter {
+  parseInboundAll(req: RawRequest): NormalizedMessage[];
+}
 
 /**
  * Core service for the Channel Adapter module.
@@ -111,27 +120,33 @@ export class ChannelAdapterService {
    * Full inbound webhook pipeline:
    *  1. Resolve the adapter for channelType
    *  2. Validate the webhook signature — throws UnauthorizedException on failure
-   *  3. Parse the raw payload into a NormalizedMessage
-   *  4. Emit `message.received` domain event
+   *  3. Parse the raw payload into NormalizedMessages
+   *  4. Persist and emit `message.received` for each
    *
-   * Returns the normalized message so callers (e.g. the controller) can
-   * return it in an audit log or for testing purposes.
+   * Returns every message the payload carried, in delivery order.
+   *
+   * Meta batches: one POST can carry several `entry` items, several `changes`
+   * per entry, and several `messages` per change — which is exactly what
+   * happens when a customer fires off two or three messages in a row, or when
+   * Meta redelivers a backlog. `parseInbound` returns only the first of those,
+   * so processing a batch through it silently dropped every message after the
+   * first: no row stored, no event emitted, no error anywhere.
    *
    * @param channelType  Which channel this webhook came from
    * @param req          Raw HTTP request (headers + body + optional rawBody)
    * @param businessId   The tenant that owns this channel account
    * @param correlationId Optional pre-assigned trace ID (generated if omitted)
    */
-  async handleInboundWebhook(
+  async handleInboundWebhookBatch(
     channelType: ChannelType,
     req: RawRequest,
     businessId: string,
     correlationId?: string,
-  ): Promise<NormalizedMessage> {
+  ): Promise<NormalizedMessage[]> {
     const adapter = this.getAdapter(channelType);
     const traceId = correlationId ?? generateCorrelationId();
 
-    // Step 1: Signature validation
+    // Step 1: Signature validation — once per request, not once per message.
     const isValid = adapter.validateWebhook(req);
     if (!isValid) {
       this.logger.warn(
@@ -141,15 +156,87 @@ export class ChannelAdapterService {
     }
 
     // Step 2: Parse
-    let normalized: NormalizedMessage;
+    const parsed = this.parseInboundBatch(adapter, req, traceId);
+
+    if (parsed.length > 1) {
+      this.logger.log(`[${traceId}] ${channelType} webhook carried ${parsed.length} messages`);
+    }
+
+    // Sequential on purpose: several messages from one sender share a client
+    // and a conversation, and the find-or-create for both is a read followed by
+    // a write. Running them concurrently races two creates for the same pair.
+    const handled: NormalizedMessage[] = [];
+    for (const normalized of parsed) {
+      await this.processInboundMessage(channelType, normalized, req, businessId, traceId);
+      handled.push(normalized);
+    }
+    return handled;
+  }
+
+  /**
+   * Single-message form of {@link handleInboundWebhookBatch}, kept for callers
+   * that want one message back. Every message in the payload is still
+   * processed; only the first is returned.
+   */
+  async handleInboundWebhook(
+    channelType: ChannelType,
+    req: RawRequest,
+    businessId: string,
+    correlationId?: string,
+  ): Promise<NormalizedMessage> {
+    const handled = await this.handleInboundWebhookBatch(
+      channelType,
+      req,
+      businessId,
+      correlationId,
+    );
+    return handled[0]!;
+  }
+
+  /**
+   * Parse every message in the payload, preferring the adapter's batch parser
+   * and falling back to the single-message one for adapters that have none.
+   *
+   * A payload that yields nothing is a parse failure, matching what
+   * `parseInbound` did by throwing: the caller asked us to process a message
+   * webhook and there was no message in it.
+   */
+  private parseInboundBatch(
+    adapter: ChannelAdapter,
+    req: RawRequest,
+    traceId: string,
+  ): NormalizedMessage[] {
+    const batchParser = (adapter as Partial<BatchParsingAdapter>).parseInboundAll;
+
     try {
-      normalized = adapter.parseInbound(req);
+      const parsed = batchParser
+        ? batchParser.call(adapter, req)
+        : [adapter.parseInbound(req)];
+
+      if (parsed.length === 0) {
+        // `parseInboundAll` swallows per-message failures, so an empty result
+        // can mean "status-only payload" or "every message was unparseable".
+        // `parseInbound` distinguishes them by throwing with a reason; call it
+        // for the message rather than reporting a bare "no messages".
+        adapter.parseInbound(req);
+        throw new PayloadParseError(adapter.channelType, 'payload carried no inbound message');
+      }
+      return parsed;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`[${traceId}] Failed to parse inbound webhook: ${message}`);
       throw new BadRequestException(`Could not parse inbound message: ${message}`);
     }
+  }
 
+  /** Dedupe, persist and announce one already-parsed inbound message. */
+  private async processInboundMessage(
+    channelType: ChannelType,
+    normalized: NormalizedMessage,
+    req: RawRequest,
+    businessId: string,
+    traceId: string,
+  ): Promise<void> {
     this.logger.log(
       `[${traceId}] Parsed inbound ${channelType} message ${normalized.externalId} ` +
         `from ${normalized.sender.externalId} (type: ${normalized.content.type})`,
@@ -173,7 +260,7 @@ export class ChannelAdapterService {
         this.logger.log(
           `[${traceId}] Duplicate ${channelType} webhook for external_id=${normalized.externalId} — skipping reprocessing`,
         );
-        return normalized;
+        return;
       }
     }
 
@@ -378,8 +465,6 @@ export class ChannelAdapterService {
     };
 
     this.eventEmitter.emit('message.received', event);
-
-    return normalized;
   }
 
   /**

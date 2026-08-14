@@ -154,15 +154,17 @@ export class ChannelAdapterController {
     const businessId = (headers['x-business-id'] as string | undefined) ?? 'unknown';
 
     try {
-      const normalized = await this.channelAdapterService.handleInboundWebhook(
+      // Batch form: Meta packs several messages into one POST whenever a
+      // customer sends them in quick succession or a backlog is redelivered.
+      const handled = await this.channelAdapterService.handleInboundWebhookBatch(
         ChannelType.WHATSAPP,
         rawReq,
         businessId,
       );
 
       this.logger.log(
-        `Processed WhatsApp message ${normalized.externalId} ` +
-          `from ${normalized.sender.externalId}`,
+        `Processed ${handled.length} WhatsApp message(s): ` +
+          handled.map((m) => `${m.externalId} from ${m.sender.externalId}`).join(', '),
       );
     } catch (err) {
       // Log the error but still return 200 — we don't want Meta to retry
@@ -249,15 +251,16 @@ export class ChannelAdapterController {
     const businessId = (headers['x-business-id'] as string | undefined) ?? 'unknown';
 
     try {
-      const normalized = await this.channelAdapterService.handleInboundWebhook(
+      // Same batching as WhatsApp — one Meta POST, many messaging events.
+      const handled = await this.channelAdapterService.handleInboundWebhookBatch(
         ChannelType.INSTAGRAM,
         rawReq,
         businessId,
       );
 
       this.logger.log(
-        `Processed Instagram message ${normalized.externalId} ` +
-          `from ${normalized.sender.externalId}`,
+        `Processed ${handled.length} Instagram message(s): ` +
+          handled.map((m) => `${m.externalId} from ${m.sender.externalId}`).join(', '),
       );
     } catch (err) {
       // Log the error but still return 200 — we don't want Meta to retry

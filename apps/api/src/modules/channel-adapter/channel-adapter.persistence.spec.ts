@@ -556,6 +556,114 @@ describe('ChannelAdapterService — inbound persistence', () => {
       expect(emitter.emit).toHaveBeenCalledWith('message.received', expect.anything());
     });
   });
+
+  // ── Batched payloads ────────────────────────────────────
+
+  /**
+   * Meta packs several messages into one POST — a customer sending three
+   * messages in a row, or a backlog being redelivered, arrives as one webhook
+   * with three `messages` entries. `parseInbound` returns only the first, so
+   * routing a batch through it stored one row, emitted one event, and dropped
+   * the rest without an error anywhere.
+   */
+  describe('batched webhooks', () => {
+    /** Adapter whose batch parser returns all of `normalized`. */
+    function makeBatchAdapter(all: NormalizedMessage[]) {
+      return {
+        ...makeAdapter(all[0]!),
+        parseInboundAll: jest.fn().mockReturnValue(all),
+      };
+    }
+
+    it('stores and announces every message in the batch', async () => {
+      const batch = [
+        makeNormalized({ id: 'msg_1', externalId: 'wamid.A' }),
+        makeNormalized({ id: 'msg_2', externalId: 'wamid.B' }),
+        makeNormalized({ id: 'msg_3', externalId: 'wamid.C' }),
+      ];
+      service.registerAdapter(makeBatchAdapter(batch) as never);
+
+      const handled = await service.handleInboundWebhookBatch(
+        ChannelType.WHATSAPP,
+        REQ,
+        BUSINESS_ID,
+      );
+
+      expect(handled).toHaveLength(3);
+      expect(db.messages.create).toHaveBeenCalledTimes(3);
+      expect(
+        emitter.emit.mock.calls.filter(([name]) => name === 'message.received'),
+      ).toHaveLength(3);
+    });
+
+    it('dedupes per message, not per request', async () => {
+      // The middle message is a redelivery; the other two are new. Keying the
+      // dedupe on the request would drop all three or none.
+      const batch = [
+        makeNormalized({ externalId: 'wamid.A' }),
+        makeNormalized({ externalId: 'wamid.B' }),
+        makeNormalized({ externalId: 'wamid.C' }),
+      ];
+      db.webhook_events.create
+        .mockResolvedValueOnce({ id: 'evt_1' })
+        .mockRejectedValueOnce(
+          new Prisma.PrismaClientKnownRequestError('dup', {
+            code: 'P2002',
+            clientVersion: '5.0.0',
+          }),
+        )
+        .mockResolvedValueOnce({ id: 'evt_3' });
+      service.registerAdapter(makeBatchAdapter(batch) as never);
+
+      await service.handleInboundWebhookBatch(ChannelType.WHATSAPP, REQ, BUSINESS_ID);
+
+      expect(db.messages.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('falls back to the single-message parser for adapters without a batch one', async () => {
+      // SMS and WebChat never batch; they must keep working untouched.
+      service.registerAdapter(makeAdapter(makeNormalized()) as never);
+
+      const handled = await service.handleInboundWebhookBatch(
+        ChannelType.WHATSAPP,
+        REQ,
+        BUSINESS_ID,
+      );
+
+      expect(handled).toHaveLength(1);
+      expect(db.messages.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports the underlying reason when a batch parses to nothing', async () => {
+      // `parseInboundAll` swallows per-message failures and returns [], which
+      // says nothing about why. The single parser's error is the diagnosis.
+      const adapter = {
+        ...makeAdapter(makeNormalized()),
+        parseInboundAll: jest.fn().mockReturnValue([]),
+        parseInbound: jest.fn().mockImplementation(() => {
+          throw new Error('type=text but no text field');
+        }),
+      };
+      service.registerAdapter(adapter as never);
+
+      await expect(
+        service.handleInboundWebhookBatch(ChannelType.WHATSAPP, REQ, BUSINESS_ID),
+      ).rejects.toThrow(/type=text but no text field/);
+    });
+
+    it('handleInboundWebhook still processes the whole batch, returning the first', async () => {
+      const batch = [
+        makeNormalized({ externalId: 'wamid.A' }),
+        makeNormalized({ externalId: 'wamid.B' }),
+      ];
+      service.registerAdapter(makeBatchAdapter(batch) as never);
+
+      const first = await service.handleInboundWebhook(ChannelType.WHATSAPP, REQ, BUSINESS_ID);
+
+      expect(first.externalId).toBe('wamid.A');
+      expect(db.messages.create).toHaveBeenCalledTimes(2);
+    });
+  });
 });
 
 // ─────────────────────────────────────────────
