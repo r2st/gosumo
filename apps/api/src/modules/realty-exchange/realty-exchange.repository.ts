@@ -297,6 +297,43 @@ export class RealtyExchangeRepository {
     });
   }
 
+  /**
+   * Latest canonical composite for each of several members, in one round trip.
+   *
+   * A member's canonical score is their self-row (`business_id ==
+   * target_business_id`), latest `period_start` — exactly what
+   * `findLatestReliabilityScore(id, id)` returns. The exchange matcher needs
+   * that for every distinct owner on the network supply board, and calling the
+   * singular version once per owner issues a query per member of the network on
+   * every match request.
+   *
+   * Raw, for two reasons Prisma cannot express: `business_id =
+   * target_business_id` is a column-to-column comparison, and `DISTINCT ON` is
+   * the only way to take the latest row per group without either N queries or
+   * reading every historical period into Node.
+   *
+   * Members with no score row are simply absent from the map; the caller
+   * substitutes the neutral score, which is the same thing the per-owner
+   * version's `null` meant.
+   */
+  async findLatestSelfReliabilityScores(
+    businessIds: readonly string[],
+  ): Promise<Map<string, Prisma.Decimal>> {
+    if (businessIds.length === 0) return new Map();
+
+    const rows = await this.prisma.$queryRaw<
+      Array<{ business_id: string; composite_score: Prisma.Decimal }>
+    >`
+      SELECT DISTINCT ON (business_id) business_id, composite_score
+      FROM realty_reliability_scores
+      WHERE business_id = target_business_id
+        AND business_id = ANY(${[...new Set(businessIds)]}::uuid[])
+      ORDER BY business_id, period_start DESC
+    `;
+
+    return new Map(rows.map((r) => [r.business_id, r.composite_score]));
+  }
+
   async listReliabilityScores(businessId: string): Promise<realty_reliability_scores[]> {
     return this.prisma.realty_reliability_scores.findMany({
       where: { business_id: businessId },

@@ -433,22 +433,26 @@ export class RealtyExchangeService {
       this.repository.findExchangeUnitSupply(requesterBusinessId),
     ]);
 
-    // One reliability read per distinct owner, memoised across both supply lists —
-    // a member typically has several listings on the board at once.
-    const inflight = new Map<string, Promise<number>>();
-    const reliabilityOf = (ownerId: string): Promise<number> => {
-      const hit = inflight.get(ownerId);
-      if (hit) return hit;
-      const pending = this.repository
-        .findLatestReliabilityScore(ownerId, ownerId)
-        .then((self) => (self ? decimalToNumber(self.composite_score) : NEUTRAL_COMPOSITE));
-      inflight.set(ownerId, pending);
-      return pending;
+    // Every distinct owner on the board, resolved in one round trip. Reading
+    // them one owner at a time issued a query per member of the network on
+    // every match request — and because the reads were kicked off inside a
+    // single Promise.all, they fired concurrently, so a busy board could ask
+    // for more connections at once than the pool has to give.
+    const owners = new Set<string>();
+    for (const r of resale) owners.add(r.business_id);
+    for (const u of units) owners.add(u.business_id);
+    const scores = await this.repository.findLatestSelfReliabilityScores([...owners]);
+
+    // Absent means unscored, which is the neutral 50 a brand-new member gets —
+    // trusted enough to match, not enough to outrank a proven partner.
+    const reliabilityOf = (ownerId: string): number => {
+      const score = scores.get(ownerId);
+      return score === undefined ? NEUTRAL_COMPOSITE : decimalToNumber(score);
     };
 
-    return Promise.all([
+    return [
       ...resale.map(
-        async (r): Promise<ExchangeCandidate> => ({
+        (r): ExchangeCandidate => ({
           listingId: r.id,
           sourceType: 'RESALE',
           ownerBusinessId: r.business_id,
@@ -456,11 +460,11 @@ export class RealtyExchangeService {
           locality: r.locality,
           config: r.config,
           askingPricePaise: decimalToPaise(r.asking_price),
-          reliabilityScore: await reliabilityOf(r.business_id),
+          reliabilityScore: reliabilityOf(r.business_id),
         }),
       ),
       ...units.map(
-        async (u: ExchangeUnitCandidate): Promise<ExchangeCandidate> => ({
+        (u: ExchangeUnitCandidate): ExchangeCandidate => ({
           listingId: u.id,
           sourceType: 'UNIT',
           ownerBusinessId: u.business_id,
@@ -468,10 +472,10 @@ export class RealtyExchangeService {
           locality: u.project.locality,
           config: u.config,
           askingPricePaise: decimalToPaise(u.all_in_price),
-          reliabilityScore: await reliabilityOf(u.business_id),
+          reliabilityScore: reliabilityOf(u.business_id),
         }),
       ),
-    ]);
+    ];
   }
 
   /** Best-effort OpenRouter rationale. Degrades to null on any error. */

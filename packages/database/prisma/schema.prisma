@@ -2724,6 +2724,11 @@ model realty_units {
   @@index([business_id, config, availability])
   @@index([business_id, all_in_price])
   @@index([deleted_at])
+  // Exchange network supply — the one read here that does not filter on
+  // business_id (it excludes the requester instead), so every index above is
+  // useless to it and the planner scanned the whole network's inventory.
+  // See migration 0036.
+  @@index([network_visibility, availability, business_id])
   @@map("realty_units")
 }
 

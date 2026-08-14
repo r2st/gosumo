@@ -1,0 +1,47 @@
+-- Migration: 0036_index_exchange_unit_supply
+-- Index the co-broking exchange's network supply read.
+--
+-- RealtyExchangeRepository.findExchangeUnitSupply is one of the two deliberate
+-- cross-tenant reads in the codebase: EXCHANGE-visible, AVAILABLE units from
+-- every member except the requester. Every realty_units index leads with
+-- business_id, and this is the one query that does not filter on it — so the
+-- only usable index was realty_units_deleted_at_idx, and the planner read every
+-- non-deleted unit in the entire network to find the small slice that is
+-- actually on the board.
+--
+-- That matters more than a normal list query. This is not one tenant's data:
+-- the scan grows with the whole network's inventory, so it gets slower for
+-- everybody each time any member adds units, and it runs on the product's
+-- primary action — matching a lead to the exchange.
+--
+-- EXPLAIN (ANALYZE, BUFFERS) against a synthetic network of 200k units over 60
+-- members, with a realistic ~8% of inventory actually EXCHANGE + AVAILABLE
+-- (most stays PRIVATE), for the query as the repository spells it including the
+-- project join:
+--
+--   before   parallel seq scan   6,755 buf   10.8 ms   196,667 rows discarded
+--   after    bitmap index scan   3,288 buf    3.7 ms
+--
+-- The remaining buffers are the heap fetch for supply that genuinely is on the
+-- board; what the index removes is the scan of everything that is not. Index is
+-- 1.4 MB against a 26 MB table.
+--
+-- Column order is the two equality predicates first, then business_id — which
+-- the query uses as an inequality (`<> requester`) and so cannot seek on, but
+-- carrying it keeps the tenant check on the index tuple.
+--
+-- Name matches what `prisma migrate diff` emits for the corresponding @@index
+-- entry added to schema.prisma in the same commit, so the two stay in sync.
+--
+-- Not addressed here, because an index cannot: the read has no LIMIT, so the
+-- whole network's exchange supply is still materialised in Node on every match
+-- request. Bounding it is a product decision rather than a mechanical one — the
+-- matcher ranks the full set and returns the top 5, so any cap risks discarding
+-- the best match rather than merely deferring it.
+--
+-- Plain CREATE INDEX, matching every migration before this one. On a live
+-- database use CREATE INDEX CONCURRENTLY instead; that form cannot run inside a
+-- transaction, so issue it outside any wrapping BEGIN/COMMIT.
+
+CREATE INDEX IF NOT EXISTS "realty_units_network_visibility_availability_business_id_idx"
+    ON "realty_units"("network_visibility", "availability", "business_id");

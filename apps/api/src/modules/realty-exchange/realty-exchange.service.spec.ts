@@ -117,6 +117,7 @@ describe('RealtyExchangeService', () => {
       findExchangeUnitSupply: jest.fn(),
       upsertReliabilityScore: jest.fn(),
       findLatestReliabilityScore: jest.fn(),
+      findLatestSelfReliabilityScores: jest.fn().mockResolvedValue(new Map()),
       listReliabilityScores: jest.fn(),
     } as unknown as jest.Mocked<RealtyExchangeRepository>;
     leads = { getLead: jest.fn() };
@@ -440,13 +441,9 @@ describe('RealtyExchangeService', () => {
       repo.findExchangeResaleSupply.mockResolvedValue([makeResale({ id: 'r1', business_id: OTHER })]);
       repo.findExchangeUnitSupply.mockResolvedValue([]);
       // OTHER has a strong reliability self-row.
-      repo.findLatestReliabilityScore.mockResolvedValue({
-        id: 'sc', business_id: OTHER, target_business_id: OTHER,
-        response_speed_score: new Prisma.Decimal(90), showup_integrity_score: new Prisma.Decimal(90),
-        split_honoring_score: new Prisma.Decimal(90), documentation_hygiene_score: new Prisma.Decimal(90),
-        composite_score: new Prisma.Decimal(90), period_start: new Date(), period_end: new Date(),
-        metadata: {}, created_at: new Date(), updated_at: new Date(),
-      } as never);
+      repo.findLatestSelfReliabilityScores.mockResolvedValue(
+        new Map([[OTHER, new Prisma.Decimal(90)]]),
+      );
 
       const res = await service.matchLeadToExchange(FROM, LEAD, {});
 
@@ -462,7 +459,7 @@ describe('RealtyExchangeService', () => {
       leads.getLead.mockResolvedValue(leadWith());
       repo.findExchangeResaleSupply.mockResolvedValue([makeResale({ id: 'r1', business_id: OTHER, asking_price: new Prisma.Decimal(10_000_000) })]);
       repo.findExchangeUnitSupply.mockResolvedValue([]);
-      repo.findLatestReliabilityScore.mockResolvedValue(null);
+      repo.findLatestSelfReliabilityScores.mockResolvedValue(new Map());
 
       const res = await service.matchLeadToExchange(FROM, LEAD, {});
       expect(res.matches[0]!.reliabilityScore).toBe(50);
@@ -472,7 +469,7 @@ describe('RealtyExchangeService', () => {
       leads.getLead.mockResolvedValue(leadWith());
       repo.findExchangeResaleSupply.mockResolvedValue([makeResale({ id: 'r1', business_id: OTHER })]);
       repo.findExchangeUnitSupply.mockResolvedValue([]);
-      repo.findLatestReliabilityScore.mockResolvedValue(null);
+      repo.findLatestSelfReliabilityScores.mockResolvedValue(new Map());
       llm.complete.mockRejectedValue(new Error('OpenRouter down'));
 
       const res = await service.matchLeadToExchange(FROM, LEAD, { aiRationale: true });
@@ -890,7 +887,7 @@ describe('RealtyExchangeService', () => {
       leads.getLead.mockResolvedValue(leadWith());
       repo.findExchangeResaleSupply.mockResolvedValue([]);
       repo.findExchangeUnitSupply.mockResolvedValue([makeUnit()] as never);
-      repo.findLatestReliabilityScore.mockResolvedValue(null);
+      repo.findLatestSelfReliabilityScores.mockResolvedValue(new Map());
 
       const res = await service.matchLeadToExchange(FROM, LEAD);
 
@@ -901,25 +898,73 @@ describe('RealtyExchangeService', () => {
     });
 
     /**
-     * A member usually has several listings on the board at once; the reliability
-     * lookup is memoised per owner so the fan-out stays one read per counterparty.
+     * A member usually has several listings on the board at once, and the board
+     * spans the whole network. Reliability is read for every distinct owner in
+     * one query — the count must not track the size of the board.
      */
-    it('reads a counterparty reliability score once across all of its listings', async () => {
+    it('reads reliability once for the whole board, not once per listing', async () => {
       leads.getLead.mockResolvedValue(leadWith());
       repo.findExchangeResaleSupply.mockResolvedValue([
         makeResale({ id: 'r1', business_id: OTHER }),
         makeResale({ id: 'r2', business_id: OTHER }),
       ]);
       repo.findExchangeUnitSupply.mockResolvedValue([makeUnit({ id: 'u1', business_id: OTHER })] as never);
-      repo.findLatestReliabilityScore.mockResolvedValue(null);
+      repo.findLatestSelfReliabilityScores.mockResolvedValue(new Map());
 
       await service.matchLeadToExchange(FROM, LEAD);
 
-      expect(repo.findLatestReliabilityScore).toHaveBeenCalledTimes(1);
-      expect(repo.findLatestReliabilityScore).toHaveBeenCalledWith(OTHER, OTHER);
+      expect(repo.findLatestSelfReliabilityScores).toHaveBeenCalledTimes(1);
+      expect(repo.findLatestSelfReliabilityScores).toHaveBeenCalledWith([OTHER]);
+      // The per-owner read is what this replaced; it must not creep back in.
+      expect(repo.findLatestReliabilityScore).not.toHaveBeenCalled();
     });
 
-    it('reads once per distinct owner when supply spans several members', async () => {
+    it('asks for every distinct owner when supply spans several members', async () => {
+      const THIRD = '00000000-0000-4000-a000-000000000004';
+      leads.getLead.mockResolvedValue(leadWith());
+      repo.findExchangeResaleSupply.mockResolvedValue([
+        makeResale({ id: 'r1', business_id: OTHER }),
+        makeResale({ id: 'r2', business_id: THIRD }),
+      ]);
+      repo.findExchangeUnitSupply.mockResolvedValue([makeUnit({ id: 'u1', business_id: THIRD })] as never);
+      repo.findLatestSelfReliabilityScores.mockResolvedValue(new Map());
+
+      await service.matchLeadToExchange(FROM, LEAD);
+
+      expect(repo.findLatestSelfReliabilityScores).toHaveBeenCalledTimes(1);
+      const asked = repo.findLatestSelfReliabilityScores.mock.calls[0]![0] as string[];
+      expect([...asked].sort()).toEqual([OTHER, THIRD].sort());
+    });
+
+    /**
+     * Resale and unit supply are separate reads that routinely name the same
+     * owner; the id set is built across both, so a member listing on each side
+     * is still asked for once.
+     */
+    it('blends a score onto listings from both supply sides', async () => {
+      leads.getLead.mockResolvedValue(leadWith());
+      repo.findExchangeResaleSupply.mockResolvedValue([
+        makeResale({ id: 'r1', business_id: OTHER }),
+      ]);
+      repo.findExchangeUnitSupply.mockResolvedValue([
+        makeUnit({ id: 'u1', business_id: OTHER }),
+      ] as never);
+      repo.findLatestSelfReliabilityScores.mockResolvedValue(
+        new Map([[OTHER, new Prisma.Decimal(88)]]),
+      );
+
+      const res = await service.matchLeadToExchange(FROM, LEAD);
+
+      expect(repo.findLatestSelfReliabilityScores).toHaveBeenCalledWith([OTHER]);
+      expect(res.matches).toHaveLength(2);
+      expect(res.matches.map((m) => m.reliabilityScore)).toEqual([88, 88]);
+    });
+
+    /**
+     * An owner the map has no entry for is unscored, not zero-scored — the
+     * difference decides whether a new member can be matched at all.
+     */
+    it('falls back to neutral for an owner missing from the batch result', async () => {
       const THIRD = '00000000-0000-4000-a000-000000000004';
       leads.getLead.mockResolvedValue(leadWith());
       repo.findExchangeResaleSupply.mockResolvedValue([
@@ -927,10 +972,27 @@ describe('RealtyExchangeService', () => {
         makeResale({ id: 'r2', business_id: THIRD }),
       ]);
       repo.findExchangeUnitSupply.mockResolvedValue([]);
-      repo.findLatestReliabilityScore.mockResolvedValue(null);
+      // Only OTHER has ever been scored.
+      repo.findLatestSelfReliabilityScores.mockResolvedValue(
+        new Map([[OTHER, new Prisma.Decimal(92)]]),
+      );
 
-      await service.matchLeadToExchange(FROM, LEAD);
-      expect(repo.findLatestReliabilityScore).toHaveBeenCalledTimes(2);
+      const res = await service.matchLeadToExchange(FROM, LEAD);
+
+      const byOwner = new Map(res.matches.map((m) => [m.ownerBusinessId, m.reliabilityScore]));
+      expect(byOwner.get(OTHER)).toBe(92);
+      expect(byOwner.get(THIRD)).toBe(50);
+    });
+
+    it('skips the reliability read entirely when the network has no supply', async () => {
+      leads.getLead.mockResolvedValue(leadWith());
+      repo.findExchangeResaleSupply.mockResolvedValue([]);
+      repo.findExchangeUnitSupply.mockResolvedValue([]);
+
+      const res = await service.matchLeadToExchange(FROM, LEAD);
+
+      expect(res.matches).toEqual([]);
+      expect(repo.findLatestSelfReliabilityScores).toHaveBeenCalledWith([]);
     });
 
     it('honours an explicit result limit', async () => {
@@ -941,7 +1003,7 @@ describe('RealtyExchangeService', () => {
         makeResale({ id: 'r3', business_id: OTHER }),
       ]);
       repo.findExchangeUnitSupply.mockResolvedValue([]);
-      repo.findLatestReliabilityScore.mockResolvedValue(null);
+      repo.findLatestSelfReliabilityScores.mockResolvedValue(new Map());
 
       const res = await service.matchLeadToExchange(FROM, LEAD, { limit: 2 });
       expect(res.matches).toHaveLength(2);
@@ -962,7 +1024,7 @@ describe('RealtyExchangeService', () => {
       leads.getLead.mockResolvedValue(leadWith());
       repo.findExchangeResaleSupply.mockResolvedValue([makeResale({ id: 'r1', business_id: OTHER })]);
       repo.findExchangeUnitSupply.mockResolvedValue([]);
-      repo.findLatestReliabilityScore.mockResolvedValue(null);
+      repo.findLatestSelfReliabilityScores.mockResolvedValue(new Map());
       llm.complete.mockResolvedValue({ text: 'Syndicate the Baner 2BHK first.' });
 
       const res = await service.matchLeadToExchange(FROM, LEAD, { aiRationale: true });
@@ -977,7 +1039,7 @@ describe('RealtyExchangeService', () => {
       leads.getLead.mockResolvedValue(leadWith());
       repo.findExchangeResaleSupply.mockResolvedValue([makeResale({ id: 'r1', business_id: OTHER })]);
       repo.findExchangeUnitSupply.mockResolvedValue([]);
-      repo.findLatestReliabilityScore.mockResolvedValue(null);
+      repo.findLatestSelfReliabilityScores.mockResolvedValue(new Map());
       llm.complete.mockResolvedValue({ text: '' });
 
       const res = await service.matchLeadToExchange(FROM, LEAD, { aiRationale: true });
@@ -995,7 +1057,7 @@ describe('RealtyExchangeService', () => {
       );
       repo.findExchangeResaleSupply.mockResolvedValue([makeResale({ id: 'r1', business_id: OTHER })]);
       repo.findExchangeUnitSupply.mockResolvedValue([]);
-      repo.findLatestReliabilityScore.mockResolvedValue(null);
+      repo.findLatestSelfReliabilityScores.mockResolvedValue(new Map());
       llm.complete.mockResolvedValue({ text: 'ok' });
 
       await service.matchLeadToExchange(FROM, LEAD, { aiRationale: true });

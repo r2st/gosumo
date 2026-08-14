@@ -48,6 +48,7 @@ describe('RealtyExchangeRepository', () => {
     };
     realty_units: { findMany: jest.Mock };
     realty_reliability_scores: { upsert: jest.Mock; findFirst: jest.Mock; findMany: jest.Mock };
+    $queryRaw: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -70,6 +71,7 @@ describe('RealtyExchangeRepository', () => {
         findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
       },
+      $queryRaw: jest.fn().mockResolvedValue([]),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -434,6 +436,80 @@ describe('RealtyExchangeRepository', () => {
         where: { business_id: BUSINESS_ID, target_business_id: OTHER_ID },
         orderBy: { period_start: 'desc' },
       });
+    });
+  });
+
+  describe('findLatestSelfReliabilityScores', () => {
+    /** The SQL of the last $queryRaw call, whitespace collapsed. */
+    function lastRawSql(): string {
+      const call = prisma.$queryRaw.mock.calls[prisma.$queryRaw.mock.calls.length - 1]!;
+      return (call[0] as string[]).join('?').replace(/\s+/g, ' ').trim();
+    }
+
+    /** The interpolated values, in order, of the last $queryRaw call. */
+    function lastRawParams(): unknown[] {
+      const call = prisma.$queryRaw.mock.calls[prisma.$queryRaw.mock.calls.length - 1]!;
+      return call.slice(1);
+    }
+
+    it('does not touch the database for an empty id list', async () => {
+      expect(await repository.findLatestSelfReliabilityScores([])).toEqual(new Map());
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    });
+
+    it('reads one row per member regardless of how many are asked for', async () => {
+      // DISTINCT ON is the whole point: the alternative is either a query per
+      // member or every historical period read into Node to be reduced there.
+      await repository.findLatestSelfReliabilityScores([BUSINESS_ID, OTHER_ID]);
+
+      const sql = lastRawSql();
+      expect(sql).toContain('DISTINCT ON (business_id)');
+      expect(sql).toContain('ORDER BY business_id, period_start DESC');
+    });
+
+    it('restricts to canonical self-rows, not scores one member holds on another', async () => {
+      // A member's canonical score is the row they hold on themselves. Without
+      // this predicate the query would also return A's opinion of B and pick
+      // whichever happened to be newest.
+      await repository.findLatestSelfReliabilityScores([BUSINESS_ID]);
+      expect(lastRawSql()).toContain('business_id = target_business_id');
+    });
+
+    it('binds the ids as a uuid array rather than interpolating them', async () => {
+      await repository.findLatestSelfReliabilityScores([BUSINESS_ID, OTHER_ID]);
+
+      expect(lastRawSql()).toContain('business_id = ANY(');
+      expect(lastRawParams()).toEqual([[BUSINESS_ID, OTHER_ID]]);
+    });
+
+    it('de-duplicates the ids it is handed', async () => {
+      await repository.findLatestSelfReliabilityScores([BUSINESS_ID, OTHER_ID, BUSINESS_ID]);
+      expect(lastRawParams()).toEqual([[BUSINESS_ID, OTHER_ID]]);
+    });
+
+    it('keys the returned map by business, carrying the composite through', async () => {
+      prisma.$queryRaw.mockResolvedValue([
+        { business_id: BUSINESS_ID, composite_score: new Prisma.Decimal(72.5) },
+        { business_id: OTHER_ID, composite_score: new Prisma.Decimal(41) },
+      ]);
+
+      const scores = await repository.findLatestSelfReliabilityScores([BUSINESS_ID, OTHER_ID]);
+
+      expect(scores.size).toBe(2);
+      expect(scores.get(BUSINESS_ID)!.toString()).toBe('72.5');
+      expect(scores.get(OTHER_ID)!.toString()).toBe('41');
+    });
+
+    it('omits a member with no score row rather than inventing a zero', async () => {
+      // The caller reads absence as "unscored" and substitutes the neutral 50.
+      // A 0 here would mean "scored, and terrible" — a new member would never
+      // be matched again.
+      prisma.$queryRaw.mockResolvedValue([
+        { business_id: BUSINESS_ID, composite_score: new Prisma.Decimal(72.5) },
+      ]);
+
+      const scores = await repository.findLatestSelfReliabilityScores([BUSINESS_ID, OTHER_ID]);
+      expect(scores.has(OTHER_ID)).toBe(false);
     });
   });
 
