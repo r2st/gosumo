@@ -1,1 +1,0 @@
-Forget about WhatsApp make it platform agnostic

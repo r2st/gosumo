@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { realty_projects, realty_units, realty_assets } from '@prisma/client';
 import { PrismaService } from '../../common/services/prisma.service';
+import { AVAILABILITY_FRESHNESS_HOURS } from './realty-inventory.constants';
 
 export interface CreateProjectData {
   businessId: string;
@@ -199,7 +200,7 @@ export class RealtyInventoryRepository {
    */
   async findMatchCandidates(
     businessId: string,
-    freshnessHours = 24,
+    freshnessHours = AVAILABILITY_FRESHNESS_HOURS,
   ): Promise<CandidateUnit[]> {
     const cutoff = new Date(Date.now() - freshnessHours * 60 * 60 * 1000);
     return this.prisma.realty_units.findMany({

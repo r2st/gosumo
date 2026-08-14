@@ -14,13 +14,9 @@ export const MAX_SEARCH_RESULTS = 50;
 export const DEFAULT_PAGE_SIZE = 20;
 export const MAX_PAGE_SIZE = 100;
 
-/** Sender types stored on the `sender_type` column. */
-export const SENDER_TYPE = {
-  CLIENT: 'CLIENT',
-  AI: 'AI',
-  HUMAN_AGENT: 'HUMAN_AGENT',
-  SYSTEM: 'SYSTEM',
-} as const;
+// Sender types for the `sender_type` column live in
+// `conversation/conversation.constants.ts` (SENDER_TYPE / SenderType). A
+// verbatim second copy used to sit here and was read by nothing.
 
 /**
  * Map a polymorphic content `type` discriminant (see `MessageContent` in

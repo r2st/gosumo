@@ -18,6 +18,7 @@ import { Type } from 'class-transformer';
 import { ChannelType, MessageStatus, MessageDirection } from '@gosumo/shared';
 import { NotificationTemplateChannel } from '@prisma/client';
 import { IsCalendarDateString } from '../../../common/validators/is-calendar-date.validator';
+import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../message.constants';
 
 // ─────────────────────────────────────────────
 // StoreInboundMessageDto
@@ -141,15 +142,15 @@ export class StoreOutboundMessageDto {
 
 export class MessagePaginationQueryDto {
   @ApiPropertyOptional({
-    description: 'Number of messages to return (1-100)',
-    default: 20,
+    description: `Number of messages to return (1-${MAX_PAGE_SIZE})`,
+    default: DEFAULT_PAGE_SIZE,
   })
   @IsOptional()
   @IsInt()
   @Min(1)
-  @Max(100)
+  @Max(MAX_PAGE_SIZE)
   @Type(() => Number)
-  limit?: number = 20;
+  limit?: number = DEFAULT_PAGE_SIZE;
 
   @ApiPropertyOptional({
     description: 'Base64-encoded cursor for pagination',

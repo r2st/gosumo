@@ -17,6 +17,7 @@ import { RealtyInventoryRepository } from './realty-inventory.repository';
 import type { CandidateUnit } from './realty-inventory.repository';
 import { RealtyLeadsService } from '../realty-leads/realty-leads.service';
 import { matchUnits } from './unit-matching.util';
+import { AVAILABILITY_FRESHNESS_HOURS } from './realty-inventory.constants';
 import type { MatchCriteria, MatchCandidate } from './unit-matching.util';
 import {
   CreateProjectDto,
@@ -92,7 +93,7 @@ export interface AssetResponseDto {
   createdAt: Date;
 }
 
-const FRESHNESS_HOURS = 24;
+const FRESHNESS_HOURS = AVAILABILITY_FRESHNESS_HOURS;
 
 /**
  * RealtyInventoryService — the grounding layer (blueprint §14). Verified projects,

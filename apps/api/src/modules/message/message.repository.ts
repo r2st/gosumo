@@ -3,7 +3,7 @@ import { PrismaService } from '../../common/services/prisma.service';
 import { MessageDirection, MessageStatus } from '@gosumo/shared';
 import type { messages, file_uploads } from '@prisma/client';
 import { Prisma, MessageType, FileUploadType } from '@prisma/client';
-import { SEARCHABLE_MESSAGE_TYPES } from './message.constants';
+import { MAX_SEARCH_RESULTS, SEARCHABLE_MESSAGE_TYPES } from './message.constants';
 
 // ─────────────────────────────────────────────
 // Types
@@ -266,7 +266,7 @@ export class MessageRepository {
     return this.prisma.messages.findMany({
       where,
       orderBy: { created_at: 'desc' },
-      take: 50,
+      take: MAX_SEARCH_RESULTS,
     });
   }
 

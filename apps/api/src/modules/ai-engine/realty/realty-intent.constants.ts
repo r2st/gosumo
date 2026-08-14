@@ -25,8 +25,9 @@ export const REALTY_GUIDED = 50;
 export const REALTY_WEIGHT_DATA = 0.5;
 export const REALTY_WEIGHT_POLICY = 0.5;
 
-/** A unit's availability is only assertable within this window (blueprint §14). */
-export const AVAILABILITY_FRESHNESS_HOURS = 24;
+// The availability-freshness window that decides what the AI may assert lives
+// with the module that enforces it: AVAILABILITY_FRESHNESS_HOURS in
+// `realty-inventory/realty-inventory.constants.ts`. It is not redeclared here.
 
 // ─────────────────────────────────────────────
 // Default routing policy per intent (the autonomy ceiling)
