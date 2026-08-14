@@ -335,6 +335,18 @@ const PUBLIC_ROUTES: PublicRoute[] = [
 
   // ── Deliberately anonymous ────────────────────────────────
   {
+    handler: 'HealthController.liveness',
+    mechanism: 'anonymous-by-design',
+    authenticates:
+      'A load balancer carries no JWT, and gating the probe behind auth makes an auth outage read as a total outage. Touches no dependency and returns only process uptime and a timestamp — nothing derived from any tenant.',
+  },
+  {
+    handler: 'HealthController.readiness',
+    mechanism: 'anonymous-by-design',
+    authenticates:
+      'Same caller as the liveness probe. Reports whether Postgres and Redis are reachable and how long each took — a reachability bit and a latency, never a row, a count, or any tenant-derived value.',
+  },
+  {
     handler: 'ChannelsController.getWebChatEmbed',
     mechanism: 'anonymous-by-design',
     authenticates:
@@ -594,6 +606,12 @@ describe('anonymous-by-design routes are held to a short list', () => {
     // Every other mechanism above proves something about the caller. These
     // prove nothing, so the only control left is that there are almost none of
     // them and each is argued individually in PUBLIC_ROUTES.
-    expect(anonymous).toEqual(['ChannelsController.getWebChatEmbed']);
+    expect(anonymous).toEqual([
+      // The health probes prove nothing about their caller by design, but they
+      // also disclose nothing: a status, an uptime, and two latencies.
+      'HealthController.liveness',
+      'HealthController.readiness',
+      'ChannelsController.getWebChatEmbed',
+    ]);
   });
 });

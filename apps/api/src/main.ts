@@ -116,6 +116,13 @@ async function bootstrap() {
     });
   }
 
+  // Graceful shutdown. Without this, Nest never runs onModuleDestroy on a
+  // signal, so a systemd restart kills the process with Prisma still holding
+  // its pool and BullMQ workers mid-job. Postgres only reaps those connections
+  // on its own timeout, and this deployment shares a 50-connection ceiling —
+  // a few restarts in a row were enough to exhaust it.
+  app.enableShutdownHooks();
+
   const port = parseInt(process.env['PORT'] ?? '3000', 10);
   await app.listen(port);
 

@@ -11,7 +11,7 @@ import { SessionService } from './session.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { RolesGuard } from './guards/roles.guard';
-import { redisProvider } from './redis.provider';
+import { redisProvider, REDIS_CLIENT } from './redis.provider';
 import { PrismaService } from '../../common/services/prisma.service';
 
 @Module({
@@ -54,6 +54,6 @@ import { PrismaService } from '../../common/services/prisma.service';
     redisProvider,
     PrismaService,
   ],
-  exports: [AuthService, SessionService, JwtStrategy, RolesGuard, PrismaService],
+  exports: [AuthService, SessionService, JwtStrategy, RolesGuard, PrismaService, REDIS_CLIENT],
 })
 export class AuthModule {}

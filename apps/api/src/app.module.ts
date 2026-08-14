@@ -45,6 +45,7 @@ import { CannedResponseModule } from './modules/canned-response/canned-response.
 import { SlaModule } from './modules/sla/sla.module';
 import { AgentPerformanceModule } from './modules/agent-performance/agent-performance.module';
 import { WebhookLogModule } from './modules/webhook-log/webhook-log.module';
+import { HealthModule } from './modules/health/health.module';
 
 @Module({
   imports: [
@@ -85,6 +86,10 @@ import { WebhookLogModule } from './modules/webhook-log/webhook-log.module';
       }),
       inject: [ConfigService],
     }),
+
+    // Health probes — first so /v1/health stays answerable even while a
+    // later module is still warming up.
+    HealthModule,
 
     // Feature modules
     AuthModule,

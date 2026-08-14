@@ -16,6 +16,7 @@ jest.mock('@nestjs/core', () => {
     useGlobalPipes: jest.fn(),
     useGlobalFilters: jest.fn(),
     useGlobalInterceptors: jest.fn(),
+    enableShutdownHooks: jest.fn(),
     listen: jest.fn().mockResolvedValue(undefined),
   };
   return { NestFactory: { create: jest.fn().mockResolvedValue(app) } };
@@ -63,6 +64,17 @@ describe('bootstrap (main.ts)', () => {
       AppModule,
       expect.objectContaining({ rawBody: true }),
     );
+  });
+
+  it('enables shutdown hooks before it starts listening', async () => {
+    // Without these, Nest never runs onModuleDestroy on a signal: a systemd
+    // restart kills the process with Prisma still holding its pool and BullMQ
+    // workers mid-job. Postgres only reaps those on its own timeout, and this
+    // deployment shares a 50-connection ceiling.
+    const app = await (NestFactory.create as jest.Mock).mock.results[0]?.value;
+
+    expect(app.enableShutdownHooks).toHaveBeenCalled();
+    expect(app.listen).toHaveBeenCalled();
   });
 
   describe('resolveCorsOrigin', () => {

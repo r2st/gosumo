@@ -25,6 +25,8 @@ export interface RedisClient {
   zrem(key: string, ...members: string[]): Promise<number>;
   zcard(key: string): Promise<number>;
   zrange(key: string, start: number, stop: number): Promise<string[]>;
+  /** Liveness probe for the readiness check. */
+  ping(): Promise<string>;
   quit(): Promise<'OK'>;
 }
 
