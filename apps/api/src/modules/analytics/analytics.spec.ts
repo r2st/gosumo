@@ -188,7 +188,9 @@ describe('AnalyticsService', () => {
 
       // Re-cache happened with the dashboard key + TTL.
       expect(cache.set).toHaveBeenCalledWith(
-        `gosumo:${BUSINESS_ID}:analytics:dashboard`,
+        expect.stringMatching(
+          new RegExp(`^gosumo:${BUSINESS_ID}:analytics:dashboard:\\d{4}-\\d{2}-\\d{2}$`),
+        ),
         expect.any(String),
         300,
       );
@@ -247,8 +249,98 @@ describe('AnalyticsService', () => {
       stubDashboardRepo();
       await service.getDashboardSummary(OTHER_BUSINESS_ID);
       expect(cache.get).toHaveBeenCalledWith(
-        `gosumo:${OTHER_BUSINESS_ID}:analytics:dashboard`,
+        expect.stringContaining(`gosumo:${OTHER_BUSINESS_ID}:analytics:dashboard:`),
       );
+    });
+
+    /**
+     * Every field on the summary is a "today" figure over `[UTC midnight, now)`,
+     * cached for five minutes. With a day-less key an entry written at 23:58 was
+     * still served at 00:01, so a dashboard opened on a fresh day showed the
+     * previous day's counts and then appeared to lose them when the entry
+     * expired. Dating the key turns the rollover into a miss.
+     */
+    describe('across the UTC day boundary', () => {
+      afterEach(() => {
+        jest.useRealTimers();
+      });
+
+      /** The (key, value) of the most recent cache write. */
+      const lastWrite = (): { key: string; value: string } => {
+        const call = cache.set.mock.calls.at(-1);
+        if (!call) throw new Error('expected a cache write');
+        return { key: call[0], value: call[1] };
+      };
+
+      const keyAt = async (iso: string): Promise<string> => {
+        jest.useFakeTimers().setSystemTime(new Date(iso));
+        cache.get.mockResolvedValue(null);
+        stubDashboardRepo();
+        await service.getDashboardSummary(BUSINESS_ID);
+        return (cache.get.mock.calls.at(-1) as [string])[0];
+      };
+
+      it('reads a different key on either side of midnight', async () => {
+        const lastNight = await keyAt('2026-08-13T23:58:00.000Z');
+        const thisMorning = await keyAt('2026-08-14T00:01:00.000Z');
+
+        expect(lastNight).toBe(`gosumo:${BUSINESS_ID}:analytics:dashboard:2026-08-13`);
+        expect(thisMorning).toBe(`gosumo:${BUSINESS_ID}:analytics:dashboard:2026-08-14`);
+      });
+
+      it('keeps one key for the whole of a single UTC day', async () => {
+        const justAfterMidnight = await keyAt('2026-08-14T00:00:00.000Z');
+        const midday = await keyAt('2026-08-14T12:30:00.000Z');
+        const lastSecond = await keyAt('2026-08-14T23:59:59.999Z');
+
+        expect(midday).toBe(justAfterMidnight);
+        expect(lastSecond).toBe(justAfterMidnight);
+      });
+
+      it('cannot serve yesterday\'s counts on today\'s key', async () => {
+        jest.useFakeTimers().setSystemTime(new Date('2026-08-13T23:58:00.000Z'));
+        stubDashboardRepo();
+        cache.get.mockResolvedValue(null);
+        await service.getDashboardSummary(BUSINESS_ID);
+        const { key: writtenKey, value: writtenValue } = lastWrite();
+
+        // Roll over. Redis still holds yesterday's entry under yesterday's key.
+        jest.useFakeTimers().setSystemTime(new Date('2026-08-14T00:01:00.000Z'));
+        cache.get.mockImplementation(async (key: string) =>
+          key === writtenKey ? writtenValue : null,
+        );
+        repo.getConversationCounts.mockResolvedValue({
+          total: 0,
+          resolved: 0,
+          open: 0,
+          pendingHuman: 0,
+          escalated: 0,
+          snoozed: 0,
+          aiResolved: 0,
+          humanResolved: 0,
+        });
+
+        const summary = await service.getDashboardSummary(BUSINESS_ID);
+
+        // The new day starts at zero, not at yesterday's 10 conversations.
+        expect(summary.conversationsToday).toBe(0);
+        expect(summary.generatedAt).toBe('2026-08-14T00:01:00.000Z');
+      });
+
+      it('dates the key from the same clock read the window uses', async () => {
+        // Key and window must agree: reading the clock twice could straddle
+        // midnight and file a summary of one day under the other day's key.
+        jest.useFakeTimers().setSystemTime(new Date('2026-08-14T00:00:00.000Z'));
+        cache.get.mockResolvedValue(null);
+        stubDashboardRepo();
+
+        await service.getDashboardSummary(BUSINESS_ID);
+
+        const { key, value } = lastWrite();
+        const summary = JSON.parse(value) as { generatedAt: string };
+
+        expect(key.endsWith(summary.generatedAt.slice(0, 10))).toBe(true);
+      });
     });
 
     it('reports a 0 autonomy rate when there are no decisions, never NaN', async () => {
@@ -463,6 +555,61 @@ describe('AnalyticsService', () => {
       expect(result.returningClients).toBe(10);
       expect(result.newClientShare).toBe(75); // 30 / 40
       expect(result.byChannel[0]!.channel).toBe(ChannelType.WHATSAPP);
+    });
+
+    it('reads the channel split as a partition of the new-client total', async () => {
+      // The percentages are taken against `newClients`, which only means
+      // anything if each client appears in exactly one bucket. The repository
+      // guarantees that by attributing on first contact; this pins the
+      // arithmetic that depends on it, so a breakdown that started
+      // double-counting would show up as percentages summing past 100.
+      repo.countNewClients.mockResolvedValue(30);
+      repo.countReturningClients.mockResolvedValue(0);
+      repo.getAcquisitionByChannel.mockResolvedValue([
+        { channel: ChannelType.WHATSAPP, count: 18 },
+        { channel: ChannelType.INSTAGRAM, count: 9 },
+        { channel: ChannelType.EMAIL, count: 3 },
+      ]);
+      repo.getAcquisitionSeries.mockResolvedValue([]);
+
+      const result = await service.getClientAcquisitionMetrics(BUSINESS_ID, { from: FROM, to: TO });
+
+      const totalCount = result.byChannel.reduce((sum, c) => sum + c.count, 0);
+      const totalPercent = result.byChannel.reduce((sum, c) => sum + c.percentage, 0);
+
+      expect(totalCount).toBe(result.newClients);
+      expect(totalPercent).toBeCloseTo(100, 1);
+    });
+
+    it('never reports a channel share above 100%', async () => {
+      // A client with contacts on every channel used to land in every bucket,
+      // so a single-client tenant reported 100% WhatsApp *and* 100% Instagram.
+      repo.countNewClients.mockResolvedValue(1);
+      repo.countReturningClients.mockResolvedValue(0);
+      repo.getAcquisitionByChannel.mockResolvedValue([
+        { channel: ChannelType.WHATSAPP, count: 1 },
+      ]);
+      repo.getAcquisitionSeries.mockResolvedValue([]);
+
+      const result = await service.getClientAcquisitionMetrics(BUSINESS_ID, { from: FROM, to: TO });
+
+      expect(result.byChannel).toHaveLength(1);
+      expect(result.byChannel[0]!.percentage).toBe(100);
+    });
+
+    it('tolerates new clients with no channel contact at all', async () => {
+      // The join is inner, so a client created without a contact row is absent
+      // from the split. The breakdown may sum to less than the total — that is
+      // under-attribution, not double counting, and must not produce NaN.
+      repo.countNewClients.mockResolvedValue(10);
+      repo.countReturningClients.mockResolvedValue(0);
+      repo.getAcquisitionByChannel.mockResolvedValue([]);
+      repo.getAcquisitionSeries.mockResolvedValue([]);
+
+      const result = await service.getClientAcquisitionMetrics(BUSINESS_ID, { from: FROM, to: TO });
+
+      expect(result.newClients).toBe(10);
+      expect(result.byChannel).toEqual([]);
     });
   });
 

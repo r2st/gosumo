@@ -559,20 +559,50 @@ export class AnalyticsRepository {
     });
   }
 
-  /** New-client acquisition split by the channels they were reached on. */
+  /**
+   * New-client acquisition attributed to the channel each client *arrived* on.
+   *
+   * Attribution is single-channel by construction: `DISTINCT ON (c.id)` keeps
+   * exactly one `channel_contacts` row per client — the earliest-seen one — so
+   * every new client contributes to exactly one bucket and the buckets sum to
+   * the number of new clients that have any contact at all.
+   *
+   * The obvious spelling, `COUNT(DISTINCT c.id) ... GROUP BY cc.channel`, is
+   * what this replaces. The DISTINCT there only dedupes *within* a channel (a
+   * client with two WhatsApp numbers), and a client reachable on WhatsApp and
+   * Instagram still lands in both groups. That was tolerable when a person who
+   * wrote in on two channels became two clients; since R53's cross-channel
+   * identity matching it is the normal case, so the split was counting the same
+   * acquisition once per channel and `AnalyticsService` was dividing those
+   * inflated counts by the true `newClients` total — a channel breakdown whose
+   * percentages summed past 100.
+   *
+   * `first_seen_at` ties are broken by `created_at` then `id` so the attributed
+   * channel is stable across runs. Ties are not hypothetical: a client created
+   * from a multi-channel contact payload gets every row in one transaction, all
+   * defaulting to the same `now()`.
+   */
   async getAcquisitionByChannel(
     businessId: string,
     range: DateRange,
   ): Promise<{ channel: ChannelType; count: number }[]> {
     const rows = await this.prisma.$queryRaw<{ channel: ChannelType; count: number }[]>`
-      SELECT cc.channel AS channel, COUNT(DISTINCT c.id)::int AS count
-      FROM clients c
-      JOIN channel_contacts cc ON cc.client_id = c.id
-      WHERE c.business_id = ${businessId}::uuid
-        AND c.deleted_at IS NULL
-        AND c.first_seen_at >= ${range.from} AND c.first_seen_at < ${range.to}
+      WITH first_contact AS (
+        SELECT DISTINCT ON (c.id)
+               c.id AS client_id,
+               cc.channel AS channel
+        FROM clients c
+        JOIN channel_contacts cc
+          ON cc.client_id = c.id AND cc.business_id = c.business_id
+        WHERE c.business_id = ${businessId}::uuid
+          AND c.deleted_at IS NULL
+          AND c.first_seen_at >= ${range.from} AND c.first_seen_at < ${range.to}
+        ORDER BY c.id, cc.first_seen_at ASC, cc.created_at ASC, cc.id ASC
+      )
+      SELECT channel, COUNT(*)::int AS count
+      FROM first_contact
       GROUP BY 1
-      ORDER BY count DESC
+      ORDER BY count DESC, channel ASC
     `;
     return rows.map((r) => ({ channel: r.channel, count: r.count }));
   }

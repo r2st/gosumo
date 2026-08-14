@@ -541,14 +541,46 @@ describe('AnalyticsRepository', () => {
   });
 
   describe('getAcquisitionByChannel', () => {
-    it('returns the channel split the join produced', async () => {
+    it('returns the channel split the query produced', async () => {
       prisma.$queryRaw.mockResolvedValue([{ channel: 'WHATSAPP', count: 30 }]);
 
       await expect(repository.getAcquisitionByChannel(BUSINESS_ID, RANGE)).resolves.toEqual([
         { channel: 'WHATSAPP', count: 30 },
       ]);
-      // A client on two channels must count once per channel, not twice.
-      expect(rawSql()).toContain('COUNT(DISTINCT c.id)');
+    });
+
+    it('attributes each new client to exactly one channel', async () => {
+      // The bug this replaces: `COUNT(DISTINCT c.id) GROUP BY cc.channel` dedupes
+      // only *within* a channel, so a client reachable on WhatsApp and Instagram
+      // was counted in both buckets. Since R53 matches one person across
+      // channels, that is the ordinary shape of a client — the split inflated
+      // silently and its percentages summed past 100.
+      prisma.$queryRaw.mockResolvedValue([]);
+      await repository.getAcquisitionByChannel(BUSINESS_ID, RANGE);
+
+      const sql = rawSql();
+      expect(sql).toContain('DISTINCT ON (c.id)');
+      expect(sql).not.toContain('COUNT(DISTINCT c.id)');
+    });
+
+    it('attributes on earliest contact, with a deterministic tie-break', async () => {
+      // A client created from a multi-channel payload gets every contact row in
+      // one transaction, so they share a `first_seen_at` default. Without the
+      // secondary keys, which channel wins would vary run to run and the
+      // breakdown would drift with no data change behind it.
+      prisma.$queryRaw.mockResolvedValue([]);
+      await repository.getAcquisitionByChannel(BUSINESS_ID, RANGE);
+
+      expect(rawSql()).toContain(
+        'ORDER BY c.id, cc.first_seen_at ASC, cc.created_at ASC, cc.id ASC',
+      );
+    });
+
+    it('scopes the joined contacts to the same tenant as the client', async () => {
+      prisma.$queryRaw.mockResolvedValue([]);
+      await repository.getAcquisitionByChannel(BUSINESS_ID, RANGE);
+
+      expect(rawSql()).toContain('cc.business_id = c.business_id');
     });
   });
 

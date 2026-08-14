@@ -131,7 +131,11 @@ export class AnalyticsService {
    * Never throws on an empty business — returns zeros.
    */
   async getDashboardSummary(businessId: string): Promise<DashboardSummaryDto> {
-    const cacheKey = this.dashboardCacheKey(businessId);
+    // One clock read for both the key and the window it describes, so a request
+    // that straddles midnight cannot cache a summary of one day under another
+    // day's key.
+    const now = new Date();
+    const cacheKey = this.dashboardCacheKey(businessId, now);
 
     const cached = await this.safeCacheGet(cacheKey);
     if (cached) {
@@ -142,13 +146,15 @@ export class AnalyticsService {
       }
     }
 
-    const summary = await this.computeDashboardSummary(businessId);
+    const summary = await this.computeDashboardSummary(businessId, now);
     await this.safeCacheSet(cacheKey, JSON.stringify(summary), DASHBOARD_CACHE_TTL_SECONDS);
     return summary;
   }
 
-  private async computeDashboardSummary(businessId: string): Promise<DashboardSummaryDto> {
-    const now = new Date();
+  private async computeDashboardSummary(
+    businessId: string,
+    now: Date,
+  ): Promise<DashboardSummaryDto> {
     const startOfDay = new Date(
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0),
     );
@@ -193,8 +199,25 @@ export class AnalyticsService {
     };
   }
 
-  private dashboardCacheKey(businessId: string): string {
-    return `gosumo:${businessId}:analytics:dashboard`;
+  /**
+   * The cache key carries the UTC day the summary describes.
+   *
+   * Every field on `DashboardSummaryDto` is a "today" figure measured over
+   * `[UTC midnight, now)`, but the key used to be day-less and the entry lives
+   * for {@link DASHBOARD_CACHE_TTL_SECONDS}. An entry written at 23:58 UTC was
+   * therefore still served at 00:01 the next day: the dashboard opened on a
+   * fresh day showing the previous day's conversation, revenue and booking
+   * counts, and a `generatedAt` timestamp that quietly disagreed with them. The
+   * numbers then appeared to *drop to zero* when the entry finally expired,
+   * which reads as data loss rather than a new day starting.
+   *
+   * Dating the key makes the rollover a cache miss instead of a stale hit. The
+   * previous day's entry is simply never asked for again and ages out on its
+   * own TTL.
+   */
+  private dashboardCacheKey(businessId: string, now: Date): string {
+    const utcDay = now.toISOString().slice(0, 10); // YYYY-MM-DD
+    return `gosumo:${businessId}:analytics:dashboard:${utcDay}`;
   }
 
   // ───────────────────────────────────────────────────────────────────

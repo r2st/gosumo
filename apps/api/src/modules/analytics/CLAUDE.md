@@ -55,6 +55,8 @@ pnpm --filter @gosumo/api test --testPathPattern=modules/analytics
 ## Key Gotchas
 
 - **Dashboard summary is cached in Redis for 5 minutes** — on cache miss, run live query and re-cache; never return a 404 for a missing summary
+- **The dashboard cache key is dated** (`…:analytics:dashboard:YYYY-MM-DD`, UTC) — every field on it measures `[UTC midnight, now)`, so a day-less key would serve the previous day's counts for up to a TTL after rollover. The key and the window come from a single clock read
+- **`getClientAcquisitionMetrics.byChannel` is a partition, not a tally** — each new client is attributed to the one channel they arrived on (earliest `channel_contacts.first_seen_at`). Since clients are matched across channels, grouping contacts by channel would count one acquisition once per channel and push the percentages past 100
 - **Autonomy rate = `autoExecuted / totalDecisions × 100`** — this is the primary GoSumo KPI; ensure it is always accurate and never returns 0 when decisions exist
 - **All monetary metrics returned in paise** (integer) — frontend converts to rupees. Never return rupees from API endpoints
 - **Date range queries are capped at 365 days** — return 422 `DATE_RANGE_TOO_LARGE` for larger ranges
