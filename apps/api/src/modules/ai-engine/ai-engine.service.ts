@@ -34,6 +34,7 @@ import {
   ScoredConfidence,
 } from './pipeline/confidence-calculator.service';
 import { ActionRouterService, RoutingDecision } from './pipeline/action-router.service';
+import { extractAmountPaise } from './pipeline/money-extract.util';
 import { GuardrailsService } from './safety/guardrails.service';
 import { ReviewQueueService } from './hitl/review-queue.service';
 import { KnowledgeIngestionService } from './rag/knowledge-ingestion.service';
@@ -824,17 +825,30 @@ export class AiEngineService {
     return context.history.some((m) => m.ai_decision_id !== null);
   }
 
-  /** Derive refund / price override inputs from intent entities + policies. */
+  /**
+   * Derive refund / price override inputs from intent entities + policies.
+   *
+   * The amount is read from the classifier's entity bag when it is present and
+   * numeric, and otherwise extracted from the message text directly. That
+   * fallback is what makes `REFUND_OVER_LIMIT` reachable at all: Tier-1 keyword
+   * rules — which is how virtually every "refund"/"paisa wapas" message
+   * resolves — return an empty entity bag, so entities alone left the override
+   * permanently dark and let an over-limit refund score into AUTO_PILOT.
+   */
   private refundOverrideInputs(
     classification: IntentClassificationDto,
     context: EnrichedContext,
   ): { refundAmountPaise?: number; maxRefundAmountPaise?: number } {
     if (classification.intent !== IntentType.REFUND) return {};
-    const amount = classification.entities['amountPaise'];
+    const entityAmount = classification.entities['amountPaise'];
+    const amount =
+      typeof entityAmount === 'number' && Number.isFinite(entityAmount) && entityAmount > 0
+        ? entityAmount
+        : (extractAmountPaise(context.messageText) ?? undefined);
     const aiSettings = (context.business?.ai_settings as Record<string, unknown> | null) ?? {};
     const max = aiSettings['maxAutoRefundPaise'];
     return {
-      refundAmountPaise: typeof amount === 'number' ? amount : undefined,
+      refundAmountPaise: amount,
       maxRefundAmountPaise: typeof max === 'number' ? max : undefined,
     };
   }

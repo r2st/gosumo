@@ -480,7 +480,7 @@ describe('AiEngineService — refund override inputs', () => {
     );
   });
 
-  it('leaves both bounds undefined when the entity and the policy are absent', async () => {
+  it('leaves both bounds undefined when the entity, the text and the policy are all absent', async () => {
     const h = makeHarness();
     h.classify.mockResolvedValue({
       intent: IntentType.REFUND,
@@ -490,7 +490,9 @@ describe('AiEngineService — refund override inputs', () => {
       entities: { amountPaise: 'two thousand rupees' },
       reasoning: 'refund request',
     });
-    h.load.mockResolvedValue(makeContext({ business: null as never }));
+    h.load.mockResolvedValue(
+      makeContext({ business: null as never, messageText: 'refund karo bhaiya' }),
+    );
 
     await h.service.processMessage('b1', dto);
 
@@ -499,6 +501,83 @@ describe('AiEngineService — refund override inputs', () => {
         refundAmountPaise: undefined,
         maxRefundAmountPaise: undefined,
       }),
+    );
+  });
+
+  /**
+   * The Tier-1 keyword rules — which is how essentially every refund message
+   * resolves, since `/\brefund\b/` and `/\bpaisa? ?wapas\b/` are Tier-1
+   * patterns — return `entities: {}` by construction. Reading the amount only
+   * from entities therefore left `REFUND_OVER_LIMIT` permanently unreachable
+   * and let an over-limit refund score into AUTO_PILOT. These pin the text
+   * fallback that makes the override live.
+   */
+  it('extracts the refund amount from the message when Tier-1 rules left entities empty', async () => {
+    const h = makeHarness();
+    h.classify.mockResolvedValue({
+      intent: IntentType.REFUND,
+      secondaryIntent: null,
+      confidence: 0.95,
+      tier: 1,
+      entities: {},
+      reasoning: 'Matched a Tier-1 keyword rule for REFUND',
+    });
+    h.load.mockResolvedValue(
+      makeContext({
+        messageText: 'please refund my ₹2,500 for the last order',
+        business: { name: 'Priya Salon', ai_settings: { maxAutoRefundPaise: 100_000 } } as never,
+      }),
+    );
+
+    await h.service.processMessage('b1', dto);
+
+    expect(h.calculate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        refundAmountPaise: 250_000,
+        maxRefundAmountPaise: 100_000,
+      }),
+    );
+  });
+
+  it('prefers a numeric entity over the text when the classifier supplied one', async () => {
+    // Tier-3 stays authoritative if the model ever does return a real number:
+    // the text fallback is a backstop, not an override.
+    const h = makeHarness();
+    h.classify.mockResolvedValue({
+      intent: IntentType.REFUND,
+      secondaryIntent: null,
+      confidence: 0.8,
+      tier: 3,
+      entities: { amountPaise: 700_000 },
+      reasoning: 'refund request',
+    });
+    h.load.mockResolvedValue(makeContext({ messageText: 'refund my ₹2,500 please' }));
+
+    await h.service.processMessage('b1', dto);
+
+    expect(h.calculate).toHaveBeenCalledWith(
+      expect.objectContaining({ refundAmountPaise: 700_000 }),
+    );
+  });
+
+  it('falls back to the text when the entity is a non-positive number', async () => {
+    // `0` is numeric but not an amount; taking it verbatim would compare zero
+    // against the cap and silently clear an over-limit refund.
+    const h = makeHarness();
+    h.classify.mockResolvedValue({
+      intent: IntentType.REFUND,
+      secondaryIntent: null,
+      confidence: 0.8,
+      tier: 3,
+      entities: { amountPaise: 0 },
+      reasoning: 'refund request',
+    });
+    h.load.mockResolvedValue(makeContext({ messageText: 'paisa wapas karo, 2 lakh' }));
+
+    await h.service.processMessage('b1', dto);
+
+    expect(h.calculate).toHaveBeenCalledWith(
+      expect.objectContaining({ refundAmountPaise: 20_000_000 }),
     );
   });
 
