@@ -20,7 +20,7 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createQueryHarness, type QueryHarness } from '@/__tests__/query-harness';
+import { createQueryHarness, type MutationLike, type QueryHarness } from '@/__tests__/query-harness';
 import * as hooks from './use-bookings';
 
 vi.mock('@/lib/api-client', () => ({ apiRequest: vi.fn() }));
@@ -240,7 +240,7 @@ describe('booking mutation hooks call the documented endpoint', () => {
       body: { defaultSlotDurationMinutes: 45 },
     },
   ])('$name → $method $url', async ({ run, vars, url, method, body }) => {
-    const { result } = renderHook(run, { wrapper: h.wrapper });
+    const { result } = renderHook(run as () => MutationLike, { wrapper: h.wrapper });
 
     await result.current.mutateAsync(vars as never);
 
@@ -280,7 +280,7 @@ describe('mutations refresh exactly the views their change affects', () => {
     ['useCancelBooking', () => hooks.useCancelBooking(), { id: BOOKING_ID, reason: 'x' }],
     ['useCompleteBooking', () => hooks.useCompleteBooking(), { id: BOOKING_ID }],
   ])('%s refreshes the list and the booking it changed', async (_name, run, vars) => {
-    const { result } = renderHook(run as () => { mutateAsync: (v: never) => Promise<unknown> }, {
+    const { result } = renderHook(run as () => MutationLike, {
       wrapper: h.wrapper,
     });
 

@@ -15,7 +15,7 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createQueryHarness, type QueryHarness } from '@/__tests__/query-harness';
+import { createQueryHarness, type MutationLike, type QueryHarness } from '@/__tests__/query-harness';
 import * as hooks from './use-payments';
 
 vi.mock('@/lib/api-client', () => ({ apiRequest: vi.fn() }));
@@ -88,7 +88,7 @@ describe('usePayment stays idle until it has an id', () => {
 describe('the payment list is keyed on its filters', () => {
   it('refetches when the method filter changes', async () => {
     const { result, rerender } = renderHook(
-      ({ method }: { method: string }) => hooks.usePayments({ method }),
+      ({ method }: { method: 'UPI' | 'CARD' }) => hooks.usePayments({ method }),
       { wrapper: h.wrapper, initialProps: { method: 'UPI' } },
     );
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
@@ -169,7 +169,7 @@ describe('mutations refresh exactly the views their change affects', () => {
     ['useRefundPayment', () => hooks.useRefundPayment(), { id: PAYMENT_ID, amountInPaise: 500 }],
     ['useCapturePayment', () => hooks.useCapturePayment(), { id: PAYMENT_ID }],
   ])('%s refreshes the list and the payment it changed', async (_name, run, vars) => {
-    const { result } = renderHook(run as () => { mutateAsync: (v: never) => Promise<unknown> }, {
+    const { result } = renderHook(run as () => MutationLike, {
       wrapper: h.wrapper,
     });
 

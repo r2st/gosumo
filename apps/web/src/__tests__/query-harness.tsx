@@ -17,6 +17,25 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { vi } from 'vitest';
 import type { ReactNode } from 'react';
 
+/**
+ * The observer-level options a hook declares — polling and freshness.
+ *
+ * React Query stores these on the cached query but types `query.options` as
+ * `QueryOptions`, which does not name them, so reading either off a cached
+ * query is a type error. They are genuinely there at runtime; this narrows to
+ * the two the hooks in this codebase set, so a test can assert "this view
+ * polls" without an inline cast at every call site.
+ */
+export interface ObserverOptions {
+  refetchInterval?: number;
+  staleTime?: number;
+}
+
+/** A mutation hook, erased to the one method the request assertions call. */
+export interface MutationLike {
+  mutateAsync: (vars: never) => Promise<unknown>;
+}
+
 export interface QueryHarness {
   queryClient: QueryClient;
   wrapper: ({ children }: { children: ReactNode }) => JSX.Element;
@@ -26,6 +45,8 @@ export interface QueryHarness {
   invalidatedKeys: () => unknown[][];
   /** The `[key, value]` pairs a mutation wrote straight into the cache. */
   cacheWrites: () => [unknown, unknown][];
+  /** Polling and freshness options of the first cached query under `queryKey`. */
+  observerOptions: (queryKey: unknown[]) => ObserverOptions | undefined;
 }
 
 /**
@@ -59,5 +80,9 @@ export function createQueryHarness(): QueryHarness {
       invalidateSpy.mock.calls.map((call) => (call[0] as { queryKey: unknown[] }).queryKey),
     cacheWrites: () =>
       setQueryDataSpy.mock.calls.map((call) => [call[0], call[1]] as [unknown, unknown]),
+    observerOptions: (queryKey) => {
+      const [query] = queryClient.getQueryCache().findAll({ queryKey });
+      return query?.options as ObserverOptions | undefined;
+    },
   };
 }

@@ -26,7 +26,7 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createQueryHarness, type QueryHarness } from '@/__tests__/query-harness';
+import { createQueryHarness, type MutationLike, type QueryHarness } from '@/__tests__/query-harness';
 import * as hooks from './use-queries';
 
 vi.mock('@/lib/api-client', () => ({
@@ -200,16 +200,14 @@ describe('the live views poll, because an update nobody refreshes into view is n
     const { result } = renderHook(() => hooks.useMessages(CONV_ID), { wrapper: h.wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    const [query] = h.queryClient.getQueryCache().findAll({ queryKey: ['messages', CONV_ID] });
-    expect(query?.options.refetchInterval).toBe(15_000);
+    expect(h.observerOptions(['messages', CONV_ID])?.refetchInterval).toBe(15_000);
   });
 
   it('refreshes the review queue every 20 seconds', async () => {
     const { result } = renderHook(() => hooks.useHitlTasks(), { wrapper: h.wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    const [query] = h.queryClient.getQueryCache().findAll({ queryKey: ['hitl', 'tasks'] });
-    expect(query?.options.refetchInterval).toBe(20_000);
+    expect(h.observerOptions(['hitl', 'tasks'])?.refetchInterval).toBe(20_000);
   });
 });
 
@@ -309,7 +307,7 @@ describe('mutation hooks call the right endpoint with the caller’s arguments',
       args: [TASK_ID, 'Wrong price quoted'],
     },
   ])('$name', async ({ run, vars, fn, args }) => {
-    const { result } = renderHook(run, { wrapper: h.wrapper });
+    const { result } = renderHook(run as () => MutationLike, { wrapper: h.wrapper });
 
     await result.current.mutateAsync(vars as never);
 
@@ -359,7 +357,7 @@ describe('mutations refresh exactly the views their change affects', () => {
     ['useResolveConversation', () => hooks.useResolveConversation(), { id: CONV_ID }],
     ['useUpdateConversation', () => hooks.useUpdateConversation(), { id: CONV_ID, tags: [] }],
   ])('%s refreshes the inbox and the open conversation', async (_name, run, vars) => {
-    const { result } = renderHook(run as () => { mutateAsync: (v: never) => Promise<unknown> }, {
+    const { result } = renderHook(run as () => MutationLike, {
       wrapper: h.wrapper,
     });
 

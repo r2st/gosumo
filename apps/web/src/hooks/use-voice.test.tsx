@@ -62,8 +62,7 @@ describe('useVoiceCommands', () => {
     const { result } = renderHook(() => hooks.useVoiceCommands(), { wrapper: h.wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    const [query] = h.queryClient.getQueryCache().findAll({ queryKey: COMMANDS_KEY });
-    expect(query?.options.refetchInterval).toBe(60_000);
+    expect(h.observerOptions(COMMANDS_KEY)?.refetchInterval).toBe(60_000);
   });
 
   it('keys the cache on the limit, not just the endpoint', async () => {

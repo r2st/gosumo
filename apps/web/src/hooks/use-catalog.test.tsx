@@ -21,7 +21,7 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createQueryHarness, type QueryHarness } from '@/__tests__/query-harness';
+import { createQueryHarness, type MutationLike, type QueryHarness } from '@/__tests__/query-harness';
 import * as hooks from './use-catalog';
 
 vi.mock('@/lib/api-client', () => ({ apiRequest: vi.fn() }));
@@ -228,7 +228,7 @@ describe('mutations refresh exactly the views their change affects', () => {
     ['useSetAvailability', () => hooks.useSetAvailability(), { id: ITEM_ID, isAvailable: true }],
   ])('%s refreshes the item list only', async (_name, run, vars) => {
     // Neither changes which categories exist or how many items each holds.
-    const { result } = renderHook(run as () => { mutateAsync: (v: never) => Promise<unknown> }, {
+    const { result } = renderHook(run as () => MutationLike, {
       wrapper: h.wrapper,
     });
 
@@ -247,7 +247,7 @@ describe('mutations refresh exactly the views their change affects', () => {
   ])('%s also refreshes categories, whose item counts moved', async (_name, run, vars) => {
     // An edit can reassign an item's category and a delete removes it from one,
     // so the category list's per-category counts are stale either way.
-    const { result } = renderHook(run as () => { mutateAsync: (v: never) => Promise<unknown> }, {
+    const { result } = renderHook(run as () => MutationLike, {
       wrapper: h.wrapper,
     });
 
@@ -265,7 +265,7 @@ describe('mutations refresh exactly the views their change affects', () => {
     ],
     ['useDeleteCategory', () => hooks.useDeleteCategory(), CATEGORY_ID],
   ])('%s refreshes the category list only', async (_name, run, vars) => {
-    const { result } = renderHook(run as () => { mutateAsync: (v: never) => Promise<unknown> }, {
+    const { result } = renderHook(run as () => MutationLike, {
       wrapper: h.wrapper,
     });
 

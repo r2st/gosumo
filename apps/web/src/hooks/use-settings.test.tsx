@@ -21,7 +21,7 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createQueryHarness, type QueryHarness } from '@/__tests__/query-harness';
+import { createQueryHarness, type MutationLike, type QueryHarness } from '@/__tests__/query-harness';
 import * as hooks from './use-settings';
 
 vi.mock('@/lib/api-client', () => ({ apiRequest: vi.fn() }));
@@ -181,7 +181,7 @@ describe('settings mutation hooks call the documented endpoint', () => {
       options: { method: 'POST', body: {} },
     },
   ])('$name → $url', async ({ run, vars, url, options }) => {
-    const { result } = renderHook(run, { wrapper: h.wrapper });
+    const { result } = renderHook(run as () => MutationLike, { wrapper: h.wrapper });
 
     await result.current.mutateAsync(vars as never);
 
@@ -264,7 +264,7 @@ describe('team and channel writes refetch, because their responses are partial',
   ])('%s refreshes the team list', async (_name, run, vars) => {
     // An invite returns the invitation, a removal returns nothing — neither is
     // the list, so the list has to be refetched.
-    const { result } = renderHook(run as () => { mutateAsync: (v: never) => Promise<unknown> }, {
+    const { result } = renderHook(run as () => MutationLike, {
       wrapper: h.wrapper,
     });
 
@@ -282,7 +282,7 @@ describe('team and channel writes refetch, because their responses are partial',
     ],
     ['useDisconnectChannel', () => hooks.useDisconnectChannel(), CHANNEL_ID],
   ])('%s refreshes the channel list', async (_name, run, vars) => {
-    const { result } = renderHook(run as () => { mutateAsync: (v: never) => Promise<unknown> }, {
+    const { result } = renderHook(run as () => MutationLike, {
       wrapper: h.wrapper,
     });
 
@@ -299,7 +299,7 @@ describe('calendar and billing writes touch only what they change', () => {
   ])('%s refreshes the integration status', async (_name, run) => {
     // Both change the "connected / last synced" card, which is the whole
     // integration resource.
-    const { result } = renderHook(run as () => { mutateAsync: (v: never) => Promise<unknown> }, {
+    const { result } = renderHook(run as () => MutationLike, {
       wrapper: h.wrapper,
     });
 
@@ -315,7 +315,7 @@ describe('calendar and billing writes touch only what they change', () => {
     // Both hand back a URL and the browser leaves for Google or the payment
     // gateway. Nothing has changed yet — the state flips on the callback, and
     // refreshing here would just show the same pre-flow status.
-    const { result } = renderHook(run as () => { mutateAsync: (v: never) => Promise<unknown> }, {
+    const { result } = renderHook(run as () => MutationLike, {
       wrapper: h.wrapper,
     });
 

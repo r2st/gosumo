@@ -21,7 +21,7 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createQueryHarness, type QueryHarness } from '@/__tests__/query-harness';
+import { createQueryHarness, type MutationLike, type QueryHarness } from '@/__tests__/query-harness';
 import * as hooks from './use-onboarding';
 
 vi.mock('@/lib/api-client', () => ({ apiRequest: vi.fn() }));
@@ -113,8 +113,7 @@ describe('useOnboardingStatus', () => {
     const { result } = renderHook(() => hooks.useOnboardingStatus(), { wrapper: h.wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    const [query] = h.queryClient.getQueryCache().findAll({ queryKey: STATUS_KEY });
-    expect(query?.options.staleTime).toBe(60_000);
+    expect(h.observerOptions(STATUS_KEY)?.staleTime).toBe(60_000);
   });
 
   it('serves a remount from cache while still fresh', async () => {
@@ -132,8 +131,7 @@ describe('useOnboardingStatus', () => {
     const { result } = renderHook(() => hooks.useOnboardingProgress(), { wrapper: h.wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    const [query] = h.queryClient.getQueryCache().findAll({ queryKey: PROGRESS_KEY });
-    expect(query?.options.staleTime).toBeUndefined();
+    expect(h.observerOptions(PROGRESS_KEY)?.staleTime).toBeUndefined();
   });
 });
 
@@ -201,7 +199,7 @@ describe('step writes seed progress and re-ask the derived status', () => {
     // whether the wizard shows on the next navigation.
     const updated = { completed: true, steps: [{ id: 'CONNECT_CHANNEL', completed: true }] };
     apiRequest.mockResolvedValueOnce(updated);
-    const { result } = renderHook(run as () => { mutateAsync: (v: never) => Promise<unknown> }, {
+    const { result } = renderHook(run as () => MutationLike, {
       wrapper: h.wrapper,
     });
 

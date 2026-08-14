@@ -16,7 +16,7 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createQueryHarness, type QueryHarness } from '@/__tests__/query-harness';
+import { createQueryHarness, type MutationLike, type QueryHarness } from '@/__tests__/query-harness';
 import * as hooks from './use-integrations';
 
 vi.mock('@/lib/api-client', () => ({ apiRequest: vi.fn() }));
@@ -197,7 +197,7 @@ describe('mutations refresh exactly the views their change affects', () => {
   ])('%s refreshes the credential list', async (_name, run, vars) => {
     // Testing a connection looks like a read, but the API stores the outcome —
     // so without this the status badge shows the *previous* test's result.
-    const { result } = renderHook(run as () => { mutateAsync: (v: never) => Promise<unknown> }, {
+    const { result } = renderHook(run as () => MutationLike, {
       wrapper: h.wrapper,
     });
 
@@ -212,7 +212,7 @@ describe('mutations refresh exactly the views their change affects', () => {
   ])('%s refreshes the API key list only', async (_name, run, vars) => {
     // API keys and third-party credentials are unrelated resources on a shared
     // page; refreshing both would re-request secrets nothing asked about.
-    const { result } = renderHook(run as () => { mutateAsync: (v: never) => Promise<unknown> }, {
+    const { result } = renderHook(run as () => MutationLike, {
       wrapper: h.wrapper,
     });
 

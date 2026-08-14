@@ -19,7 +19,7 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createQueryHarness, type QueryHarness } from '@/__tests__/query-harness';
+import { createQueryHarness, type MutationLike, type QueryHarness } from '@/__tests__/query-harness';
 import * as hooks from './use-notifications';
 
 vi.mock('@/lib/api-client', () => ({ apiRequest: vi.fn() }));
@@ -66,8 +66,7 @@ describe('useNotifications', () => {
     const { result } = renderHook(() => hooks.useNotifications(), { wrapper: h.wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    const [query] = h.queryClient.getQueryCache().findAll({ queryKey: KEY });
-    expect(query?.options.refetchInterval).toBe(60_000);
+    expect(h.observerOptions(KEY)?.refetchInterval).toBe(60_000);
   });
 
   it('narrows the response to the two fields the bell renders', async () => {
@@ -183,7 +182,7 @@ describe('marking notifications read', () => {
     // The badge count is server-derived and can exceed the fetched page, so it
     // cannot be recomputed locally from one row's new state. A refetch is the
     // only way to get a count that is right.
-    const { result } = renderHook(run as () => { mutateAsync: (v: never) => Promise<unknown> }, {
+    const { result } = renderHook(run as () => MutationLike, {
       wrapper: h.wrapper,
     });
 

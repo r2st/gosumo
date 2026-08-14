@@ -17,7 +17,7 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createQueryHarness, type QueryHarness } from '@/__tests__/query-harness';
+import { createQueryHarness, type MutationLike, type QueryHarness } from '@/__tests__/query-harness';
 import * as hooks from './use-orders';
 
 vi.mock('@/lib/api-client', () => ({ apiRequest: vi.fn() }));
@@ -221,7 +221,7 @@ describe('every transition refreshes both the list and the open order', () => {
       { id: ORDER_ID, status: 'DELIVERED' },
     ],
   ])('%s', async (_name, run, vars) => {
-    const { result } = renderHook(run as () => { mutateAsync: (v: never) => Promise<unknown> }, {
+    const { result } = renderHook(run as () => MutationLike, {
       wrapper: h.wrapper,
     });
 
