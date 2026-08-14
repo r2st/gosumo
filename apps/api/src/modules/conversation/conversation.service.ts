@@ -171,8 +171,13 @@ export class ConversationService {
   // ─────────────────────────────────────────────
 
   /**
-   * Find an active conversation for the given client + channel account,
-   * or create a new one if none exists.
+   * Find the existing conversation for the given client + channel account,
+   * or create a new one if this client has never written on this channel.
+   *
+   * A RESOLVED thread is returned as-is rather than skipped — there is one
+   * thread per (business, client, channel account), and the caller decides
+   * whether the new activity reopens it (see `handleMessageReceived`).
+   * Creating a second thread instead would split the client's history.
    *
    * Emits `conversation.created` when a new conversation is created.
    */
@@ -180,7 +185,7 @@ export class ConversationService {
     businessId: string,
     dto: { clientId: string; channelAccountId: string; channel: ChannelType },
   ): Promise<conversations> {
-    const existing = await this.repository.findActiveByClientAndChannel(
+    const existing = await this.repository.findLatestByClientAndChannel(
       businessId,
       dto.clientId,
       dto.channelAccountId,
@@ -188,7 +193,7 @@ export class ConversationService {
 
     if (existing) {
       this.logger.debug(
-        `Found active conversation ${existing.id} for client ${dto.clientId} on ${dto.channel}`,
+        `Found ${existing.status} conversation ${existing.id} for client ${dto.clientId} on ${dto.channel}`,
       );
       return existing;
     }
@@ -854,24 +859,26 @@ export class ConversationService {
       // A resolved or snoozed conversation auto-reopens when the client
       // messages again — a reply during a snooze window means the human
       // reason to wait no longer applies, and this is the only reopen path
-      // that fires before the scheduled snooze-wake job is due.
+      // that fires before the scheduled snooze-wake job is due. Reopening
+      // also clears resolved_at, so the SLA resolution clock restarts.
       if (
         conversation.status === ConversationStatus.RESOLVED ||
         conversation.status === ConversationStatus.SNOOZED
       ) {
         const previousStatus = conversation.status as ConversationStatus;
-        await this.repository
-          .updateStatus(event.businessId, conversation.id, ConversationStatus.OPEN)
-          .then(() =>
-            this.emitStatusChanged(
-              event.businessId,
-              conversation.id,
-              conversation.client_id,
-              previousStatus,
-              ConversationStatus.OPEN,
-              RESOLVED_BY.SYSTEM,
-            ),
-          );
+        await this.repository.updateStatus(
+          event.businessId,
+          conversation.id,
+          ConversationStatus.OPEN,
+        );
+        this.emitStatusChanged(
+          event.businessId,
+          conversation.id,
+          conversation.client_id,
+          previousStatus,
+          ConversationStatus.OPEN,
+          RESOLVED_BY.SYSTEM,
+        );
       }
 
       this.logger.debug(

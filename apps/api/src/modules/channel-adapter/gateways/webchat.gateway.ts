@@ -264,13 +264,15 @@ export class WebChatGateway implements OnGatewayConnection, OnGatewayDisconnect 
     clientId: string,
     channelAccountId: string,
   ) {
-    // Find an active (non-resolved) conversation for this client on this channel
+    // Reuse this visitor's existing thread whatever its status — a RESOLVED one
+    // is reopened by the conversation module when message.received lands, so
+    // filtering it out here would fork the visitor's history into a duplicate.
     const existing = await this.prisma.conversations.findFirst({
       where: {
         business_id: businessId,
         client_id: clientId,
         channel_account_id: channelAccountId,
-        status: { not: "RESOLVED" },
+        deleted_at: null,
       },
       orderBy: { created_at: "desc" },
     });

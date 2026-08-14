@@ -116,10 +116,16 @@ export class ConversationRepository {
   }
 
   /**
-   * Find an active (non-RESOLVED, non-deleted) conversation for a given
-   * client and channel account within a business.
+   * Find the conversation a new inbound message from this client on this
+   * channel account belongs to — the most recently active non-deleted thread,
+   * whatever its status.
+   *
+   * RESOLVED is deliberately *not* filtered out: there is one thread per
+   * (business, client, channel account), and a resolved one is reopened when
+   * the client writes again rather than being shadowed by a duplicate. Ordering
+   * by last_message_at picks the newest thread when duplicates already exist.
    */
-  async findActiveByClientAndChannel(
+  async findLatestByClientAndChannel(
     businessId: string,
     clientId: string,
     channelAccountId: string,
@@ -129,9 +135,9 @@ export class ConversationRepository {
         business_id: businessId,
         client_id: clientId,
         channel_account_id: channelAccountId,
-        status: { not: ConversationStatus.RESOLVED },
         deleted_at: null,
       },
+      orderBy: [{ last_message_at: 'desc' }, { created_at: 'desc' }],
       include: CONVERSATION_INCLUDE,
     });
   }

@@ -68,7 +68,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
   let service: ConversationService;
   let repository: {
     findById: jest.Mock;
-    findActiveByClientAndChannel: jest.Mock;
+    findLatestByClientAndChannel: jest.Mock;
     create: jest.Mock;
     updateStatus: jest.Mock;
     update: jest.Mock;
@@ -94,7 +94,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
   beforeEach(async () => {
     repository = {
       findById: jest.fn(),
-      findActiveByClientAndChannel: jest.fn(),
+      findLatestByClientAndChannel: jest.fn(),
       create: jest.fn(),
       updateStatus: jest.fn(),
       update: jest.fn(),
@@ -372,7 +372,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
 
   describe('handleMessageReceived', () => {
     it('swallows a repository failure instead of rejecting into the event bus', async () => {
-      repository.findActiveByClientAndChannel.mockRejectedValue(
+      repository.findLatestByClientAndChannel.mockRejectedValue(
         new Error('connection reset'),
       );
 
@@ -385,7 +385,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
     });
 
     it('logs the offending message id so a failure is traceable', async () => {
-      repository.findActiveByClientAndChannel.mockRejectedValue(
+      repository.findLatestByClientAndChannel.mockRejectedValue(
         new Error('boom'),
       );
 
@@ -397,7 +397,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
     });
 
     it('stringifies a non-Error rejection', async () => {
-      repository.findActiveByClientAndChannel.mockRejectedValue('string failure');
+      repository.findLatestByClientAndChannel.mockRejectedValue('string failure');
 
       await service.handleMessageReceived(messageReceived());
 

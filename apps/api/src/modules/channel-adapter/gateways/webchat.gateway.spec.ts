@@ -232,7 +232,7 @@ describe('WebChatGateway', () => {
       expect(prisma.clients.create).toHaveBeenCalled();
     });
 
-    it('looks for an active conversation, excluding RESOLVED ones', async () => {
+    it('reuses the visitor thread whatever its status, so a RESOLVED one is not duplicated', async () => {
       prisma.channel_accounts.findFirst.mockResolvedValue({
         id: WIDGET_ID,
         business_id: BUSINESS_ID,
@@ -250,7 +250,7 @@ describe('WebChatGateway', () => {
           business_id: BUSINESS_ID,
           client_id: CLIENT_ID,
           channel_account_id: WIDGET_ID,
-          status: { not: 'RESOLVED' },
+          deleted_at: null,
         },
         orderBy: { created_at: 'desc' },
       });

@@ -71,7 +71,7 @@ describe('hot-path index contract', () => {
     });
 
     it('resolves the active conversation for an inbound message', () => {
-      // findActiveByClientAndChannel runs once per inbound message.
+      // findLatestByClientAndChannel runs once per inbound message.
       expect(hasIndex('conversations', ['business_id', 'client_id'])).toBe(true);
     });
 

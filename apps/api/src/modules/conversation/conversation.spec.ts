@@ -97,7 +97,7 @@ function makeConversation(overrides: Record<string, unknown> = {}): Record<strin
 function createMockRepository() {
   return {
     findById: jest.fn(),
-    findActiveByClientAndChannel: jest.fn(),
+    findLatestByClientAndChannel: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
     updateStatus: jest.fn(),
@@ -165,12 +165,12 @@ describe('ConversationService', () => {
 
     it('should return existing conversation when one is active', async () => {
       const existing = makeConversation();
-      repository.findActiveByClientAndChannel.mockResolvedValue(existing);
+      repository.findLatestByClientAndChannel.mockResolvedValue(existing);
 
       const result = await service.findOrCreate(BUSINESS_ID, dto);
 
       expect(result).toEqual(existing);
-      expect(repository.findActiveByClientAndChannel).toHaveBeenCalledWith(
+      expect(repository.findLatestByClientAndChannel).toHaveBeenCalledWith(
         BUSINESS_ID,
         CLIENT_ID,
         CHANNEL_ACCOUNT_ID,
@@ -181,7 +181,7 @@ describe('ConversationService', () => {
 
     it('should create new conversation when none exists and emit conversation.created', async () => {
       const created = makeConversation();
-      repository.findActiveByClientAndChannel.mockResolvedValue(null);
+      repository.findLatestByClientAndChannel.mockResolvedValue(null);
       repository.create.mockResolvedValue(created);
 
       const result = await service.findOrCreate(BUSINESS_ID, dto);
@@ -206,20 +206,28 @@ describe('ConversationService', () => {
       );
     });
 
-    it('should create new conversation when existing is RESOLVED', async () => {
-      // findActiveByClientAndChannel filters out RESOLVED, so it returns null
-      const created = makeConversation();
-      repository.findActiveByClientAndChannel.mockResolvedValue(null);
-      repository.create.mockResolvedValue(created);
+    it('should reuse — never duplicate — a RESOLVED conversation', async () => {
+      const resolved = makeConversation({
+        status: ConversationStatus.RESOLVED,
+        resolved_at: new Date('2026-06-20T11:00:00Z'),
+      });
+      repository.findLatestByClientAndChannel.mockResolvedValue(resolved);
 
       const result = await service.findOrCreate(BUSINESS_ID, dto);
 
-      expect(result).toEqual(created);
-      expect(repository.create).toHaveBeenCalled();
-      expect(eventEmitter.emit).toHaveBeenCalledWith(
-        'conversation.created',
-        expect.objectContaining({ type: 'conversation.created' }),
-      );
+      expect(result).toEqual(resolved);
+      expect(repository.create).not.toHaveBeenCalled();
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
+    });
+
+    it('should reuse a SNOOZED conversation too', async () => {
+      const snoozed = makeConversation({ status: ConversationStatus.SNOOZED });
+      repository.findLatestByClientAndChannel.mockResolvedValue(snoozed);
+
+      const result = await service.findOrCreate(BUSINESS_ID, dto);
+
+      expect(result).toEqual(snoozed);
+      expect(repository.create).not.toHaveBeenCalled();
     });
   });
 
@@ -551,7 +559,7 @@ describe('ConversationService', () => {
   describe('handleMessageReceived', () => {
     it('should find or create conversation and update last_message_at', async () => {
       const conversation = makeConversation();
-      repository.findActiveByClientAndChannel.mockResolvedValue(conversation);
+      repository.findLatestByClientAndChannel.mockResolvedValue(conversation);
       repository.updateLastMessageAt.mockResolvedValue(conversation);
 
       const event: MessageReceivedEvent = {
@@ -570,7 +578,7 @@ describe('ConversationService', () => {
 
       await service.handleMessageReceived(event);
 
-      expect(repository.findActiveByClientAndChannel).toHaveBeenCalledWith(
+      expect(repository.findLatestByClientAndChannel).toHaveBeenCalledWith(
         BUSINESS_ID,
         CLIENT_ID,
         CHANNEL_ACCOUNT_ID,
@@ -599,7 +607,7 @@ describe('ConversationService', () => {
 
       await service.handleMessageReceived(event);
 
-      expect(repository.findActiveByClientAndChannel).not.toHaveBeenCalled();
+      expect(repository.findLatestByClientAndChannel).not.toHaveBeenCalled();
       expect(repository.updateLastMessageAt).not.toHaveBeenCalled();
     });
 
@@ -608,7 +616,7 @@ describe('ConversationService', () => {
         status: ConversationStatus.SNOOZED,
         snoozed_until: new Date(Date.now() + 3_600_000),
       });
-      repository.findActiveByClientAndChannel.mockResolvedValue(snoozed);
+      repository.findLatestByClientAndChannel.mockResolvedValue(snoozed);
       repository.updateLastMessageAt.mockResolvedValue(snoozed);
       repository.updateStatus.mockResolvedValue(
         makeConversation({ status: ConversationStatus.OPEN }),

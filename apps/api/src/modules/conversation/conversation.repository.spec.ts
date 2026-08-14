@@ -69,16 +69,24 @@ describe('ConversationRepository', () => {
     });
   });
 
-  it('treats anything not RESOLVED as an active thread for a client', async () => {
-    await repository.findActiveByClientAndChannel(BUSINESS_ID, CLIENT_ID, 'acc_1');
+  it('resolves a client thread by status-blind lookup, so a RESOLVED one is reused', async () => {
+    await repository.findLatestByClientAndChannel(BUSINESS_ID, CLIENT_ID, 'acc_1');
 
     expect(prisma.conversations.findFirst.mock.calls[0]![0].where).toEqual({
       business_id: BUSINESS_ID,
       client_id: CLIENT_ID,
       channel_account_id: 'acc_1',
-      status: { not: ConversationStatus.RESOLVED },
       deleted_at: null,
     });
+  });
+
+  it('picks the most recently active thread when duplicates already exist', async () => {
+    await repository.findLatestByClientAndChannel(BUSINESS_ID, CLIENT_ID, 'acc_1');
+
+    expect(prisma.conversations.findFirst.mock.calls[0]![0].orderBy).toEqual([
+      { last_message_at: 'desc' },
+      { created_at: 'desc' },
+    ]);
   });
 
   it('creates an OPEN conversation with zeroed counters', async () => {

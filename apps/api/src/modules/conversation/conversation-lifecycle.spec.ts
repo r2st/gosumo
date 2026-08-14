@@ -73,7 +73,7 @@ function makeConversation(
 function createMockRepository() {
   return {
     findById: jest.fn(),
-    findActiveByClientAndChannel: jest.fn(),
+    findLatestByClientAndChannel: jest.fn(),
     create: jest.fn(),
     updateStatus: jest.fn(),
     update: jest.fn(),
