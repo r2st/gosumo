@@ -60,3 +60,42 @@ describe('MorningBriefing', () => {
     expect(screen.getByText(/1 draft to review/i)).toBeInTheDocument();
   });
 });
+
+/**
+ * The briefing is the first thing an agent sees each morning, so the two
+ * degenerate shapes matter: a bucket with nothing in it, and a lead the
+ * ingestion never captured a name for (a missed call, a portal row with only a
+ * phone). Both are ordinary, and neither should render a blank line.
+ */
+describe('MorningBriefing degenerate rows', () => {
+  it('says so when a bucket is empty rather than rendering an empty list', () => {
+    useMorningBriefing.mockReturnValue({
+      data: makeBriefing({ hotLeads: [], visitsToday: [], followupsDue: [] }),
+      isLoading: false,
+      isError: false,
+    });
+    render(<MorningBriefing />);
+
+    expect(screen.getAllByText('Nothing yet')).toHaveLength(3);
+    // The headings stay — an agent should see that the bucket exists and is
+    // clear, not that the section vanished.
+    expect(screen.getByText('Hot leads')).toBeInTheDocument();
+  });
+
+  it('labels a nameless lead rather than leaving the link blank', () => {
+    useMorningBriefing.mockReturnValue({
+      data: makeBriefing({
+        hotLeads: [{ leadId: 'l9', name: null, detail: '2BHK · Hinjewadi' }],
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    render(<MorningBriefing />);
+
+    expect(screen.getByText('Unknown buyer')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Hinjewadi/ })).toHaveAttribute(
+      'href',
+      '/leads?lead=l9',
+    );
+  });
+});

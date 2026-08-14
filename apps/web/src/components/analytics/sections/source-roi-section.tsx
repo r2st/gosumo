@@ -132,12 +132,18 @@ export function SourceRoiSection({ range }: { range: DateRange }) {
   // Best source: lowest cost per qualified lead among sources that actually
   // produced qualified leads; ties broken by the larger qualified volume.
   const best = useMemo(() => {
-    const eligible = rows.filter((r) => r.costPerQualifiedPaise != null);
+    // The predicate narrows the type, so the reducer can compare the costs
+    // directly. The `?? Infinity` guards it used to carry could never fire —
+    // every row here has already been filtered to a non-null cost — and read
+    // as though a null were possible mid-comparison.
+    const eligible = rows.filter(
+      (r): r is SourceRow & { costPerQualifiedPaise: number } => r.costPerQualifiedPaise != null,
+    );
     if (eligible.length === 0) return null;
     return eligible.reduce((a, b) => {
-      const ca = a.costPerQualifiedPaise ?? Infinity;
-      const cb = b.costPerQualifiedPaise ?? Infinity;
-      if (cb !== ca) return cb < ca ? b : a;
+      if (b.costPerQualifiedPaise !== a.costPerQualifiedPaise) {
+        return b.costPerQualifiedPaise < a.costPerQualifiedPaise ? b : a;
+      }
       return b.qualified > a.qualified ? b : a;
     });
   }, [rows]);

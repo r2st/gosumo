@@ -489,3 +489,44 @@ describe('OnboardingGate', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 });
+
+/**
+ * Two paths that only run once a save has actually resolved, plus the case
+ * where the progress payload and the step order disagree.
+ */
+describe('OnboardingWizard skip and desynced progress', () => {
+  it('advances to the next step once the skip has saved', () => {
+    // The existing Skip test asserts the PUT and stops there, so the
+    // `target && setActiveStep(target)` continuation never ran — a Skip that
+    // recorded the status but left the operator on the same step would pass.
+    state.progress.data = makeProgress({ currentStep: 'CATALOG' });
+    render(<OnboardingWizard open onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Skip' }));
+    expect(screen.getByText('Step 3 of 6')).toBeInTheDocument();
+
+    resolveSave();
+    expect(screen.getByText('Step 4 of 6')).toBeInTheDocument();
+  });
+
+  it('navigates from a step the progress payload does not describe', () => {
+    // A step added server-side before the tenant's rows are backfilled leaves
+    // `steps` without an entry for the active step. Every read of it is
+    // optional-chained; the status written on navigation falls back to
+    // 'pending' rather than crashing or inventing a completion.
+    state.progress.data = makeProgress({
+      currentStep: 'CATALOG',
+      steps: ORDER.filter((id) => id !== 'CATALOG').map((id) => step(id)),
+    });
+    render(<OnboardingWizard open onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Back/ }));
+
+    expect(updateStep).toHaveBeenCalledWith(
+      { step: 'CATALOG', status: 'pending', data: {} },
+      expect.anything(),
+    );
+    resolveSave();
+    expect(screen.getByText('Step 2 of 6')).toBeInTheDocument();
+  });
+});

@@ -219,3 +219,41 @@ describe('LeadDetailPage', () => {
     expect(screen.getByText('Loading lead…')).toBeInTheDocument();
   });
 });
+
+/**
+ * A lead ingested from a missed call or an IVR drop-off has a phone and
+ * nothing else — no name at all. The header renders it in three places (the
+ * avatar initials, the heading, and the document flow around them), each
+ * through the same `?? 'Unknown buyer'`. An opted-out lead is the other shape
+ * worth pinning: the badge is the operator's only warning not to message.
+ */
+describe('LeadDetailPage on a bare lead record', () => {
+  it('labels a lead with no name and flags an opt-out', () => {
+    useLead.mockReturnValue({
+      data: makeLead({ name: null, optOut: true }),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    render(<LeadDetailPage />);
+
+    // Heading and avatar both fall back rather than rendering empty.
+    expect(screen.getByRole('heading', { name: 'Unknown buyer' })).toBeInTheDocument();
+    expect(screen.getAllByText('Unknown buyer').length).toBeGreaterThan(0);
+    expect(screen.getByText('Opted out')).toBeInTheDocument();
+  });
+
+  it('shows no opt-out badge on a contactable lead', () => {
+    useLead.mockReturnValue({
+      data: makeLead({ optOut: false }),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    render(<LeadDetailPage />);
+
+    expect(screen.queryByText('Opted out')).toBeNull();
+  });
+});
