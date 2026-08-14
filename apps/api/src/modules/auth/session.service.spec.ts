@@ -121,6 +121,43 @@ describe('SessionService', () => {
         service.verifyRefreshToken('user-1', 'sess-1', 'refresh-token'),
       ).resolves.toBe(false);
     });
+
+    /**
+     * `crypto.timingSafeEqual` throws a RangeError on buffers of different
+     * lengths rather than returning false. Without the guard in front of it, a
+     * stored hash of the wrong width turns every refresh into a 500 — and the
+     * comparison that is supposed to be constant-time becomes an exception the
+     * caller can time instead.
+     */
+    it('returns false rather than throwing on a truncated stored hash', async () => {
+      redis.get.mockResolvedValue(
+        JSON.stringify(makeStored({ refreshTokenHash: sha256('refresh-token').slice(0, 16) })),
+      );
+
+      await expect(
+        service.verifyRefreshToken('user-1', 'sess-1', 'refresh-token'),
+      ).resolves.toBe(false);
+    });
+
+    it('returns false rather than throwing on an over-long stored hash', async () => {
+      redis.get.mockResolvedValue(
+        JSON.stringify({ ...makeStored(), refreshTokenHash: sha256('refresh-token') + 'abcd' }),
+      );
+
+      await expect(
+        service.verifyRefreshToken('user-1', 'sess-1', 'refresh-token'),
+      ).resolves.toBe(false);
+    });
+
+    it('returns false rather than throwing on a non-hex stored hash', async () => {
+      // Buffer.from(_, 'hex') stops at the first invalid pair, so garbage in
+      // Redis becomes a short buffer — the same guard has to catch it.
+      redis.get.mockResolvedValue(JSON.stringify(makeStored({ refreshTokenHash: 'not-hex!!' })));
+
+      await expect(
+        service.verifyRefreshToken('user-1', 'sess-1', 'refresh-token'),
+      ).resolves.toBe(false);
+    });
   });
 
   describe('rotateRefreshToken', () => {
@@ -131,6 +168,46 @@ describe('SessionService', () => {
 
       const stored = JSON.parse(redis.set.mock.calls[0][1] as string) as StoredSession;
       expect(stored.refreshTokenHash).toBe(sha256('new-token'));
+    });
+
+    it('does nothing when the session has already expired', async () => {
+      // A session that aged out of Redis between the token check and the
+      // rotation must not be written back — that would resurrect a revoked
+      // session with a fresh TTL and a valid new token.
+      redis.get.mockResolvedValue(null);
+
+      await service.rotateRefreshToken('user-1', 'sess-1', 'new-token');
+
+      expect(redis.set).not.toHaveBeenCalled();
+      expect(redis.expire).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('touch', () => {
+    it('refreshes lastUsedAt and the key TTL', async () => {
+      redis.get.mockResolvedValue(JSON.stringify(makeStored({ lastUsedAt: '2020-01-01T00:00:00.000Z' })));
+
+      await service.touch('user-1', 'sess-1');
+
+      const stored = JSON.parse(redis.set.mock.calls[0][1] as string) as StoredSession;
+      expect(stored.lastUsedAt).not.toBe('2020-01-01T00:00:00.000Z');
+      expect(redis.set).toHaveBeenCalledWith(
+        'gosumo:session:user-1:sess-1',
+        expect.any(String),
+        'EX',
+        expect.any(Number),
+      );
+    });
+
+    it('does nothing when the session is gone', async () => {
+      // touch() runs on the request path for every authenticated call, so a
+      // session that expired mid-flight must be a no-op rather than a write
+      // that recreates it.
+      redis.get.mockResolvedValue(null);
+
+      await service.touch('user-1', 'sess-1');
+
+      expect(redis.set).not.toHaveBeenCalled();
     });
   });
 

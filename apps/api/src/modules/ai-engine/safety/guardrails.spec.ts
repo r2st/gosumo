@@ -1,4 +1,5 @@
 import { GuardrailsService } from './guardrails.service';
+import { PII_PATTERNS } from '../ai-engine.constants';
 
 describe('GuardrailsService', () => {
   let service: GuardrailsService;
@@ -75,12 +76,39 @@ describe('GuardrailsService', () => {
     it('does not flag an ordinary complaint', () => {
       expect(service.detectLegalThreat('the service was a bit slow today')).toBe(false);
     });
+
+    it('does not flag empty text', () => {
+      expect(service.detectLegalThreat('')).toBe(false);
+    });
   });
 
   describe('detectHumanRequest', () => {
     it('flags an explicit request for a human', () => {
       expect(service.detectHumanRequest('I want to talk to a human')).toBe(true);
       expect(service.detectHumanRequest('manager se baat karni hai')).toBe(true);
+    });
+
+    it('does not flag an ordinary message', () => {
+      expect(service.detectHumanRequest('what time do you open tomorrow')).toBe(false);
+    });
+
+    it('does not flag empty text', () => {
+      expect(service.detectHumanRequest('')).toBe(false);
+    });
+  });
+
+  /**
+   * Every detector takes the same short-circuit on empty text. A non-text
+   * message (image, location, sticker) arrives here with an empty body on the
+   * ordinary path, so this is a routine input, not an edge case — and a regex
+   * bank that matched the empty string would escalate every photo.
+   */
+  describe('empty input', () => {
+    it('is inert across all detectors', () => {
+      expect(service.detectJailbreak('')).toBe(false);
+      expect(service.detectLegalThreat('')).toBe(false);
+      expect(service.detectHumanRequest('')).toBe(false);
+      expect(service.detectAndRedactPii('').hasPii).toBe(false);
     });
   });
 
@@ -109,6 +137,45 @@ describe('GuardrailsService', () => {
       expect(result.hasPii).toBe(false);
       expect(result.redactedText).toBe('I would like to book a haircut');
     });
+
+    it('handles empty text without scanning', () => {
+      // A message with no text body (an image, a location) reaches this on the
+      // same path as any other; it must not be treated as clean-by-accident.
+      expect(service.detectAndRedactPii('')).toEqual({
+        hasPii: false,
+        detected: [],
+        redactedText: '',
+      });
+    });
+
+    it('redacts every occurrence, not just the first', () => {
+      // The global clone exists for exactly this: `replace` with a non-global
+      // pattern would leave the second card in the text.
+      const result = service.detectAndRedactPii(
+        'old card 4111 1111 1111 1111 new card 5500 0000 0000 0004',
+      );
+      expect(result.redactedText).not.toMatch(/\d{4} \d{4} \d{4} \d{4}/);
+    });
+
+    /**
+     * `pattern.test()` on a `g`-flagged regex is stateful — it advances
+     * `lastIndex` and returns false on the next call — so a global pattern in
+     * the bank would make detection alternate between working and not across
+     * consecutive messages. The service clones each pattern before replacing
+     * precisely to avoid that; this pins the assumption the clone relies on.
+     */
+    it('keeps the source patterns non-global so detection stays stateless', () => {
+      for (const { type, pattern } of PII_PATTERNS) {
+        expect([type, pattern.flags.includes('g')]).toEqual([type, false]);
+      }
+    });
+
+    it('detects the same PII twice in a row', () => {
+      // The observable form of the invariant above.
+      const text = 'PAN: ABCDE1234F';
+      expect(service.detectAndRedactPii(text).hasPii).toBe(true);
+      expect(service.detectAndRedactPii(text).hasPii).toBe(true);
+    });
   });
 
   describe('detectLoop', () => {
@@ -126,6 +193,26 @@ describe('GuardrailsService', () => {
 
     it('does not flag with fewer than 3 turns', () => {
       expect(service.detectLoop(['REFUND', 'REFUND'], false)).toBe(false);
+    });
+
+    it('does not flag a run of unclassified turns', () => {
+      // Three turns the classifier could not label are not a loop — they are
+      // three unknowns. Escalating them as "stuck on the same intent" would
+      // mean every unparseable burst trips the loop override.
+      expect(service.detectLoop(['', '', ''], false)).toBe(false);
+    });
+
+    it('only considers the most recent window', () => {
+      // An older stretch of repetition that has since moved on must not count.
+      expect(
+        service.detectLoop(['REFUND', 'REFUND', 'REFUND', 'PRICING'], false),
+      ).toBe(false);
+    });
+
+    it('flags a repeat that begins mid-history', () => {
+      expect(
+        service.detectLoop(['PRICING', 'REFUND', 'REFUND', 'REFUND'], false),
+      ).toBe(true);
     });
   });
 
