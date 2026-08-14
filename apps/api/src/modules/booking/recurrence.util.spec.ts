@@ -136,4 +136,94 @@ describe('recurrence.util', () => {
       expect(occ.length).toBeLessThanOrEqual(MAX_OCCURRENCES);
     });
   });
+
+  // ─────────────────────────────────────────────
+  // Rejections the validator owes callers
+  //
+  // Each of these would otherwise reach expansion and produce a series that is
+  // empty, infinite, or silently wrong — a booking bug the customer sees before
+  // anyone else does.
+  // ─────────────────────────────────────────────
+
+  describe('validateRecurrenceRule — malformed bounds', () => {
+    it('rejects a fractional count', () => {
+      expect(() =>
+        validateRecurrenceRule({
+          frequency: RecurrenceFrequency.DAILY,
+          count: 2.5,
+        }),
+      ).toThrow(/count must be a positive integer/);
+    });
+
+    it('rejects a zero count', () => {
+      // Bounded, but by nothing — expansion would return an empty series and
+      // the caller would create a recurring booking with no appointments.
+      expect(() =>
+        validateRecurrenceRule({
+          frequency: RecurrenceFrequency.DAILY,
+          count: 0,
+        }),
+      ).toThrow(/count must be a positive integer/);
+    });
+
+    it('rejects an unparseable until', () => {
+      expect(() =>
+        validateRecurrenceRule({
+          frequency: RecurrenceFrequency.DAILY,
+          until: 'next tuesday',
+        }),
+      ).toThrow(/valid ISO-8601 date/);
+    });
+
+    it('rejects a frequency outside the enum', () => {
+      // Reachable from persisted rows and API payloads: the column is text, so
+      // a rule written by an older build can name a frequency this one dropped.
+      expect(() =>
+        validateRecurrenceRule({
+          frequency: 'FORTNIGHTLY' as RecurrenceFrequency,
+          count: 3,
+        }),
+      ).toThrow(/Unsupported recurrence frequency: FORTNIGHTLY/);
+    });
+
+    it('rejects a weekday outside 0-6', () => {
+      expect(() =>
+        validateRecurrenceRule({
+          frequency: RecurrenceFrequency.WEEKLY,
+          count: 3,
+          byWeekday: [1, 7],
+        }),
+      ).toThrow(/byWeekday entries must be 0-6/);
+    });
+  });
+
+  describe('expandRecurrence — WEEKLY byWeekday bounded by until', () => {
+    it('stops mid-week at the until instant', () => {
+      // Anchor is Saturday 27 Jun 2026, 09:00 IST. Mon/Wed/Fri thereafter,
+      // cut off partway through the second week.
+      const rule: RecurrenceRule = {
+        frequency: RecurrenceFrequency.WEEKLY,
+        byWeekday: [1, 3, 5],
+        until: '2026-07-08T23:59:00Z',
+      };
+
+      const occ = expandRecurrence(rule, anchor, 30, IST_TIMEZONE);
+      const days = occ.map((o) => utcToZonedParts(o.startAt, IST_TIMEZONE));
+
+      expect(occ.length).toBeGreaterThan(0);
+      // Nothing past the bound, and the series ends because of `until` rather
+      // than the MAX_OCCURRENCES safety cap.
+      expect(occ.length).toBeLessThan(MAX_OCCURRENCES);
+      for (const o of occ) {
+        expect(o.startAt.getTime()).toBeLessThanOrEqual(Date.parse(rule.until!));
+      }
+      // Only the requested weekdays, and the local time-of-day is preserved.
+      for (const d of days) {
+        expect([1, 3, 5]).toContain(
+          new Date(Date.UTC(d.year, d.month - 1, d.day)).getUTCDay(),
+        );
+        expect(d.hour).toBe(9);
+      }
+    });
+  });
 });

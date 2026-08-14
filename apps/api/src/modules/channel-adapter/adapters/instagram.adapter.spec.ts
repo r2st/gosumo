@@ -65,4 +65,207 @@ describe("InstagramAdapter", () => {
       expect(result.content.text).toBe("Hello from Instagram");
     }
   });
+
+  // ─────────────────────────────────────────────
+  // Payload shapes Meta actually delivers alongside real messages.
+  //
+  // Instagram batches events, and a batch routinely carries entries the adapter
+  // must ignore rather than fail on: echoes of our own sends, read/delivery
+  // receipts, and entries with no `messaging` array at all. Getting these wrong
+  // is not a parse error — it is the AI replying to itself, or a whole batch
+  // being dropped because one member of it was unparseable.
+  // ─────────────────────────────────────────────
+
+  /** Wrap messaging events in the envelope Meta posts. */
+  const webhook = (
+    messaging: unknown[] | undefined,
+    object = "instagram",
+  ): RawRequest =>
+    ({
+      headers: {},
+      body: {
+        object,
+        entry: [
+          messaging === undefined
+            ? { id: "page123", time: 1 }
+            : { id: "page123", time: 1, messaging },
+        ],
+      },
+    }) as RawRequest;
+
+  const textEvent = (text: string, mid = "mid.1"): Record<string, unknown> => ({
+    sender: { id: "user456" },
+    recipient: { id: "page123" },
+    timestamp: 1,
+    message: { mid, text },
+  });
+
+  describe("parseInbound — events that carry no inbound message", () => {
+    it("skips an echo of our own outbound message", () => {
+      const req = webhook([
+        {
+          sender: { id: "page123" },
+          recipient: { id: "user456" },
+          timestamp: 1,
+          message: { mid: "mid.echo", text: "our reply", is_echo: true },
+        },
+        textEvent("the real inbound"),
+      ]);
+
+      // Parsing the echo would feed the AI its own words as a customer turn.
+      const result = adapter.parseInbound(req);
+      expect(result.externalId).toBe("mid.1");
+    });
+
+    it("skips a read receipt and parses the message after it", () => {
+      const req = webhook([
+        {
+          sender: { id: "user456" },
+          recipient: { id: "page123" },
+          timestamp: 1,
+          read: { mid: "mid.read" },
+        },
+        textEvent("after the receipt"),
+      ]);
+
+      const result = adapter.parseInbound(req);
+      expect(result.content).toMatchObject({ text: "after the receipt" });
+    });
+
+    it("throws when an entry has no messaging array at all", () => {
+      expect(() => adapter.parseInbound(webhook(undefined))).toThrow(
+        /no parseable inbound message/,
+      );
+    });
+
+    it("throws when every event in the batch is an echo", () => {
+      const req = webhook([
+        {
+          sender: { id: "page123" },
+          recipient: { id: "user456" },
+          timestamp: 1,
+          message: { mid: "mid.echo", text: "ours", is_echo: true },
+        },
+      ]);
+
+      expect(() => adapter.parseInbound(req)).toThrow(
+        /no parseable inbound message/,
+      );
+    });
+  });
+
+  describe("parseInboundAll", () => {
+    it("returns every inbound message in a batch", () => {
+      const req = webhook([textEvent("first", "mid.a"), textEvent("second", "mid.b")]);
+
+      expect(adapter.parseInboundAll(req).map((m) => m.externalId)).toEqual([
+        "mid.a",
+        "mid.b",
+      ]);
+    });
+
+    it("returns an empty array for a non-instagram payload", () => {
+      expect(adapter.parseInboundAll(webhook([textEvent("hi")], "page"))).toEqual([]);
+    });
+
+    it("drops echoes and receipts but keeps the real messages", () => {
+      const req = webhook([
+        {
+          sender: { id: "page123" },
+          recipient: { id: "user456" },
+          timestamp: 1,
+          message: { mid: "mid.echo", text: "ours", is_echo: true },
+        },
+        { sender: { id: "user456" }, recipient: { id: "page123" }, timestamp: 1 },
+        textEvent("keep me", "mid.keep"),
+      ]);
+
+      const result = adapter.parseInboundAll(req);
+      expect(result).toHaveLength(1);
+      expect(result[0]!.externalId).toBe("mid.keep");
+    });
+
+    it("skips an entry with no messaging array without dropping the batch", () => {
+      const req = {
+        headers: {},
+        body: {
+          object: "instagram",
+          entry: [
+            { id: "page123", time: 1 },
+            { id: "page123", time: 1, messaging: [textEvent("survivor", "mid.s")] },
+          ],
+        },
+      } as RawRequest;
+
+      // One malformed entry must not cost us the messages in the others.
+      expect(adapter.parseInboundAll(req).map((m) => m.externalId)).toEqual([
+        "mid.s",
+      ]);
+    });
+  });
+
+  describe("quick replies", () => {
+    it("represents a quick-reply tap as interactive content", () => {
+      const req = webhook([
+        {
+          sender: { id: "user456" },
+          recipient: { id: "page123" },
+          timestamp: 1,
+          message: {
+            mid: "mid.qr",
+            text: "Book a visit",
+            quick_reply: { payload: "BOOK_VISIT" },
+          },
+        },
+      ]);
+
+      expect(adapter.parseInbound(req).content).toMatchObject({
+        type: MessageContentType.INTERACTIVE,
+        interactiveType: "quick_reply",
+        payload: { id: "BOOK_VISIT", title: "Book a visit" },
+      });
+    });
+
+    it("tolerates a quick reply that carries no visible text", () => {
+      // Ice-breaker taps arrive with a payload and no `text`; a missing title
+      // must not become the string "undefined" in the conversation log.
+      const req = webhook([
+        {
+          sender: { id: "user456" },
+          recipient: { id: "page123" },
+          timestamp: 1,
+          message: { mid: "mid.qr2", quick_reply: { payload: "PRICING" } },
+        },
+      ]);
+
+      expect(adapter.parseInbound(req).content).toMatchObject({
+        payload: { id: "PRICING", title: "" },
+      });
+    });
+  });
+
+  describe("sendMessage — unsupported content", () => {
+    it("reports a content type the channel cannot express as a failed send", async () => {
+      // The exhaustive-switch guard throws, but `sendWithRetry` converts it to
+      // a failed SendResult so the caller's `message.failed` flow runs instead
+      // of an exception escaping into the outbound worker.
+      const result = await adapter.sendMessage({
+        recipientExternalId: "user456",
+        content: { type: "HOLOGRAM" },
+      } as never);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/cannot send content of type "HOLOGRAM"/);
+    });
+
+    it("reports a location send as unsupported rather than throwing", async () => {
+      const result = await adapter.sendMessage({
+        recipientExternalId: "user456",
+        content: { type: MessageContentType.LOCATION, latitude: 1, longitude: 2 },
+      } as never);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/does not support sending location/);
+    });
+  });
 });
