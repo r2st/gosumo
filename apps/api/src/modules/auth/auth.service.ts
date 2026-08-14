@@ -27,7 +27,24 @@ import { GoogleProfile } from './strategies/google.strategy';
 const ACCESS_TOKEN_TTL = '15m';
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 const REFRESH_TOKEN_TTL = '7d';
-const BCRYPT_COST = 12;
+/**
+ * bcrypt work factor. 12 is the production cost and is deliberately *not*
+ * configurable — a mis-set environment variable must never be able to weaken
+ * stored password hashes.
+ *
+ * Under `NODE_ENV=test` the cost drops to 4. A single cost-12 hash burns ~265ms
+ * of CPU, and because bcryptjs is pure JS it blocks the worker's event loop for
+ * that whole time; a suite of jest workers all hashing at once starves each
+ * other badly enough to blow the default 5s per-test timeout. Cost 4 is ~60x
+ * cheaper and keeps the assertions honest: `bcrypt.compare` reads the cost from
+ * the hash itself, so verification behaviour is identical at any cost.
+ */
+const PRODUCTION_BCRYPT_COST = 12;
+const TEST_BCRYPT_COST = 4;
+
+export function resolveBcryptCost(env: NodeJS.ProcessEnv = process.env): number {
+  return env['NODE_ENV'] === 'test' ? TEST_BCRYPT_COST : PRODUCTION_BCRYPT_COST;
+}
 
 /** Login throttling — 5 failed attempts within the window triggers a lockout. */
 const MAX_LOGIN_ATTEMPTS = 5;
@@ -479,7 +496,7 @@ export class AuthService {
   // ─────────────────────────────────────────────
 
   private async hashPassword(password: string): Promise<string> {
-    return bcrypt.hash(password, BCRYPT_COST);
+    return bcrypt.hash(password, resolveBcryptCost());
   }
 
   private async verifyPassword(password: string, hash: string): Promise<boolean> {

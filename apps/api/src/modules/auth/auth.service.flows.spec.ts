@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
-import { AuthService } from './auth.service';
+import { AuthService, resolveBcryptCost } from './auth.service';
 import { AuthRepository, TeamMemberWithBusiness } from './auth.repository';
 import { SessionService } from './session.service';
 import { REDIS_CLIENT } from './redis.provider';
@@ -812,6 +812,54 @@ describe('AuthService — refresh, reset, throttling, sessions', () => {
       await expect(service.getProfile(BUSINESS_ID, USER_ID)).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  // ═══════════════════════════════════════════
+  // bcrypt work factor
+  // ═══════════════════════════════════════════
+
+  describe('resolveBcryptCost', () => {
+    it('uses the cheap cost under NODE_ENV=test so parallel workers do not starve', () => {
+      expect(resolveBcryptCost({ NODE_ENV: 'test' })).toBe(4);
+    });
+
+    it.each(['production', 'development', 'staging'])(
+      'uses the full production cost under NODE_ENV=%s',
+      (env) => {
+        expect(resolveBcryptCost({ NODE_ENV: env })).toBe(12);
+      },
+    );
+
+    it('uses the full production cost when NODE_ENV is unset', () => {
+      expect(resolveBcryptCost({})).toBe(12);
+    });
+
+    it('cannot be weakened by configuration — only an exact "test" env reduces it', () => {
+      // A mis-set env var must never lower the production work factor.
+      for (const NODE_ENV of ['TEST', 'Test', 'testing', 'test ', '', 'prod']) {
+        expect(resolveBcryptCost({ NODE_ENV })).toBe(12);
+      }
+    });
+
+    it('reads process.env when called with no argument', () => {
+      // The suite itself runs under NODE_ENV=test.
+      expect(resolveBcryptCost()).toBe(4);
+    });
+
+    it('produces a hash whose embedded cost matches the resolved factor', async () => {
+      repo.findTeamMemberById.mockResolvedValue(buildTeamMember());
+
+      await service.changePassword(BUSINESS_ID, USER_ID, {
+        currentPassword: PLAINTEXT_PASSWORD,
+        newPassword: 'BrandNew123!',
+      });
+
+      const stored = repo.updateTeamMember.mock.calls[0][2].password_hash as string;
+      // bcrypt hashes are $2<x>$<cost>$<salt+digest>.
+      expect(stored.split('$')[2]).toBe('04');
+      // Verification is cost-agnostic: the hash still checks out.
+      expect(bcrypt.compareSync('BrandNew123!', stored)).toBe(true);
     });
   });
 });
