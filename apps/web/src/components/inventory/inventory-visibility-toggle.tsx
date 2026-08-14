@@ -55,7 +55,14 @@ export function InventoryVisibilityToggle({ project }: { project: RealtyProject 
           </p>
         </div>
       </div>
-      {canWrite && <Switch checked={onExchange} onChange={toggle} disabled={update.isPending} />}
+      {canWrite && (
+        <Switch
+          checked={onExchange}
+          onChange={toggle}
+          disabled={update.isPending}
+          ariaLabel="List this project on the co-broking exchange"
+        />
+      )}
     </div>
   );
 }

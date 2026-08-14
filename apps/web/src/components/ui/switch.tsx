@@ -7,13 +7,21 @@ export function Switch({
   onChange,
   disabled,
   label,
+  ariaLabel,
   description,
   id,
 }: {
   checked: boolean;
   onChange: (next: boolean) => void;
   disabled?: boolean;
+  /** Rendered as visible text beside the toggle, and used as its name. */
   label?: string;
+  /**
+   * The accessible name when the visible text lives outside this component —
+   * a sibling `<span>`, a table row, a card title. Use this instead of `label`
+   * there: `label` would render a *second* copy of the text.
+   */
+  ariaLabel?: string;
   description?: string;
   id?: string;
 }) {
@@ -22,10 +30,11 @@ export function Switch({
       type="button"
       role="switch"
       id={id}
-      // The visible `label` is a sibling <span>, not a <label for=…>, so
-      // without this the control announces as an unnamed switch — a screen
-      // reader user hears "on"/"off" with no idea what is being toggled.
-      aria-label={label}
+      // A `<button>` with no text content has no accessible name, and a
+      // wrapping `<label>` does not give one — so without this the control
+      // announces as an unnamed switch: a screen reader user hears "on"/"off"
+      // with no idea what is being toggled.
+      aria-label={ariaLabel ?? label}
       aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}

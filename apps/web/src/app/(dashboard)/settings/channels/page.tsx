@@ -360,6 +360,7 @@ export default function ChannelsPage() {
                             toggleChannel.mutate({ channelId: channel.id, enabled: next })
                           }
                           disabled={toggleChannel.isPending}
+                          ariaLabel={`${channel.displayName} enabled`}
                         />
                       </div>
                     )}

@@ -109,6 +109,9 @@ function CadenceList() {
               <Switch
                 checked={cadence.isActive}
                 onChange={(next) => toggle.mutate({ id: cadence.id, isActive: next })}
+                // One switch per cadence card, so the name has to carry which
+                // cadence it pauses — an unnamed row of them is unusable.
+                ariaLabel={`Cadence ${cadence.name} active`}
               />
             )}
           </CardHeader>

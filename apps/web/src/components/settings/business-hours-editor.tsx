@@ -34,7 +34,13 @@ export function BusinessHoursEditor({
         return (
           <div key={key} className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
             <div className="flex w-40 items-center gap-3">
-              <Switch checked={day.isOpen} onChange={(v) => update(key, { isOpen: v })} />
+              {/* Seven identical switches down the card — the day has to be
+                  in the name, not only in the sibling <span>. */}
+              <Switch
+                checked={day.isOpen}
+                onChange={(v) => update(key, { isOpen: v })}
+                ariaLabel={`Open on ${label}`}
+              />
               <span className="text-sm font-medium text-foreground">{label}</span>
             </div>
             {day.isOpen ? (

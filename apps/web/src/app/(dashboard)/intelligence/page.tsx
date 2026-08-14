@@ -165,6 +165,7 @@ function OptInCard() {
             checked={optIn}
             disabled={isLoading || setOptIn.isPending}
             onChange={(next) => setOptIn.mutate(next)}
+            ariaLabel={t('intel.optInTitle')}
           />
         )}
       </CardContent>
