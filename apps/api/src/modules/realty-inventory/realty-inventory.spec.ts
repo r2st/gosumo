@@ -98,6 +98,7 @@ describe('RealtyInventoryService', () => {
       updateUnit: jest.fn(),
       softDeleteUnit: jest.fn(),
       listUnitsByProject: jest.fn(),
+      listUnitsByProjects: jest.fn(),
       findMatchCandidates: jest.fn(),
       createAsset: jest.fn(),
       findCurrentAsset: jest.fn(),
@@ -151,6 +152,44 @@ describe('RealtyInventoryService', () => {
       );
       expect(result.reraNumber).toBe('P52100012345');
     });
+
+    it('parses a possession date and converts both price-band ends', async () => {
+      repository.createProject.mockResolvedValue(makeProject() as never);
+
+      await service.createProject(BUSINESS_ID, {
+        name: 'Serene Heights',
+        locality: 'Baner',
+        status: ProjectStatus.UC,
+        possessionDate: '2028-12-01T00:00:00.000Z',
+        priceBandMaxPaise: 1500000000,
+      });
+
+      const arg = repository.createProject.mock.calls[0]![0] as {
+        possessionDate: Date | null;
+        priceBandMin: Prisma.Decimal | null;
+        priceBandMax: Prisma.Decimal;
+      };
+      expect(arg.possessionDate).toEqual(new Date('2028-12-01T00:00:00.000Z'));
+      // An omitted band end stays null rather than becoming Decimal(0), which
+      // would read as "priced at zero" to the matcher.
+      expect(arg.priceBandMin).toBeNull();
+      expect(arg.priceBandMax.mul(100).toNumber()).toBe(1500000000);
+    });
+
+    it('emits an undefined reraNumber for a project registered without one', async () => {
+      repository.createProject.mockResolvedValue(makeProject({ rera_number: null }) as never);
+
+      await service.createProject(BUSINESS_ID, {
+        name: 'Pre-RERA Plot',
+        locality: 'Wagholi',
+        status: ProjectStatus.UC,
+      });
+
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'realty.project.created',
+        expect.objectContaining({ reraNumber: undefined }),
+      );
+    });
   });
 
   describe('getProject', () => {
@@ -188,6 +227,29 @@ describe('RealtyInventoryService', () => {
 
       const arg = repository.createUnit.mock.calls[0]![0] as { verifiedAt: Date | null };
       expect(arg.verifiedAt).toBeNull();
+    });
+
+    it('defaults an omitted availability to UNVERIFIED and converts an optional base price', async () => {
+      repository.findProjectById.mockResolvedValue(makeProject() as never);
+      repository.createUnit.mockResolvedValue(
+        makeUnit({ availability: 'UNVERIFIED', verified_at: null }) as never,
+      );
+
+      await service.createUnit(BUSINESS_ID, PROJECT_ID, {
+        config: '3BHK',
+        allInPricePaise: 1200000000,
+        basePricePaise: 1050000000,
+      });
+
+      const arg = repository.createUnit.mock.calls[0]![0] as {
+        availability: string;
+        verifiedAt: Date | null;
+        basePrice: Prisma.Decimal;
+      };
+      // Defaulting to AVAILABLE would put an unchecked unit in front of buyers.
+      expect(arg.availability).toBe(UnitAvailability.UNVERIFIED);
+      expect(arg.verifiedAt).toBeNull();
+      expect(arg.basePrice.mul(100).toNumber()).toBe(1050000000);
     });
   });
 
@@ -290,6 +352,33 @@ describe('RealtyInventoryService', () => {
       expect(matches[0]!.projectName).toBe('Serene Heights');
       expect(matches[0]!.fitScore).toBeGreaterThan(0);
     });
+
+    it('treats an unconstrained query as null criteria and returns the top 3', async () => {
+      repository.findMatchCandidates.mockResolvedValue(
+        ['u1', 'u2', 'u3', 'u4'].map((id) => ({
+          ...makeUnit({ id }),
+          project: { id: PROJECT_ID, name: 'Serene Heights', locality: 'Baner' },
+        })) as never,
+      );
+
+      const matches = await service.match(BUSINESS_ID, {});
+
+      expect(matches).toHaveLength(3);
+      expect(matches.every((m) => m.projectName === 'Serene Heights')).toBe(true);
+    });
+
+    it('scores a candidate with no all-in price as 0 paise instead of skipping it', async () => {
+      repository.findMatchCandidates.mockResolvedValue([
+        {
+          ...makeUnit({ id: 'u1', all_in_price: null }),
+          project: { id: PROJECT_ID, name: 'Serene Heights', locality: 'Baner' },
+        },
+      ] as never);
+
+      const matches = await service.match(BUSINESS_ID, { localities: ['Baner'] });
+
+      expect(matches[0]).toMatchObject({ unitId: 'u1', allInPricePaise: 0 });
+    });
   });
 
   describe('matchForLead', () => {
@@ -314,6 +403,120 @@ describe('RealtyInventoryService', () => {
 
       expect(matches[0]!.unitId).toBe('u1');
       expect(leadsService.setMatchedUnits).toHaveBeenCalledWith(BUSINESS_ID, LEAD_ID, ['u1']);
+    });
+
+    it('defaults to the top 3 matches when the caller omits a limit', async () => {
+      leadsService.getLead.mockResolvedValue({
+        bltc: {
+          budgetMinPaise: null,
+          budgetMaxPaise: 950000000,
+          localities: ['Baner'],
+          timelineMonths: null,
+          config: '2BHK',
+          purpose: null,
+          financing: null,
+        },
+      } as never);
+      repository.findMatchCandidates.mockResolvedValue(
+        ['u1', 'u2', 'u3', 'u4'].map((id) => ({
+          ...makeUnit({ id }),
+          project: { id: PROJECT_ID, name: 'Serene Heights', locality: 'Baner' },
+        })) as never,
+      );
+      leadsService.setMatchedUnits.mockResolvedValue({} as never);
+
+      const matches = await service.matchForLead(BUSINESS_ID, LEAD_ID);
+
+      expect(matches).toHaveLength(3);
+      expect(leadsService.setMatchedUnits).toHaveBeenCalledWith(BUSINESS_ID, LEAD_ID, [
+        'u1',
+        'u2',
+        'u3',
+      ]);
+    });
+  });
+
+  // ── Bulk / single reads ──
+  describe('listUnitsForProjects', () => {
+    it('maps each project bucket to DTOs without re-verifying project ownership', async () => {
+      repository.listUnitsByProjects.mockResolvedValue(
+        new Map([
+          [PROJECT_ID, [makeUnit({ id: 'u1' }), makeUnit({ id: 'u2' })]],
+          ['project-b', [makeUnit({ id: 'u3', project_id: 'project-b' })]],
+        ]) as never,
+      );
+
+      const result = await service.listUnitsForProjects(BUSINESS_ID, [PROJECT_ID, 'project-b']);
+
+      expect(repository.listUnitsByProjects).toHaveBeenCalledWith(BUSINESS_ID, [
+        PROJECT_ID,
+        'project-b',
+      ]);
+      expect(repository.findProjectById).not.toHaveBeenCalled();
+      expect(result.get(PROJECT_ID)!.map((u) => u.id)).toEqual(['u1', 'u2']);
+      expect(result.get('project-b')![0]!.projectId).toBe('project-b');
+    });
+
+    it('returns an empty map when no project has units', async () => {
+      repository.listUnitsByProjects.mockResolvedValue(new Map() as never);
+
+      expect((await service.listUnitsForProjects(BUSINESS_ID, [PROJECT_ID])).size).toBe(0);
+    });
+  });
+
+  describe('getUnit', () => {
+    it('returns the mapped unit', async () => {
+      repository.findUnitById.mockResolvedValue(makeUnit() as never);
+
+      const unit = await service.getUnit(BUSINESS_ID, UNIT_ID);
+
+      expect(unit).toMatchObject({ id: UNIT_ID, config: '2BHK', allInPricePaise: 920000000 });
+    });
+
+    it('reports a priceless unit as 0 paise rather than null', async () => {
+      repository.findUnitById.mockResolvedValue(makeUnit({ all_in_price: null }) as never);
+
+      expect((await service.getUnit(BUSINESS_ID, UNIT_ID)).allInPricePaise).toBe(0);
+    });
+
+    it('throws NotFound for a unit outside the tenant', async () => {
+      repository.findUnitById.mockResolvedValue(null);
+
+      await expect(service.getUnit(BUSINESS_ID, UNIT_ID)).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('listAssets', () => {
+    it('verifies the project then maps its assets', async () => {
+      repository.findProjectById.mockResolvedValue(makeProject() as never);
+      repository.listAssetsByProject.mockResolvedValue([
+        {
+          id: 'a1',
+          project_id: PROJECT_ID,
+          type: 'PRICESHEET',
+          url: 'https://cdn/x.pdf',
+          wa_media_id: null,
+          title: 'Aug price sheet',
+          version: 2,
+          is_current: true,
+          created_at: new Date('2026-08-01T00:00:00Z'),
+        },
+      ] as never);
+
+      const assets = await service.listAssets(BUSINESS_ID, PROJECT_ID);
+
+      expect(assets).toEqual([
+        expect.objectContaining({ id: 'a1', type: 'PRICESHEET', version: 2, isCurrent: true }),
+      ]);
+    });
+
+    it('throws NotFound before touching assets when the project is missing', async () => {
+      repository.findProjectById.mockResolvedValue(null);
+
+      await expect(service.listAssets(BUSINESS_ID, PROJECT_ID)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(repository.listAssetsByProject).not.toHaveBeenCalled();
     });
   });
 });
