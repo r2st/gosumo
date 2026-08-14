@@ -194,6 +194,21 @@ describe('the business profile form', () => {
     expect(refetch).toHaveBeenCalled();
   });
 
+  it('opens clean for a business that never filled in an email or website', () => {
+    // Both are optional on the API record. Seeding the inputs with `undefined`
+    // would make them uncontrolled, and comparing `'' !== undefined` would open
+    // the form dirty and let Save push fields the owner never touched.
+    state.profile = {
+      ...state.profile,
+      data: makeProfile({ email: undefined, website: undefined }),
+    };
+    render(<BusinessProfilePage />);
+
+    expect(screen.getByLabelText(/email/i)).toHaveValue('');
+    expect(screen.getByLabelText(/website/i)).toHaveValue('');
+    expect(saveButtons()[0]).toBeDisabled();
+  });
+
   it('fills every field from the loaded profile', () => {
     render(<BusinessProfilePage />);
     expect(nameInput()).toBeInTheDocument();
@@ -319,6 +334,18 @@ describe('the business hours form', () => {
     const retries = screen.getAllByRole('button', { name: 'Try again' });
     fireEvent.click(retries[retries.length - 1]);
     expect(refetch).toHaveBeenCalled();
+  });
+
+  it('opens clean for settings that carry no schedule or away message', () => {
+    state.settings = {
+      ...state.settings,
+      data: makeSettings({ officeHours: undefined, outsideHoursMessage: undefined }),
+    };
+    render(<BusinessProfilePage />);
+
+    fireEvent.click(enforceSwitch());
+    expect(screen.getByText('Monday')).toBeInTheDocument();
+    expect(screen.getByLabelText(/away message/i)).toHaveValue('');
   });
 
   it('hides the schedule until hours are enforced', () => {
