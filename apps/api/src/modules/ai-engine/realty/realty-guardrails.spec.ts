@@ -171,4 +171,130 @@ describe('RealtyGuardrailsService (hard rules)', () => {
     expect(r.blocked).toBe(false);
     expect(r.mustEscalate).toBe(false);
   });
+
+  // ─────────────────────────────────────────────
+  // Grounding assembled without the optional fields.
+  //
+  // `grounding()` above always fills every optional array, so the `?? []`
+  // fallbacks in the service have never run under test. Real callers do omit
+  // them: a lead with no stated budget, a project whose fact sheet carries no
+  // RERA number, a first conversation with no other buyers to leak. If any of
+  // those fallbacks were wrong the guardrail would throw on the happy path —
+  // inside the response filter, on live broker traffic.
+  // ─────────────────────────────────────────────
+
+  describe('grounding with optional fields omitted', () => {
+    /** Only the required fields — the shape a minimal caller actually builds. */
+    const minimal = (over: Partial<RealtyGrounding> = {}): RealtyGrounding =>
+      ({
+        verifiedPricesPaise: [],
+        hasFreshAvailableUnit: false,
+        leadOptedOut: false,
+        ...over,
+      }) as RealtyGrounding;
+
+    it('treats an absent RERA list as "nothing verified"', () => {
+      const r = svc.evaluate(
+        proposal({
+          intent: RealtyIntent.LEGAL_RERA,
+          responseText: 'RERA number is P52100012345, fully approved.',
+        }),
+        minimal(),
+      );
+
+      expect(r.violations.length).toBeGreaterThan(0);
+    });
+
+    it('treats an absent other-buyer list as "nobody to leak"', () => {
+      const r = svc.evaluate(
+        proposal({
+          intent: RealtyIntent.GENERAL,
+          responseText: 'Happy to help with your enquiry.',
+        }),
+        minimal(),
+      );
+
+      expect(r.violations.map((v) => v.code)).not.toContain('cross_buyer_disclosure');
+    });
+
+    it('treats an absent budget as no extra quotable figure', () => {
+      const r = svc.evaluate(
+        proposal({
+          intent: RealtyIntent.PRICE_INQUIRY,
+          responseText: 'It is ₹95 lakh.',
+        }),
+        minimal({ verifiedPricesPaise: [78 * LAKH] }),
+      );
+
+      expect(r.violations.map((v) => v.code)).toContain('unverified_price');
+    });
+  });
+
+  describe('price extraction', () => {
+    it('reads a crore figure, not just lakhs', () => {
+      // 1.2 crore quoted against a 78-lakh sheet. If crore parsed as lakh the
+      // figure would land near the verified price and pass.
+      const r = svc.evaluate(
+        proposal({
+          intent: RealtyIntent.PRICE_INQUIRY,
+          responseText: 'The penthouse is ₹1.2 crore.',
+        }),
+        grounding({ verifiedPricesPaise: [78 * LAKH] }),
+      );
+
+      expect(r.violations.map((v) => v.code)).toContain('unverified_price');
+    });
+
+    it('accepts a crore figure that matches the verified price', () => {
+      const r = svc.evaluate(
+        proposal({
+          intent: RealtyIntent.PRICE_INQUIRY,
+          responseText: 'The penthouse is ₹1.2 crore.',
+        }),
+        grounding({ verifiedPricesPaise: [120 * LAKH] }),
+      );
+
+      expect(r.violations.map((v) => v.code)).not.toContain('unverified_price');
+    });
+
+    it('reads a grouped rupee figure like ₹85,00,000', () => {
+      // Brokers write prices this way as often as "85 lakh"; a figure the
+      // extractor cannot see is a figure the guardrail cannot check.
+      const r = svc.evaluate(
+        proposal({
+          intent: RealtyIntent.PRICE_INQUIRY,
+          responseText: 'Final all-in is ₹85,00,000 for the 2BHK.',
+        }),
+        grounding({ verifiedPricesPaise: [78 * LAKH] }),
+      );
+
+      expect(r.violations.map((v) => v.code)).toContain('unverified_price');
+    });
+
+    it('matches a grouped rupee figure against the verified price', () => {
+      const r = svc.evaluate(
+        proposal({
+          intent: RealtyIntent.PRICE_INQUIRY,
+          responseText: 'Final all-in is ₹85,00,000 for the 2BHK.',
+        }),
+        grounding({ verifiedPricesPaise: [85 * LAKH] }),
+      );
+
+      expect(r.violations.map((v) => v.code)).not.toContain('unverified_price');
+    });
+
+    it('does not treat a zero verified price as matching every quote', () => {
+      // Proximity is a ratio, so a zero reference has no neighbourhood — only
+      // zero itself may match it, or a placeholder row would ground any figure.
+      const r = svc.evaluate(
+        proposal({
+          intent: RealtyIntent.PRICE_INQUIRY,
+          responseText: 'It is ₹95 lakh.',
+        }),
+        grounding({ verifiedPricesPaise: [0] }),
+      );
+
+      expect(r.violations.map((v) => v.code)).toContain('unverified_price');
+    });
+  });
 });

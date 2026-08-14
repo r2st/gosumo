@@ -96,4 +96,88 @@ describe('RealtyIntentClassifierService', () => {
       expect(r.intent).toBe(RealtyIntent.GENERAL);
     });
   });
+
+  // ─────────────────────────────────────────────
+  // Partial results from the model.
+  //
+  // Every field here feeds the realty route policy, which decides whether a
+  // broker's lead gets an autonomous reply or a human. A junk secondary intent
+  // or a non-numeric confidence must not survive to that decision.
+  // ─────────────────────────────────────────────
+
+  describe('Tier-3 partial and malformed LLM results', () => {
+    const llmReturns = (parsed: unknown): void => {
+      llm.complete.mockResolvedValue({ text: '{}' } as never);
+      llm.extractJson.mockReturnValue(parsed as never);
+    };
+
+    /** No REALTY_INTENT_RULES entry matches this, so it reaches the LLM. */
+    const UNMATCHED = 'another unmatched phrase qwerty';
+
+    it('keeps a secondary intent that is a real RealtyIntent', async () => {
+      llmReturns({
+        primaryIntent: RealtyIntent.SITE_VISIT,
+        secondaryIntent: RealtyIntent.PRICE_INQUIRY,
+        confidence: 0.85,
+        entities: { project: 'Prestige Lakeside' },
+        reasoning: 'wants a visit and asked the rate',
+      });
+
+      expect(await service.classify(UNMATCHED)).toMatchObject({
+        intent: RealtyIntent.SITE_VISIT,
+        secondaryIntent: RealtyIntent.PRICE_INQUIRY,
+        confidence: 0.85,
+        entities: { project: 'Prestige Lakeside' },
+      });
+    });
+
+    it('drops a secondary intent the enum does not contain', async () => {
+      llmReturns({
+        primaryIntent: RealtyIntent.SITE_VISIT,
+        secondaryIntent: 'VASTU_CHECK',
+        confidence: 0.85,
+      });
+
+      expect((await service.classify(UNMATCHED)).secondaryIntent).toBeNull();
+    });
+
+    it('substitutes defaults for a result missing entities and reasoning', async () => {
+      llmReturns({ primaryIntent: RealtyIntent.RENTAL, confidence: 0.7 });
+
+      const r = await service.classify(UNMATCHED);
+      expect(r.entities).toEqual({});
+      expect(r.reasoning).toBe('LLM realty classification');
+    });
+
+    it.each([
+      ['a string', '0.9'],
+      ['NaN', Number.NaN],
+      ['Infinity', Number.POSITIVE_INFINITY],
+      ['undefined', undefined],
+    ])('falls back to 0.5 when confidence is %s', async (_label, confidence) => {
+      llmReturns({ primaryIntent: RealtyIntent.LOAN_QUERY, confidence });
+
+      expect((await service.classify(UNMATCHED)).confidence).toBe(0.5);
+    });
+
+    it('still attaches the route policy to a partial result', async () => {
+      llmReturns({ primaryIntent: RealtyIntent.LEGAL_RERA, confidence: 0.95 });
+
+      // The policy — not the raw confidence — is the autonomy ceiling, and a
+      // result that lost it would be routed on the number alone.
+      expect((await service.classify(UNMATCHED)).policy).toBeDefined();
+    });
+
+    it('falls back when the model rejects with a non-Error value', async () => {
+      llm.complete.mockRejectedValue('socket hang up');
+
+      expect((await service.classify(UNMATCHED)).intent).toBe(RealtyIntent.GENERAL);
+    });
+  });
+
+  describe('classifyByRules', () => {
+    it('returns null for empty text without consulting the rules', () => {
+      expect(service.classifyByRules('')).toBeNull();
+    });
+  });
 });

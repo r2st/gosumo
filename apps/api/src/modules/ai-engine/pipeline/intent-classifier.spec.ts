@@ -84,4 +84,98 @@ describe('IntentClassifierService', () => {
       expect(result.intent).toBe(IntentType.GENERAL_INQUIRY);
     });
   });
+
+  // ─────────────────────────────────────────────
+  // What the classifier does with a model that answers *almost* correctly.
+  //
+  // The fallback path is already covered; these are the partial results — a
+  // valid primary intent alongside a junk secondary, a missing `entities`, a
+  // confidence that is not a number. Each one flows straight into the
+  // confidence calculator and the action router, so a bad value here decides
+  // whether a real customer message is auto-answered or escalated.
+  // ─────────────────────────────────────────────
+
+  describe('Tier-3 partial and malformed LLM results', () => {
+    const llmReturns = (parsed: unknown): void => {
+      llm.complete.mockResolvedValue({ text: '{}' } as never);
+      llm.extractJson.mockReturnValue(parsed as never);
+    };
+
+    /** Nothing in INTENT_RULES matches this, so it always reaches the LLM. */
+    const UNMATCHED = 'another unmatched phrase qwerty';
+
+    it('keeps a secondary intent that is a real IntentType', async () => {
+      llmReturns({
+        primaryIntent: IntentType.BOOKING,
+        secondaryIntent: IntentType.PRICING,
+        confidence: 0.8,
+        entities: { date: 'tomorrow' },
+        reasoning: 'asked to book and priced it',
+      });
+
+      expect(await service.classify(UNMATCHED)).toMatchObject({
+        intent: IntentType.BOOKING,
+        secondaryIntent: IntentType.PRICING,
+        confidence: 0.8,
+        entities: { date: 'tomorrow' },
+      });
+    });
+
+    it('drops a secondary intent the enum does not contain', async () => {
+      llmReturns({
+        primaryIntent: IntentType.BOOKING,
+        secondaryIntent: 'VIBES',
+        confidence: 0.8,
+      });
+
+      // A hallucinated intent must not reach downstream routing as if real.
+      expect((await service.classify(UNMATCHED)).secondaryIntent).toBeNull();
+    });
+
+    it('substitutes defaults for a result missing entities and reasoning', async () => {
+      llmReturns({ primaryIntent: IntentType.REFUND, confidence: 0.7 });
+
+      const result = await service.classify(UNMATCHED);
+      expect(result.entities).toEqual({});
+      expect(result.reasoning).toBe('LLM classification');
+    });
+
+    it.each([
+      ['a string', '0.9'],
+      ['NaN', Number.NaN],
+      ['Infinity', Number.POSITIVE_INFINITY],
+      ['undefined', undefined],
+    ])('falls back to 0.5 when confidence is %s', async (_label, confidence) => {
+      llmReturns({ primaryIntent: IntentType.PAYMENT, confidence });
+
+      // 0.5 lands in the human-review band. Letting a non-number through would
+      // reach the router as NaN and compare false against every threshold.
+      expect((await service.classify(UNMATCHED)).confidence).toBe(0.5);
+    });
+
+    it.each([
+      ['above 1', 4.2, 1],
+      ['below 0', -3, 0],
+    ])('clamps a confidence %s into range', async (_label, confidence, expected) => {
+      llmReturns({ primaryIntent: IntentType.PAYMENT, confidence });
+
+      expect((await service.classify(UNMATCHED)).confidence).toBe(expected);
+    });
+
+    it('falls back when the model rejects with a non-Error value', async () => {
+      // Some transports reject with a plain string; the handler must not
+      // assume `.message` exists while building its log line.
+      llm.complete.mockRejectedValue('socket hang up');
+
+      expect((await service.classify(UNMATCHED)).intent).toBe(
+        IntentType.GENERAL_INQUIRY,
+      );
+    });
+  });
+
+  describe('classifyByRules', () => {
+    it('returns null for empty text without consulting the rules', () => {
+      expect(service.classifyByRules('')).toBeNull();
+    });
+  });
 });
