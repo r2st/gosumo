@@ -9,7 +9,10 @@ import { useT } from '@/providers/language-provider';
 import { cn } from '@/lib/utils';
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const pathname = usePathname();
+  // `usePathname` is typed `string | null`; BottomNav already guards the same
+  // way. Without the fallback the `startsWith` below throws and takes the whole
+  // dashboard shell down with it.
+  const pathname = usePathname() ?? '';
   const t = useT();
 
   const renderItem = (item: NavItem) => {
