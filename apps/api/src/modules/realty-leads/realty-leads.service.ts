@@ -82,6 +82,25 @@ export interface LeadResponseDto {
   updatedAt: Date;
 }
 
+/**
+ * The projection the intelligence aggregation reads — budgets already in paise,
+ * objections already flattened to their text. Kept separate from
+ * {@link LeadResponseDto} so the aggregation is not paying to build (or the
+ * database to return) the two dozen fields it never looks at.
+ */
+export interface AggregationLead {
+  source: string;
+  stage: string;
+  qualScore: number;
+  localities: string[];
+  budgetMinPaise: number | null;
+  budgetMaxPaise: number | null;
+  config: string | null;
+  objections: string[];
+  firstTouchAt: Date;
+  lastActivityAt: Date | null;
+}
+
 export interface BltcUpdateResult {
   lead: LeadResponseDto;
   /** Slots whose existing value differed from the incoming one (not overwritten unless forced). */
@@ -339,6 +358,55 @@ export class RealtyLeadsService {
       limit: result.limit,
       totalPages: result.totalPages,
     };
+  }
+
+  /**
+   * Stream every lead first touched at or after `since`, as the narrow
+   * projection the intelligence aggregation consumes.
+   *
+   * Exposed here rather than letting that module reach into `realty_leads`:
+   * the table belongs to this one. `cap` bounds the whole walk so a pathological
+   * tenant cannot hold the nightly job open indefinitely; hitting it is logged
+   * by the caller rather than silently truncating.
+   */
+  async listLeadsForAggregation(
+    businessId: string,
+    since: Date,
+    cap: number,
+    pageSize: number,
+  ): Promise<{ leads: AggregationLead[]; truncated: boolean }> {
+    const leads: AggregationLead[] = [];
+    let cursor: { firstTouchAt: Date; id: string } | undefined;
+
+    while (leads.length < cap) {
+      const take = Math.min(pageSize, cap - leads.length);
+      const rows = await this.repository.listForAggregation(businessId, since, take, cursor);
+      if (rows.length === 0) break;
+
+      for (const row of rows) {
+        leads.push({
+          source: row.source,
+          stage: row.stage,
+          qualScore: row.qual_score,
+          localities: row.localities ?? [],
+          budgetMinPaise: decimalToPaise(row.budget_min),
+          budgetMaxPaise: decimalToPaise(row.budget_max),
+          config: row.config,
+          objections: this.readMemory(row.objections)
+            .map((o) => o.text)
+            .filter((text): text is string => Boolean(text)),
+          firstTouchAt: row.first_touch_at,
+          lastActivityAt: row.last_activity_at,
+        });
+      }
+
+      if (rows.length < take) break;
+      const last = rows[rows.length - 1];
+      if (!last) break;
+      cursor = { firstTouchAt: last.first_touch_at, id: last.id };
+    }
+
+    return { leads, truncated: leads.length >= cap };
   }
 
   /** Pipeline board: counts per stage in canonical order. */

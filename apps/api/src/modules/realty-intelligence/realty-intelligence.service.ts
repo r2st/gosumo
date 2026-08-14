@@ -14,7 +14,7 @@ import type {
 } from '@gosumo/shared';
 import { LlmClientService, LlmUnavailableError } from '../ai-engine/pipeline/llm-client.service';
 import { RealtyLeadsService } from '../realty-leads/realty-leads.service';
-import type { LeadResponseDto } from '../realty-leads/realty-leads.service';
+import type { AggregationLead } from '../realty-leads/realty-leads.service';
 import { RealtyIntelligenceRepository } from './realty-intelligence.repository';
 import {
   computeAggregatesForBusiness,
@@ -27,6 +27,7 @@ import {
   DEFAULT_MIN_N_THRESHOLD,
   AGGREGATION_LOOKBACK_DAYS,
   LEAD_FETCH_PAGE_SIZE,
+  LEAD_FETCH_CAP,
   INTELLIGENCE_SUMMARY_MODEL,
 } from './realty-intelligence.constants';
 
@@ -156,36 +157,46 @@ export class RealtyIntelligenceService {
     return result;
   }
 
-  /** Page a business's recent leads into the minimal aggregation projection. */
+  /**
+   * A business's in-window leads, as the minimal aggregation projection.
+   *
+   * This used to page `listLeads` — which has no date filter — and drop the
+   * out-of-window rows here. That meant reading every lead the tenant had ever
+   * had, in full, to aggregate the last year: up to 200 pages, each paired with
+   * a `count` over the whole table and sorted by qual_score, all discarded.
+   * `listLeadsForAggregation` pushes the window into the WHERE clause and
+   * selects only these ten columns.
+   */
   private async fetchIntelLeads(businessId: string, since: Date): Promise<IntelLead[]> {
-    const out: IntelLead[] = [];
-    let page = 1;
-    // Guard against an unbounded loop; 200 pages × 500 = 100k leads is ample.
-    for (let guard = 0; guard < 200; guard++) {
-      const res = await this.leads.listLeads(businessId, {
-        page,
-        limit: LEAD_FETCH_PAGE_SIZE,
-      });
-      for (const lead of res.data) {
-        if (lead.firstTouchAt && new Date(lead.firstTouchAt) < since) continue;
-        out.push(this.toIntelLead(lead));
-      }
-      if (res.data.length < LEAD_FETCH_PAGE_SIZE || page >= res.totalPages) break;
-      page++;
+    const { leads, truncated } = await this.leads.listLeadsForAggregation(
+      businessId,
+      since,
+      LEAD_FETCH_CAP,
+      LEAD_FETCH_PAGE_SIZE,
+    );
+
+    if (truncated) {
+      // Say so rather than quietly aggregating a prefix: the resulting
+      // corridor stats would be a biased sample of the tenant's oldest leads.
+      this.logger.warn(
+        `Business ${businessId} hit the ${LEAD_FETCH_CAP}-lead aggregation cap; ` +
+          'corridor aggregates for this run cover only the oldest leads in the window.',
+      );
     }
-    return out;
+
+    return leads.map((lead) => this.toIntelLead(lead));
   }
 
-  private toIntelLead(lead: LeadResponseDto): IntelLead {
+  private toIntelLead(lead: AggregationLead): IntelLead {
     return {
       source: lead.source,
       stage: lead.stage,
       qualScore: lead.qualScore,
-      localities: lead.bltc.localities ?? [],
-      budgetMinPaise: lead.bltc.budgetMinPaise ?? null,
-      budgetMaxPaise: lead.bltc.budgetMaxPaise ?? null,
-      config: lead.bltc.config ?? null,
-      objections: (lead.objections ?? []).map((o) => o.text).filter(Boolean),
+      localities: lead.localities,
+      budgetMinPaise: lead.budgetMinPaise,
+      budgetMaxPaise: lead.budgetMaxPaise,
+      config: lead.config,
+      objections: lead.objections,
       firstTouchAt: new Date(lead.firstTouchAt),
       lastActivityAt: lead.lastActivityAt ? new Date(lead.lastActivityAt) : null,
     };

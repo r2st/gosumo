@@ -39,6 +39,13 @@ export const AGGREGATION_LOOKBACK_DAYS = 365;
 export const LEAD_FETCH_PAGE_SIZE = 500;
 
 /**
+ * Upper bound on how many leads one tenant contributes to a nightly run.
+ * Matches the old page-loop guard (200 pages x 500). Reaching it is logged,
+ * not silent — the aggregates would otherwise be a biased sample.
+ */
+export const LEAD_FETCH_CAP = 100_000;
+
+/**
  * Free OpenRouter model used for the optional one-line natural-language corridor
  * summary. Kept to a small free-tier model — summarization is a nicety, never on
  * the critical path (a failure just leaves the numeric aggregate un-narrated).

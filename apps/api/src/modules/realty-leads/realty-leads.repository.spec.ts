@@ -302,6 +302,87 @@ describe('RealtyLeadsRepository', () => {
     });
   });
 
+  /**
+   * The nightly intelligence aggregation's read. Unlike `list` it pushes the
+   * lookback window into SQL, projects only the ten columns the maths uses, and
+   * pages by keyset rather than offset — so the assertions here are about the
+   * window reaching the WHERE clause and the cursor being a genuine tie-break.
+   */
+  describe('listForAggregation', () => {
+    const SINCE = new Date('2025-07-03T00:00:00Z');
+
+    async function argsFor(cursor?: { firstTouchAt: Date; id: string }) {
+      await repository.listForAggregation(BUSINESS_ID, SINCE, 500, cursor);
+      return prisma.realty_leads.findMany.mock.calls[0]![0];
+    }
+
+    it('scopes to the tenant, live rows, and the lookback window', async () => {
+      expect((await argsFor()).where).toEqual({
+        business_id: BUSINESS_ID,
+        deleted_at: null,
+        first_touch_at: { gte: SINCE },
+      });
+    });
+
+    it('projects only the aggregation columns, plus the id the cursor needs', async () => {
+      const select = (await argsFor()).select;
+
+      expect(select).toEqual({
+        source: true,
+        stage: true,
+        qual_score: true,
+        localities: true,
+        budget_min: true,
+        budget_max: true,
+        config: true,
+        objections: true,
+        first_touch_at: true,
+        last_activity_at: true,
+        id: true,
+      });
+      // The two memory columns the aggregation never reads stay on the server.
+      expect(select).not.toHaveProperty('extracted_facts');
+      expect(select).not.toHaveProperty('promises');
+    });
+
+    it('orders by the keyset and takes the page size, with no offset or count', async () => {
+      const args = await argsFor();
+
+      expect(args.orderBy).toEqual([{ first_touch_at: 'asc' }, { id: 'asc' }]);
+      expect(args.take).toBe(500);
+      expect(args).not.toHaveProperty('skip');
+      expect(prisma.realty_leads.count).not.toHaveBeenCalled();
+    });
+
+    it('omits the cursor predicate on the first page', async () => {
+      expect((await argsFor()).where).not.toHaveProperty('OR');
+    });
+
+    /**
+     * Ordering on first_touch_at alone would drop or repeat rows whenever a
+     * batch boundary lands in the middle of a group sharing one timestamp —
+     * which bulk portal imports produce constantly. The cursor carries the id
+     * so the second predicate can break exactly those ties.
+     */
+    it('resumes strictly after the cursor, breaking timestamp ties by id', async () => {
+      const cursor = { firstTouchAt: new Date('2026-01-05T09:00:00Z'), id: LEAD_ID };
+
+      expect((await argsFor(cursor)).where.OR).toEqual([
+        { first_touch_at: { gt: cursor.firstTouchAt } },
+        { first_touch_at: cursor.firstTouchAt, id: { gt: cursor.id } },
+      ]);
+    });
+
+    it('keeps the window predicate alongside the cursor', async () => {
+      const where = (await argsFor({ firstTouchAt: new Date('2026-01-05T09:00:00Z'), id: LEAD_ID }))
+        .where;
+
+      // Losing this on page 2+ would silently widen the window to all time.
+      expect(where.first_touch_at).toEqual({ gte: SINCE });
+      expect(where.business_id).toBe(BUSINESS_ID);
+    });
+  });
+
   describe('countByStage', () => {
     it('flattens the grouping into a stage → count map', async () => {
       prisma.realty_leads.groupBy.mockResolvedValue([

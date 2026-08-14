@@ -66,6 +66,30 @@ export interface LeadListFilters {
   limit?: number;
 }
 
+/**
+ * The columns the intelligence aggregation actually reads.
+ *
+ * Selected explicitly rather than returning whole rows: the aggregation runs
+ * nightly over a year of leads, and `realty_leads` carries three JSONB memory
+ * columns (extracted_facts, objections, promises) of which it needs only one.
+ */
+export const AGGREGATION_LEAD_SELECT = {
+  source: true,
+  stage: true,
+  qual_score: true,
+  localities: true,
+  budget_min: true,
+  budget_max: true,
+  config: true,
+  objections: true,
+  first_touch_at: true,
+  last_activity_at: true,
+} as const;
+
+export type AggregationLeadRow = Prisma.realty_leadsGetPayload<{
+  select: typeof AGGREGATION_LEAD_SELECT;
+}>;
+
 export interface PaginatedLeads {
   data: realty_leads[];
   total: number;
@@ -198,6 +222,48 @@ export class RealtyLeadsRepository {
     ]);
 
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  /**
+   * Leads first touched at or after `since`, for the intelligence aggregation.
+   *
+   * Deliberately not `list()`. That method pages with `skip`/`take`, pairs every
+   * page with a `count` over the whole filtered set, and sorts by qual_score —
+   * all of which the aggregation pays for and none of which it uses. It also
+   * has no date filter, so the caller was fetching every lead the tenant had
+   * ever had and discarding the out-of-window ones in JavaScript.
+   *
+   * Here the window is a WHERE clause, the projection is narrow, there is no
+   * count, and paging is keyset on (first_touch_at, id) so the last page costs
+   * the same as the first. Ties on first_touch_at are broken by id, which is
+   * why the cursor carries both — ordering on the timestamp alone can drop or
+   * repeat rows when several leads share one.
+   */
+  async listForAggregation(
+    businessId: string,
+    since: Date,
+    limit: number,
+    cursor?: { firstTouchAt: Date; id: string },
+  ): Promise<Array<AggregationLeadRow & { id: string }>> {
+    const where: Prisma.realty_leadsWhereInput = {
+      business_id: businessId,
+      deleted_at: null,
+      first_touch_at: { gte: since },
+    };
+
+    if (cursor) {
+      where.OR = [
+        { first_touch_at: { gt: cursor.firstTouchAt } },
+        { first_touch_at: cursor.firstTouchAt, id: { gt: cursor.id } },
+      ];
+    }
+
+    return this.prisma.realty_leads.findMany({
+      where,
+      select: { ...AGGREGATION_LEAD_SELECT, id: true },
+      orderBy: [{ first_touch_at: 'asc' }, { id: 'asc' }],
+      take: limit,
+    });
   }
 
   /** Count of active leads grouped by pipeline stage — powers the board. */

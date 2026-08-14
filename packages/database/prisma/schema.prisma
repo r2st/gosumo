@@ -2547,6 +2547,8 @@ model realty_leads {
   @@index([business_id, assigned_agent_id, stage])
   @@index([business_id, source])
   @@index([business_id, next_followup_at])
+  /// Nightly intelligence aggregation: the lookback window, keyset-paged.
+  @@index([business_id, first_touch_at])
   @@index([deleted_at])
   @@map("realty_leads")
 }

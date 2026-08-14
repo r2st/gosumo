@@ -15,42 +15,47 @@ import { IntelligenceMetricType, LeadStage, LeadSource } from '@gosumo/shared';
 import { RealtyIntelligenceService } from './realty-intelligence.service';
 import { RealtyIntelligenceRepository } from './realty-intelligence.repository';
 import { RealtyLeadsService } from '../realty-leads/realty-leads.service';
+import type { AggregationLead } from '../realty-leads/realty-leads.service';
 import { LlmClientService, LlmUnavailableError } from '../ai-engine/pipeline/llm-client.service';
-import { INTELLIGENCE_SUMMARY_MODEL } from './realty-intelligence.constants';
+import {
+  INTELLIGENCE_SUMMARY_MODEL,
+  AGGREGATION_LOOKBACK_DAYS,
+  LEAD_FETCH_CAP,
+  LEAD_FETCH_PAGE_SIZE,
+} from './realty-intelligence.constants';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
 
-function makeLead(overrides: Record<string, unknown> = {}) {
+/**
+ * One row of the aggregation projection — the narrow shape
+ * `RealtyLeadsService.listLeadsForAggregation` returns. Budgets already in
+ * paise and objections already flattened to text: the widening from database
+ * row to this shape is the leads module's job and is tested there.
+ */
+function makeLead(overrides: Partial<AggregationLead> = {}): AggregationLead {
   return {
-    id: '00000000-0000-4000-a000-0000000000aa',
-    businessId: BUSINESS_ID,
     source: LeadSource.PORTAL,
     stage: LeadStage.VISIT_BOOKED,
     qualScore: 70,
-    bltc: {
-      budgetMinPaise: 80_00_000 * 100,
-      budgetMaxPaise: 1_00_00_000 * 100,
-      localities: ['Whitefield'],
-      timelineMonths: 3,
-      config: '2BHK',
-      purpose: null,
-      financing: null,
-    },
-    objections: [{ text: 'too expensive', at: '2026-03-10T00:00:00Z' }],
+    localities: ['Whitefield'],
+    budgetMinPaise: 80_00_000 * 100,
+    budgetMaxPaise: 1_00_00_000 * 100,
+    config: '2BHK',
+    objections: ['too expensive'],
     firstTouchAt: new Date('2026-03-10T00:00:00Z'),
     lastActivityAt: new Date('2026-03-12T00:00:00Z'),
     ...overrides,
   };
 }
 
-function paginated(data: unknown[]) {
-  return { data, total: data.length, page: 1, limit: 500, totalPages: 1 };
+function fetched(leads: AggregationLead[], truncated = false) {
+  return { leads, truncated };
 }
 
 describe('RealtyIntelligenceService', () => {
   let service: RealtyIntelligenceService;
   let repository: jest.Mocked<RealtyIntelligenceRepository>;
-  let leads: { listLeads: jest.Mock };
+  let leads: { listLeadsForAggregation: jest.Mock };
   let llm: { complete: jest.Mock };
   let emitter: { emit: jest.Mock };
 
@@ -65,7 +70,7 @@ describe('RealtyIntelligenceService', () => {
       listOptInBusinessIds: jest.fn().mockResolvedValue([BUSINESS_ID]),
     } as unknown as jest.Mocked<RealtyIntelligenceRepository>;
 
-    leads = { listLeads: jest.fn().mockResolvedValue(paginated([])) };
+    leads = { listLeadsForAggregation: jest.fn().mockResolvedValue(fetched([])) };
     llm = { complete: jest.fn() };
     emitter = { emit: jest.fn() };
 
@@ -80,7 +85,9 @@ describe('RealtyIntelligenceService', () => {
   describe('generateNightlyAggregates', () => {
     it('aggregates only opted-in businesses and emits a summary event', async () => {
       // 6 identical Whitefield leads clears the default minN=5.
-      leads.listLeads.mockResolvedValue(paginated(Array.from({ length: 6 }, () => makeLead())));
+      leads.listLeadsForAggregation.mockResolvedValue(
+        fetched(Array.from({ length: 6 }, () => makeLead())),
+      );
 
       const result = await service.generateNightlyAggregates(new Date('2026-07-03T00:00:00Z'));
 
@@ -96,7 +103,7 @@ describe('RealtyIntelligenceService', () => {
     });
 
     it('writes nothing when a corridor is below the min-n threshold', async () => {
-      leads.listLeads.mockResolvedValue(paginated([makeLead(), makeLead()])); // only 2
+      leads.listLeadsForAggregation.mockResolvedValue(fetched([makeLead(), makeLead()])); // only 2
       const result = await service.generateNightlyAggregates();
       expect(result.aggregateCount).toBe(0);
       expect(repository.upsertAggregate).not.toHaveBeenCalled();
@@ -106,12 +113,14 @@ describe('RealtyIntelligenceService', () => {
       repository.getOptInStatus.mockResolvedValue(false);
       const result = await service.generateNightlyAggregates(new Date(), BUSINESS_ID);
       expect(result.businessCount).toBe(0);
-      expect(leads.listLeads).not.toHaveBeenCalled();
+      expect(leads.listLeadsForAggregation).not.toHaveBeenCalled();
     });
 
     it('single-tenant run uses that tenant when opted in', async () => {
       repository.getOptInStatus.mockResolvedValue(true);
-      leads.listLeads.mockResolvedValue(paginated(Array.from({ length: 6 }, () => makeLead())));
+      leads.listLeadsForAggregation.mockResolvedValue(
+        fetched(Array.from({ length: 6 }, () => makeLead())),
+      );
       const result = await service.generateNightlyAggregates(new Date(), BUSINESS_ID);
       expect(repository.listOptInBusinessIds).not.toHaveBeenCalled();
       expect(result.businessCount).toBe(1);
@@ -142,8 +151,8 @@ describe('RealtyIntelligenceService', () => {
 
   describe('getSourceQualityReport', () => {
     it('reports per-source ROI over the tenant own leads (no min-n suppression)', async () => {
-      leads.listLeads.mockResolvedValue(
-        paginated([
+      leads.listLeadsForAggregation.mockResolvedValue(
+        fetched([
           makeLead({ source: LeadSource.PORTAL, stage: LeadStage.VISITED }),
           makeLead({ source: LeadSource.REFERRAL, stage: LeadStage.NEW }),
         ]),
@@ -209,52 +218,61 @@ describe('RealtyIntelligenceService', () => {
     });
   });
 
-  // ── lead paging ──
+  // ── lead fetch for aggregation ──
 
-  describe('lead paging for aggregation', () => {
-    function page(data: unknown[], pageNo: number, totalPages: number) {
-      return { data, total: data.length, page: pageNo, limit: 500, totalPages };
-    }
+  /**
+   * Paging, the lookback window and the row→projection widening all live in
+   * `RealtyLeadsService.listLeadsForAggregation` now (and are tested against the
+   * repository in realty-leads.spec.ts). What is left here is the contract this
+   * service holds with that method: the window it asks for, the cap it imposes,
+   * and what it does when the cap is hit.
+   */
+  describe('lead fetch for aggregation', () => {
+    it('asks for exactly the lookback window, capped and paged', async () => {
+      const now = new Date('2026-07-03T00:00:00Z');
+      await service.generateNightlyAggregates(now);
 
-    /** A full page means there may be more; a short one is the end of the road. */
-    it('walks every page until a short page arrives', async () => {
-      const full = Array.from({ length: 500 }, () => makeLead());
-      leads.listLeads
-        .mockResolvedValueOnce(page(full, 1, 3))
-        .mockResolvedValueOnce(page(full, 2, 3))
-        .mockResolvedValueOnce(page([makeLead()], 3, 3));
+      expect(leads.listLeadsForAggregation).toHaveBeenCalledTimes(1);
+      const [businessId, since, cap, pageSize] = leads.listLeadsForAggregation.mock.calls[0]!;
+      expect(businessId).toBe(BUSINESS_ID);
+      expect(cap).toBe(LEAD_FETCH_CAP);
+      expect(pageSize).toBe(LEAD_FETCH_PAGE_SIZE);
 
-      const report = await service.getSourceQualityReport(BUSINESS_ID);
-
-      expect(leads.listLeads).toHaveBeenCalledTimes(3);
-      expect(report.totalLeads).toBe(1001);
-      expect(leads.listLeads.mock.calls[2]![1]).toEqual({ page: 3, limit: 500 });
+      // The window closes at `now` and opens AGGREGATION_LOOKBACK_DAYS earlier.
+      expect((since as Date).toISOString()).toBe('2025-07-03T00:00:00.000Z');
+      const spanDays = (now.getTime() - (since as Date).getTime()) / 86_400_000;
+      expect(spanDays).toBe(AGGREGATION_LOOKBACK_DAYS);
     });
 
     /**
-     * A page that is exactly full but is also the last page must not trigger a
-     * fourth read — `totalPages` is the second stop condition for a reason.
+     * Hitting the cap silently would publish corridor stats computed from the
+     * tenant's oldest leads only — a biased sample that reads like a complete
+     * one. The run still proceeds; it just says so.
      */
-    it('stops on the last page even when it is exactly full', async () => {
-      const full = Array.from({ length: 500 }, () => makeLead());
-      leads.listLeads
-        .mockResolvedValueOnce(page(full, 1, 2))
-        .mockResolvedValueOnce(page(full, 2, 2));
-
-      await service.getSourceQualityReport(BUSINESS_ID);
-      expect(leads.listLeads).toHaveBeenCalledTimes(2);
-    });
-
-    it('drops leads whose first touch predates the lookback window', async () => {
-      leads.listLeads.mockResolvedValue(
-        paginated([
-          makeLead({ firstTouchAt: new Date('2020-01-01T00:00:00Z') }),
-          makeLead({ firstTouchAt: new Date() }),
-        ]),
+    it('warns when a tenant hits the aggregation cap', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      leads.listLeadsForAggregation.mockResolvedValue(
+        fetched(Array.from({ length: 6 }, () => makeLead()), true),
       );
 
-      const report = await service.getSourceQualityReport(BUSINESS_ID);
-      expect(report.totalLeads).toBe(1);
+      const result = await service.generateNightlyAggregates();
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('aggregation cap'));
+      // Capped or not, the aggregates for this run are still written.
+      expect(result.aggregateCount).toBe(5);
+      warn.mockRestore();
+    });
+
+    it('stays quiet when the tenant is under the cap', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      leads.listLeadsForAggregation.mockResolvedValue(
+        fetched(Array.from({ length: 6 }, () => makeLead()), false),
+      );
+
+      await service.generateNightlyAggregates();
+
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
     });
   });
 
@@ -262,25 +280,19 @@ describe('RealtyIntelligenceService', () => {
 
   describe('lead projection', () => {
     /**
-     * The projection is fed by the leads service DTO, where every BLTC field and
-     * the objection list are individually nullable. A sparse lead has to reduce
-     * to explicit nulls rather than undefined — the aggregation maths branches
-     * on null, and undefined would slip past those guards.
+     * A sparse lead has to reduce to explicit nulls rather than undefined — the
+     * aggregation maths branches on null, and undefined would slip past those
+     * guards.
      */
-    it('normalises a lead with no BLTC, objections or last activity', async () => {
-      leads.listLeads.mockResolvedValue(
-        paginated([
+    it('normalises a lead with no budget, config, objections or last activity', async () => {
+      leads.listLeadsForAggregation.mockResolvedValue(
+        fetched([
           makeLead({
-            bltc: {
-              budgetMinPaise: null,
-              budgetMaxPaise: null,
-              localities: null,
-              timelineMonths: null,
-              config: null,
-              purpose: null,
-              financing: null,
-            },
-            objections: null,
+            localities: [],
+            budgetMinPaise: null,
+            budgetMaxPaise: null,
+            config: null,
+            objections: [],
             lastActivityAt: null,
           }),
         ]),
@@ -291,19 +303,24 @@ describe('RealtyIntelligenceService', () => {
       expect(report.sources).toHaveLength(1);
     });
 
-    it('drops objections that carry no text', async () => {
-      leads.listLeads.mockResolvedValue(
-        paginated([
+    /**
+     * The projection re-wraps both timestamps in `new Date`. Prisma hands back
+     * real Dates, but the aggregation maths does arithmetic on them, so a row
+     * that arrived as an ISO string (a JSON round-trip through a cache, say)
+     * must not reach it as a string.
+     */
+    it('coerces timestamps that arrive as ISO strings', async () => {
+      leads.listLeadsForAggregation.mockResolvedValue(
+        fetched([
           makeLead({
-            objections: [
-              { text: '', at: '2026-03-10T00:00:00Z' },
-              { text: 'too expensive', at: '2026-03-10T00:00:00Z' },
-            ],
+            firstTouchAt: '2026-03-10T00:00:00Z' as unknown as Date,
+            lastActivityAt: '2026-03-12T00:00:00Z' as unknown as Date,
           }),
         ]),
       );
 
-      await expect(service.getSourceQualityReport(BUSINESS_ID)).resolves.toBeDefined();
+      const report = await service.getSourceQualityReport(BUSINESS_ID);
+      expect(report.totalLeads).toBe(1);
     });
   });
 

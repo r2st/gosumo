@@ -7,6 +7,7 @@ The AI Lead Manager's system of record — the central `realty_leads` entity. Ca
 ```typescript
 createLead / getLead / updateLead / deleteLead
 listLeads(businessId, query): Promise<PaginatedLeads>
+listLeadsForAggregation(businessId, since, cap, pageSize)  // keyset walk, narrow projection — realty-intelligence only
 getBoard(businessId): Promise<{ stage, count }[]>          // pipeline board
 applyBltcUpdate(businessId, leadId, dto): Promise<BltcUpdateResult>  // merge + rescore + auto-qualify
 transitionStage / captureMemory / assignAgent / setOptOut

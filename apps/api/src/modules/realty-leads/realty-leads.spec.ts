@@ -95,6 +95,7 @@ describe('RealtyLeadsService', () => {
       update: jest.fn(),
       softDelete: jest.fn(),
       list: jest.fn(),
+      listForAggregation: jest.fn().mockResolvedValue([]),
       countByStage: jest.fn(),
     };
     const mockEventEmitter = { emit: jest.fn() };
@@ -177,6 +178,218 @@ describe('RealtyLeadsService', () => {
       expect(board[0]).toEqual({ stage: 'NEW', count: 3 });
       expect(board.find((b) => b.stage === 'QUALIFIED')).toEqual({ stage: 'QUALIFIED', count: 1 });
       expect(board.find((b) => b.stage === 'DORMANT')).toEqual({ stage: 'DORMANT', count: 0 });
+    });
+  });
+
+  // ── Aggregation feed (consumed by realty-intelligence) ──
+
+  /**
+   * `listLeadsForAggregation` is the nightly intelligence run's only door into
+   * this table. It owns the keyset walk and the row→projection widening, so the
+   * cases here are the ones that would silently corrupt a year of corridor
+   * statistics: a cursor that fails to advance, a cap that truncates without
+   * saying so, and budgets crossing the rupee/paise boundary.
+   */
+  describe('listLeadsForAggregation', () => {
+    const SINCE = new Date('2025-07-03T00:00:00Z');
+
+    /** A projection row as the repository returns it (raw columns). */
+    function aggRow(overrides: Record<string, unknown> = {}) {
+      return {
+        id: LEAD_ID,
+        source: 'PORTAL',
+        stage: 'NEW',
+        qual_score: 70,
+        localities: ['Whitefield'],
+        budget_min: null as Prisma.Decimal | null,
+        budget_max: null as Prisma.Decimal | null,
+        config: '2BHK',
+        objections: [],
+        first_touch_at: new Date('2026-01-05T09:00:00Z'),
+        last_activity_at: new Date('2026-01-06T09:00:00Z'),
+        ...overrides,
+      };
+    }
+
+    it('returns a single short page without asking for another', async () => {
+      repository.listForAggregation.mockResolvedValueOnce([aggRow(), aggRow()] as never);
+
+      const { leads, truncated } = await service.listLeadsForAggregation(
+        BUSINESS_ID,
+        SINCE,
+        1000,
+        500,
+      );
+
+      expect(leads).toHaveLength(2);
+      expect(truncated).toBe(false);
+      expect(repository.listForAggregation).toHaveBeenCalledTimes(1);
+      expect(repository.listForAggregation).toHaveBeenCalledWith(BUSINESS_ID, SINCE, 500, undefined);
+    });
+
+    it('walks pages until a short one arrives, carrying the keyset cursor', async () => {
+      const full = Array.from({ length: 500 }, (_, i) =>
+        aggRow({ id: `lead-${i}`, first_touch_at: new Date(2026, 0, 1, 0, 0, i) }),
+      );
+      const last = full[full.length - 1]!;
+      repository.listForAggregation
+        .mockResolvedValueOnce(full as never)
+        .mockResolvedValueOnce([aggRow()] as never);
+
+      const { leads, truncated } = await service.listLeadsForAggregation(
+        BUSINESS_ID,
+        SINCE,
+        100_000,
+        500,
+      );
+
+      expect(leads).toHaveLength(501);
+      expect(truncated).toBe(false);
+      expect(repository.listForAggregation).toHaveBeenCalledTimes(2);
+      // Page 2 resumes from the last row of page 1 — both halves of the key.
+      expect(repository.listForAggregation).toHaveBeenNthCalledWith(2, BUSINESS_ID, SINCE, 500, {
+        firstTouchAt: last.first_touch_at,
+        id: last.id,
+      });
+    });
+
+    /**
+     * A page that is exactly full is indistinguishable from a page with more
+     * behind it, so the walk has to probe once more and stop on the empty
+     * result rather than assuming.
+     */
+    it('stops on an empty page after an exactly-full one', async () => {
+      const full = Array.from({ length: 500 }, () => aggRow());
+      repository.listForAggregation
+        .mockResolvedValueOnce(full as never)
+        .mockResolvedValueOnce([] as never);
+
+      const { leads, truncated } = await service.listLeadsForAggregation(
+        BUSINESS_ID,
+        SINCE,
+        100_000,
+        500,
+      );
+
+      expect(leads).toHaveLength(500);
+      expect(truncated).toBe(false);
+      expect(repository.listForAggregation).toHaveBeenCalledTimes(2);
+    });
+
+    it('stops at the cap and reports the truncation', async () => {
+      const full = Array.from({ length: 500 }, () => aggRow());
+      repository.listForAggregation.mockResolvedValue(full as never);
+
+      const { leads, truncated } = await service.listLeadsForAggregation(
+        BUSINESS_ID,
+        SINCE,
+        1000,
+        500,
+      );
+
+      expect(leads).toHaveLength(1000);
+      expect(truncated).toBe(true);
+      // Exactly two pages — the cap stops the walk, it does not keep reading.
+      expect(repository.listForAggregation).toHaveBeenCalledTimes(2);
+    });
+
+    /** The last page must not overshoot the cap just because pageSize is bigger. */
+    it('shrinks the final page so the cap is never exceeded', async () => {
+      // A tenant with more leads than the cap: every page comes back full.
+      repository.listForAggregation.mockImplementation(
+        (_b: string, _s: Date, take: number) =>
+          Promise.resolve(Array.from({ length: take }, () => aggRow())) as never,
+      );
+
+      const { leads, truncated } = await service.listLeadsForAggregation(
+        BUSINESS_ID,
+        SINCE,
+        600,
+        500,
+      );
+
+      expect(leads).toHaveLength(600);
+      expect(truncated).toBe(true);
+      // 500 asked for first, then only the 100 that still fit under the cap.
+      expect(repository.listForAggregation.mock.calls[0]![2]).toBe(500);
+      expect(repository.listForAggregation.mock.calls[1]![2]).toBe(100);
+    });
+
+    it('reports no truncation when the walk ends exactly on the cap boundary', async () => {
+      repository.listForAggregation
+        .mockResolvedValueOnce(Array.from({ length: 500 }, () => aggRow()) as never)
+        .mockResolvedValueOnce([] as never);
+
+      const { leads, truncated } = await service.listLeadsForAggregation(
+        BUSINESS_ID,
+        SINCE,
+        1000,
+        500,
+      );
+
+      expect(leads).toHaveLength(500);
+      expect(truncated).toBe(false);
+    });
+
+    it('converts stored Decimal rupees to integer paise', async () => {
+      repository.listForAggregation.mockResolvedValueOnce([
+        aggRow({
+          budget_min: new Prisma.Decimal('9000000'),
+          budget_max: new Prisma.Decimal('9500000.50'),
+        }),
+      ] as never);
+
+      const { leads } = await service.listLeadsForAggregation(BUSINESS_ID, SINCE, 1000, 500);
+
+      expect(leads[0]!.budgetMinPaise).toBe(900_000_000);
+      expect(leads[0]!.budgetMaxPaise).toBe(950_000_050);
+    });
+
+    it('leaves an absent budget null rather than zero', async () => {
+      repository.listForAggregation.mockResolvedValueOnce([aggRow()] as never);
+
+      const { leads } = await service.listLeadsForAggregation(BUSINESS_ID, SINCE, 1000, 500);
+
+      // Zero would read as "this buyer has no money" to the price-band maths.
+      expect(leads[0]!.budgetMinPaise).toBeNull();
+      expect(leads[0]!.budgetMaxPaise).toBeNull();
+    });
+
+    it('flattens objections to text and drops the empty ones', async () => {
+      repository.listForAggregation.mockResolvedValueOnce([
+        aggRow({
+          objections: [
+            { text: 'too expensive', at: '2026-01-05T09:00:00Z' },
+            { text: '', at: '2026-01-05T09:00:00Z' },
+            { at: '2026-01-05T09:00:00Z' },
+          ],
+        }),
+      ] as never);
+
+      const { leads } = await service.listLeadsForAggregation(BUSINESS_ID, SINCE, 1000, 500);
+
+      expect(leads[0]!.objections).toEqual(['too expensive']);
+    });
+
+    it('normalises a non-array objections column to an empty list', async () => {
+      repository.listForAggregation.mockResolvedValueOnce([
+        aggRow({ objections: null, localities: null, config: null, last_activity_at: null }),
+      ] as never);
+
+      const { leads } = await service.listLeadsForAggregation(BUSINESS_ID, SINCE, 1000, 500);
+
+      expect(leads[0]!.objections).toEqual([]);
+      expect(leads[0]!.localities).toEqual([]);
+      expect(leads[0]!.config).toBeNull();
+      expect(leads[0]!.lastActivityAt).toBeNull();
+    });
+
+    it('returns nothing for a tenant with no leads in the window', async () => {
+      repository.listForAggregation.mockResolvedValueOnce([] as never);
+
+      await expect(
+        service.listLeadsForAggregation(BUSINESS_ID, SINCE, 1000, 500),
+      ).resolves.toEqual({ leads: [], truncated: false });
     });
   });
 

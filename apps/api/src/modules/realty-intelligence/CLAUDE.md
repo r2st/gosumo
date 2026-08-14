@@ -69,9 +69,16 @@ run just leaves yesterday's priors in place (non-fatal).
 
 ## Cross-module reads
 
-Uses `RealtyLeadsService.listLeads` (public API — never touches the leads table directly) to
-stream leads for aggregation, and `LlmClientService` (OpenRouter free-tier, provided locally)
-for the optional narration. `intelligence_opt_in` on `businesses` is read/written here.
+Uses `RealtyLeadsService.listLeadsForAggregation` (public API — never touches the leads table
+directly) to stream leads for aggregation, and `LlmClientService` (OpenRouter free-tier, provided
+locally) for the optional narration. `intelligence_opt_in` on `businesses` is read/written here.
+
+That method — **not** `listLeads` — exists for this caller: it pushes the lookback window into
+the WHERE clause, projects only the ten columns the maths reads, and pages by keyset. Reading
+the ordinary lead list instead meant fetching every lead the tenant had ever had, in full, and
+discarding the out-of-window rows in JavaScript. `LEAD_FETCH_CAP` bounds the walk; hitting it is
+logged as a warning, because the resulting aggregates would be a biased sample of the oldest
+leads rather than the corridor.
 
 ## Key gotchas
 
