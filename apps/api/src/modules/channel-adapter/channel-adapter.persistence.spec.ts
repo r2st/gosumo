@@ -429,6 +429,45 @@ describe('ChannelAdapterService — inbound persistence', () => {
       );
     });
 
+    /**
+     * The whole point of `messageId` is that `ai-engine` looks the row up with
+     * it (`ContextLoaderService.load` → `messages.findFirst({ id: messageId })`)
+     * to read the customer's text. `normalized.id` is a UUID the adapter mints
+     * for its in-memory envelope, while `messages.id` is `uuid_generate_v4()`
+     * on the database side — so publishing the former meant the lookup never
+     * matched, `messageText` fell back to `''`, and every inbound message was
+     * classified and answered as if the customer had sent nothing.
+     */
+    it('carries the stored row id, not the adapter envelope id', async () => {
+      const normalized = makeNormalized();
+
+      await inbound(normalized);
+
+      const [, event] = emitter.emit.mock.calls.find(
+        ([name]) => name === 'message.received',
+      ) as [string, { messageId: string }];
+
+      expect(event.messageId).toBe('m1');
+      expect(event.messageId).not.toBe(normalized.id);
+    });
+
+    it('falls back to the envelope id when no message row was written', async () => {
+      // No channel_account ⇒ nothing persisted. The event is emitted anyway so
+      // the delivery is not lost, and `ai-engine` skips it on the empty
+      // conversationId rather than on the id.
+      db.channel_accounts.findFirst.mockResolvedValue(null);
+      const normalized = makeNormalized();
+
+      await inbound(normalized);
+
+      const [, event] = emitter.emit.mock.calls.find(
+        ([name]) => name === 'message.received',
+      ) as [string, { messageId: string; conversationId: string }];
+
+      expect(event.messageId).toBe(normalized.id);
+      expect(event.conversationId).toBe('');
+    });
+
     it('still emits — with the caller\'s tenant — when persistence throws', async () => {
       // Losing the message entirely is worse than losing its enrichment: the AI
       // pipeline downstream can still answer the customer.

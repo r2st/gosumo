@@ -182,6 +182,11 @@ export class ChannelAdapterService {
     let resolvedClientId = '';
     let resolvedConversationId = '';
     let resolvedChannelAccountId = normalized.channelAccountId;
+    // Set from the row `messages.create` actually wrote. `normalized.id` is a
+    // UUID the adapter minted for the in-memory envelope; `messages.id` is
+    // `uuid_generate_v4()` on the database side. They are never equal, so
+    // publishing the former is publishing an id nothing can be joined on.
+    let resolvedMessageId = normalized.id;
 
     try {
       // Look up the channel_account by channel type and external_id
@@ -324,7 +329,7 @@ export class ChannelAdapterService {
           'text' in normalized.content && typeof normalized.content.text === 'string'
             ? normalized.content.text
             : undefined;
-        await this.prisma.messages.create({
+        const stored = await this.prisma.messages.create({
           data: {
             business_id: channelAccount.business_id,
             conversation_id: conversation.id,
@@ -339,9 +344,10 @@ export class ChannelAdapterService {
             external_id: normalized.externalId,
           },
         });
+        resolvedMessageId = stored.id;
 
         this.logger.log(
-          `[${traceId}] Stored inbound message for conversation ${conversation.id}`,
+          `[${traceId}] Stored inbound message ${stored.id} for conversation ${conversation.id}`,
         );
       } else {
         this.logger.warn(
@@ -363,7 +369,7 @@ export class ChannelAdapterService {
       timestamp: new Date().toISOString(),
       businessId: resolvedBusinessId,
       correlationId: traceId,
-      messageId: normalized.id,
+      messageId: resolvedMessageId,
       conversationId: resolvedConversationId,
       channelAccountId: resolvedChannelAccountId,
       channel: normalized.channel,
