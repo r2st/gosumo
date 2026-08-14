@@ -475,4 +475,21 @@ export class NotificationRepository {
       where: { id: clientId, business_id: businessId, deleted_at: null },
     });
   }
+
+  /**
+   * Which of `clientIds` exist in this business — one round trip for a whole
+   * batch, so a 5000-recipient dispatch can be validated before it writes a
+   * single row. Ids belonging to another tenant simply do not come back.
+   */
+  async findExistingClientIds(
+    businessId: string,
+    clientIds: string[],
+  ): Promise<Set<string>> {
+    if (clientIds.length === 0) return new Set();
+    const rows = await this.prisma.clients.findMany({
+      where: { id: { in: clientIds }, business_id: businessId, deleted_at: null },
+      select: { id: true },
+    });
+    return new Set(rows.map((r) => r.id));
+  }
 }

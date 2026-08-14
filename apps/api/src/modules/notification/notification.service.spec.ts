@@ -285,6 +285,10 @@ class FakeRepo {
     return c && c.business_id === b ? { ...c } : null;
   });
 
+  findExistingClientIds = jest.fn(async (b: string, ids: string[]) => {
+    return new Set(ids.filter((id) => this.clients.get(id)?.business_id === b));
+  });
+
   // Test helpers
   seedClient(overrides: Record<string, unknown> = {}) {
     const c = {
@@ -967,6 +971,138 @@ describe('NotificationService.dispatchBatch', () => {
     expect(batchJobs[0][1].notificationIds).toHaveLength(BATCH_CHUNK_SIZE);
     expect(batchJobs[1][1].notificationIds).toHaveLength(1);
     expect(batchJobs[0][2].delay).toBeGreaterThan(0);
+  });
+
+  // ─────────────────────────────────────────────
+  // Partial failure
+  //
+  // A batch is up to 5000 recipients built by a caller from their own CRM
+  // export. Some of those ids will be stale, and — the case that matters — an
+  // id belonging to a different business is indistinguishable from a typo at
+  // the point it arrives. What must never happen is a batch that half-commits:
+  // rows written for the recipients before the bad one, no batch id returned
+  // to the caller, and nothing enqueued to send or fail them.
+  // ─────────────────────────────────────────────
+
+  it('rejects the whole batch before writing anything when a recipient belongs to another business', async () => {
+    const { service, repo, queue } = makeService();
+    repo.seedClient();
+    // A real client id — just not this tenant's.
+    repo.clients.set('00000000-0000-4000-8000-0000000000ff', {
+      id: '00000000-0000-4000-8000-0000000000ff',
+      business_id: '00000000-0000-4000-8000-000000000999',
+      email: 'other@example.com',
+      phone: '+919111111111',
+      profile: {},
+      opt_outs: {},
+    });
+
+    await expect(
+      service.dispatchBatch(BUSINESS, {
+        channel: NotificationTemplateChannel.SMS,
+        body: { text: 'hi' },
+        recipients: [
+          { recipient: '+919000000001' },
+          { clientId: CLIENT },
+          { clientId: '00000000-0000-4000-8000-0000000000ff' },
+          { recipient: '+919000000002' },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    // Nothing half-written: the two recipients ahead of the foreign id in the
+    // list must not have left rows behind, and nothing may be enqueued.
+    expect([...repo.notifications.values()]).toHaveLength(0);
+    expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  it('names how many recipients are unresolvable without dumping the whole list', async () => {
+    const { service } = makeService();
+    const unknown = Array.from(
+      { length: 12 },
+      (_, i) => `00000000-0000-4000-8000-0000000001${String(i).padStart(2, '0')}`,
+    );
+
+    const thrown = await service
+      .dispatchBatch(BUSINESS, {
+        channel: NotificationTemplateChannel.SMS,
+        body: { text: 'hi' },
+        recipients: unknown.map((clientId) => ({ clientId })),
+      })
+      .then(() => null)
+      .catch((e: unknown) => e as Error);
+
+    const message = thrown?.message ?? '';
+    expect(message).toContain('12');
+    // Actionable, but a 5000-id error body helps nobody.
+    expect(message.match(/00000000-0000-4000-8000/g)?.length ?? 0).toBeLessThanOrEqual(5);
+  });
+
+  it('still resolves a client that does belong to the tenant', async () => {
+    const { service, repo } = makeService();
+    repo.seedClient();
+
+    const result = await service.dispatchBatch(BUSINESS, {
+      channel: NotificationTemplateChannel.SMS,
+      body: { text: 'hi' },
+      recipients: [{ clientId: CLIENT }, { recipient: '+919000000001' }],
+    });
+
+    expect(result).toMatchObject({ total: 2, queued: 2, skipped: 0, failed: 0 });
+  });
+
+  it('isolates an unexpected per-recipient failure instead of abandoning the batch', async () => {
+    const { service, repo, queue } = makeService();
+    const realCreate = repo.createNotification.getMockImplementation()!;
+    let n = 0;
+    repo.createNotification.mockImplementation(async (input: Record<string, unknown>) => {
+      n += 1;
+      if (n === 2) throw new Error('connection reset');
+      return realCreate(input);
+    });
+
+    const result = await service.dispatchBatch(BUSINESS, {
+      channel: NotificationTemplateChannel.SMS,
+      body: { text: 'hi' },
+      recipients: [
+        { recipient: '+919000000001' },
+        { recipient: '+919000000002' },
+        { recipient: '+919000000003' },
+      ],
+    });
+
+    // The failure is reported rather than swallowed or thrown.
+    expect(result).toMatchObject({ total: 3, queued: 2, skipped: 0, failed: 1 });
+
+    // The invariant that matters: every row that got created got enqueued.
+    // A row left PENDING and unqueued never sends and never fails.
+    const created = [...repo.notifications.values()].map((r) => r.id);
+    const enqueued = queue.add.mock.calls
+      .filter((c) => c[0] === NOTIFICATION_JOBS.BATCH)
+      .flatMap((c) => c[1].notificationIds as string[]);
+    expect(new Set(enqueued)).toEqual(new Set(created));
+  });
+
+  it('keeps enqueuing later chunks when one chunk fails to reach the queue', async () => {
+    const { service, repo, queue } = makeService();
+    queue.add.mockImplementationOnce(() => Promise.reject(new Error('redis down')));
+
+    const recipients = Array.from({ length: BATCH_CHUNK_SIZE + 2 }, (_, i) => ({
+      recipient: `+9190000${String(i).padStart(5, '0')}`,
+    }));
+
+    const result = await service.dispatchBatch(BUSINESS, {
+      channel: NotificationTemplateChannel.SMS,
+      body: { text: 'hi' },
+      recipients,
+    });
+
+    // The second chunk still went out, and the count reported as queued is the
+    // number actually handed to the queue — not the number of rows written.
+    expect(queue.add).toHaveBeenCalledTimes(2);
+    expect(result.queued).toBe(2);
+    expect(result.failed).toBe(BATCH_CHUNK_SIZE);
+    expect([...repo.notifications.values()]).toHaveLength(BATCH_CHUNK_SIZE + 2);
   });
 });
 

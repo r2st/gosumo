@@ -577,6 +577,15 @@ export interface DispatchResultDto {
 export interface BatchResultDto {
   batchId: string;
   total: number;
+  /** Recipients whose notification row was written *and* handed to the queue. */
   queued: number;
+  /** Recipients dropped by an opt-out, quiet hours, or a missing address. */
   skipped: number;
+  /**
+   * Recipients whose notification could not be created or could not be
+   * enqueued. Non-zero means the batch went out partially — the counts are the
+   * only place a caller can see that, so they are always returned rather than
+   * folded into `skipped`.
+   */
+  failed: number;
 }

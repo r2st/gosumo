@@ -161,6 +161,25 @@ export class NotificationService {
    * Fan a notification out to many recipients. The recipients are written as
    * individual notification rows sharing a `batchId`, then enqueued in chunks
    * so one slow recipient never blocks the rest.
+   *
+   * A batch is up to 5000 recipients assembled by the caller from their own
+   * export, so bad entries are normal rather than exceptional — and the two
+   * ways a batch can go wrong need opposite handling.
+   *
+   * An unresolvable `clientId` is the caller's list being wrong, and it is
+   * checked for the whole batch before anything is written. A foreign
+   * business's client id is not distinguishable here from a stale one: both
+   * simply fail to resolve within the tenant, and either way the right answer
+   * is to reject the submission rather than send to whoever *did* resolve.
+   * Doing it per-recipient mid-loop would abort the batch after writing rows
+   * for everyone ahead of the bad entry, with no batch id returned — rows that
+   * would then sit PENDING forever, never sent and never failed.
+   *
+   * A failure while creating or enqueuing an individual recipient is different:
+   * it is not the caller's mistake and it says nothing about the rest of the
+   * list, so it is counted into `failed` and the batch carries on. The
+   * invariant that holds either way is that no row is created without being
+   * handed to the queue.
    */
   async dispatchBatch(
     businessId: string,
@@ -177,56 +196,111 @@ export class NotificationService {
       throw new BadRequestException('Batch requires either templateName or body');
     }
 
+    await this.assertRecipientClientsAreOurs(businessId, dto.recipients);
+
     const batchId = generateId();
     const category = dto.category ?? NotificationCategory.MARKETING;
     const scheduledAt = dto.scheduledAt ? new Date(dto.scheduledAt) : null;
-    const queuedIds: string[] = [];
+    const createdIds: string[] = [];
     let skipped = 0;
+    let failed = 0;
 
     for (const r of dto.recipients) {
-      const result = await this.createAndQueue(
-        businessId,
-        {
-          clientId: r.clientId ?? null,
-          channel: dto.channel,
-          category,
-          recipientOverride: r.recipient ?? null,
-          template,
-          body: dto.body ?? null,
-          data: { ...(dto.data ?? {}), ...(r.data ?? {}) },
-          scheduledAt,
-          campaignId: dto.campaignId ?? null,
-          batchId,
-        },
-        // Defer queueing — we push chunks ourselves below.
-        { deferQueue: true },
-      );
-      if (result.skipped) {
-        skipped += 1;
-      } else {
-        queuedIds.push(result.notification.id);
+      try {
+        const result = await this.createAndQueue(
+          businessId,
+          {
+            clientId: r.clientId ?? null,
+            channel: dto.channel,
+            category,
+            recipientOverride: r.recipient ?? null,
+            template,
+            body: dto.body ?? null,
+            data: { ...(dto.data ?? {}), ...(r.data ?? {}) },
+            scheduledAt,
+            campaignId: dto.campaignId ?? null,
+            batchId,
+          },
+          // Defer queueing — we push chunks ourselves below.
+          { deferQueue: true },
+        );
+        if (result.skipped) {
+          skipped += 1;
+        } else {
+          createdIds.push(result.notification.id);
+        }
+      } catch (err) {
+        failed += 1;
+        this.logger.error(
+          `Batch ${batchId}: recipient failed — ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
 
-    // Enqueue in BATCH_CHUNK_SIZE chunks.
-    for (let i = 0; i < queuedIds.length; i += BATCH_CHUNK_SIZE) {
-      const chunk = queuedIds.slice(i, i + BATCH_CHUNK_SIZE);
+    // Enqueue in BATCH_CHUNK_SIZE chunks. A chunk that cannot reach the queue
+    // must not take the chunks after it down with it: those rows are already
+    // written, and an unqueued row never sends and never fails.
+    let queued = 0;
+    for (let i = 0; i < createdIds.length; i += BATCH_CHUNK_SIZE) {
+      const chunk = createdIds.slice(i, i + BATCH_CHUNK_SIZE);
       const data: BatchJobData = { businessId, batchId, notificationIds: chunk };
-      await this.queue.add(NOTIFICATION_JOBS.BATCH, data, {
-        attempts: 1,
-        delay: scheduledAt ? Math.max(0, scheduledAt.getTime() - Date.now()) : 0,
-      });
+      try {
+        await this.queue.add(NOTIFICATION_JOBS.BATCH, data, {
+          attempts: 1,
+          delay: scheduledAt ? Math.max(0, scheduledAt.getTime() - Date.now()) : 0,
+        });
+        queued += chunk.length;
+      } catch (err) {
+        failed += chunk.length;
+        // The rows stay PENDING and are individually retryable via
+        // `POST /notifications/:id/retry`, so name the batch in the log.
+        this.logger.error(
+          `Batch ${batchId}: ${chunk.length} notifications written but not enqueued — ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
 
     this.logger.log(
-      `Batch ${batchId}: ${queuedIds.length} queued, ${skipped} skipped (channel ${dto.channel})`,
+      `Batch ${batchId}: ${queued} queued, ${skipped} skipped, ${failed} failed ` +
+        `(channel ${dto.channel})`,
     );
     return {
       batchId,
       total: dto.recipients.length,
-      queued: queuedIds.length,
+      queued,
       skipped,
+      failed,
     };
+  }
+
+  /**
+   * Reject the batch unless every referenced client resolves inside this
+   * business. One query for the whole list, before any row is written.
+   */
+  private async assertRecipientClientsAreOurs(
+    businessId: string,
+    recipients: DispatchBatchDto['recipients'],
+  ): Promise<void> {
+    const ids = [
+      ...new Set(
+        recipients
+          .map((r) => r.clientId)
+          .filter((id): id is string => typeof id === 'string' && id.length > 0),
+      ),
+    ];
+    if (ids.length === 0) return;
+
+    const found = await this.repository.findExistingClientIds(businessId, ids);
+    const missing = ids.filter((id) => !found.has(id));
+    if (missing.length === 0) return;
+
+    // Enough to fix the list, without echoing 5000 ids into an error body.
+    const sample = missing.slice(0, 5).join(', ');
+    throw new BadRequestException(
+      `${missing.length} of ${ids.length} recipient client ids do not exist in this business` +
+        `${missing.length > 5 ? ` (first 5: ${sample})` : `: ${sample}`}`,
+    );
   }
 
   // ════════════════════════════════════════════
