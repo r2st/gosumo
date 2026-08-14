@@ -1,11 +1,16 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Lead } from '@/lib/realty-types';
 
 // ── Mocks ──────────────────────────────────────────────────────────────────
+// Controllable, because two of the page's branches turn on them: a null
+// `useParams` (the route segment not yet resolved) and the router push behind
+// the not-found escape hatch.
+const useParams = vi.fn<[], { leadId: string } | null>(() => ({ leadId: 'lead-1' }));
+const push = vi.fn();
 vi.mock('next/navigation', () => ({
-  useParams: () => ({ leadId: 'lead-1' }),
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useParams: () => useParams(),
+  useRouter: () => ({ push, replace: vi.fn() }),
 }));
 
 const noopMutation = { mutate: vi.fn(), isPending: false, isError: false };
@@ -141,5 +146,76 @@ describe('LeadDetailPage', () => {
     });
     render(<LeadDetailPage />);
     expect(screen.getByText('Lead not found')).toBeInTheDocument();
+  });
+
+  it('routes back to the pipeline from the not-found state', () => {
+    // The only way out of this state — without it the operator is stranded on
+    // a page with no content and no navigation but the breadcrumb.
+    useLead.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    render(<LeadDetailPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to pipeline' }));
+    expect(push).toHaveBeenCalledWith('/leads');
+  });
+
+  it('shows an error state, with the error, when the fetch fails', () => {
+    useLead.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('boom'),
+      refetch: vi.fn(),
+    });
+    render(<LeadDetailPage />);
+
+    expect(screen.getByText('Something went wrong')).toBeInTheDocument();
+    // ErrorState prefers the thrown error over the page's fallback copy, so
+    // the operator sees the specific cause rather than one generic sentence.
+    expect(screen.getByText('boom')).toBeInTheDocument();
+    // A failed load must not be mistaken for a deleted lead.
+    expect(screen.queryByText('Lead not found')).not.toBeInTheDocument();
+  });
+
+  it('refetches when the error state is retried', () => {
+    const refetch = vi.fn();
+    useLead.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('boom'),
+      refetch,
+    });
+    render(<LeadDetailPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /retry|try again/i }));
+    expect(refetch).toHaveBeenCalled();
+  });
+
+  it('titles the breadcrumb "Loading…" while fetching and "Lead" when there is none', () => {
+    useLead.mockReturnValue({ data: undefined, isLoading: true, isError: false, refetch: vi.fn() });
+    const { unmount } = render(<LeadDetailPage />);
+    expect(screen.getByText('Loading…')).toBeInTheDocument();
+    unmount();
+
+    // Settled with no lead: the breadcrumb still needs a label, and "Loading…"
+    // there would claim a fetch that has already finished.
+    useLead.mockReturnValue({ data: undefined, isLoading: false, isError: false, refetch: vi.fn() });
+    render(<LeadDetailPage />);
+    expect(screen.getByText('Lead')).toBeInTheDocument();
+  });
+
+  it('asks for no lead at all when the route param is not resolved yet', () => {
+    // `useParams()` is null on the first render of a dynamic segment. Passing
+    // `undefined` through as an id would fetch `/leads/undefined`.
+    useParams.mockReturnValueOnce(null);
+    useLead.mockReturnValue({ data: undefined, isLoading: true, isError: false, refetch: vi.fn() });
+
+    render(<LeadDetailPage />);
+    expect(screen.getByText('Loading lead…')).toBeInTheDocument();
   });
 });
