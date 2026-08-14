@@ -83,13 +83,13 @@ export function IntegrationCard({
   // Dirty when a non-secret field changed or any secret field was filled.
   const dirty = visibleFields.some((f) => {
     if (f.secret) return !!form[f.name];
-    return (form[f.name] ?? '') !== (initial[f.name] ?? '');
+    return form[f.name] !== initial[f.name];
   });
 
   const buildPayload = () => {
     const credentials: Record<string, string> = {};
     for (const f of visibleFields) {
-      const value = form[f.name] ?? '';
+      const value = form[f.name];
       if (f.secret) {
         if (value) credentials[f.name] = value; // blank secret keeps stored value
       } else {
@@ -163,12 +163,12 @@ export function IntegrationCard({
                     {f.options ? (
                       <Select
                         options={f.options}
-                        value={form[f.name] ?? ''}
+                        value={form[f.name]}
                         onChange={(e) => set(f.name, e.target.value)}
                       />
                     ) : f.secret ? (
                       <SecretInput
-                        value={form[f.name] ?? ''}
+                        value={form[f.name]}
                         onChange={(v) => set(f.name, v)}
                         configured={fieldState?.set}
                         last4={fieldState?.last4}
@@ -177,7 +177,7 @@ export function IntegrationCard({
                     ) : (
                       <Input
                         type={f.type ?? 'text'}
-                        value={form[f.name] ?? ''}
+                        value={form[f.name]}
                         placeholder={f.placeholder}
                         onChange={(e) => set(f.name, e.target.value)}
                       />

@@ -535,6 +535,44 @@ describe('PaymentDetailDrawer', () => {
     expect(screen.getByText(/Expires 3 Aug 2026/)).toBeInTheDocument();
   });
 
+  it('falls back to the long payment link when Razorpay returned no short one', () => {
+    state.payment = {
+      ...state.payment,
+      data: makePayment({
+        paymentLinkUrl: 'https://rzp.io/i/long-form-link',
+        paymentLinkShortUrl: undefined,
+      }),
+    };
+    render(<PaymentDetailDrawer paymentId="pay-1" onClose={vi.fn()} />);
+    expect(screen.getByRole('link', { name: /long-form-link/ })).toHaveAttribute(
+      'href',
+      'https://rzp.io/i/long-form-link',
+    );
+  });
+
+  it('shows a dash rather than a blank line for a client with no contact detail', () => {
+    state.payment = {
+      ...state.payment,
+      data: makePayment({ client: { id: 'c3', name: 'Walk-in' } as Payment['client'] }),
+    };
+    render(<PaymentDetailDrawer paymentId="pay-1" onClose={vi.fn()} />);
+    expect(screen.getByText('Walk-in')).toBeInTheDocument();
+    expect(screen.getByText('—')).toBeInTheDocument();
+  });
+
+  it('badges a refund status the dashboard does not recognise without crashing', () => {
+    // Razorpay can add refund states ahead of the dashboard; an unmapped one
+    // must degrade to a neutral badge rather than render an undefined tone.
+    state.payment = {
+      ...state.payment,
+      data: makePayment({
+        refunds: [makeRefund({ amount: 50_000, status: 'REVERSED' as PaymentRefund['status'] })],
+      }),
+    };
+    render(<PaymentDetailDrawer paymentId="pay-1" onClose={vi.fn()} />);
+    expect(screen.getByText('Reversed')).toBeInTheDocument();
+  });
+
   describe('the refund ceiling', () => {
     it('subtracts refunds that already went through', () => {
       state.payment = {

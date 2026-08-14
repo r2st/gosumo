@@ -29,15 +29,24 @@ const EVENTS: { type: NotificationType; label: string; channels: string[] }[] = 
   { type: 'CHANNEL_ERROR', label: 'A channel went down', channels: ['In-app', 'Email', 'SMS'] },
 ];
 
-type Form = Pick<
-  BusinessSettings,
-  | 'emailNotificationsEnabled'
-  | 'smsNotificationsEnabled'
-  | 'notificationEmail'
-  | 'notificationPhone'
-  | 'quietHoursEnabled'
-  | 'quietHoursStart'
-  | 'quietHoursEnd'
+/**
+ * Every field is required here even though the matching `BusinessSettings`
+ * keys are optional: the effect below fills each one in from the server value
+ * or a default, so once the form exists there is no such thing as an unset
+ * field. Inheriting the optionality instead would push a `?? ''` onto every
+ * input and every dirty comparison to re-handle a case that cannot occur.
+ */
+type Form = Required<
+  Pick<
+    BusinessSettings,
+    | 'emailNotificationsEnabled'
+    | 'smsNotificationsEnabled'
+    | 'notificationEmail'
+    | 'notificationPhone'
+    | 'quietHoursEnabled'
+    | 'quietHoursStart'
+    | 'quietHoursEnd'
+  >
 >;
 
 export default function NotificationsPage() {
@@ -68,11 +77,11 @@ export default function NotificationsPage() {
   const dirty =
     form.emailNotificationsEnabled !== data.emailNotificationsEnabled ||
     form.smsNotificationsEnabled !== data.smsNotificationsEnabled ||
-    (form.notificationEmail ?? '') !== (data.notificationEmail ?? '') ||
-    (form.notificationPhone ?? '') !== (data.notificationPhone ?? '') ||
-    !!form.quietHoursEnabled !== !!data.quietHoursEnabled ||
-    (form.quietHoursStart ?? '') !== (data.quietHoursStart ?? '22:00') ||
-    (form.quietHoursEnd ?? '') !== (data.quietHoursEnd ?? '08:00');
+    form.notificationEmail !== (data.notificationEmail ?? '') ||
+    form.notificationPhone !== (data.notificationPhone ?? '') ||
+    form.quietHoursEnabled !== (data.quietHoursEnabled ?? false) ||
+    form.quietHoursStart !== (data.quietHoursStart ?? '22:00') ||
+    form.quietHoursEnd !== (data.quietHoursEnd ?? '08:00');
 
   return (
     <form
@@ -113,7 +122,7 @@ export default function NotificationsPage() {
                 <Input
                   type="email"
                   className="pl-9"
-                  value={form.notificationEmail ?? ''}
+                  value={form.notificationEmail}
                   onChange={(e) => patch({ notificationEmail: e.target.value })}
                   placeholder="alerts@business.in"
                 />
@@ -135,7 +144,7 @@ export default function NotificationsPage() {
                 <MessageSquare className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   className="pl-9"
-                  value={form.notificationPhone ?? ''}
+                  value={form.notificationPhone}
                   onChange={(e) => patch({ notificationPhone: e.target.value })}
                   placeholder="+91…"
                 />
@@ -149,7 +158,7 @@ export default function NotificationsPage() {
           description="Pause non-urgent notifications during these hours (your business timezone)."
         >
           <Switch
-            checked={!!form.quietHoursEnabled}
+            checked={form.quietHoursEnabled}
             onChange={(v) => patch({ quietHoursEnabled: v })}
             label="Enable quiet hours"
           />
@@ -159,14 +168,14 @@ export default function NotificationsPage() {
               <Field label="From">
                 <Input
                   type="time"
-                  value={form.quietHoursStart ?? '22:00'}
+                  value={form.quietHoursStart}
                   onChange={(e) => patch({ quietHoursStart: e.target.value })}
                 />
               </Field>
               <Field label="To">
                 <Input
                   type="time"
-                  value={form.quietHoursEnd ?? '08:00'}
+                  value={form.quietHoursEnd}
                   onChange={(e) => patch({ quietHoursEnd: e.target.value })}
                 />
               </Field>

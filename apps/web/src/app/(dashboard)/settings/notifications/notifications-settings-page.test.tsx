@@ -202,6 +202,17 @@ describe('NotificationsPage', () => {
     expect(screen.getAllByText('SMS')).toHaveLength(2);
   });
 
+  it('opens clean for a business that has never stored a notification email', () => {
+    // Every optional field falls back to a client-side default. If the form
+    // compared those defaults against the server's `undefined` it would open
+    // dirty, and Save would push settings the operator never chose.
+    state.settings.data = makeSettings({ notificationEmail: undefined });
+    render(<NotificationsPage />);
+
+    expect(screen.getByPlaceholderText('alerts@business.in')).toHaveValue('');
+    expect(save()).toBeDisabled();
+  });
+
   it('explains itself instead of saving for an operator who cannot manage', () => {
     role = 'STAFF';
     render(<NotificationsPage />);

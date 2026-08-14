@@ -35,12 +35,18 @@ const mocks = vi.hoisted(() => ({
     refetch: vi.fn(),
   },
   board: {
-    data: [] as { stage: string; count: number }[],
+    data: [] as { stage: string; count: number }[] | undefined,
     isLoading: false,
     isError: false,
     refetch: vi.fn(),
   },
-  team: { data: { data: [] as { id: string; name: string }[] }, isLoading: false, isError: false },
+  team: {
+    data: { data: [] as { id: string; name: string }[] } as
+      | { data: { id: string; name: string }[] }
+      | undefined,
+    isLoading: false,
+    isError: false,
+  },
   search: '',
   replace: vi.fn(),
   downloadCsv: vi.fn(),
@@ -351,6 +357,33 @@ describe('LeadsPage — the ?lead= deep link', () => {
   it('does not navigate when a dossier opened without a deep link is closed', () => {
     render(<LeadsPage />);
     expect(mocks.replace).not.toHaveBeenCalled();
+  });
+});
+
+describe('LeadsPage — partial payloads', () => {
+  it('renders the board before the counts and the roster have arrived', () => {
+    // The board totals and the team roster resolve independently of the lead
+    // list. Reading either one unguarded blanks the whole pipeline while the
+    // slower of the two is still in flight.
+    mocks.board.data = undefined;
+    mocks.team.data = undefined;
+    render(<LeadsPage />);
+
+    expect(screen.getAllByText('Asha Rao').length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('tab').length).toBeGreaterThan(0);
+  });
+
+  it('leaves a lead out of the board when its stage has no column', () => {
+    // CLOSED_LOST is a real stage with no pipeline column. It must not be
+    // dropped into some other column, and it must not throw on the way past.
+    mocks.leads.data = {
+      data: [...LEADS, makeLead({ id: 'lost', name: 'Zoya Khan', stage: 'CLOSED_LOST' })],
+      pagination: { total: LEADS.length + 1 },
+    };
+    render(<LeadsPage />);
+
+    expect(screen.queryByText('Zoya Khan')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Asha Rao').length).toBeGreaterThan(0);
   });
 });
 
