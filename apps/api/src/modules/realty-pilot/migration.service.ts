@@ -79,9 +79,19 @@ export class MigrationService {
     } else {
       try {
         const result = await this.ingestionService.importCsv(businessId, { rows: dto.rows });
+        // `importCsv` swallows per-row failures into `errors` rather than
+        // throwing, so "it returned" is not the same as "it imported". A run
+        // that touched no lead at all is a failed run, exactly as the inventory
+        // path already treats one — otherwise a CSV whose every row was
+        // rejected is filed in the audit history as COMMITTED and the operator
+        // has no signal that the migration did nothing.
+        status =
+          result.total > 0 && result.created === 0 && result.merged === 0
+            ? MigrationStatus.FAILED
+            : MigrationStatus.COMMITTED;
         summary = {
           kind,
-          status: MigrationStatus.COMMITTED,
+          status,
           dryRun: false,
           total: result.total,
           created: result.created,
@@ -89,7 +99,6 @@ export class MigrationService {
           skipped: result.skipped,
           errors: result.errors,
         };
-        status = MigrationStatus.COMMITTED;
       } catch (err) {
         summary = this.failedSummary(kind, rows.length, err);
         status = MigrationStatus.FAILED;

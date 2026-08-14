@@ -96,6 +96,60 @@ describe('MigrationService', () => {
       expect(run.status).toBe(MigrationStatus.FAILED);
       expect(run.errors[0]!.reason).toMatch(/db down/);
     });
+
+    /**
+     * `importCsv` collects per-row failures into `errors` and returns normally,
+     * so "it resolved" is not "it imported". A run that touched no lead is a
+     * failed run — the inventory path already says so, and filing it as
+     * COMMITTED leaves the operator with an audit row claiming a migration
+     * that moved nothing.
+     */
+    it('records FAILED when every row was rejected', async () => {
+      ingestion.importCsv.mockResolvedValue({
+        total: 3,
+        created: 0,
+        merged: 0,
+        skipped: 3,
+        errors: [
+          { row: 1, reason: 'invalid phone' },
+          { row: 2, reason: 'invalid phone' },
+          { row: 3, reason: 'invalid phone' },
+        ],
+      });
+      const run = await service.importLeads(BUSINESS_ID, {
+        rows: [{ phone: 'x' }, { phone: 'y' }, { phone: 'z' }],
+      });
+      expect(run.status).toBe(MigrationStatus.FAILED);
+      expect(run.created).toBe(0);
+      expect(run.skipped).toBe(3);
+      expect(emitter.emit).toHaveBeenCalledWith(
+        'realty.migration.completed',
+        expect.objectContaining({ status: MigrationStatus.FAILED }),
+      );
+    });
+
+    it('still records COMMITTED when a single row merged and the rest failed', async () => {
+      // Partial success is a real import: one buyer's history now exists.
+      ingestion.importCsv.mockResolvedValue({
+        total: 3,
+        created: 0,
+        merged: 1,
+        skipped: 2,
+        errors: [{ row: 2, reason: 'invalid phone' }, { row: 3, reason: 'invalid phone' }],
+      });
+      const run = await service.importLeads(BUSINESS_ID, {
+        rows: [{ phone: '9876543210' }, { phone: 'y' }, { phone: 'z' }],
+      });
+      expect(run.status).toBe(MigrationStatus.COMMITTED);
+    });
+
+    it('records COMMITTED for an empty file rather than calling it a failure', async () => {
+      // Nothing to import is not a failed import; only a run that had rows and
+      // moved none of them is.
+      ingestion.importCsv.mockResolvedValue({ total: 0, created: 0, merged: 0, skipped: 0, errors: [] });
+      const run = await service.importLeads(BUSINESS_ID, { rows: [] });
+      expect(run.status).toBe(MigrationStatus.COMMITTED);
+    });
   });
 
   describe('importInventory', () => {
