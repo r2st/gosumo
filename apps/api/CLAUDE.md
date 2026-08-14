@@ -37,7 +37,8 @@ src/
 - `ValidationPipe` — applied globally; `whitelist: true`, `transform: true`
 - `HttpExceptionFilter` — standardized error responses
 - `LoggingInterceptor` — request/response logging with correlation IDs
-- Swagger UI — available at `/api/docs` in dev
+- Swagger UI — served at `/v1/docs`, **development only**. In production it is not mounted at all (it would publish every route and DTO); set `ENABLE_SWAGGER=true` to override.
+- CORS — origins come from `CORS_ORIGIN` (comma-separated for a list). When it is unset the origin falls back to `*` and credentials are switched **off**, since `Access-Control-Allow-Origin: *` with credentials is the one combination the CORS spec forbids.
 - CORS configured for dashboard origin
 
 ## Auth Flow

