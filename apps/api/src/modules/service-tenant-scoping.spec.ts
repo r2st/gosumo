@@ -100,7 +100,7 @@ const { tenantModels: TENANT_MODELS, nullableTenant: NULLABLE_TENANT } =
  * entry means asserting that property about the new call.
  */
 const ALLOWED_UNSCOPED: Record<string, string> = {
-  'ChannelAdapterService.handleInboundWebhook':
+  'ChannelAdapterService.processInboundMessage':
     'Resolves the channel_account an inbound provider webhook belongs to. The ' +
     'provider posts a channel type and its own external id and nothing else, ' +
     'so there is no tenant yet — this row is what supplies one, and every ' +

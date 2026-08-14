@@ -70,7 +70,9 @@ describe('Instagram channel (e2e)', () => {
 
   beforeEach(() => {
     h.events.length = 0;
-    parseSpy = jest.spyOn(adapter, 'parseInbound');
+    // The webhook route goes through the batch parser — one Meta POST can
+    // carry several messaging events, and `parseInbound` returns only the first.
+    parseSpy = jest.spyOn(adapter, 'parseInboundAll');
   });
 
   afterEach(() => {
@@ -90,7 +92,10 @@ describe('Instagram channel (e2e)', () => {
   /** The NormalizedMessage the adapter produced for the most recent request. */
   async function lastParsed(): Promise<NormalizedMessage> {
     expect(parseSpy).toHaveBeenCalled();
-    return parseSpy.mock.results[parseSpy.mock.results.length - 1]!.value as NormalizedMessage;
+    const batch = parseSpy.mock.results[parseSpy.mock.results.length - 1]!
+      .value as NormalizedMessage[];
+    expect(batch.length).toBeGreaterThan(0);
+    return batch[batch.length - 1]!;
   }
 
   const receivedEvents = () => h.events.filter((e) => e.name === 'message.received');
