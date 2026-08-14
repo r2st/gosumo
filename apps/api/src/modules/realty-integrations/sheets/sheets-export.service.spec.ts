@@ -149,6 +149,31 @@ describe('SheetsExportService', () => {
         BadRequestException,
       );
     });
+
+    it('accepts an access-token-only grant', async () => {
+      // Google withholds the refresh token on re-consent; the access token alone
+      // is still enough to export until it expires.
+      sheets.exchangeCode.mockResolvedValue({ accessToken: 'at' });
+      repo.upsertConnection.mockResolvedValue(makeConnection());
+      repo.findConnection.mockResolvedValue(makeConnection());
+
+      await expect(service.completeOAuth(BUSINESS_ID, 'code')).resolves.toMatchObject({
+        connected: true,
+      });
+    });
+
+    it('emits an empty connectionId when the row cannot be read back', async () => {
+      sheets.exchangeCode.mockResolvedValue({ refreshToken: 'rt' });
+      repo.upsertConnection.mockResolvedValue(makeConnection());
+      repo.findConnection.mockResolvedValue(null);
+
+      await service.completeOAuth(BUSINESS_ID, 'code');
+
+      expect(emitter.emit).toHaveBeenCalledWith(
+        'realty.integration.connected',
+        expect.objectContaining({ connectionId: '' }),
+      );
+    });
   });
 
   describe('exportForBusiness', () => {
@@ -157,6 +182,146 @@ describe('SheetsExportService', () => {
       await expect(service.exportForBusiness(BUSINESS_ID)).rejects.toBeInstanceOf(
         BadRequestException,
       );
+    });
+
+    it('throws when the connection row exists but is DISCONNECTED', async () => {
+      repo.findConnection.mockResolvedValue(makeConnection({ status: 'DISCONNECTED' }));
+
+      await expect(service.exportForBusiness(BUSINESS_ID)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(sheets.ensureSpreadsheet).not.toHaveBeenCalled();
+    });
+
+    it('walks every page of leads before writing the sheet', async () => {
+      repo.findConnection.mockResolvedValue(makeConnection());
+      repo.upsertConnection.mockResolvedValue(makeConnection());
+      repo.recordSync.mockResolvedValue(makeConnection());
+      leads.listLeads
+        .mockResolvedValueOnce({
+          data: [{ id: 'lead-1', bltc: { localities: [] } }] as never,
+          total: 2,
+          page: 1,
+          limit: 500,
+          totalPages: 2,
+        })
+        .mockResolvedValueOnce({
+          data: [{ id: 'lead-2', bltc: { localities: [] } }] as never,
+          total: 2,
+          page: 2,
+          limit: 500,
+          totalPages: 2,
+        });
+      inventory.listProjects.mockResolvedValue([]);
+      sheets.ensureSpreadsheet.mockResolvedValue({
+        spreadsheetId: 'sheet-123',
+        spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/sheet-123',
+      });
+      sheets.writeSheet.mockResolvedValue();
+
+      const result = await service.exportForBusiness(BUSINESS_ID);
+
+      expect(leads.listLeads).toHaveBeenCalledTimes(2);
+      expect(leads.listLeads).toHaveBeenLastCalledWith(BUSINESS_ID, {
+        page: 2,
+        limit: 500,
+      });
+      expect(result.leadsExported).toBe(2);
+    });
+
+    it('stops paging when a page comes back empty', async () => {
+      // A shrinking result set must not spin to the MAX_LEAD_PAGES cap.
+      repo.findConnection.mockResolvedValue(makeConnection());
+      repo.upsertConnection.mockResolvedValue(makeConnection());
+      repo.recordSync.mockResolvedValue(makeConnection());
+      leads.listLeads.mockResolvedValue({
+        data: [],
+        total: 0,
+        page: 1,
+        limit: 500,
+        totalPages: 99,
+      });
+      inventory.listProjects.mockResolvedValue([]);
+      sheets.ensureSpreadsheet.mockResolvedValue({
+        spreadsheetId: 'sheet-123',
+        spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/sheet-123',
+      });
+      sheets.writeSheet.mockResolvedValue();
+
+      const result = await service.exportForBusiness(BUSINESS_ID);
+
+      expect(leads.listLeads).toHaveBeenCalledTimes(1);
+      expect(result.leadsExported).toBe(0);
+    });
+
+    it('exports a project that has no units yet', async () => {
+      repo.findConnection.mockResolvedValue(makeConnection());
+      repo.upsertConnection.mockResolvedValue(makeConnection());
+      repo.recordSync.mockResolvedValue(makeConnection());
+      leads.listLeads.mockResolvedValue({
+        data: [],
+        total: 0,
+        page: 1,
+        limit: 500,
+        totalPages: 1,
+      });
+      inventory.listProjects.mockResolvedValue([{ id: 'proj-empty' }] as never);
+      inventory.listUnitsForProjects.mockResolvedValue(new Map() as never);
+      sheets.ensureSpreadsheet.mockResolvedValue({
+        spreadsheetId: 'sheet-123',
+        spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/sheet-123',
+      });
+      sheets.writeSheet.mockResolvedValue();
+
+      const result = await service.exportForBusiness(BUSINESS_ID);
+
+      expect(result.unitsExported).toBe(0);
+      expect(sheets.writeSheet).toHaveBeenCalledTimes(2);
+    });
+
+    it('persists the newly created spreadsheetId back onto the connection', async () => {
+      // First export: the connection has credentials but no sheet yet.
+      repo.findConnection.mockResolvedValue(
+        makeConnection({ config: { refreshToken: 'rt' }, external_ref: null }),
+      );
+      repo.upsertConnection.mockResolvedValue(makeConnection());
+      repo.recordSync.mockResolvedValue(makeConnection());
+      leads.listLeads.mockResolvedValue({
+        data: [],
+        total: 0,
+        page: 1,
+        limit: 500,
+        totalPages: 1,
+      });
+      inventory.listProjects.mockResolvedValue([]);
+      sheets.ensureSpreadsheet.mockResolvedValue({
+        spreadsheetId: 'sheet-new',
+        spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/sheet-new',
+      });
+      sheets.writeSheet.mockResolvedValue();
+
+      await service.exportForBusiness(BUSINESS_ID);
+
+      expect(repo.upsertConnection).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        RealtyIntegrationProvider.GOOGLE_SHEETS,
+        expect.objectContaining({
+          externalRef: 'sheet-new',
+          config: expect.objectContaining({
+            refreshToken: 'rt',
+            spreadsheetId: 'sheet-new',
+          }),
+        }),
+      );
+    });
+
+    it('records a non-Error rejection as a string', async () => {
+      repo.findConnection.mockResolvedValue(makeConnection());
+      repo.recordSync.mockResolvedValue(makeConnection());
+      leads.listLeads.mockRejectedValue('socket hang up');
+
+      await expect(service.exportForBusiness(BUSINESS_ID)).rejects.toBe('socket hang up');
+      expect(repo.recordSync).toHaveBeenCalledWith(BUSINESS_ID, 'conn-1', 'socket hang up');
     });
 
     it('collects leads + inventory, writes both tabs, records sync, and emits', async () => {
@@ -236,6 +401,127 @@ describe('SheetsExportService', () => {
 
       expect(spy).toHaveBeenCalledTimes(2);
       expect(res).toEqual({ businesses: 2, failures: 1 });
+    });
+
+    it('counts a non-Error failure without derailing the sweep', async () => {
+      repo.listConnectedByProvider.mockResolvedValue([
+        makeConnection({ id: 'c1', business_id: 'b1' }),
+        makeConnection({ id: 'c2', business_id: 'b2' }),
+      ] as never);
+      jest
+        .spyOn(service, 'exportForBusiness')
+        .mockRejectedValueOnce('socket hang up')
+        .mockResolvedValueOnce({
+          spreadsheetId: 's',
+          spreadsheetUrl: 'u',
+          leadsExported: 0,
+          unitsExported: 0,
+        });
+
+      // The second business must still export after the first one blows up.
+      expect(await service.runNightlyExport()).toEqual({ businesses: 2, failures: 1 });
+    });
+
+    it('reports a clean sweep when there is nothing connected', async () => {
+      repo.listConnectedByProvider.mockResolvedValue([]);
+
+      expect(await service.runNightlyExport()).toEqual({ businesses: 0, failures: 0 });
+    });
+  });
+
+  describe('disconnect', () => {
+    it('soft-deletes the connection and announces the disconnect', async () => {
+      repo.findConnection.mockResolvedValue(makeConnection());
+
+      await service.disconnect(BUSINESS_ID);
+
+      expect(repo.softDeleteConnection).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        RealtyIntegrationProvider.GOOGLE_SHEETS,
+      );
+      expect(emitter.emit).toHaveBeenCalledWith(
+        'realty.integration.disconnected',
+        expect.objectContaining({
+          type: 'realty.integration.disconnected',
+          connectionId: 'conn-1',
+          businessId: BUSINESS_ID,
+        }),
+      );
+    });
+
+    it('stays quiet when there was no connection to remove', async () => {
+      // Disconnecting twice must not announce a second teardown — downstream
+      // listeners treat the event as "credentials just went away".
+      repo.findConnection.mockResolvedValue(null);
+
+      await service.disconnect(BUSINESS_ID);
+
+      expect(repo.softDeleteConnection).toHaveBeenCalled();
+      expect(emitter.emit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getStatus', () => {
+    it('reports a disconnected shell when no connection row exists', async () => {
+      repo.findConnection.mockResolvedValue(null);
+
+      expect(await service.getStatus(BUSINESS_ID)).toEqual({
+        connected: false,
+        status: 'DISCONNECTED',
+        spreadsheetId: null,
+        spreadsheetUrl: null,
+        lastSyncAt: null,
+        lastError: null,
+        syncCount: 0,
+      });
+    });
+
+    it('builds the spreadsheet URL from the stored id', async () => {
+      const lastSyncAt = new Date('2026-01-02T03:04:05.000Z');
+      repo.findConnection.mockResolvedValue(
+        makeConnection({ last_sync_at: lastSyncAt, sync_count: 7 }),
+      );
+
+      const status = await service.getStatus(BUSINESS_ID);
+
+      expect(status).toMatchObject({
+        connected: true,
+        spreadsheetId: 'sheet-123',
+        spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/sheet-123',
+        lastSyncAt,
+        syncCount: 7,
+      });
+    });
+
+    it('leaves the URL null before the first export has created a sheet', async () => {
+      repo.findConnection.mockResolvedValue(
+        makeConnection({ config: { refreshToken: 'rt' } }),
+      );
+
+      const status = await service.getStatus(BUSINESS_ID);
+
+      expect(status.spreadsheetId).toBeNull();
+      expect(status.spreadsheetUrl).toBeNull();
+    });
+
+    it('surfaces a connection parked in ERROR as not connected', async () => {
+      repo.findConnection.mockResolvedValue(
+        makeConnection({ status: 'ERROR', last_error: 'google 403' }),
+      );
+
+      const status = await service.getStatus(BUSINESS_ID);
+
+      expect(status).toMatchObject({
+        connected: false,
+        status: 'ERROR',
+        lastError: 'google 403',
+      });
+    });
+
+    it('tolerates a connection whose config was never written', async () => {
+      repo.findConnection.mockResolvedValue(makeConnection({ config: null as never }));
+
+      expect((await service.getStatus(BUSINESS_ID)).spreadsheetId).toBeNull();
     });
   });
 });

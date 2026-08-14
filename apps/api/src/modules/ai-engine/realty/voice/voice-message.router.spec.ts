@@ -134,4 +134,144 @@ describe('VoiceMessageRouter', () => {
     await router.onMessageReceived(event({ conversationId: '' }));
     expect(prisma.messages.findFirst).not.toHaveBeenCalled();
   });
+
+  it('returns early when the event has no business', async () => {
+    await router.onMessageReceived(event({ businessId: '' }));
+    expect(prisma.messages.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('returns early when the event has no sender', async () => {
+    // Without a sender there is no phone to resolve a lead by.
+    await router.onMessageReceived(event({ senderExternalId: '' }));
+    expect(prisma.messages.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('returns early when the conversation has no stored inbound message', async () => {
+    prisma.messages.findFirst.mockResolvedValue(null);
+    await router.onMessageReceived(event());
+    expect(leads.findLeadByPhone).not.toHaveBeenCalled();
+  });
+
+  it('scopes the message lookup to the tenant and the inbound direction', async () => {
+    await router.onMessageReceived(event());
+    expect(prisma.messages.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          business_id: BIZ,
+          conversation_id: 'conv_1',
+          direction: 'INBOUND',
+        },
+        orderBy: { created_at: 'desc' },
+      }),
+    );
+  });
+
+  it('scopes the metadata update to the tenant', async () => {
+    await router.onMessageReceived(event());
+    expect(prisma.messages.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'm1', business_id: BIZ } }),
+    );
+  });
+
+  it('preserves pre-existing metadata when stamping the transcript', async () => {
+    prisma.messages.findFirst.mockResolvedValue({
+      ...audioMessage,
+      metadata: { waMessageId: 'wamid.1' },
+    });
+
+    await router.onMessageReceived(event());
+
+    const data = prisma.messages.update.mock.calls[0][0].data.metadata;
+    expect(data).toMatchObject({
+      waMessageId: 'wamid.1',
+      transcription: 'two bhk in whitefield',
+    });
+    expect(typeof data.transcribedAt).toBe('string');
+  });
+
+  it('treats a VOICE-typed message as audio', async () => {
+    prisma.messages.findFirst.mockResolvedValue({
+      ...audioMessage,
+      type: 'VOICE',
+      content: { url: 'whatsapp-media://v2' },
+    });
+
+    await router.onMessageReceived(event());
+
+    // No mimeType on the payload — the WhatsApp default is assumed.
+    expect(processor.transcribeVoiceNote).toHaveBeenCalledWith(
+      'whatsapp-media://v2',
+      'audio/ogg',
+    );
+  });
+
+  it('falls back to the content type when the row has no type column value', async () => {
+    prisma.messages.findFirst.mockResolvedValue({
+      id: 'm4',
+      type: null,
+      content: { type: 'AUDIO', url: 'whatsapp-media://v3' },
+      metadata: {},
+    });
+
+    await router.onMessageReceived(event());
+
+    expect(processor.transcribeVoiceNote).toHaveBeenCalledWith(
+      'whatsapp-media://v3',
+      'audio/ogg',
+    );
+  });
+
+  it('ignores an audio message that carries no media URL', async () => {
+    prisma.messages.findFirst.mockResolvedValue({
+      ...audioMessage,
+      content: { mimeType: 'audio/ogg' },
+    });
+
+    await router.onMessageReceived(event());
+
+    expect(processor.transcribeVoiceNote).not.toHaveBeenCalled();
+  });
+
+  it('ignores a message with no content at all', async () => {
+    prisma.messages.findFirst.mockResolvedValue({ id: 'm3', type: 'TEXT', content: null });
+    await router.onMessageReceived(event());
+    expect(processor.transcribeVoiceNote).not.toHaveBeenCalled();
+  });
+
+  it('treats null metadata as not-yet-transcribed', async () => {
+    prisma.messages.findFirst.mockResolvedValue({ ...audioMessage, metadata: null });
+    await router.onMessageReceived(event());
+    expect(processor.transcribeVoiceNote).toHaveBeenCalled();
+  });
+
+  it('swallows an unexpected transcription failure instead of breaking the spine', async () => {
+    // This runs inside an @OnEvent handler — an escaping rejection would surface
+    // as an unhandled rejection and take down unrelated message.received work.
+    processor.transcribeVoiceNote.mockRejectedValue(new Error('whisper 500'));
+
+    await expect(router.onMessageReceived(event())).resolves.toBeUndefined();
+    expect(prisma.messages.update).not.toHaveBeenCalled();
+    expect(processor.processBuyerVoiceNote).not.toHaveBeenCalled();
+  });
+
+  it('swallows a database failure during lookup', async () => {
+    prisma.messages.findFirst.mockRejectedValue(new Error('connection terminated'));
+
+    await expect(router.onMessageReceived(event())).resolves.toBeUndefined();
+  });
+
+  it('swallows a non-Error rejection', async () => {
+    prisma.messages.findFirst.mockRejectedValue('socket hang up');
+
+    await expect(router.onMessageReceived(event())).resolves.toBeUndefined();
+  });
+
+  it('does not route to the AI when the metadata stamp fails', async () => {
+    // The transcript is the record; routing without persisting it would make the
+    // turn unreproducible and re-transcribe on the next inbound message.
+    prisma.messages.update.mockRejectedValue(new Error('write conflict'));
+
+    await expect(router.onMessageReceived(event())).resolves.toBeUndefined();
+    expect(processor.processBuyerVoiceNote).not.toHaveBeenCalled();
+  });
 });
