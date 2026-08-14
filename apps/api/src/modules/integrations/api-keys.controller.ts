@@ -8,6 +8,8 @@ import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-
 import { PrismaService } from '../../common/services/prisma.service';
 import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
 import { randomBytes, createHash } from 'crypto';
+import { TeamMemberRole } from '@gosumo/database';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { CreateApiKeyDto } from './dto/create-api-key.dto';
 
 /** Bounds on `?limit=`; anything unparseable falls back to the default. */
@@ -68,9 +70,15 @@ export class ApiKeysController {
     };
   }
 
+  // Issuing a key is issuing a credential, so it is gated the same way team
+  // membership is. The listing above stays open: it returns prefixes and
+  // last-4s, never a secret, and the settings page has to render for whoever
+  // opens it.
   @Post()
+  @Roles(TeamMemberRole.MANAGER)
   @ApiOperation({ summary: 'Create a new API key' })
   @ApiResponse({ status: 201, description: 'The created api key' })
+  @ApiResponse({ status: 403, description: 'Only OWNER or MANAGER may issue API keys' })
   async create(
     @TenantId() tenantId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -114,9 +122,11 @@ export class ApiKeysController {
   }
 
   @Delete(':id')
+  @Roles(TeamMemberRole.MANAGER)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Revoke an API key' })
   @ApiResponse({ status: 204, description: 'Deleted; no content returned' })
+  @ApiResponse({ status: 403, description: 'Only OWNER or MANAGER may revoke API keys' })
   @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
   @ApiParam({ name: 'id', description: 'Record UUID' })
   async revoke(

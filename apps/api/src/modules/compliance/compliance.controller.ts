@@ -9,7 +9,9 @@ import {
   Put,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { TeamMemberRole } from '@gosumo/database';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { ComplianceService } from './compliance.service';
 import { ConsentService } from './consent.service';
 import { RetentionService } from './retention.service';
@@ -47,10 +49,16 @@ export class ComplianceController {
     return this.compliance.correction(tenantId, dto);
   }
 
+  // Erasure is irreversible: it anonymizes the lead, its messages, and its
+  // consent trail with nothing to restore from. Answering an access or
+  // correction request is day-to-day support work and stays open to any
+  // member; destroying the record is not.
   @Post('erasure')
+  @Roles(TeamMemberRole.MANAGER)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Right to erasure — anonymize all PII for a phone' })
   @ApiResponse({ status: 200, description: 'Erasure result' })
+  @ApiResponse({ status: 403, description: 'Only OWNER or MANAGER may erase a data principal' })
   async erasure(@TenantId() tenantId: string, @Body() dto: ErasureDto) {
     return this.compliance.erasure(tenantId, dto.phone, 'REQUEST');
   }
@@ -73,9 +81,13 @@ export class ComplianceController {
     return this.compliance.getSettings(tenantId);
   }
 
+  // Shortening the retention window decides when customer data is destroyed
+  // in bulk, and the data-processor agreement is a legal attestation.
   @Put('settings')
+  @Roles(TeamMemberRole.OWNER)
   @ApiOperation({ summary: 'Update retention window / data-processor agreement' })
   @ApiResponse({ status: 200, description: 'Updated compliance settings' })
+  @ApiResponse({ status: 403, description: 'Only an owner may change compliance settings' })
   async updateSettings(
     @TenantId() tenantId: string,
     @Body() dto: UpdateComplianceSettingsDto,
@@ -92,10 +104,14 @@ export class ComplianceController {
 
   // ── Retention (manual trigger) ────────────────────────────────────────────────
 
+  // A manual sweep deletes every record past the retention window across the
+  // whole business in one call.
   @Post('retention/run')
+  @Roles(TeamMemberRole.OWNER)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Run the retention sweep now for this business' })
   @ApiResponse({ status: 200, description: 'Retention run result' })
+  @ApiResponse({ status: 403, description: 'Only an owner may trigger a retention sweep' })
   async runRetention(@TenantId() tenantId: string) {
     return this.retention.runForBusiness(tenantId);
   }

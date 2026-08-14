@@ -1,7 +1,9 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RealtyPlan } from '@gosumo/shared';
+import { TeamMemberRole } from '@gosumo/database';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { BillingService } from './billing.service';
 import { PLAN_DEFINITIONS } from './billing.constants';
 import { UpgradePlanDto } from './dto';
@@ -29,10 +31,15 @@ export class BillingController {
     return this.billing.getUsageSummary(tenantId);
   }
 
+  // Reading the catalogue and the current usage is open to any member — the
+  // billing page has to render for whoever opens it. Changing the tier moves
+  // money and is the owner's decision alone.
   @Post('upgrade')
+  @Roles(TeamMemberRole.OWNER)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Change the subscription tier' })
   @ApiResponse({ status: 200, description: 'Updated subscription usage summary' })
+  @ApiResponse({ status: 403, description: 'Only an owner may change the subscription tier' })
   async upgrade(@TenantId() tenantId: string, @Body() dto: UpgradePlanDto) {
     return this.billing.upgradePlan(tenantId, dto.plan as RealtyPlan);
   }
