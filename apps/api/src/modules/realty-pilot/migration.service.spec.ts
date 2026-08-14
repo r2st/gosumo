@@ -150,5 +150,135 @@ describe('MigrationService', () => {
       expect(run.created).toBe(2); // proj-1 + its unit
       expect(run.errors.some((e) => /bad project/.test(e.reason))).toBe(true);
     });
+
+    it('records FAILED when every project in the file failed to commit', async () => {
+      // Partial success stays COMMITTED (above); total failure must not, or
+      // the import history shows a green run that imported nothing.
+      inventory.createProject.mockRejectedValue(new Error('db down'));
+
+      const run = await service.importInventory(BUSINESS_ID, {
+        rows: [{ projectName: 'Skyline', locality: 'Baner', config: '2BHK', allInPrice: '85L' }],
+      });
+
+      expect(run.status).toBe(MigrationStatus.FAILED);
+      expect(run.created).toBe(0);
+    });
+
+    it('captures a per-unit failure without losing the project that succeeded', async () => {
+      inventory.createProject.mockResolvedValue({ id: 'proj-1' } as never);
+      inventory.createUnit.mockRejectedValue(new Error('bad unit'));
+
+      const run = await service.importInventory(BUSINESS_ID, {
+        rows: [{ projectName: 'Skyline', locality: 'Baner', config: '2BHK', allInPrice: '85L' }],
+      });
+
+      // The project landed, so the run committed even though its unit did not.
+      expect(run.status).toBe(MigrationStatus.COMMITTED);
+      expect(run.created).toBe(1);
+      expect(run.errors.some((e) => /bad unit/.test(e.reason))).toBe(true);
+    });
+
+    it('reports a non-Error thrown by the inventory service as its string form', async () => {
+      inventory.createProject.mockRejectedValue('connection reset');
+
+      const run = await service.importInventory(BUSINESS_ID, {
+        rows: [{ projectName: 'Skyline', locality: 'Baner', config: '2BHK', allInPrice: '85L' }],
+      });
+
+      // Not "undefined" — the reason is what the operator reads in the history.
+      expect(run.errors[0]?.reason).toContain('connection reset');
+    });
+
+    /**
+     * A file whose every row failed validation never reaches the commit loop,
+     * so `projects.length` is 0 and the run is recorded COMMITTED — created 0,
+     * skipped N. That reads as success in the import history for what is
+     * really a rejected file, and it is the one case the FAILED branch above
+     * deliberately excludes (`createdCount === 0 && projects.length > 0`).
+     *
+     * Pinned rather than changed: which status an all-invalid file deserves is
+     * a product call, not a test's.
+     */
+    it('records an all-invalid file as COMMITTED with nothing created', async () => {
+      const run = await service.importInventory(BUSINESS_ID, {
+        rows: [{ projectName: '', locality: '', config: '', allInPrice: '' }],
+      });
+
+      expect(run.created).toBe(0);
+      expect(run.status).toBe(MigrationStatus.COMMITTED);
+      expect(run.errors.length).toBeGreaterThan(0);
+      expect(inventory.createProject).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('history', () => {
+    const row = {
+      id: 'run-1',
+      kind: 'INVENTORY',
+      status: 'COMMITTED',
+      dry_run: false,
+      total_rows: 4,
+      created_count: 3,
+      merged_count: 0,
+      skipped_count: 1,
+      errors: [{ row: 2, reason: 'no locality' }],
+      created_by: USER_ID,
+      created_at: new Date('2026-07-04T00:00:00Z'),
+    };
+
+    it('maps a stored run onto the DTO', async () => {
+      repository.findMigrationRun = jest.fn().mockResolvedValue(row);
+
+      await expect(service.getRun(BUSINESS_ID, 'run-1')).resolves.toEqual({
+        id: 'run-1',
+        kind: 'INVENTORY',
+        status: 'COMMITTED',
+        dryRun: false,
+        total: 4,
+        created: 3,
+        merged: 0,
+        skipped: 1,
+        errors: [{ row: 2, reason: 'no locality' }],
+        createdBy: USER_ID,
+        createdAt: new Date('2026-07-04T00:00:00Z'),
+      });
+    });
+
+    it('returns null for a run this tenant cannot see', async () => {
+      repository.findMigrationRun = jest.fn().mockResolvedValue(null);
+
+      await expect(service.getRun(BUSINESS_ID, 'run-1')).resolves.toBeNull();
+    });
+
+    it('renders a run whose errors column is null as an empty list', async () => {
+      // The DTO's `errors` is read directly by the console; a null there
+      // would throw on `.length` rather than render an empty history.
+      repository.findMigrationRun = jest.fn().mockResolvedValue({ ...row, errors: null });
+
+      const run = await service.getRun(BUSINESS_ID, 'run-1');
+
+      expect(run?.errors).toEqual([]);
+    });
+
+    it('maps every run in the list and passes the filter through', async () => {
+      repository.listMigrationRuns = jest
+        .fn()
+        .mockResolvedValue([row, { ...row, id: 'run-2', status: 'FAILED' }]);
+
+      const runs = await service.listRuns(BUSINESS_ID, { kind: 'INVENTORY' });
+
+      expect(repository.listMigrationRuns).toHaveBeenCalledWith(BUSINESS_ID, {
+        kind: 'INVENTORY',
+      });
+      expect(runs.map((r) => r.id)).toEqual(['run-1', 'run-2']);
+      expect(runs[1]?.status).toBe('FAILED');
+      expect(runs[0]).not.toHaveProperty('total_rows');
+    });
+
+    it('returns an empty history rather than null', async () => {
+      repository.listMigrationRuns = jest.fn().mockResolvedValue([]);
+
+      await expect(service.listRuns(BUSINESS_ID, {})).resolves.toEqual([]);
+    });
   });
 });
