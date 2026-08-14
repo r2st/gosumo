@@ -297,7 +297,12 @@ export interface Client {
   churnRisk?: number | null;
   engagementScore?: number | null;
   totalOrders: number;
-  totalSpent: number;
+  /**
+   * Lifetime spend in paise. The API serialises this as `totalSpentPaise`
+   * (see ContactResponseDto) — it has never sent a `totalSpent` field, so
+   * reading one silently rendered ₹0 for every client.
+   */
+  totalSpentPaise: number;
   lastInteractionAt?: ISODate | null;
   firstSeenAt: ISODate;
   createdAt: ISODate;

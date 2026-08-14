@@ -10,7 +10,7 @@ import { Avatar } from '@/components/ui/avatar';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { LoadingState, EmptyState, ErrorState } from '@/components/ui/states';
 import { useClients } from '@/hooks/use-queries';
-import { formatDateIST } from '@/lib/format';
+import { formatDateIST, paiseToRupees } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { ClientFilters } from '@/lib/api-client';
 
@@ -97,7 +97,7 @@ export default function ClientsPage() {
                       </Link>
                     </TD>
                     <TD>{c.totalOrders ?? 0}</TD>
-                    <TD className="font-medium">{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(c.totalSpent ?? 0)}</TD>
+                    <TD className="font-medium">{paiseToRupees(c.totalSpentPaise)}</TD>
                     <TD className="text-muted-foreground">{formatDateIST(c.lastInteractionAt)}</TD>
                   </TR>
                 ))}

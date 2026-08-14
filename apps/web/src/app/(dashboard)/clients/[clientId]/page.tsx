@@ -95,7 +95,7 @@ export default function ClientDetailPage() {
             <MetricTile
               icon={Wallet}
               label="Total spent"
-              value={new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(client.totalSpent ?? 0)}
+              value={paiseToRupees(client.totalSpentPaise)}
               tone="text-violet-600 bg-violet-50"
             />
             <MetricTile
