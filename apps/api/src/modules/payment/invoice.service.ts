@@ -19,6 +19,7 @@ import type {
   PaymentSuccessEvent,
 } from '@gosumo/shared';
 import { PaymentRepository, InvoiceLineItemData } from './payment.repository';
+import { createWithSequentialNumber } from '../../common/utils/sequential-number.util';
 import {
   CreateInvoiceDto,
   InvoiceDto,
@@ -73,24 +74,30 @@ export class InvoiceService {
     const discountPaise = dto.discountAmountPaise ?? 0;
     const totalPaise = Math.max(0, subtotalPaise + taxPaise - discountPaise);
 
-    const invoiceNumber = await this.generateInvoiceNumber(businessId);
-
-    const invoice = await this.repository.createInvoice({
-      businessId,
-      orderId: dto.orderId,
-      clientId: dto.clientId,
-      paymentId: dto.paymentId,
-      invoiceNumber,
-      currency,
-      // Repository stores in major units (rupees) as Decimal(14,2).
-      subtotal: subtotalPaise / 100,
-      taxAmount: taxPaise / 100,
-      discountAmount: discountPaise / 100,
-      total: totalPaise / 100,
-      lineItems,
-      notes: dto.notes,
-      dueAt: dto.dueAt ? new Date(dto.dueAt) : undefined,
-    });
+    // The number is derived from what is already stored, so two invoices
+    // raised at the same instant derive the same one and the unique constraint
+    // rejects the second. Re-derive and retry rather than failing the invoice.
+    const invoice = await createWithSequentialNumber(
+      () => this.generateInvoiceNumber(businessId),
+      (invoiceNumber) =>
+        this.repository.createInvoice({
+          businessId,
+          orderId: dto.orderId,
+          clientId: dto.clientId,
+          paymentId: dto.paymentId,
+          invoiceNumber,
+          currency,
+          // Repository stores in major units (rupees) as Decimal(14,2).
+          subtotal: subtotalPaise / 100,
+          taxAmount: taxPaise / 100,
+          discountAmount: discountPaise / 100,
+          total: totalPaise / 100,
+          lineItems,
+          notes: dto.notes,
+          dueAt: dto.dueAt ? new Date(dto.dueAt) : undefined,
+        }),
+      'invoice_number',
+    );
 
     const event: InvoiceCreatedEvent = {
       type: 'invoice.created',
@@ -99,7 +106,9 @@ export class InvoiceService {
       businessId,
       correlationId: generateCorrelationId(),
       invoiceId: invoice.id,
-      invoiceNumber,
+      // Read back from the stored row, not from a locally generated value: a
+      // retried create issues a different number than the first attempt did.
+      invoiceNumber: invoice.invoice_number,
       orderId: dto.orderId,
       clientId: dto.clientId,
       paymentId: dto.paymentId,
@@ -109,7 +118,7 @@ export class InvoiceService {
     this.eventEmitter.emit('invoice.created', event);
 
     this.logger.log(
-      `Created invoice ${invoiceNumber} (${invoice.id}) for client ${dto.clientId} — ${totalPaise} paise`,
+      `Created invoice ${invoice.invoice_number} (${invoice.id}) for client ${dto.clientId} — ${totalPaise} paise`,
     );
 
     return this.toInvoiceDto(invoice);
@@ -312,8 +321,8 @@ export class InvoiceService {
    */
   private async generateInvoiceNumber(businessId: string): Promise<string> {
     const year = new Date().getUTCFullYear();
-    const count = await this.repository.countInvoicesForYear(businessId, year);
-    const sequence = String(count + 1).padStart(6, '0');
+    const highest = await this.repository.findHighestInvoiceSequenceForYear(businessId, year);
+    const sequence = String(highest + 1).padStart(6, '0');
     return `INV-${year}-${sequence}`;
   }
 

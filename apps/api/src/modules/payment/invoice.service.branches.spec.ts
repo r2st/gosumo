@@ -62,6 +62,7 @@ describe('InvoiceService — branch coverage', () => {
     listInvoices: jest.Mock;
     updateInvoiceStatus: jest.Mock;
     countInvoicesForYear: jest.Mock;
+    findHighestInvoiceSequenceForYear: jest.Mock;
   };
   let eventEmitter: { emit: jest.Mock };
 
@@ -73,6 +74,7 @@ describe('InvoiceService — branch coverage', () => {
       listInvoices: jest.fn(),
       updateInvoiceStatus: jest.fn(),
       countInvoicesForYear: jest.fn(),
+      findHighestInvoiceSequenceForYear: jest.fn().mockResolvedValue(0),
     };
     eventEmitter = { emit: jest.fn() };
 
@@ -95,7 +97,7 @@ describe('InvoiceService — branch coverage', () => {
 
   describe('createInvoice', () => {
     it('treats an omitted tax and discount as zero', async () => {
-      repository.countInvoicesForYear.mockResolvedValue(0);
+      repository.findHighestInvoiceSequenceForYear.mockResolvedValue(0);
       repository.createInvoice.mockImplementation(async () => mockInvoice());
 
       const dto: CreateInvoiceDto = {
@@ -118,7 +120,7 @@ describe('InvoiceService — branch coverage', () => {
     });
 
     it('converts an ISO dueAt into a Date', async () => {
-      repository.countInvoicesForYear.mockResolvedValue(0);
+      repository.findHighestInvoiceSequenceForYear.mockResolvedValue(0);
       repository.createInvoice.mockImplementation(async () => mockInvoice());
 
       await service.createInvoice(BUSINESS_ID, {
@@ -132,7 +134,7 @@ describe('InvoiceService — branch coverage', () => {
     });
 
     it('floors the total at zero when the discount exceeds subtotal + tax', async () => {
-      repository.countInvoicesForYear.mockResolvedValue(0);
+      repository.findHighestInvoiceSequenceForYear.mockResolvedValue(0);
       repository.createInvoice.mockImplementation(async () => mockInvoice());
 
       await service.createInvoice(BUSINESS_ID, {

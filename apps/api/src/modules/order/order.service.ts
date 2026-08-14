@@ -28,6 +28,7 @@ import type {
 import { OrderRepository } from './order.repository';
 import { CouponService } from './coupon.service';
 import { PrismaService } from '../../common/services/prisma.service';
+import { createWithSequentialNumber } from '../../common/utils/sequential-number.util';
 import {
   CreateOrderDto,
   UpdateOrderStatusDto,
@@ -316,9 +317,6 @@ export class OrderService {
     const totalPaise =
       subtotalPaise - discountAmountPaise + effectiveTaxPaise + shippingFeePaise;
 
-    // Step 4: Generate order number
-    const orderNumber = await this.repository.getNextOrderNumber(businessId);
-
     // Step 5: Determine initial status
     const isCod = dto.paymentMethod === PaymentMethod.COD;
     const initialStatus = isCod ? OrderStatus.CONFIRMED : OrderStatus.DRAFT;
@@ -331,28 +329,39 @@ export class OrderService {
       await this.prisma.$transaction(stockDecrements);
     }
 
-    // Convert paise to rupees for Prisma Decimal storage
-    const order = await this.repository.createOrder({
-      businessId,
-      clientId: dto.clientId,
-      conversationId: dto.conversationId,
-      orderNumber,
-      status: initialStatus,
-      lineItems: lineItems as unknown as Prisma.InputJsonValue,
-      subtotal: subtotalPaise / 100,
-      discountAmount: discountAmountPaise / 100,
-      taxAmount: effectiveTaxPaise / 100,
-      shippingFee: shippingFeePaise / 100,
-      total: totalPaise / 100,
-      currency: 'INR',
-      discountCode,
-      discountType,
-      discountValue,
-      shippingAddressId: dto.shippingAddressId,
-      shippingOptionId: dto.shippingOptionId,
-      customerNote: dto.notes,
-      metadata: { paymentMethod: dto.paymentMethod },
-    });
+    // The order number is derived from the highest already stored, so two
+    // orders placed on the same business at the same instant derive the same
+    // one and the unique constraint rejects the second. That mattered more than
+    // a failed create: stock has already been taken above and is not rolled
+    // back, so the collision used to cost the tenant inventory as well as the
+    // order. Re-deriving and retrying keeps both.
+    const order = await createWithSequentialNumber(
+      () => this.repository.getNextOrderNumber(businessId),
+      (orderNumber) =>
+        // Convert paise to rupees for Prisma Decimal storage
+        this.repository.createOrder({
+          businessId,
+          clientId: dto.clientId,
+          conversationId: dto.conversationId,
+          orderNumber,
+          status: initialStatus,
+          lineItems: lineItems as unknown as Prisma.InputJsonValue,
+          subtotal: subtotalPaise / 100,
+          discountAmount: discountAmountPaise / 100,
+          taxAmount: effectiveTaxPaise / 100,
+          shippingFee: shippingFeePaise / 100,
+          total: totalPaise / 100,
+          currency: 'INR',
+          discountCode,
+          discountType,
+          discountValue,
+          shippingAddressId: dto.shippingAddressId,
+          shippingOptionId: dto.shippingOptionId,
+          customerNote: dto.notes,
+          metadata: { paymentMethod: dto.paymentMethod },
+        }),
+      'order_number',
+    );
 
     // Step 7: Record coupon redemption now that the order exists
     if (appliedCouponId) {
@@ -378,7 +387,7 @@ export class OrderService {
     this.eventEmitter.emit('order.created', event);
 
     this.logger.log(
-      `Order ${orderNumber} created for client ${dto.clientId} ` +
+      `Order ${order.order_number} created for client ${dto.clientId} ` +
         `(status: ${initialStatus}, total: ${totalPaise} paise)`,
     );
 

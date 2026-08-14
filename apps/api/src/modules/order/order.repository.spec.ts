@@ -538,8 +538,12 @@ describe('OrderRepository', () => {
   // ─────────────────────────────────────────────
 
   describe('getNextOrderNumber', () => {
+    /** The row the "highest issued so far" lookup returns. */
+    const latest = (n: string | null) =>
+      prisma.orders.findFirst.mockResolvedValue(n ? { order_number: n } : null);
+
     it('produces a zero-padded ORD-YYYY-NNNNN number for the first order', async () => {
-      prisma.orders.count.mockResolvedValue(0);
+      latest(null);
       const year = new Date().getFullYear();
 
       await expect(repository.getNextOrderNumber(BUSINESS_ID)).resolves.toBe(
@@ -547,34 +551,71 @@ describe('OrderRepository', () => {
       );
     });
 
-    it('continues the sequence from the existing count', async () => {
-      prisma.orders.count.mockResolvedValue(41);
+    it('continues from the highest number issued', async () => {
       const year = new Date().getFullYear();
+      latest(`ORD-${year}-00041`);
 
       await expect(repository.getNextOrderNumber(BUSINESS_ID)).resolves.toBe(
         `ORD-${year}-00042`,
       );
     });
 
-    it('counts only this tenant’s numbers for the current year', async () => {
+    it('reads the highest issued rather than counting rows', async () => {
+      // Counting re-issues a number the moment the sequence has a gap — a
+      // create that consumed a number and failed, or a hard-deleted row — and
+      // then every subsequent order collides on it, permanently.
       const year = new Date().getFullYear();
+      latest(`ORD-${year}-00100`);
+
+      await expect(repository.getNextOrderNumber(BUSINESS_ID)).resolves.toBe(
+        `ORD-${year}-00101`,
+      );
+      expect(prisma.orders.count).not.toHaveBeenCalled();
+    });
+
+    it('seeks this tenant’s highest number for the current year', async () => {
+      const year = new Date().getFullYear();
+      latest(null);
 
       await repository.getNextOrderNumber(BUSINESS_ID);
 
-      expect(prisma.orders.count).toHaveBeenCalledWith({
+      expect(prisma.orders.findFirst).toHaveBeenCalledWith({
         where: {
           business_id: BUSINESS_ID,
           order_number: { startsWith: `ORD-${year}-` },
         },
+        orderBy: { order_number: 'desc' },
+        select: { order_number: true },
       });
     });
 
     it('widens past five digits rather than truncating', async () => {
-      prisma.orders.count.mockResolvedValue(99999);
       const year = new Date().getFullYear();
+      latest(`ORD-${year}-99999`);
 
       await expect(repository.getNextOrderNumber(BUSINESS_ID)).resolves.toBe(
         `ORD-${year}-100000`,
+      );
+    });
+
+    it('keeps ordering numerically once the width has grown', async () => {
+      // Fixed-width padding is what makes the lexicographic `desc` seek
+      // correct; past the width it still holds because the longer string
+      // sorts above the shorter one at the first differing digit.
+      const year = new Date().getFullYear();
+      latest(`ORD-${year}-100000`);
+
+      await expect(repository.getNextOrderNumber(BUSINESS_ID)).resolves.toBe(
+        `ORD-${year}-100001`,
+      );
+    });
+
+    it('restarts at one rather than crashing on an unparseable stored number', async () => {
+      const year = new Date().getFullYear();
+      latest(`ORD-${year}-legacy`);
+
+      await expect(repository.getNextOrderNumber(BUSINESS_ID)).resolves.toBe(
+        `ORD-${year}-00001`,
       );
     });
   });

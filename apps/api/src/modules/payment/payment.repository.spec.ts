@@ -898,6 +898,64 @@ describe('PaymentRepository', () => {
     });
   });
 
+  describe('findHighestInvoiceSequenceForYear', () => {
+    const latest = (n: string | null) =>
+      prisma.invoices.findFirst.mockResolvedValue(n ? { invoice_number: n } : null);
+
+    it('reports zero when the business has issued none this year', async () => {
+      latest(null);
+
+      await expect(
+        repository.findHighestInvoiceSequenceForYear(BUSINESS_ID, 2026),
+      ).resolves.toBe(0);
+    });
+
+    it('parses the sequence out of the highest number issued', async () => {
+      latest('INV-2026-000041');
+
+      await expect(
+        repository.findHighestInvoiceSequenceForYear(BUSINESS_ID, 2026),
+      ).resolves.toBe(41);
+    });
+
+    it('seeks by the number itself, not by created_at', async () => {
+      // Numbering by a created_at count disagrees with the year encoded in the
+      // number at the new-year boundary: an invoice created moments into
+      // January is counted into the new year and numbered into it too, while
+      // one created moments before is counted into the old year — so the two
+      // sequences can hand out the same number.
+      latest(null);
+
+      await repository.findHighestInvoiceSequenceForYear(BUSINESS_ID, 2026);
+
+      expect(prisma.invoices.findFirst).toHaveBeenCalledWith({
+        where: {
+          business_id: BUSINESS_ID,
+          invoice_number: { startsWith: 'INV-2026-' },
+        },
+        orderBy: { invoice_number: 'desc' },
+        select: { invoice_number: true },
+      });
+    });
+
+    it('scopes to the tenant, so another business’s invoices cannot shift the sequence', async () => {
+      latest('INV-2026-000900');
+
+      await repository.findHighestInvoiceSequenceForYear(BUSINESS_ID, 2026);
+
+      expect(prisma.invoices.findFirst.mock.calls[0][0].where.business_id).toBe(BUSINESS_ID);
+    });
+
+    it('falls back to zero on an unparseable stored number rather than NaN', async () => {
+      // `NaN + 1` would render as "INV-2026-000NaN" and then collide forever.
+      latest('INV-2026-legacy');
+
+      await expect(
+        repository.findHighestInvoiceSequenceForYear(BUSINESS_ID, 2026),
+      ).resolves.toBe(0);
+    });
+  });
+
   // ─────────────────────────────────────────────
   // getPaymentStats date-window branches
   // ─────────────────────────────────────────────

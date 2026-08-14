@@ -58,6 +58,7 @@ describe('InvoiceService', () => {
       listInvoices: jest.fn(),
       updateInvoiceStatus: jest.fn(),
       countInvoicesForYear: jest.fn(),
+      findHighestInvoiceSequenceForYear: jest.fn().mockResolvedValue(0),
     };
     const mockEventEmitter = { emit: jest.fn() };
 
@@ -92,7 +93,7 @@ describe('InvoiceService', () => {
         notes: 'Thank you',
       };
 
-      repository.countInvoicesForYear.mockResolvedValue(0);
+      repository.findHighestInvoiceSequenceForYear.mockResolvedValue(0);
       repository.createInvoice.mockResolvedValue(createMockInvoice() as never);
 
       const result = await service.createInvoice(BUSINESS_ID, dto);
@@ -125,7 +126,7 @@ describe('InvoiceService', () => {
         lineItems: [{ description: 'Item', quantity: 1, unitAmountPaise: 1000 }],
         discountAmountPaise: 5000,
       };
-      repository.countInvoicesForYear.mockResolvedValue(0);
+      repository.findHighestInvoiceSequenceForYear.mockResolvedValue(0);
       repository.createInvoice.mockResolvedValue(
         createMockInvoice({ total: dec(0), subtotal: dec(10), discount_amount: dec(50) }) as never,
       );

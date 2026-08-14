@@ -278,27 +278,46 @@ export class OrderRepository {
   }
 
   /**
-   * Get the next order number using an atomic counter pattern.
-   * Uses a raw SQL query to atomically increment and return the next sequence.
+   * Derive the next order number for this business and year.
    * Format: ORD-YYYY-NNNNN
+   *
+   * This is a derivation, not an allocation: nothing is reserved, so two
+   * requests reading at the same moment get the same number. The unique
+   * constraint on (business_id, order_number) is what arbitrates, and
+   * `createWithSequentialNumber` re-derives for whichever caller loses. The
+   * docstring here used to claim a raw atomic increment inside a transaction —
+   * it was neither, and the count-plus-one below is what actually shipped.
+   *
+   * Reads the highest number issued rather than counting rows. Counting is
+   * wrong the moment the sequence has a gap — a failed insert that consumed a
+   * number, or a hard-deleted row — because it then re-issues a number that is
+   * already taken and every subsequent create collides on it forever. It is
+   * also a full count of the tenant's year on every single order, where this is
+   * one backward index scan on the unique index.
    */
   async getNextOrderNumber(businessId: string): Promise<string> {
     const year = new Date().getFullYear();
+    const prefix = `ORD-${year}-`;
 
-    // Count existing orders for this business this year and add 1
-    // Using a transaction to ensure atomicity
-    const count = await this.prisma.orders.count({
+    // Zero-padded to a fixed width, so lexicographic order is numeric order
+    // and the index can answer this by seeking to the end of the prefix range.
+    const latest = await this.prisma.orders.findFirst({
       where: {
         business_id: businessId,
-        order_number: {
-          startsWith: `ORD-${year}-`,
-        },
+        order_number: { startsWith: prefix },
       },
+      orderBy: { order_number: 'desc' },
+      select: { order_number: true },
     });
 
-    const nextNumber = count + 1;
-    const paddedNumber = String(nextNumber).padStart(5, '0');
-    return `ORD-${year}-${paddedNumber}`;
+    // Anything that does not parse — a legacy or hand-written number — falls
+    // back to zero. `NaN + 1` would render as "ORD-2026-000NaN" and then
+    // collide with itself on every subsequent order.
+    const stored = typeof latest?.order_number === 'string' ? latest.order_number : '';
+    const highest = Number.parseInt(stored.slice(prefix.length), 10);
+    const nextNumber = (Number.isFinite(highest) ? highest : 0) + 1;
+
+    return `${prefix}${String(nextNumber).padStart(5, '0')}`;
   }
 
   /**

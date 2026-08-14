@@ -791,6 +791,41 @@ export class PaymentRepository {
     });
   }
 
+  /**
+   * The highest invoice sequence issued for this business and year, or 0 when
+   * none has been.
+   *
+   * Numbering read `countInvoicesForYear() + 1`, which is wrong twice over. It
+   * re-issues a number the moment the sequence has a gap — and an invoice
+   * number, once handed to a customer on a GST invoice, is issued whether or
+   * not its row survived. It also counts by `created_at` while the number
+   * encodes the year, so an invoice created just either side of the new year
+   * boundary is counted into one year and numbered into the other.
+   *
+   * Reading the maximum from the numbers themselves keeps those two in
+   * agreement, and answers from the unique index rather than a yearly count.
+   */
+  async findHighestInvoiceSequenceForYear(businessId: string, year: number): Promise<number> {
+    const prefix = `INV-${year}-`;
+
+    // Fixed-width zero padding makes lexicographic order numeric order.
+    const latest = await this.prisma.invoices.findFirst({
+      where: {
+        business_id: businessId,
+        invoice_number: { startsWith: prefix },
+      },
+      orderBy: { invoice_number: 'desc' },
+      select: { invoice_number: true },
+    });
+
+    // Anything that does not parse — a legacy or hand-written number — reports
+    // zero. Returning NaN would render the next number as "INV-2026-000NaN"
+    // and then collide with itself on every subsequent invoice.
+    const stored = typeof latest?.invoice_number === 'string' ? latest.invoice_number : '';
+    const parsed = Number.parseInt(stored.slice(prefix.length), 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
 
   /**
    * Aggregate payment stats for the dashboard. `payments.amount` is stored in
