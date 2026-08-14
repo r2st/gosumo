@@ -23,6 +23,7 @@ import {
   useNotifications,
 } from '@/hooks/use-notifications';
 import type { AppNotification, NotificationType } from '@/lib/feature-types';
+import { usePermissions } from '@/hooks/use-permissions';
 
 const ICON: Record<NotificationType, LucideIcon> = {
   TASK_CREATED: ListChecks,
@@ -50,6 +51,9 @@ export function NotificationCenter() {
   const { data, isLoading, isError } = useNotifications();
   const markRead = useMarkNotificationRead();
   const markAll = useMarkAllNotificationsRead();
+  // Marking notifications read is an undecorated write — STAFF and above.
+  // The bell and the list stay visible to everyone.
+  const { canWrite } = usePermissions();
 
   const unread = data?.unreadCount ?? 0;
   const items = data?.data ?? [];
@@ -84,16 +88,20 @@ export function NotificationCenter() {
             <div className="flex items-center gap-2">
               <p className="text-sm font-semibold">Notifications</p>
               {unread > 0 && (
-                <span className="rounded-full bg-accent px-1.5 py-0.5 text-xs font-medium text-accent-foreground">{unread} new</span>
+                <span className="rounded-full bg-accent px-1.5 py-0.5 text-xs font-medium text-accent-foreground">
+                  {unread} new
+                </span>
               )}
             </div>
-            <button
-              onClick={() => markAll.mutate()}
-              disabled={markAll.isPending || unread === 0}
-              className="flex items-center gap-1 text-xs font-medium text-primary hover:underline disabled:opacity-40"
-            >
-              <CheckCheck className="h-3.5 w-3.5" /> Mark all read
-            </button>
+            {canWrite && (
+              <button
+                onClick={() => markAll.mutate()}
+                disabled={markAll.isPending || unread === 0}
+                className="flex items-center gap-1 text-xs font-medium text-primary hover:underline disabled:opacity-40"
+              >
+                <CheckCheck className="h-3.5 w-3.5" /> Mark all read
+              </button>
+            )}
           </div>
 
           <div className="max-h-96 overflow-y-auto scrollbar-thin">
@@ -102,7 +110,9 @@ export function NotificationCenter() {
                 <Spinner />
               </div>
             ) : isError ? (
-              <p className="px-4 py-10 text-center text-sm text-muted-foreground">Couldn’t load notifications.</p>
+              <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+                Couldn’t load notifications.
+              </p>
             ) : items.length === 0 ? (
               <div className="flex flex-col items-center gap-1 px-4 py-10 text-center">
                 <Bell className="h-6 w-6 text-muted-foreground" />
@@ -112,7 +122,13 @@ export function NotificationCenter() {
             ) : (
               <ul className="divide-y divide-border">
                 {items.map((n) => (
-                  <NotificationRow key={n.id} notification={n} onToggle={() => markRead.mutate({ id: n.id, read: !n.read })} />
+                  <NotificationRow
+                    key={n.id}
+                    notification={n}
+                    onToggle={
+                      canWrite ? () => markRead.mutate({ id: n.id, read: !n.read }) : undefined
+                    }
+                  />
                 ))}
               </ul>
             )}
@@ -131,11 +147,23 @@ export function NotificationCenter() {
   );
 }
 
-function NotificationRow({ notification, onToggle }: { notification: AppNotification; onToggle: () => void }) {
+function NotificationRow({
+  notification,
+  onToggle,
+}: {
+  notification: AppNotification;
+  /** Undefined for a role that cannot mark notifications read. */
+  onToggle?: () => void;
+}) {
   const Icon = ICON[notification.type] ?? Info;
   const body = (
     <div className="flex gap-3">
-      <div className={cn('mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', ICON_TONE[notification.type])}>
+      <div
+        className={cn(
+          'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
+          ICON_TONE[notification.type],
+        )}
+      >
         <Icon className="h-4 w-4" />
       </div>
       <div className="min-w-0 flex-1">
@@ -143,16 +171,26 @@ function NotificationRow({ notification, onToggle }: { notification: AppNotifica
         <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{notification.body}</p>
         <p className="mt-1 text-[11px] text-muted-foreground">{timeAgo(notification.createdAt)}</p>
       </div>
-      {!notification.read && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="Unread" />}
+      {!notification.read && (
+        <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="Unread" />
+      )}
     </div>
   );
 
   return (
-    <li className={cn('px-4 py-3 transition-colors hover:bg-muted/60', !notification.read && 'bg-accent/30')}>
+    <li
+      className={cn(
+        'px-4 py-3 transition-colors hover:bg-muted/60',
+        !notification.read && 'bg-accent/30',
+      )}
+    >
       {notification.actionUrl ? (
         <Link href={notification.actionUrl} onClick={onToggle}>
           {body}
         </Link>
+      ) : onToggle === undefined ? (
+        // Nothing to click: following the row would only mark it read.
+        body
       ) : (
         <button onClick={onToggle} className="w-full text-left">
           {body}

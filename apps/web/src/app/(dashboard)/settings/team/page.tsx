@@ -2,8 +2,13 @@
 
 import { useState, type FormEvent } from 'react';
 import { Shield, Trash2, UserPlus } from 'lucide-react';
-import { useInviteMember, useRemoveMember, useTeam, useUpdateMemberRole } from '@/hooks/use-settings';
-import { useAuth } from '@/providers/auth-provider';
+import {
+  useInviteMember,
+  useRemoveMember,
+  useTeam,
+  useUpdateMemberRole,
+} from '@/hooks/use-settings';
+import { usePermissions } from '@/hooks/use-permissions';
 import { SettingsCard } from '@/components/settings/settings-kit';
 import { Button } from '@/components/ui/button';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
@@ -46,17 +51,16 @@ const ROLE_OPTIONS = [
 
 export default function TeamPage() {
   const { data, isLoading, isError, refetch } = useTeam();
-  const { user } = useAuth();
   const updateRole = useUpdateMemberRole();
   const removeMember = useRemoveMember();
   const [inviteOpen, setInviteOpen] = useState(false);
   const [toRemove, setToRemove] = useState<TeamMember | null>(null);
 
-  // Mirrors what the API enforces: OWNER and MANAGER may invite and remove,
-  // only OWNER may change a role. The server is the authority — this only
-  // keeps the page from offering buttons that come back 403.
-  const canManage = user?.role === 'OWNER' || user?.role === 'MANAGER';
-  const canChangeRoles = user?.role === 'OWNER';
+  // Mirrors what the API enforces: OWNER and MANAGER may invite and remove
+  // (@Roles(MANAGER)), only OWNER may change a role (@Roles(OWNER)). The
+  // server is the authority — this only keeps the page from offering buttons
+  // that come back 403.
+  const { canManage, canOwn: canChangeRoles } = usePermissions();
 
   if (isLoading) return <LoadingState />;
   if (isError || !data) return <ErrorState onRetry={() => void refetch()} />;
@@ -65,7 +69,10 @@ export default function TeamPage() {
 
   return (
     <>
-      <SettingsCard title="Team members" description="Invite teammates and control what they can access.">
+      <SettingsCard
+        title="Team members"
+        description="Invite teammates and control what they can access."
+      >
         {canManage && (
           <div className="flex justify-end">
             <Button size="sm" onClick={() => setInviteOpen(true)}>
@@ -75,7 +82,11 @@ export default function TeamPage() {
         )}
 
         {members.length === 0 ? (
-          <EmptyState icon={UserPlus} title="No team members yet" description="Invite your first teammate to collaborate." />
+          <EmptyState
+            icon={UserPlus}
+            title="No team members yet"
+            description="Invite your first teammate to collaborate."
+          />
         ) : (
           <div className="overflow-hidden rounded-lg border border-border">
             <Table>
@@ -113,17 +124,33 @@ export default function TeamPage() {
                             options={ROLE_OPTIONS}
                             value={m.role}
                             disabled={updateRole.isPending}
-                            onChange={(e) => updateRole.mutate({ memberId: m.id, role: e.target.value as Role })}
+                            onChange={(e) =>
+                              updateRole.mutate({ memberId: m.id, role: e.target.value as Role })
+                            }
                             className="h-8 w-32"
                           />
                         )}
                       </TD>
                       <TD>
-                        <Badge tone={m.status === 'ACTIVE' ? 'success' : m.status === 'INVITED' ? 'warning' : 'danger'}>
-                          {m.status === 'ACTIVE' ? 'Active' : m.status === 'INVITED' ? 'Invited' : 'Suspended'}
+                        <Badge
+                          tone={
+                            m.status === 'ACTIVE'
+                              ? 'success'
+                              : m.status === 'INVITED'
+                                ? 'warning'
+                                : 'danger'
+                          }
+                        >
+                          {m.status === 'ACTIVE'
+                            ? 'Active'
+                            : m.status === 'INVITED'
+                              ? 'Invited'
+                              : 'Suspended'}
                         </Badge>
                       </TD>
-                      <TD className="text-muted-foreground">{m.lastActiveAt ? timeAgo(m.lastActiveAt) : '—'}</TD>
+                      <TD className="text-muted-foreground">
+                        {m.lastActiveAt ? timeAgo(m.lastActiveAt) : '—'}
+                      </TD>
                       <TD className="text-right">
                         {!isOwner && canManage && (
                           <button
@@ -168,7 +195,9 @@ export default function TeamPage() {
             <Button
               variant="danger"
               loading={removeMember.isPending}
-              onClick={() => toRemove && removeMember.mutate(toRemove.id, { onSuccess: () => setToRemove(null) })}
+              onClick={() =>
+                toRemove && removeMember.mutate(toRemove.id, { onSuccess: () => setToRemove(null) })
+              }
             >
               Remove
             </Button>
@@ -220,10 +249,19 @@ function InviteModal({ open, onClose }: { open: boolean; onClose: () => void }) 
     >
       <form id="invite-form" onSubmit={submit} className="space-y-4">
         <Field label="Full name">
-          <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} required />
+          <Input
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            required
+          />
         </Field>
         <Field label="Email">
-          <Input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} required />
+          <Input
+            type="email"
+            value={form.email}
+            onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+            required
+          />
         </Field>
         <Field label="Role">
           <Select
@@ -232,7 +270,9 @@ function InviteModal({ open, onClose }: { open: boolean; onClose: () => void }) 
             onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as AssignableRole }))}
           />
         </Field>
-        {invite.isError && <p className="text-sm text-danger">Couldn’t send the invite. Please try again.</p>}
+        {invite.isError && (
+          <p className="text-sm text-danger">Couldn’t send the invite. Please try again.</p>
+        )}
       </form>
     </Modal>
   );

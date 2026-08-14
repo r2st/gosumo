@@ -6,6 +6,7 @@ import { useUpdateProject } from '@/hooks/use-realty';
 import { useToast } from '@/providers/toast-provider';
 import { cn } from '@/lib/utils';
 import type { RealtyProject } from '@/lib/realty-types';
+import { usePermissions } from '@/hooks/use-permissions';
 
 /**
  * PRIVATE ↔ EXCHANGE visibility control. PRIVATE keeps a project inside the
@@ -14,6 +15,9 @@ import type { RealtyProject } from '@/lib/realty-types';
 export function InventoryVisibilityToggle({ project }: { project: RealtyProject }) {
   const toast = useToast();
   const update = useUpdateProject();
+  // Listing a project on the exchange patches it — STAFF and above. Read-only
+  // roles still see whether it is listed.
+  const { canWrite } = usePermissions();
   const onExchange = project.networkVisibility === 'EXCHANGE';
 
   const toggle = (next: boolean) => {
@@ -23,9 +27,7 @@ export function InventoryVisibilityToggle({ project }: { project: RealtyProject 
       {
         onSuccess: () =>
           toast.success(
-            next
-              ? 'Now visible on the co-broking exchange.'
-              : 'Now private to your brokerage.',
+            next ? 'Now visible on the co-broking exchange.' : 'Now private to your brokerage.',
             { title: 'Visibility updated' },
           ),
         onError: () => toast.error('Could not change visibility. Please try again.'),
@@ -53,7 +55,7 @@ export function InventoryVisibilityToggle({ project }: { project: RealtyProject 
           </p>
         </div>
       </div>
-      <Switch checked={onExchange} onChange={toggle} disabled={update.isPending} />
+      {canWrite && <Switch checked={onExchange} onChange={toggle} disabled={update.isPending} />}
     </div>
   );
 }

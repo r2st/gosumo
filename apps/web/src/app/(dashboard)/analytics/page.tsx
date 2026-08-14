@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Check, Download } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
+import { usePermissions } from '@/hooks/use-permissions';
 import { Button } from '@/components/ui/button';
 import { SegmentedTabs, type TabItem } from '@/components/ui/tabs';
 import {
@@ -50,6 +51,10 @@ export default function AnalyticsPage() {
   const [range, setRange] = useState<DateRange>(() => defaultRange());
   const [tab, setTab] = useState<TabKey>('overview');
   const exportReport = useExportReport();
+  // POST /analytics/reports/export queues a server-side render — an
+  // undecorated write. The CSV button builds its file in the browser from
+  // data already on screen, so it stays available to every role.
+  const { canWrite } = usePermissions();
   const [queued, setQueued] = useState(false);
 
   // Headline metrics for the client-side CSV export (the summary shown on Overview).
@@ -78,8 +83,14 @@ export default function AnalyticsPage() {
       { metric: 'Conversations — open', value: formatNumber(metrics.conversations.open) },
       { metric: 'Conversations — resolved', value: formatNumber(metrics.conversations.resolved) },
       { metric: 'Conversations — escalated', value: formatNumber(metrics.conversations.escalated) },
-      { metric: 'Avg first response', value: formatDuration(metrics.conversations.avgFirstResponseTimeMs) },
-      { metric: 'Avg resolution', value: formatDuration(metrics.conversations.avgResolutionTimeMs) },
+      {
+        metric: 'Avg first response',
+        value: formatDuration(metrics.conversations.avgFirstResponseTimeMs),
+      },
+      {
+        metric: 'Avg resolution',
+        value: formatDuration(metrics.conversations.avgResolutionTimeMs),
+      },
       { metric: 'Net revenue', value: paiseToRupees(metrics.revenue.total) },
       { metric: 'Orders', value: formatNumber(metrics.revenue.orders) },
       { metric: 'Avg order value', value: paiseToRupees(metrics.revenue.avgOrderValue) },
@@ -111,10 +122,21 @@ export default function AnalyticsPage() {
             <Button variant="outline" size="sm" disabled={!metrics} onClick={handleExportCsv}>
               <Download className="h-4 w-4" /> Export
             </Button>
-            <Button variant="outline" size="sm" loading={exportReport.isPending} onClick={handleExportPdf}>
-              {queued ? <Check className="h-4 w-4 text-success" /> : <Download className="h-4 w-4" />}
-              {queued ? 'Queued' : 'PDF'}
-            </Button>
+            {canWrite && (
+              <Button
+                variant="outline"
+                size="sm"
+                loading={exportReport.isPending}
+                onClick={handleExportPdf}
+              >
+                {queued ? (
+                  <Check className="h-4 w-4 text-success" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                {queued ? 'Queued' : 'PDF'}
+              </Button>
+            )}
           </>
         }
       />

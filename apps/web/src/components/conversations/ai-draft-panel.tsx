@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { useApproveTask, useRejectTask } from '@/hooks/use-queries';
 import type { HitlTask } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { usePermissions } from '@/hooks/use-permissions';
 
 /**
  * In-thread review card for a pending DRAFT_REVIEW task. Lets an operator approve
@@ -17,6 +18,9 @@ export function AiDraftPanel({ task }: { task: HitlTask }) {
   const [draft, setDraft] = useState(task.aiDraft ?? '');
   const approve = useApproveTask();
   const reject = useRejectTask();
+  // Approving or rejecting a draft sends (or suppresses) a real customer
+  // message — an undecorated write, STAFF and above.
+  const { canWrite } = usePermissions();
 
   const confidence = Math.round(task.aiConfidence ?? 0);
   const confidenceTone = confidence >= 90 ? 'success' : confidence >= 70 ? 'warning' : 'danger';
@@ -52,7 +56,11 @@ export function AiDraftPanel({ task }: { task: HitlTask }) {
           className="w-full resize-none rounded-md border border-amber-300 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
       ) : (
-        <div className={cn('rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-foreground')}>
+        <div
+          className={cn(
+            'rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-foreground',
+          )}
+        >
           {draft || <span className="italic text-muted-foreground">No draft provided.</span>}
         </div>
       )}
@@ -63,32 +71,37 @@ export function AiDraftPanel({ task }: { task: HitlTask }) {
         </p>
       )}
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          variant="success"
-          loading={approve.isPending}
-          disabled={busy}
-          onClick={() =>
-            approve.mutate({ id: task.id, editedResponse: editing && draft !== task.aiDraft ? draft : undefined })
-          }
-        >
-          <Check className="h-4 w-4" />
-          {editing && draft !== task.aiDraft ? 'Send edited' : 'Approve & send'}
-        </Button>
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => setEditing((v) => !v)}>
-          <Pencil className="h-4 w-4" /> {editing ? 'Cancel edit' : 'Edit'}
-        </Button>
-        <Button
-          size="sm"
-          variant="danger"
-          loading={reject.isPending}
-          disabled={busy}
-          onClick={() => reject.mutate({ id: task.id })}
-        >
-          <X className="h-4 w-4" /> Reject & take over
-        </Button>
-      </div>
+      {canWrite && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="success"
+            loading={approve.isPending}
+            disabled={busy}
+            onClick={() =>
+              approve.mutate({
+                id: task.id,
+                editedResponse: editing && draft !== task.aiDraft ? draft : undefined,
+              })
+            }
+          >
+            <Check className="h-4 w-4" />
+            {editing && draft !== task.aiDraft ? 'Send edited' : 'Approve & send'}
+          </Button>
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => setEditing((v) => !v)}>
+            <Pencil className="h-4 w-4" /> {editing ? 'Cancel edit' : 'Edit'}
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            loading={reject.isPending}
+            disabled={busy}
+            onClick={() => reject.mutate({ id: task.id })}
+          >
+            <X className="h-4 w-4" /> Reject & take over
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

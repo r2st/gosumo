@@ -46,7 +46,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loadSession = useCallback(async () => {
     try {
-      const [user, business] = await Promise.all([api.auth.me(), api.business.me().catch(() => null)]);
+      const [user, business] = await Promise.all([
+        api.auth.me(),
+        api.business.me().catch(() => null),
+      ]);
       setState({ user, business, status: 'authenticated' });
     } catch {
       setState({ user: null, business: null, status: 'unauthenticated' });
@@ -78,28 +81,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, [router]);
 
-  const applyLoginResult = useCallback(
-    async (result: LoginResult): Promise<boolean> => {
-      if (result.requiresTwoFactor) {
-        return false;
-      }
-      tokenStore.setAccessToken(result.tokens.accessToken);
-      tokenStore.setRefreshToken(result.tokens.refreshToken);
-      const business = await api.business.me().catch(() => null);
-      setState({ user: result.user, business, status: 'authenticated' });
-      return true;
-    },
-    [],
-  );
+  const applyLoginResult = useCallback(async (result: LoginResult): Promise<boolean> => {
+    if (result.requiresTwoFactor) {
+      return false;
+    }
+    tokenStore.setAccessToken(result.tokens.accessToken);
+    tokenStore.setRefreshToken(result.tokens.refreshToken);
+    const business = await api.business.me().catch(() => null);
+    setState({ user: result.user, business, status: 'authenticated' });
+    return true;
+  }, []);
 
   const login = useCallback(
-    async (email: string, password: string) => applyLoginResult(await api.auth.login(email, password)),
+    async (email: string, password: string) =>
+      applyLoginResult(await api.auth.login(email, password)),
     [applyLoginResult],
   );
 
   const register = useCallback(
-    async (body: { businessName: string; name: string; email: string; password: string; phone?: string }) =>
-      applyLoginResult(await api.auth.register(body)),
+    async (body: {
+      businessName: string;
+      name: string;
+      email: string;
+      password: string;
+      phone?: string;
+    }) => applyLoginResult(await api.auth.register(body)),
     [applyLoginResult],
   );
 
@@ -123,4 +129,18 @@ export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within an AuthProvider');
   return ctx;
+}
+
+/**
+ * The session if there is a provider above, otherwise null.
+ *
+ * {@link useAuth} throws so that a component depending on the session fails
+ * loudly when it is mounted outside the dashboard shell. Permission checks
+ * want the opposite: a missing provider should mean "no role, so no write
+ * controls", not a crashed subtree. Read-only is the safe reading of an
+ * unknown session, and it keeps a component that merely *hides a button*
+ * based on role renderable in isolation.
+ */
+export function useOptionalAuth(): AuthContextValue | null {
+  return useContext(AuthContext);
 }

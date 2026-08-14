@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { SegmentedTabs } from '@/components/ui/tabs';
 import { LoadingState, EmptyState, ErrorState } from '@/components/ui/states';
 import { formatDateTimeIST } from '@/lib/format';
+import { usePermissions } from '@/hooks/use-permissions';
 import {
   useSiteVisits,
   useProjects,
@@ -52,6 +53,9 @@ function toIso(local: string): string {
 export default function SiteVisitsPage() {
   const [view, setView] = useState<'list' | 'calendar'>('list');
   const [booking, setBooking] = useState(false);
+  // Booking, confirming, rescheduling and cancelling visits are all
+  // undecorated writes — STAFF and above.
+  const { canWrite } = usePermissions();
   const visitsQ = useSiteVisits({ limit: 100 });
   const visits = visitsQ.data?.data ?? [];
 
@@ -61,9 +65,11 @@ export default function SiteVisitsPage() {
         title="Site Visits"
         description="Book, confirm and follow up on property visits — reminders fire at T-24h and T-2h."
         actions={
-          <Button onClick={() => setBooking(true)}>
-            <Plus className="h-4 w-4" /> Book visit
-          </Button>
+          canWrite ? (
+            <Button onClick={() => setBooking(true)}>
+              <Plus className="h-4 w-4" /> Book visit
+            </Button>
+          ) : null
         }
       />
 
@@ -107,8 +113,12 @@ export default function SiteVisitsPage() {
 
 function VisitList({ visits }: { visits: SiteVisit[] }) {
   const now = Date.now();
-  const upcoming = visits.filter((v) => new Date(v.scheduledAt).getTime() >= now && !TERMINAL.includes(v.status));
-  const past = visits.filter((v) => !(new Date(v.scheduledAt).getTime() >= now && !TERMINAL.includes(v.status)));
+  const upcoming = visits.filter(
+    (v) => new Date(v.scheduledAt).getTime() >= now && !TERMINAL.includes(v.status),
+  );
+  const past = visits.filter(
+    (v) => !(new Date(v.scheduledAt).getTime() >= now && !TERMINAL.includes(v.status)),
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -118,7 +128,15 @@ function VisitList({ visits }: { visits: SiteVisit[] }) {
   );
 }
 
-function Section({ title, visits, emptyLabel }: { title: string; visits: SiteVisit[]; emptyLabel: string }) {
+function Section({
+  title,
+  visits,
+  emptyLabel,
+}: {
+  title: string;
+  visits: SiteVisit[];
+  emptyLabel: string;
+}) {
   return (
     <div>
       <h3 className="mb-2 text-sm font-semibold text-muted-foreground">{title}</h3>
@@ -139,6 +157,7 @@ function VisitRow({ visit }: { visit: SiteVisit }) {
   const confirm = useConfirmVisit();
   const cancel = useCancelVisit();
   const noShow = useMarkNoShow();
+  const { canWrite } = usePermissions();
   const [reschedule, setReschedule] = useState(false);
   const [complete, setComplete] = useState(false);
   const isTerminal = TERMINAL.includes(visit.status);
@@ -158,10 +177,15 @@ function VisitRow({ visit }: { visit: SiteVisit }) {
 
       {visit.feedback && <p className="mt-2 text-xs text-muted-foreground">“{visit.feedback}”</p>}
 
-      {!isTerminal && (
+      {!isTerminal && canWrite && (
         <div className="mt-3 flex flex-wrap gap-2">
           {visit.status !== 'CONFIRMED' && (
-            <Button size="sm" variant="secondary" loading={confirm.isPending} onClick={() => confirm.mutate(visit.id)}>
+            <Button
+              size="sm"
+              variant="secondary"
+              loading={confirm.isPending}
+              onClick={() => confirm.mutate(visit.id)}
+            >
               Confirm
             </Button>
           )}
@@ -171,10 +195,20 @@ function VisitRow({ visit }: { visit: SiteVisit }) {
           <Button size="sm" variant="ghost" onClick={() => setReschedule(true)}>
             Reschedule
           </Button>
-          <Button size="sm" variant="ghost" loading={noShow.isPending} onClick={() => noShow.mutate(visit.id)}>
+          <Button
+            size="sm"
+            variant="ghost"
+            loading={noShow.isPending}
+            onClick={() => noShow.mutate(visit.id)}
+          >
             No-show
           </Button>
-          <Button size="sm" variant="ghost" loading={cancel.isPending} onClick={() => cancel.mutate({ id: visit.id })}>
+          <Button
+            size="sm"
+            variant="ghost"
+            loading={cancel.isPending}
+            onClick={() => cancel.mutate({ id: visit.id })}
+          >
             Cancel
           </Button>
         </div>
@@ -230,7 +264,7 @@ function VisitCalendar({ visits }: { visits: SiteVisit[] }) {
       </div>
       <div className="mt-1 grid grid-cols-7 gap-1">
         {days.map((cell, i) => {
-          const dayVisits = cell.date ? byDay.get(cell.date.toDateString()) ?? [] : [];
+          const dayVisits = cell.date ? (byDay.get(cell.date.toDateString()) ?? []) : [];
           return (
             <div
               key={i}
@@ -257,7 +291,9 @@ function VisitCalendar({ visits }: { visits: SiteVisit[] }) {
                       </span>
                     ))}
                     {dayVisits.length > 3 && (
-                      <span className="text-[10px] text-muted-foreground">+{dayVisits.length - 3} more</span>
+                      <span className="text-[10px] text-muted-foreground">
+                        +{dayVisits.length - 3} more
+                      </span>
                     )}
                   </div>
                 </>
@@ -325,7 +361,10 @@ function BookVisitModal({ onClose }: { onClose: () => void }) {
             onChange={(e) => setLeadId(e.target.value)}
             options={[
               { value: '', label: 'Select a lead…' },
-              ...leads.map((l) => ({ value: l.id, label: `${l.name ?? 'Unknown'} · ${l.whatsappPhone}` })),
+              ...leads.map((l) => ({
+                value: l.id,
+                label: `${l.name ?? 'Unknown'} · ${l.whatsappPhone}`,
+              })),
             ]}
           />
         </Field>
@@ -340,15 +379,28 @@ function BookVisitModal({ onClose }: { onClose: () => void }) {
           />
         </Field>
         <Field label="Date & time">
-          <Input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />
+          <Input
+            type="datetime-local"
+            value={scheduledAt}
+            onChange={(e) => setScheduledAt(e.target.value)}
+          />
         </Field>
         <Field label="Duration (minutes)">
-          <Input type="number" min={5} value={duration} onChange={(e) => setDuration(e.target.value)} />
+          <Input
+            type="number"
+            min={5}
+            value={duration}
+            onChange={(e) => setDuration(e.target.value)}
+          />
         </Field>
         <Field label="Notes (address, meeting point)">
           <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
         </Field>
-        {book.isError && <p className="text-xs text-danger">Could not book the visit. Check the details and try again.</p>}
+        {book.isError && (
+          <p className="text-xs text-danger">
+            Could not book the visit. Check the details and try again.
+          </p>
+        )}
       </div>
     </Modal>
   );
@@ -372,7 +424,10 @@ function RescheduleModal({ visit, onClose }: { visit: SiteVisit; onClose: () => 
             loading={reschedule.isPending}
             disabled={!when || reschedule.isPending}
             onClick={() =>
-              reschedule.mutate({ id: visit.id, newScheduledAt: toIso(when) }, { onSuccess: onClose })
+              reschedule.mutate(
+                { id: visit.id, newScheduledAt: toIso(when) },
+                { onSuccess: onClose },
+              )
             }
           >
             Reschedule
@@ -405,7 +460,10 @@ function CompleteModal({ visit, onClose }: { visit: SiteVisit; onClose: () => vo
           <Button
             loading={complete.isPending}
             onClick={() =>
-              complete.mutate({ id: visit.id, outcome, feedback: feedback || undefined }, { onSuccess: onClose })
+              complete.mutate(
+                { id: visit.id, outcome, feedback: feedback || undefined },
+                { onSuccess: onClose },
+              )
             }
           >
             Save outcome

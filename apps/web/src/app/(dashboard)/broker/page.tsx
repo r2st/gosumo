@@ -1,7 +1,19 @@
 'use client';
 
-import { Bell, BellOff, Flame, CheckSquare, Clock, Repeat, Users, ShieldAlert, Mic, MicOff } from 'lucide-react';
+import {
+  Bell,
+  BellOff,
+  Flame,
+  CheckSquare,
+  Clock,
+  Repeat,
+  Users,
+  ShieldAlert,
+  Mic,
+  MicOff,
+} from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
+import { usePermissions } from '@/hooks/use-permissions';
 import { KpiCard } from '@/components/dashboard/kpi-card';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
@@ -9,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Select } from '@/components/ui/select';
 import { LoadingState, EmptyState } from '@/components/ui/states';
+import { ReadOnlyFieldset } from '@/components/settings/settings-kit';
 import { timeAgo } from '@/lib/format';
 import {
   useBrokerConsole,
@@ -47,12 +60,46 @@ export default function BrokerConsolePage() {
 
       <div className="space-y-6 overflow-auto p-4 lg:p-6">
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
-          <KpiCard label="Active leads" value={String(m?.activeLeads ?? 0)} icon={Users} loading={consoleQ.isLoading} />
-          <KpiCard label="Hot leads" value={String(m?.hotLeads ?? 0)} icon={Flame} iconClassName="bg-rose-100 text-rose-600" loading={consoleQ.isLoading} />
-          <KpiCard label="To approve" value={String(m?.pendingApprovals ?? 0)} icon={CheckSquare} iconClassName="bg-amber-100 text-amber-600" loading={consoleQ.isLoading} />
-          <KpiCard label="Follow-ups due" value={String(m?.followupsDueToday ?? 0)} icon={Clock} iconClassName="bg-sky-100 text-sky-600" loading={consoleQ.isLoading} />
-          <KpiCard label="Active cadences" value={String(m?.activeCadences ?? 0)} icon={Repeat} loading={consoleQ.isLoading} />
-          <KpiCard label="AI-handled" value={`${m?.aiHandledPct ?? 0}%`} icon={ShieldAlert} iconClassName="bg-emerald-100 text-emerald-600" loading={consoleQ.isLoading} />
+          <KpiCard
+            label="Active leads"
+            value={String(m?.activeLeads ?? 0)}
+            icon={Users}
+            loading={consoleQ.isLoading}
+          />
+          <KpiCard
+            label="Hot leads"
+            value={String(m?.hotLeads ?? 0)}
+            icon={Flame}
+            iconClassName="bg-rose-100 text-rose-600"
+            loading={consoleQ.isLoading}
+          />
+          <KpiCard
+            label="To approve"
+            value={String(m?.pendingApprovals ?? 0)}
+            icon={CheckSquare}
+            iconClassName="bg-amber-100 text-amber-600"
+            loading={consoleQ.isLoading}
+          />
+          <KpiCard
+            label="Follow-ups due"
+            value={String(m?.followupsDueToday ?? 0)}
+            icon={Clock}
+            iconClassName="bg-sky-100 text-sky-600"
+            loading={consoleQ.isLoading}
+          />
+          <KpiCard
+            label="Active cadences"
+            value={String(m?.activeCadences ?? 0)}
+            icon={Repeat}
+            loading={consoleQ.isLoading}
+          />
+          <KpiCard
+            label="AI-handled"
+            value={`${m?.aiHandledPct ?? 0}%`}
+            icon={ShieldAlert}
+            iconClassName="bg-emerald-100 text-emerald-600"
+            loading={consoleQ.isLoading}
+          />
         </div>
 
         <div className="grid gap-6 lg:grid-cols-3">
@@ -105,9 +152,9 @@ function VoiceCommandHistory() {
         ) : (
           <ul className="divide-y divide-border">
             {data.map((cmd) => {
-              const status = (cmd.status in VOICE_STATUS_TONE
-                ? cmd.status
-                : 'not_understood') as VoiceCommandStatus;
+              const status = (
+                cmd.status in VOICE_STATUS_TONE ? cmd.status : 'not_understood'
+              ) as VoiceCommandStatus;
               return (
                 <li key={cmd.id} className="flex items-start gap-3 py-3">
                   <Badge tone={VOICE_STATUS_TONE[status]} className="mt-0.5 shrink-0">
@@ -134,6 +181,9 @@ function NotificationCenter() {
   const { data, isLoading } = useBrokerAlerts();
   const markRead = useMarkAlertRead();
   const markAll = useMarkAllAlertsRead();
+  // Marking an alert read posts to /realty/broker/alerts — an undecorated
+  // write, so STAFF and above.
+  const { canWrite } = usePermissions();
 
   return (
     <Card>
@@ -143,8 +193,13 @@ function NotificationCenter() {
           Notifications
           {data && data.unread > 0 && <Badge tone="danger">{data.unread}</Badge>}
         </CardTitle>
-        {data && data.unread > 0 && (
-          <Button size="sm" variant="ghost" onClick={() => markAll.mutate()} loading={markAll.isPending}>
+        {data && data.unread > 0 && canWrite && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => markAll.mutate()}
+            loading={markAll.isPending}
+          >
             Mark all read
           </Button>
         )}
@@ -153,7 +208,11 @@ function NotificationCenter() {
         {isLoading ? (
           <LoadingState label="Loading notifications…" />
         ) : !data || data.alerts.length === 0 ? (
-          <EmptyState icon={BellOff} title="All caught up" description="Hot-lead alerts, briefings, and takeovers will appear here." />
+          <EmptyState
+            icon={BellOff}
+            title="All caught up"
+            description="Hot-lead alerts, briefings, and takeovers will appear here."
+          />
         ) : (
           <ul className="divide-y divide-border">
             {data.alerts.map((alert: BrokerAlert) => (
@@ -166,11 +225,13 @@ function NotificationCenter() {
                 </Badge>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{alert.title}</p>
-                  {alert.body && <p className="truncate text-xs text-muted-foreground">{alert.body}</p>}
+                  {alert.body && (
+                    <p className="truncate text-xs text-muted-foreground">{alert.body}</p>
+                  )}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <span className="text-xs text-muted-foreground">{timeAgo(alert.createdAt)}</span>
-                  {!alert.isRead && (
+                  {!alert.isRead && canWrite && (
                     <button
                       onClick={() => markRead.mutate(alert.id)}
                       className="text-xs font-medium text-primary hover:underline"
@@ -191,6 +252,8 @@ function NotificationCenter() {
 function AutonomyDial() {
   const { data: settings, isLoading } = useBrokerSettings();
   const update = useUpdateBrokerSettings();
+  // PATCH /realty/broker/settings is an undecorated write — STAFF and above.
+  const { canWrite } = usePermissions();
 
   return (
     <Card>
@@ -201,7 +264,7 @@ function AutonomyDial() {
         {isLoading || !settings ? (
           <LoadingState label="Loading settings…" />
         ) : (
-          <>
+          <ReadOnlyFieldset readOnly={!canWrite} className="space-y-5">
             <div>
               <label className="mb-1.5 block text-sm font-medium">AI independence</label>
               <Select
@@ -246,7 +309,7 @@ function AutonomyDial() {
               label="Morning briefing"
               description={`Daily digest at ${settings.briefingHour}:${String(settings.briefingMinute).padStart(2, '0')} IST.`}
             />
-          </>
+          </ReadOnlyFieldset>
         )}
       </CardContent>
     </Card>

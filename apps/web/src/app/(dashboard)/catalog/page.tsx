@@ -17,6 +17,7 @@ import { useCatalogItems, useCategories } from '@/hooks/use-catalog';
 import { paiseToRupees } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { CatalogItem, CatalogItemType } from '@/lib/types';
+import { usePermissions } from '@/hooks/use-permissions';
 
 const TYPES = [
   { label: 'All', value: '' },
@@ -27,6 +28,9 @@ const TYPES = [
 ];
 
 export default function CatalogPage() {
+  // Undecorated writes — STAFF and above.
+  const { canWrite } = usePermissions();
+
   const [q, setQ] = useState('');
   const [type, setType] = useState('');
   const [categoryId, setCategoryId] = useState('');
@@ -60,14 +64,16 @@ export default function CatalogPage() {
         title="Catalog"
         description="Your products, services and packages."
         actions={
-          <>
-            <Button variant="outline" onClick={() => setCategoryOpen(true)}>
-              <FolderTree className="h-4 w-4" /> Categories
-            </Button>
-            <Button onClick={openNew}>
-              <Plus className="h-4 w-4" /> Add item
-            </Button>
-          </>
+          canWrite ? (
+            <>
+              <Button variant="outline" onClick={() => setCategoryOpen(true)}>
+                <FolderTree className="h-4 w-4" /> Categories
+              </Button>
+              <Button onClick={openNew}>
+                <Plus className="h-4 w-4" /> Add item
+              </Button>
+            </>
+          ) : undefined
         }
       />
 
@@ -94,7 +100,10 @@ export default function CatalogPage() {
               <Select
                 value={categoryId}
                 onChange={(e) => setCategoryId(e.target.value)}
-                options={[{ label: 'All categories', value: '' }, ...categories.map((c) => ({ label: c.name, value: c.id }))]}
+                options={[
+                  { label: 'All categories', value: '' },
+                  ...categories.map((c) => ({ label: c.name, value: c.id })),
+                ]}
               />
             </div>
             <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
@@ -102,7 +111,12 @@ export default function CatalogPage() {
             </label>
             <div className="relative w-full sm:w-64">
               <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search catalog…" className="pl-8" />
+              <Input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search catalog…"
+                className="pl-8"
+              />
             </div>
           </div>
         </div>
@@ -117,9 +131,11 @@ export default function CatalogPage() {
             title="No catalog items"
             description="Add your first product or service to get started."
             action={
-              <Button onClick={openNew}>
-                <Plus className="h-4 w-4" /> Add item
-              </Button>
+              canWrite ? (
+                <Button onClick={openNew}>
+                  <Plus className="h-4 w-4" /> Add item
+                </Button>
+              ) : undefined
             }
           />
         ) : (
@@ -129,7 +145,11 @@ export default function CatalogPage() {
                 <div className="relative aspect-video w-full bg-muted">
                   {item.imageUrls?.[0] ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={item.imageUrls[0]} alt={item.name} className="h-full w-full object-cover" />
+                    <img
+                      src={item.imageUrls[0]}
+                      alt={item.name}
+                      className="h-full w-full object-cover"
+                    />
                   ) : (
                     <div className="flex h-full items-center justify-center text-muted-foreground">
                       <Package className="h-8 w-8" />
@@ -184,12 +204,18 @@ export default function CatalogPage() {
 
         {data && data.data.length > 0 && (
           <p className="text-xs text-muted-foreground">
-            Showing {data.data.length} of {data.pagination?.total ?? (data as any).total ?? '?'} items
+            Showing {data.data.length} of {data.pagination?.total ?? (data as any).total ?? '?'}{' '}
+            items
           </p>
         )}
       </div>
 
-      <ProductFormModal open={formOpen} onClose={() => setFormOpen(false)} item={editItem} categories={categories} />
+      <ProductFormModal
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        item={editItem}
+        categories={categories}
+      />
       <CategoryManager open={categoryOpen} onClose={() => setCategoryOpen(false)} />
     </div>
   );

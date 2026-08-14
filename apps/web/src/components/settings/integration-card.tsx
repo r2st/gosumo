@@ -9,10 +9,17 @@ import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { SecretInput } from '@/components/settings/masked-input';
+import { ReadOnlyFieldset } from '@/components/settings/settings-kit';
 import { useSaveIntegration, useTestIntegration } from '@/hooks/use-integrations';
+import { usePermissions } from '@/hooks/use-permissions';
 import { cn } from '@/lib/utils';
 import { timeAgo } from '@/lib/format';
-import type { IntegrationCredential, IntegrationProvider, IntegrationStatus, TestConnectionResult } from '@/lib/integration-types';
+import type {
+  IntegrationCredential,
+  IntegrationProvider,
+  IntegrationStatus,
+  TestConnectionResult,
+} from '@/lib/integration-types';
 
 export interface IntegrationFieldDef {
   name: string;
@@ -35,15 +42,25 @@ export interface IntegrationDef {
   fields: IntegrationFieldDef[];
 }
 
-const STATUS_META: Record<IntegrationStatus, { tone: BadgeTone; label: string; icon: LucideIcon }> = {
-  CONNECTED: { tone: 'success', label: 'Connected', icon: CheckCircle2 },
-  DISCONNECTED: { tone: 'neutral', label: 'Not connected', icon: PlugZap },
-  ERROR: { tone: 'danger', label: 'Error', icon: XCircle },
-};
+const STATUS_META: Record<IntegrationStatus, { tone: BadgeTone; label: string; icon: LucideIcon }> =
+  {
+    CONNECTED: { tone: 'success', label: 'Connected', icon: CheckCircle2 },
+    DISCONNECTED: { tone: 'neutral', label: 'Not connected', icon: PlugZap },
+    ERROR: { tone: 'danger', label: 'Error', icon: XCircle },
+  };
 
-export function IntegrationCard({ def, credential }: { def: IntegrationDef; credential?: IntegrationCredential }) {
+export function IntegrationCard({
+  def,
+  credential,
+}: {
+  def: IntegrationDef;
+  credential?: IntegrationCredential;
+}) {
   const save = useSaveIntegration();
   const test = useTestIntegration();
+  // PUT /integrations/credentials/:provider and its /test sibling are both
+  // @Roles(MANAGER) — these fields hold third-party secrets.
+  const { canManage } = usePermissions();
   const [testResult, setTestResult] = useState<TestConnectionResult | null>(null);
 
   const initial = useMemo(() => buildInitial(def, credential), [def, credential]);
@@ -96,7 +113,8 @@ export function IntegrationCard({ def, credential }: { def: IntegrationDef; cred
     );
   };
 
-  const status: IntegrationStatus = credential?.status ?? (credential?.configured ? 'CONNECTED' : 'DISCONNECTED');
+  const status: IntegrationStatus =
+    credential?.status ?? (credential?.configured ? 'CONNECTED' : 'DISCONNECTED');
   const meta = STATUS_META[status];
   const StatusIcon = meta.icon;
   const Icon = def.icon;
@@ -104,102 +122,131 @@ export function IntegrationCard({ def, credential }: { def: IntegrationDef; cred
   return (
     <Card>
       <form onSubmit={onSubmit}>
-        <div className="flex items-start justify-between gap-3 border-b border-border p-5">
-          <div className="flex gap-3">
-            <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white', def.color)}>
-              <Icon className="h-5 w-5" />
+        {/* Disables every credential field for a non-manager, so the form is
+            readable but not editable — the Save and Test buttons below are
+            hidden for the same reason. */}
+        <ReadOnlyFieldset readOnly={!canManage}>
+          <div className="flex items-start justify-between gap-3 border-b border-border p-5">
+            <div className="flex gap-3">
+              <div
+                className={cn(
+                  'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white',
+                  def.color,
+                )}
+              >
+                <Icon className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="font-semibold text-foreground">{def.label}</p>
+                <p className="text-xs text-muted-foreground">{def.blurb}</p>
+              </div>
             </div>
-            <div>
-              <p className="font-semibold text-foreground">{def.label}</p>
-              <p className="text-xs text-muted-foreground">{def.blurb}</p>
+            <Badge tone={meta.tone}>
+              <StatusIcon className="h-3 w-3" /> {meta.label}
+            </Badge>
+          </div>
+
+          <div className="space-y-4 p-5">
+            {credential?.status === 'ERROR' && credential.errorMessage && (
+              <p className="rounded-md bg-danger/10 px-3 py-2 text-xs text-danger">
+                {credential.errorMessage}
+              </p>
+            )}
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              {visibleFields.map((f) => {
+                const fieldState = credential?.fields?.[f.name];
+                const full =
+                  f.options || f.name.toLowerCase().includes('token') ? 'sm:col-span-2' : '';
+                return (
+                  <Field key={f.name} label={f.label} hint={f.hint} className={full}>
+                    {f.options ? (
+                      <Select
+                        options={f.options}
+                        value={form[f.name] ?? ''}
+                        onChange={(e) => set(f.name, e.target.value)}
+                      />
+                    ) : f.secret ? (
+                      <SecretInput
+                        value={form[f.name] ?? ''}
+                        onChange={(v) => set(f.name, v)}
+                        configured={fieldState?.set}
+                        last4={fieldState?.last4}
+                        placeholder={f.placeholder}
+                      />
+                    ) : (
+                      <Input
+                        type={f.type ?? 'text'}
+                        value={form[f.name] ?? ''}
+                        placeholder={f.placeholder}
+                        onChange={(e) => set(f.name, e.target.value)}
+                      />
+                    )}
+                  </Field>
+                );
+              })}
+            </div>
+
+            {testResult && (
+              <p
+                className={cn(
+                  'text-xs font-medium',
+                  testResult.success ? 'text-success' : 'text-danger',
+                )}
+              >
+                {testResult.success ? '✓ ' : '✕ '}
+                {testResult.message}
+                {testResult.latencyMs != null ? ` (${testResult.latencyMs}ms)` : ''}
+              </p>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between gap-3 border-t border-border px-5 py-3">
+            <span className="text-xs text-muted-foreground">
+              {credential?.lastTestedAt
+                ? `Last tested ${timeAgo(credential.lastTestedAt)}`
+                : 'Not tested yet'}
+            </span>
+            <div className="flex items-center gap-2">
+              {save.isSuccess && !dirty && (
+                <span className="text-xs font-medium text-success">Saved</span>
+              )}
+              {canManage && (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    loading={test.isPending}
+                    disabled={!credential?.configured && !dirty}
+                    onClick={onTest}
+                  >
+                    Test connection
+                  </Button>
+                  <Button type="submit" size="sm" loading={save.isPending} disabled={!dirty}>
+                    Save
+                  </Button>
+                </>
+              )}
             </div>
           </div>
-          <Badge tone={meta.tone}>
-            <StatusIcon className="h-3 w-3" /> {meta.label}
-          </Badge>
-        </div>
-
-        <div className="space-y-4 p-5">
-          {credential?.status === 'ERROR' && credential.errorMessage && (
-            <p className="rounded-md bg-danger/10 px-3 py-2 text-xs text-danger">{credential.errorMessage}</p>
-          )}
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            {visibleFields.map((f) => {
-              const fieldState = credential?.fields?.[f.name];
-              const full = f.options || f.name.toLowerCase().includes('token') ? 'sm:col-span-2' : '';
-              return (
-                <Field key={f.name} label={f.label} hint={f.hint} className={full}>
-                  {f.options ? (
-                    <Select
-                      options={f.options}
-                      value={form[f.name] ?? ''}
-                      onChange={(e) => set(f.name, e.target.value)}
-                    />
-                  ) : f.secret ? (
-                    <SecretInput
-                      value={form[f.name] ?? ''}
-                      onChange={(v) => set(f.name, v)}
-                      configured={fieldState?.set}
-                      last4={fieldState?.last4}
-                      placeholder={f.placeholder}
-                    />
-                  ) : (
-                    <Input
-                      type={f.type ?? 'text'}
-                      value={form[f.name] ?? ''}
-                      placeholder={f.placeholder}
-                      onChange={(e) => set(f.name, e.target.value)}
-                    />
-                  )}
-                </Field>
-              );
-            })}
-          </div>
-
-          {testResult && (
-            <p className={cn('text-xs font-medium', testResult.success ? 'text-success' : 'text-danger')}>
-              {testResult.success ? '✓ ' : '✕ '}
-              {testResult.message}
-              {testResult.latencyMs != null ? ` (${testResult.latencyMs}ms)` : ''}
-            </p>
-          )}
-        </div>
-
-        <div className="flex items-center justify-between gap-3 border-t border-border px-5 py-3">
-          <span className="text-xs text-muted-foreground">
-            {credential?.lastTestedAt ? `Last tested ${timeAgo(credential.lastTestedAt)}` : 'Not tested yet'}
-          </span>
-          <div className="flex items-center gap-2">
-            {save.isSuccess && !dirty && <span className="text-xs font-medium text-success">Saved</span>}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              loading={test.isPending}
-              disabled={!credential?.configured && !dirty}
-              onClick={onTest}
-            >
-              Test connection
-            </Button>
-            <Button type="submit" size="sm" loading={save.isPending} disabled={!dirty}>
-              Save
-            </Button>
-          </div>
-        </div>
+        </ReadOnlyFieldset>
       </form>
     </Card>
   );
 }
 
-function buildInitial(def: IntegrationDef, credential?: IntegrationCredential): Record<string, string> {
+function buildInitial(
+  def: IntegrationDef,
+  credential?: IntegrationCredential,
+): Record<string, string> {
   const out: Record<string, string> = {};
   for (const f of def.fields) {
     if (f.secret) {
       out[f.name] = '';
     } else {
       const stored = credential?.fields?.[f.name]?.value;
-      out[f.name] = stored ?? (f.options?.[0]?.value ?? '');
+      out[f.name] = stored ?? f.options?.[0]?.value ?? '';
     }
   }
   return out;

@@ -9,8 +9,14 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { humanizeEnum } from '@/lib/format';
-import { useCancelOrder, useConfirmOrder, useFulfillOrder, useUpdateOrderStatus } from '@/hooks/use-orders';
+import {
+  useCancelOrder,
+  useConfirmOrder,
+  useFulfillOrder,
+  useUpdateOrderStatus,
+} from '@/hooks/use-orders';
 import type { Order, OrderStatus } from '@/lib/types';
+import { usePermissions } from '@/hooks/use-permissions';
 
 /** Allowed forward transitions handled by the generic status endpoint. */
 const NEXT_STATUSES: Partial<Record<OrderStatus, OrderStatus[]>> = {
@@ -24,6 +30,9 @@ const NEXT_STATUSES: Partial<Record<OrderStatus, OrderStatus[]>> = {
 const TERMINAL: OrderStatus[] = ['DELIVERED', 'CANCELLED', 'REFUNDED'];
 
 export function OrderStatusControl({ order }: { order: Order }) {
+  // Every control here is an order-state write — STAFF and above. A VIEWER
+  // still sees the order and its current status, just no way to move it.
+  const { canWrite } = usePermissions();
   const confirm = useConfirmOrder();
   const fulfill = useFulfillOrder();
   const advance = useUpdateOrderStatus();
@@ -69,28 +78,50 @@ export function OrderStatusControl({ order }: { order: Order }) {
     );
   };
 
+  if (!canWrite) return null;
+
   return (
     <div className="flex flex-wrap items-center gap-2">
       {order.status === 'DRAFT' && (
-        <Button size="sm" loading={confirm.isPending} onClick={() => confirm.mutate({ id: order.id })}>
+        <Button
+          size="sm"
+          loading={confirm.isPending}
+          onClick={() => confirm.mutate({ id: order.id })}
+        >
           <CheckCircle2 className="h-4 w-4" /> Confirm order
         </Button>
       )}
 
       {(order.status === 'PAID' || order.status === 'PROCESSING') && (
-        <Button size="sm" variant="outline" loading={fulfill.isPending} onClick={() => fulfill.mutate({ id: order.id })}>
+        <Button
+          size="sm"
+          variant="outline"
+          loading={fulfill.isPending}
+          onClick={() => fulfill.mutate({ id: order.id })}
+        >
           <Truck className="h-4 w-4" /> Mark fulfilled
         </Button>
       )}
 
       {nexts.map((s) => (
-        <Button key={s} size="sm" variant="secondary" loading={advance.isPending} onClick={() => advanceTo(s)}>
+        <Button
+          key={s}
+          size="sm"
+          variant="secondary"
+          loading={advance.isPending}
+          onClick={() => advanceTo(s)}
+        >
           Mark {humanizeEnum(s)}
         </Button>
       ))}
 
       {!isTerminal && (
-        <Button size="sm" variant="ghost" className="text-danger hover:text-danger" onClick={() => setCancelOpen(true)}>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-danger hover:text-danger"
+          onClick={() => setCancelOpen(true)}
+        >
           <Ban className="h-4 w-4" /> Cancel
         </Button>
       )}
@@ -114,7 +145,11 @@ export function OrderStatusControl({ order }: { order: Order }) {
       >
         <form id="ship-form" onSubmit={submitShip}>
           <Field label="Tracking number" hint="Optional">
-            <Input value={tracking} onChange={(e) => setTracking(e.target.value)} placeholder="e.g. EKART-12345678" />
+            <Input
+              value={tracking}
+              onChange={(e) => setTracking(e.target.value)}
+              placeholder="e.g. EKART-12345678"
+            />
           </Field>
         </form>
       </Modal>
@@ -130,7 +165,13 @@ export function OrderStatusControl({ order }: { order: Order }) {
             <Button variant="outline" type="button" onClick={() => setCancelOpen(false)}>
               Keep order
             </Button>
-            <Button variant="danger" type="submit" form="cancel-form" loading={cancel.isPending} disabled={!reason.trim()}>
+            <Button
+              variant="danger"
+              type="submit"
+              form="cancel-form"
+              loading={cancel.isPending}
+              disabled={!reason.trim()}
+            >
               Cancel order
             </Button>
           </>
@@ -138,12 +179,25 @@ export function OrderStatusControl({ order }: { order: Order }) {
       >
         <form id="cancel-form" onSubmit={submitCancel} className="space-y-4">
           <Field label="Reason">
-            <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} placeholder="Why is this order being cancelled?" required />
+            <Textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={3}
+              placeholder="Why is this order being cancelled?"
+              required
+            />
           </Field>
           {order.paymentId && (
-            <Switch checked={refund} onChange={setRefund} label="Refund payment" description="Issue a refund for any captured amount." />
+            <Switch
+              checked={refund}
+              onChange={setRefund}
+              label="Refund payment"
+              description="Issue a refund for any captured amount."
+            />
           )}
-          {cancel.isError && <p className="text-sm text-danger">Couldn’t cancel the order. Please try again.</p>}
+          {cancel.isError && (
+            <p className="text-sm text-danger">Couldn’t cancel the order. Please try again.</p>
+          )}
         </form>
       </Modal>
     </div>

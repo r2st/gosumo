@@ -23,14 +23,9 @@ import { LeadVisitHistory } from '@/components/leads/lead-visit-history';
 import { useMatchForLead } from '@/hooks/use-realty';
 import { paiseToCompactRupees } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import {
-  matchBorder,
-  matchTone,
-  sourceLabel,
-  sourceTone,
-  TEMPERATURE_TONE,
-} from '@/lib/realty-ui';
+import { matchBorder, matchTone, sourceLabel, sourceTone, TEMPERATURE_TONE } from '@/lib/realty-ui';
 import { STAGE_LABELS, type Lead } from '@/lib/realty-types';
+import { usePermissions } from '@/hooks/use-permissions';
 
 /**
  * Lead dossier — a wide split slide-over. Left: who the buyer is (contact,
@@ -40,10 +35,12 @@ import { STAGE_LABELS, type Lead } from '@/lib/realty-types';
 export function LeadDossier({ lead, onClose }: { lead: Lead | null; onClose: () => void }) {
   const match = useMatchForLead();
   const runMatch = match.mutate;
+  // See LeadMatchedUnits: matching is a POST, so a VIEWER cannot run it.
+  const { canWrite } = usePermissions();
 
   useEffect(() => {
-    if (lead) runMatch({ id: lead.id, limit: 6 });
-  }, [lead, runMatch]);
+    if (lead && canWrite) runMatch({ id: lead.id, limit: 6 });
+  }, [lead, runMatch, canWrite]);
 
   if (!lead) return null;
 
@@ -108,6 +105,9 @@ function LeftPanel({ lead }: { lead: Lead }) {
 function RightPanel({ lead, match }: { lead: Lead; match: ReturnType<typeof useMatchForLead> }) {
   const router = useRouter();
   const units = match.data ?? [];
+  // The quick actions all lead to write surfaces; "Call" is a tel: link and
+  // stays available to everyone.
+  const { canWrite } = usePermissions();
 
   return (
     <div className="flex flex-col gap-4">
@@ -115,14 +115,18 @@ function RightPanel({ lead, match }: { lead: Lead; match: ReturnType<typeof useM
       <section>
         <h3 className="mb-2 text-sm font-semibold">Quick actions</h3>
         <div className="grid grid-cols-2 gap-2">
-          <Button size="sm" variant="primary" onClick={() => router.push('/sitevisits')}>
-            <CalendarPlus className="h-4 w-4" />
-            Book visit
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => router.push('/inventory')}>
-            <FileText className="h-4 w-4" />
-            Send brochure
-          </Button>
+          {canWrite && (
+            <>
+              <Button size="sm" variant="primary" onClick={() => router.push('/sitevisits')}>
+                <CalendarPlus className="h-4 w-4" />
+                Book visit
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => router.push('/inventory')}>
+                <FileText className="h-4 w-4" />
+                Send brochure
+              </Button>
+            </>
+          )}
           <a
             href={`tel:${lead.whatsappPhone}`}
             className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-border bg-card px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
@@ -130,10 +134,12 @@ function RightPanel({ lead, match }: { lead: Lead; match: ReturnType<typeof useM
             <PhoneCall className="h-4 w-4" />
             Call
           </a>
-          <Button size="sm" variant="secondary" onClick={() => router.push('/conversations')}>
-            <Hand className="h-4 w-4" />
-            Takeover
-          </Button>
+          {canWrite && (
+            <Button size="sm" variant="secondary" onClick={() => router.push('/conversations')}>
+              <Hand className="h-4 w-4" />
+              Takeover
+            </Button>
+          )}
         </div>
       </section>
 
@@ -176,9 +182,14 @@ function RightPanel({ lead, match }: { lead: Lead; match: ReturnType<typeof useM
                   </Badge>
                 </div>
                 <div className="mt-2 flex items-center justify-between gap-2">
-                  <span className="text-sm font-semibold">{paiseToCompactRupees(u.allInPricePaise)}</span>
+                  <span className="text-sm font-semibold">
+                    {paiseToCompactRupees(u.allInPricePaise)}
+                  </span>
                   {u.reasons.length > 0 && (
-                    <span className="truncate text-[11px] text-muted-foreground" title={u.reasons.join(' · ')}>
+                    <span
+                      className="truncate text-[11px] text-muted-foreground"
+                      title={u.reasons.join(' · ')}
+                    >
                       {u.reasons[0]}
                     </span>
                   )}

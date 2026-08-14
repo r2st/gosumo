@@ -19,6 +19,7 @@ import { AvailabilitySettings } from '@/components/bookings/availability-setting
 import { useBookings } from '@/hooks/use-bookings';
 import { formatDateTimeIST, humanizeEnum, paiseToRupees } from '@/lib/format';
 import type { BookingStatus } from '@/lib/types';
+import { usePermissions } from '@/hooks/use-permissions';
 
 const STATUS_OPTIONS = [
   { label: 'All statuses', value: '' },
@@ -28,9 +29,17 @@ const STATUS_OPTIONS = [
   })),
 ];
 
-const PAYMENT_TONE = { PAID: 'success', PARTIAL: 'warning', UNPAID: 'neutral', REFUNDED: 'info' } as const;
+const PAYMENT_TONE = {
+  PAID: 'success',
+  PARTIAL: 'warning',
+  UNPAID: 'neutral',
+  REFUNDED: 'info',
+} as const;
 
 export default function BookingsPage() {
+  // Undecorated writes — STAFF and above.
+  const { canWrite } = usePermissions();
+
   const [view, setView] = useState('calendar');
   const [status, setStatus] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
@@ -49,14 +58,16 @@ export default function BookingsPage() {
         title="Bookings"
         description="Appointments, availability and your calendar."
         actions={
-          <>
-            <Button variant="outline" onClick={() => setAvailabilityOpen(true)}>
-              <SlidersHorizontal className="h-4 w-4" /> Availability
-            </Button>
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="h-4 w-4" /> New booking
-            </Button>
-          </>
+          canWrite ? (
+            <>
+              <Button variant="outline" onClick={() => setAvailabilityOpen(true)}>
+                <SlidersHorizontal className="h-4 w-4" /> Availability
+              </Button>
+              <Button onClick={() => setCreateOpen(true)}>
+                <Plus className="h-4 w-4" /> New booking
+              </Button>
+            </>
+          ) : undefined
         }
       />
 
@@ -72,7 +83,11 @@ export default function BookingsPage() {
           />
           {view === 'list' && (
             <div className="w-full sm:w-48">
-              <Select value={status} onChange={(e) => setStatus(e.target.value)} options={STATUS_OPTIONS} />
+              <Select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                options={STATUS_OPTIONS}
+              />
             </div>
           )}
         </div>
@@ -84,16 +99,21 @@ export default function BookingsPage() {
             {listQ.isLoading ? (
               <LoadingState />
             ) : listQ.isError ? (
-              <ErrorState message={(listQ.error as Error)?.message} onRetry={() => listQ.refetch()} />
+              <ErrorState
+                message={(listQ.error as Error)?.message}
+                onRetry={() => listQ.refetch()}
+              />
             ) : !listQ.data || listQ.data.data.length === 0 ? (
               <EmptyState
                 icon={CalendarClock}
                 title="No bookings found"
                 description="Appointments will appear here once booked."
                 action={
-                  <Button onClick={() => setCreateOpen(true)}>
-                    <Plus className="h-4 w-4" /> New booking
-                  </Button>
+                  canWrite ? (
+                    <Button onClick={() => setCreateOpen(true)}>
+                      <Plus className="h-4 w-4" /> New booking
+                    </Button>
+                  ) : undefined
                 }
               />
             ) : (
@@ -113,7 +133,11 @@ export default function BookingsPage() {
                     <TR key={b.id} className="cursor-pointer" onClick={() => setDetailId(b.id)}>
                       <TD>
                         <div className="flex items-center gap-2">
-                          <Avatar name={b.client?.name ?? 'Client'} src={b.client?.avatarUrl} size="sm" />
+                          <Avatar
+                            name={b.client?.name ?? 'Client'}
+                            src={b.client?.avatarUrl}
+                            size="sm"
+                          />
                           <span className="font-medium">{b.client?.name ?? '—'}</span>
                         </div>
                       </TD>
@@ -123,7 +147,9 @@ export default function BookingsPage() {
                         <StatusBadge value={b.status} />
                       </TD>
                       <TD>
-                        <Badge tone={PAYMENT_TONE[b.paymentStatus] ?? 'neutral'}>{humanizeEnum(b.paymentStatus)}</Badge>
+                        <Badge tone={PAYMENT_TONE[b.paymentStatus] ?? 'neutral'}>
+                          {humanizeEnum(b.paymentStatus)}
+                        </Badge>
                       </TD>
                       <TD className="font-medium">{paiseToRupees(b.price)}</TD>
                     </TR>

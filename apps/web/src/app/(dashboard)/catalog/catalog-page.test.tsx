@@ -35,6 +35,28 @@ vi.mock('@/components/catalog/category-manager', () => ({
   CategoryManager: () => null,
 }));
 
+// The page's action bar is role-gated (see @/hooks/use-permissions), so the
+// tests need a session. Without a provider the hook correctly reports
+// read-only and every write control disappears — which is its own test, in
+// src/__tests__/viewer-gating.test.tsx.
+const authValue = {
+  status: 'authenticated' as const,
+  user: {
+    id: 'u1',
+    email: 'staff@acme.in',
+    name: 'Staff',
+    role: 'OWNER' as const,
+    businessId: 'biz-1',
+    twoFactorEnabled: true,
+    createdAt: '2026-01-01T00:00:00.000Z',
+  },
+  business: null,
+};
+vi.mock('@/providers/auth-provider', () => ({
+  useAuth: () => authValue,
+  useOptionalAuth: () => authValue,
+}));
+
 import CatalogPage from './page';
 
 describe('CatalogPage', () => {

@@ -8,6 +8,7 @@ import {
   useSyncCalendar,
 } from '@/hooks/use-settings';
 import { SettingsCard } from '@/components/settings/settings-kit';
+import { usePermissions } from '@/hooks/use-permissions';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { LoadingState, ErrorState } from '@/components/ui/states';
@@ -18,6 +19,9 @@ export default function IntegrationsPage() {
   const connect = useConnectCalendar();
   const disconnect = useDisconnectCalendar();
   const sync = useSyncCalendar();
+  // Connect and disconnect are @Roles(MANAGER) on /integrations/google-calendar.
+  // "Sync now" posts to /bookings/calendar/sync, which is undecorated — STAFF+.
+  const { canManage, canWrite } = usePermissions();
 
   if (isLoading) return <LoadingState />;
   if (isError || !data) return <ErrorState onRetry={() => void refetch()} />;
@@ -31,7 +35,10 @@ export default function IntegrationsPage() {
   };
 
   return (
-    <SettingsCard title="Integrations" description="Connect third-party tools to sync your data with GoSumo.">
+    <SettingsCard
+      title="Integrations"
+      description="Connect third-party tools to sync your data with GoSumo."
+    >
       <div className="rounded-lg border border-border p-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex gap-3">
@@ -72,25 +79,45 @@ export default function IntegrationsPage() {
           <div className="flex flex-col items-stretch gap-2 sm:flex-row">
             {data.connected ? (
               <>
-                <Button variant="outline" size="sm" loading={sync.isPending} onClick={() => sync.mutate()}>
-                  <RefreshCw className="h-4 w-4" /> Sync now
-                </Button>
-                <Button variant="outline" size="sm" loading={disconnect.isPending} onClick={() => disconnect.mutate()}>
-                  Disconnect
-                </Button>
+                {canWrite && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    loading={sync.isPending}
+                    onClick={() => sync.mutate()}
+                  >
+                    <RefreshCw className="h-4 w-4" /> Sync now
+                  </Button>
+                )}
+                {canManage && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    loading={disconnect.isPending}
+                    onClick={() => disconnect.mutate()}
+                  >
+                    Disconnect
+                  </Button>
+                )}
               </>
             ) : (
-              <Button size="sm" loading={connect.isPending} onClick={handleConnect}>
-                <Link2 className="h-4 w-4" /> Connect
-              </Button>
+              canManage && (
+                <Button size="sm" loading={connect.isPending} onClick={handleConnect}>
+                  <Link2 className="h-4 w-4" /> Connect
+                </Button>
+              )
             )}
           </div>
         </div>
 
-        {sync.isSuccess && <p className="mt-3 text-xs text-success">Calendar synced successfully.</p>}
+        {sync.isSuccess && (
+          <p className="mt-3 text-xs text-success">Calendar synced successfully.</p>
+        )}
       </div>
 
-      <p className="text-xs text-muted-foreground">More integrations are on the way. Need one sooner? Let us know.</p>
+      <p className="text-xs text-muted-foreground">
+        More integrations are on the way. Need one sooner? Let us know.
+      </p>
     </SettingsCard>
   );
 }

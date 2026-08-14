@@ -25,6 +25,7 @@ import {
   useCreateResaleListing,
   useLeads,
 } from '@/hooks/use-realty';
+import { usePermissions } from '@/hooks/use-permissions';
 
 type Tab = 'syndications' | 'matches' | 'reliability' | 'resale';
 
@@ -45,6 +46,9 @@ const STATE_FILTERS: { key: string; label: string }[] = [
 ];
 
 export default function ExchangePage() {
+  // Undecorated writes — STAFF and above.
+  const { canWrite } = usePermissions();
+
   const [tab, setTab] = useState<Tab>('syndications');
   const [newSynd, setNewSynd] = useState(false);
   const [newResale, setNewResale] = useState(false);
@@ -55,7 +59,7 @@ export default function ExchangePage() {
         title="Exchange"
         description="Co-broking network — syndicate unmatched leads, match against network supply, and settle on trust."
         actions={
-          tab === 'syndications' ? (
+          !canWrite ? undefined : tab === 'syndications' ? (
             <Button onClick={() => setNewSynd(true)}>
               <Plus className="h-4 w-4" /> Syndicate a lead
             </Button>
@@ -68,11 +72,7 @@ export default function ExchangePage() {
       />
 
       <div className="border-b border-border bg-card px-4 py-3 lg:px-6">
-        <SegmentedTabs
-          items={TABS}
-          activeKey={tab}
-          onChange={(k) => setTab(k as Tab)}
-        />
+        <SegmentedTabs items={TABS} activeKey={tab} onChange={(k) => setTab(k as Tab)} />
       </div>
 
       <div className="flex-1 overflow-auto p-4 lg:p-6">
@@ -164,8 +164,12 @@ function ResaleTab() {
             </span>
             <Badge tone={RESALE_STATUS_TONE[l.status]}>{RESALE_STATUS_LABELS[l.status]}</Badge>
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">{paiseToCompactRupees(l.askingPricePaise)}</p>
-          {l.carpetSqft && <p className="text-xs text-muted-foreground">{l.carpetSqft} sqft carpet</p>}
+          <p className="mt-1 text-sm text-muted-foreground">
+            {paiseToCompactRupees(l.askingPricePaise)}
+          </p>
+          {l.carpetSqft && (
+            <p className="text-xs text-muted-foreground">{l.carpetSqft} sqft carpet</p>
+          )}
           <p className="mt-2 text-xs text-muted-foreground">
             {l.verifiedAt ? `Verified ${formatDateIST(l.verifiedAt)}` : 'Unverified'}
           </p>
@@ -242,13 +246,27 @@ function NewSyndicationModal({ onClose }: { onClose: () => void }) {
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Your share (%)">
-            <Input type="number" min={0} max={100} value={originatorPct} onChange={(e) => setOriginatorPct(e.target.value)} />
+            <Input
+              type="number"
+              min={0}
+              max={100}
+              value={originatorPct}
+              onChange={(e) => setOriginatorPct(e.target.value)}
+            />
           </Field>
           <Field label="Their share (%)">
-            <Input type="number" min={0} max={100} value={counterpartyPct} onChange={(e) => setCounterpartyPct(e.target.value)} />
+            <Input
+              type="number"
+              min={0}
+              max={100}
+              value={counterpartyPct}
+              onChange={(e) => setCounterpartyPct(e.target.value)}
+            />
           </Field>
         </div>
-        {total !== 100 && <p className="text-xs text-danger">Split must sum to 100 (currently {total}).</p>}
+        {total !== 100 && (
+          <p className="text-xs text-danger">Split must sum to 100 (currently {total}).</p>
+        )}
         {create.isError && (
           <p className="text-xs text-danger">
             Could not create the syndication. The buyer may not have consented to sharing.
@@ -302,23 +320,43 @@ function NewResaleModal({ onClose }: { onClose: () => void }) {
     >
       <div className="flex flex-col gap-3">
         <Field label="Locality">
-          <Input value={locality} onChange={(e) => setLocality(e.target.value)} placeholder="Baner" />
+          <Input
+            value={locality}
+            onChange={(e) => setLocality(e.target.value)}
+            placeholder="Baner"
+          />
         </Field>
         <Field label="Configuration">
           <Input value={config} onChange={(e) => setConfig(e.target.value)} placeholder="2BHK" />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Asking price (₹)">
-            <Input type="number" min={0} value={askingRupees} onChange={(e) => setAskingRupees(e.target.value)} />
+            <Input
+              type="number"
+              min={0}
+              value={askingRupees}
+              onChange={(e) => setAskingRupees(e.target.value)}
+            />
           </Field>
           <Field label="Carpet (sqft)">
-            <Input type="number" min={0} value={carpet} onChange={(e) => setCarpet(e.target.value)} />
+            <Input
+              type="number"
+              min={0}
+              value={carpet}
+              onChange={(e) => setCarpet(e.target.value)}
+            />
           </Field>
         </div>
         <Field label="Seller phone (private)">
-          <Input value={sellerPhone} onChange={(e) => setSellerPhone(e.target.value)} placeholder="+9198…" />
+          <Input
+            value={sellerPhone}
+            onChange={(e) => setSellerPhone(e.target.value)}
+            placeholder="+9198…"
+          />
         </Field>
-        {create.isError && <p className="text-xs text-danger">Could not add the listing. Check the details.</p>}
+        {create.isError && (
+          <p className="text-xs text-danger">Could not add the listing. Check the details.</p>
+        )}
       </div>
     </Modal>
   );

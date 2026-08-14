@@ -6,7 +6,12 @@ import { CalendarPlus, Languages, Send, UserCog, Workflow } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { Select } from '@/components/ui/select';
-import { useAssignLead, useEnrollCadence, useTransitionStage, useUpdateLead } from '@/hooks/use-realty';
+import {
+  useAssignLead,
+  useEnrollCadence,
+  useTransitionStage,
+  useUpdateLead,
+} from '@/hooks/use-realty';
 import { useTeam } from '@/hooks/use-settings';
 import { useToast } from '@/providers/toast-provider';
 import {
@@ -21,6 +26,7 @@ import {
   type LeadLanguage,
   type LeadStage,
 } from '@/lib/realty-types';
+import { usePermissions } from '@/hooks/use-permissions';
 
 type ActiveModal = 'assign' | 'stage' | 'cadence' | null;
 
@@ -29,8 +35,14 @@ const CADENCE_TRIGGERS: CadenceTrigger[] = ['NO_RESPONSE', 'POST_VISIT', 'DORMAN
 /** Primary action bar for the lead detail page: assign, change stage, book visit, start cadence. */
 export function LeadActions({ lead }: { lead: Lead }) {
   const router = useRouter();
+  // Assigning, restaging and enrolling in a cadence are undecorated writes —
+  // STAFF and above. "Book visit" only navigates, but it leads to a page whose
+  // booking control is gated the same way, so it goes with the rest.
+  const { canWrite } = usePermissions();
   const [active, setActive] = useState<ActiveModal>(null);
   const close = () => setActive(null);
+
+  if (!canWrite) return null;
 
   return (
     <>
@@ -79,7 +91,9 @@ function LanguageSelector({ lead }: { lead: Lead }) {
       { id: lead.id, patch: { languagePref: next } },
       {
         onSuccess: () =>
-          toast.success(`Follow-ups will use ${LANGUAGE_LABELS[next]}.`, { title: 'Language updated' }),
+          toast.success(`Follow-ups will use ${LANGUAGE_LABELS[next]}.`, {
+            title: 'Language updated',
+          }),
         onError: () => toast.error('Could not update the language. Please try again.'),
       },
     );
@@ -128,10 +142,9 @@ function AssignAgentModal({ lead, onClose }: { lead: Lead; onClose: () => void }
       { id: lead.id, agentId },
       {
         onSuccess: () => {
-          toast.success(
-            agentName ? `Lead assigned to ${agentName}.` : 'Lead assigned.',
-            { title: 'Agent assigned' },
-          );
+          toast.success(agentName ? `Lead assigned to ${agentName}.` : 'Lead assigned.', {
+            title: 'Agent assigned',
+          });
           onClose();
         },
         onError: () => toast.error('Could not assign the lead. Please try again.'),
@@ -240,10 +253,9 @@ function StartCadenceModal({ lead, onClose }: { lead: Lead; onClose: () => void 
         onSuccess: (data) => {
           // The API returns null when no active cadence matches the trigger.
           if (data) {
-            toast.success(
-              `Enrolled in the ${CADENCE_TRIGGER_LABELS[trigger]} sequence.`,
-              { title: 'Cadence started' },
-            );
+            toast.success(`Enrolled in the ${CADENCE_TRIGGER_LABELS[trigger]} sequence.`, {
+              title: 'Cadence started',
+            });
             onClose();
           } else {
             setNoCadence(true);

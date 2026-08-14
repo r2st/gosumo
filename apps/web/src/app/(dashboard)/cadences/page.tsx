@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Repeat, FileText, Sparkles } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
+import { usePermissions } from '@/hooks/use-permissions';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -37,6 +38,9 @@ const CATEGORY_TONE: Record<TemplateCategory, BadgeTone> = {
 export default function CadencesPage() {
   const [tab, setTab] = useState<'cadences' | 'templates'>('cadences');
   const seed = useSeedCadences();
+  // Seeding cadences, toggling one, and approving a template are all
+  // undecorated writes — STAFF and above.
+  const { canWrite } = usePermissions();
 
   return (
     <div className="flex h-full flex-col">
@@ -44,15 +48,17 @@ export default function CadencesPage() {
         title="Cadences"
         description="Declarative WhatsApp follow-up sequences and the template library that powers them."
         actions={
-          <Button
-            variant="outline"
-            size="sm"
-            loading={seed.isPending}
-            onClick={() => seed.mutate()}
-          >
-            <Sparkles className="h-4 w-4" />
-            Install defaults
-          </Button>
+          canWrite ? (
+            <Button
+              variant="outline"
+              size="sm"
+              loading={seed.isPending}
+              onClick={() => seed.mutate()}
+            >
+              <Sparkles className="h-4 w-4" />
+              Install defaults
+            </Button>
+          ) : null
         }
       />
 
@@ -74,6 +80,7 @@ export default function CadencesPage() {
 function CadenceList() {
   const { data, isLoading, isError, refetch } = useCadences();
   const toggle = useUpdateCadence();
+  const { canWrite } = usePermissions();
 
   if (isLoading) return <LoadingState label="Loading cadences…" />;
   if (isError) return <ErrorState message="Could not load cadences." onRetry={() => refetch()} />;
@@ -98,10 +105,12 @@ function CadenceList() {
                 {CADENCE_TRIGGER_LABELS[cadence.trigger]}
               </Badge>
             </div>
-            <Switch
-              checked={cadence.isActive}
-              onChange={(next) => toggle.mutate({ id: cadence.id, isActive: next })}
-            />
+            {canWrite && (
+              <Switch
+                checked={cadence.isActive}
+                onChange={(next) => toggle.mutate({ id: cadence.id, isActive: next })}
+              />
+            )}
           </CardHeader>
           <CardContent>
             {cadence.description && (
@@ -132,6 +141,7 @@ function CadenceList() {
 function TemplateLibrary() {
   const { data, isLoading, isError, refetch } = useTemplates();
   const setApproval = useSetTemplateApproval();
+  const { canWrite } = usePermissions();
 
   if (isLoading) return <LoadingState label="Loading templates…" />;
   if (isError) return <ErrorState message="Could not load templates." onRetry={() => refetch()} />;
@@ -158,7 +168,7 @@ function TemplateLibrary() {
           </CardHeader>
           <CardContent>
             <p className="whitespace-pre-wrap text-sm text-muted-foreground">{tpl.body}</p>
-            {tpl.approvalStatus !== 'APPROVED' && (
+            {tpl.approvalStatus !== 'APPROVED' && canWrite && (
               <div className="mt-3 flex gap-2">
                 <Button
                   size="sm"

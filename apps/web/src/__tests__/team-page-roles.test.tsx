@@ -38,17 +38,26 @@ const members = [
 
 let currentRole: UserRole = 'OWNER';
 
+const authValue = () => ({
+  status: 'authenticated' as const,
+  user: { id: 'me', email: 'me@acme.in', name: 'Me', role: currentRole, businessId: 'b1' },
+  business: null,
+});
+
+// The page reads the role through usePermissions, which uses the non-throwing
+// accessor so a missing provider means read-only rather than a crash. Both are
+// mocked so the test does not depend on which one the page happens to call.
 vi.mock('@/providers/auth-provider', () => ({
-  useAuth: () => ({
-    status: 'authenticated',
-    user: { id: 'me', email: 'me@acme.in', name: 'Me', role: currentRole, businessId: 'b1' },
-    business: null,
-  }),
+  useAuth: () => authValue(),
+  useOptionalAuth: () => authValue(),
 }));
 
 vi.mock('@/hooks/use-settings', () => ({
   useTeam: () => ({
-    data: { data: members, pagination: { total: members.length, limit: 100, page: 1, totalPages: 1 } },
+    data: {
+      data: members,
+      pagination: { total: members.length, limit: 100, page: 1, totalPages: 1 },
+    },
     isLoading: false,
     isError: false,
     refetch: vi.fn(),

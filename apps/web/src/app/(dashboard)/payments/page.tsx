@@ -20,10 +20,19 @@ import { usePayments } from '@/hooks/use-payments';
 import { formatDateIST, formatDateTimeIST, humanizeEnum, paiseToRupees } from '@/lib/format';
 import { invoiceNumber, isInvoiceable } from '@/lib/commerce-types';
 import type { Payment, PaymentMethod, PaymentStatus } from '@/lib/types';
+import { usePermissions } from '@/hooks/use-permissions';
 
 const STATUS_OPTIONS = [
   { label: 'All statuses', value: '' },
-  ...['PENDING', 'AUTHORIZED', 'CAPTURED', 'FAILED', 'REFUNDED', 'PARTIALLY_REFUNDED', 'EXPIRED'].map((v) => ({
+  ...[
+    'PENDING',
+    'AUTHORIZED',
+    'CAPTURED',
+    'FAILED',
+    'REFUNDED',
+    'PARTIALLY_REFUNDED',
+    'EXPIRED',
+  ].map((v) => ({
     label: humanizeEnum(v),
     value: v,
   })),
@@ -31,10 +40,16 @@ const STATUS_OPTIONS = [
 
 const METHOD_OPTIONS = [
   { label: 'All methods', value: '' },
-  ...['UPI', 'CARD', 'NETBANKING', 'WALLET', 'COD', 'EMI'].map((v) => ({ label: humanizeEnum(v), value: v })),
+  ...['UPI', 'CARD', 'NETBANKING', 'WALLET', 'COD', 'EMI'].map((v) => ({
+    label: humanizeEnum(v),
+    value: v,
+  })),
 ];
 
 export default function PaymentsPage() {
+  // Undecorated writes — STAFF and above.
+  const { canWrite } = usePermissions();
+
   const [tab, setTab] = useState('payments');
   const [status, setStatus] = useState('');
   const [method, setMethod] = useState('');
@@ -58,9 +73,11 @@ export default function PaymentsPage() {
         title="Payments"
         description="Payment links, captures, refunds and invoices."
         actions={
-          <Button onClick={() => setLinkOpen(true)}>
-            <Plus className="h-4 w-4" /> Payment link
-          </Button>
+          canWrite ? (
+            <Button onClick={() => setLinkOpen(true)}>
+              <Plus className="h-4 w-4" /> Payment link
+            </Button>
+          ) : undefined
         }
       />
 
@@ -79,10 +96,18 @@ export default function PaymentsPage() {
           {!isInvoices && (
             <div className="flex flex-col gap-3 sm:flex-row">
               <div className="w-full sm:w-44">
-                <Select value={status} onChange={(e) => setStatus(e.target.value)} options={STATUS_OPTIONS} />
+                <Select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                  options={STATUS_OPTIONS}
+                />
               </div>
               <div className="w-full sm:w-40">
-                <Select value={method} onChange={(e) => setMethod(e.target.value)} options={METHOD_OPTIONS} />
+                <Select
+                  value={method}
+                  onChange={(e) => setMethod(e.target.value)}
+                  options={METHOD_OPTIONS}
+                />
               </div>
             </div>
           )}
@@ -95,7 +120,11 @@ export default function PaymentsPage() {
             <ErrorState message={(error as Error)?.message} onRetry={() => refetch()} />
           ) : isInvoices ? (
             invoices.length === 0 ? (
-              <EmptyState icon={FileText} title="No invoices yet" description="Captured payments generate invoices automatically." />
+              <EmptyState
+                icon={FileText}
+                title="No invoices yet"
+                description="Captured payments generate invoices automatically."
+              />
             ) : (
               <Table>
                 <THead>
@@ -113,7 +142,11 @@ export default function PaymentsPage() {
                       <TD className="font-mono text-xs font-medium">{invoiceNumber(p)}</TD>
                       <TD>
                         <div className="flex items-center gap-2">
-                          <Avatar name={p.client?.name ?? 'Client'} src={p.client?.avatarUrl} size="sm" />
+                          <Avatar
+                            name={p.client?.name ?? 'Client'}
+                            src={p.client?.avatarUrl}
+                            size="sm"
+                          />
                           <span className="truncate">{p.client?.name ?? '—'}</span>
                         </div>
                       </TD>
@@ -121,14 +154,20 @@ export default function PaymentsPage() {
                       <TD>
                         <StatusBadge value={p.status} />
                       </TD>
-                      <TD className="text-muted-foreground">{formatDateIST(p.capturedAt ?? p.createdAt)}</TD>
+                      <TD className="text-muted-foreground">
+                        {formatDateIST(p.capturedAt ?? p.createdAt)}
+                      </TD>
                     </TR>
                   ))}
                 </TBody>
               </Table>
             )
           ) : !data || data.data.length === 0 ? (
-            <EmptyState icon={CreditCard} title="No payments found" description="Payments and links will appear here." />
+            <EmptyState
+              icon={CreditCard}
+              title="No payments found"
+              description="Payments and links will appear here."
+            />
           ) : (
             <Table>
               <THead>
@@ -148,12 +187,22 @@ export default function PaymentsPage() {
                     <TD className="font-mono text-xs">{p.id.slice(0, 8)}…</TD>
                     <TD>
                       <div className="flex items-center gap-2">
-                        <Avatar name={p.client?.name ?? 'Client'} src={p.client?.avatarUrl} size="sm" />
+                        <Avatar
+                          name={p.client?.name ?? 'Client'}
+                          src={p.client?.avatarUrl}
+                          size="sm"
+                        />
                         <span className="truncate">{p.client?.name ?? '—'}</span>
                       </div>
                     </TD>
                     <TD className="font-medium">{paiseToRupees(p.amount)}</TD>
-                    <TD>{p.method ? <Badge tone="info">{humanizeEnum(p.method)}</Badge> : <span className="text-muted-foreground">—</span>}</TD>
+                    <TD>
+                      {p.method ? (
+                        <Badge tone="info">{humanizeEnum(p.method)}</Badge>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TD>
                     <TD>
                       <StatusBadge value={p.status} />
                     </TD>

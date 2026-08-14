@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { usePermissions } from '@/hooks/use-permissions';
 import { CheckSquare, Check, Pencil, X } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
@@ -52,6 +53,9 @@ export default function ApprovalsPage() {
 
 function ApprovalCard({ approval }: { approval: Approval }) {
   const resolve = useResolveApproval();
+  // Resolving an approval posts to the review queue — an undecorated write, so
+  // STAFF and above. A VIEWER can read the queue but not action it.
+  const { canWrite } = usePermissions();
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(approval.draftText);
 
@@ -62,7 +66,9 @@ function ApprovalCard({ approval }: { approval: Approval }) {
       <CardContent className="pt-5">
         <div className="mb-3 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <Badge tone={confidenceTone(approval.confidence)}>{approval.confidence}% confidence</Badge>
+            <Badge tone={confidenceTone(approval.confidence)}>
+              {approval.confidence}% confidence
+            </Badge>
             {approval.intent && <Badge tone="neutral">{approval.intent}</Badge>}
           </div>
           <span className="text-xs text-muted-foreground">{timeAgo(approval.createdAt)}</span>
@@ -71,52 +77,63 @@ function ApprovalCard({ approval }: { approval: Approval }) {
         {editing ? (
           <Textarea rows={4} value={text} onChange={(e) => setText(e.target.value)} />
         ) : (
-          <p className="whitespace-pre-wrap rounded-lg bg-muted/50 p-3 text-sm">{approval.draftText}</p>
+          <p className="whitespace-pre-wrap rounded-lg bg-muted/50 p-3 text-sm">
+            {approval.draftText}
+          </p>
         )}
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          {editing ? (
-            <>
-              <Button
-                size="sm"
-                variant="success"
-                loading={busy}
-                onClick={() => resolve.mutate({ id: approval.id, status: 'EDITED', editedText: text })}
-              >
-                <Check className="h-4 w-4" />
-                Send edited
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setEditing(false)} disabled={busy}>
-                Cancel
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button
-                size="sm"
-                variant="success"
-                loading={busy}
-                onClick={() => resolve.mutate({ id: approval.id, status: 'APPROVED' })}
-              >
-                <Check className="h-4 w-4" />
-                Approve
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setEditing(true)} disabled={busy}>
-                <Pencil className="h-4 w-4" />
-                Edit
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                loading={busy}
-                onClick={() => resolve.mutate({ id: approval.id, status: 'REJECTED' })}
-              >
-                <X className="h-4 w-4" />
-                Reject
-              </Button>
-            </>
-          )}
-        </div>
+        {canWrite && (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {editing ? (
+              <>
+                <Button
+                  size="sm"
+                  variant="success"
+                  loading={busy}
+                  onClick={() =>
+                    resolve.mutate({ id: approval.id, status: 'EDITED', editedText: text })
+                  }
+                >
+                  <Check className="h-4 w-4" />
+                  Send edited
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setEditing(false)} disabled={busy}>
+                  Cancel
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  size="sm"
+                  variant="success"
+                  loading={busy}
+                  onClick={() => resolve.mutate({ id: approval.id, status: 'APPROVED' })}
+                >
+                  <Check className="h-4 w-4" />
+                  Approve
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setEditing(true)}
+                  disabled={busy}
+                >
+                  <Pencil className="h-4 w-4" />
+                  Edit
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  loading={busy}
+                  onClick={() => resolve.mutate({ id: approval.id, status: 'REJECTED' })}
+                >
+                  <X className="h-4 w-4" />
+                  Reject
+                </Button>
+              </>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

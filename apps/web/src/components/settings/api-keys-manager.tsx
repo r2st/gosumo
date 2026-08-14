@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { LoadingState, ErrorState, EmptyState } from '@/components/ui/states';
 import { useApiKeys, useCreateApiKey, useRevokeApiKey } from '@/hooks/use-integrations';
+import { usePermissions } from '@/hooks/use-permissions';
 import { formatDateIST, timeAgo } from '@/lib/format';
 import type { ApiKey, CreatedApiKey } from '@/lib/integration-types';
 
@@ -26,6 +27,9 @@ const SCOPES = [
 export function ApiKeysManager() {
   const { data, isLoading, isError, refetch } = useApiKeys();
   const revoke = useRevokeApiKey();
+  // POST /integrations/api-keys and DELETE /integrations/api-keys/:id are both
+  // @Roles(MANAGER). Listing keys stays open — only minting and revoking are gated.
+  const { canManage } = usePermissions();
   const [createOpen, setCreateOpen] = useState(false);
   const [created, setCreated] = useState<CreatedApiKey | null>(null);
   const [toRevoke, setToRevoke] = useState<ApiKey | null>(null);
@@ -35,18 +39,24 @@ export function ApiKeysManager() {
       title="GoSumo API keys"
       description="Authenticate programmatic access to the GoSumo API. Treat keys like passwords."
     >
-      <div className="flex justify-end">
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          <Plus className="h-4 w-4" /> Generate key
-        </Button>
-      </div>
+      {canManage && (
+        <div className="flex justify-end">
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            <Plus className="h-4 w-4" /> Generate key
+          </Button>
+        </div>
+      )}
 
       {isLoading ? (
         <LoadingState />
       ) : isError || !data ? (
         <ErrorState onRetry={() => void refetch()} />
       ) : data.data.length === 0 ? (
-        <EmptyState icon={KeyRound} title="No API keys yet" description="Generate a key to call the GoSumo API from your own systems." />
+        <EmptyState
+          icon={KeyRound}
+          title="No API keys yet"
+          description="Generate a key to call the GoSumo API from your own systems."
+        />
       ) : (
         <div className="overflow-hidden rounded-lg border border-border">
           <Table>
@@ -85,21 +95,27 @@ export function ApiKeysManager() {
                             </Badge>
                           ))
                         )}
-                        {key.scopes.length > 3 && <Badge tone="neutral">+{key.scopes.length - 3}</Badge>}
+                        {key.scopes.length > 3 && (
+                          <Badge tone="neutral">+{key.scopes.length - 3}</Badge>
+                        )}
                       </div>
                     </TD>
-                    <TD className="text-muted-foreground">{key.lastUsedAt ? timeAgo(key.lastUsedAt) : 'never'}</TD>
+                    <TD className="text-muted-foreground">
+                      {key.lastUsedAt ? timeAgo(key.lastUsedAt) : 'never'}
+                    </TD>
                     <TD className="text-muted-foreground">{formatDateIST(key.createdAt)}</TD>
                     <TD className="text-right">
                       <div className="flex items-center justify-end gap-2">
                         {expired && <Badge tone="danger">Expired</Badge>}
-                        <button
-                          onClick={() => setToRevoke(key)}
-                          className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-danger"
-                          aria-label={`Revoke ${key.name}`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {canManage && (
+                          <button
+                            onClick={() => setToRevoke(key)}
+                            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-danger"
+                            aria-label={`Revoke ${key.name}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
                       </div>
                     </TD>
                   </TR>
@@ -110,7 +126,11 @@ export function ApiKeysManager() {
         </div>
       )}
 
-      <CreateKeyModal open={createOpen} onClose={() => setCreateOpen(false)} onCreated={setCreated} />
+      <CreateKeyModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={setCreated}
+      />
       <RevealKeyModal created={created} onClose={() => setCreated(null)} />
 
       <Modal
@@ -126,7 +146,9 @@ export function ApiKeysManager() {
             <Button
               variant="danger"
               loading={revoke.isPending}
-              onClick={() => toRevoke && revoke.mutate(toRevoke.id, { onSuccess: () => setToRevoke(null) })}
+              onClick={() =>
+                toRevoke && revoke.mutate(toRevoke.id, { onSuccess: () => setToRevoke(null) })
+              }
             >
               Revoke key
             </Button>
@@ -183,7 +205,12 @@ function CreateKeyModal({
           <Button variant="outline" type="button" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" form="create-key-form" loading={create.isPending} disabled={!name.trim()}>
+          <Button
+            type="submit"
+            form="create-key-form"
+            loading={create.isPending}
+            disabled={!name.trim()}
+          >
             Generate
           </Button>
         </>
@@ -191,12 +218,20 @@ function CreateKeyModal({
     >
       <form id="create-key-form" onSubmit={submit} className="space-y-4">
         <Field label="Key name" hint="A label to recognise this key later, e.g. “Zapier sync”.">
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="My integration" required />
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="My integration"
+            required
+          />
         </Field>
         <Field label="Scopes">
           <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
             {SCOPES.map((s) => (
-              <label key={s.value} className="flex items-center gap-2 rounded-md border border-border px-2.5 py-2 text-sm">
+              <label
+                key={s.value}
+                className="flex items-center gap-2 rounded-md border border-border px-2.5 py-2 text-sm"
+              >
                 <input
                   type="checkbox"
                   checked={scopes.includes(s.value)}
@@ -208,13 +243,21 @@ function CreateKeyModal({
             ))}
           </div>
         </Field>
-        {create.isError && <p className="text-sm text-danger">Couldn’t generate the key. Please try again.</p>}
+        {create.isError && (
+          <p className="text-sm text-danger">Couldn’t generate the key. Please try again.</p>
+        )}
       </form>
     </Modal>
   );
 }
 
-function RevealKeyModal({ created, onClose }: { created: CreatedApiKey | null; onClose: () => void }) {
+function RevealKeyModal({
+  created,
+  onClose,
+}: {
+  created: CreatedApiKey | null;
+  onClose: () => void;
+}) {
   const [copied, setCopied] = useState(false);
 
   const copy = () => {
@@ -230,14 +273,15 @@ function RevealKeyModal({ created, onClose }: { created: CreatedApiKey | null; o
       onClose={onClose}
       title="Copy your API key"
       description="This is the only time the full key is shown."
-      footer={
-        <Button onClick={onClose}>Done</Button>
-      }
+      footer={<Button onClick={onClose}>Done</Button>}
     >
       <div className="space-y-3">
         <div className="flex items-start gap-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-amber-700">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-          <p>Store this somewhere safe. For security, we don’t keep a copy — if you lose it, generate a new one.</p>
+          <p>
+            Store this somewhere safe. For security, we don’t keep a copy — if you lose it, generate
+            a new one.
+          </p>
         </div>
         <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 p-3">
           <code className="flex-1 break-all font-mono text-xs">{created?.secret}</code>

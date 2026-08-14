@@ -14,6 +14,7 @@ import {
 } from 'recharts';
 import { LineChart, MapPin, Sparkles, TrendingUp } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
+import { usePermissions } from '@/hooks/use-permissions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select } from '@/components/ui/select';
@@ -79,7 +80,11 @@ export default function IntelligencePage() {
         ) : corridors.length === 0 ? (
           <Card>
             <CardContent className="pt-5">
-              <EmptyState icon={LineChart} title={t('intel.noData')} description={t('intel.noDataDesc')} />
+              <EmptyState
+                icon={LineChart}
+                title={t('intel.noData')}
+                description={t('intel.noDataDesc')}
+              />
             </CardContent>
           </Card>
         ) : (
@@ -136,6 +141,8 @@ function OptInCard() {
   const { t } = useLanguage();
   const { data, isLoading } = useIntelligenceOptIn();
   const setOptIn = useSetIntelligenceOptIn();
+  // Opting the tenant in or out is an undecorated write — STAFF and above.
+  const { canWrite } = usePermissions();
   const optIn = data?.optIn ?? false;
 
   return (
@@ -153,11 +160,13 @@ function OptInCard() {
             </Badge>
           </div>
         </div>
-        <Switch
-          checked={optIn}
-          disabled={isLoading || setOptIn.isPending}
-          onChange={(next) => setOptIn.mutate(next)}
-        />
+        {canWrite && (
+          <Switch
+            checked={optIn}
+            disabled={isLoading || setOptIn.isPending}
+            onChange={(next) => setOptIn.mutate(next)}
+          />
+        )}
       </CardContent>
     </Card>
   );
@@ -303,7 +312,11 @@ function CorridorDetail({ corridor }: { corridor: string }) {
                     converted: m.converted,
                   }))}
                 >
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="hsl(var(--border))"
+                    vertical={false}
+                  />
                   <XAxis dataKey="month" {...axisProps} />
                   <YAxis allowDecimals={false} {...axisProps} />
                   <Tooltip contentStyle={tooltipStyle} />
@@ -341,7 +354,9 @@ function CorridorDetail({ corridor }: { corridor: string }) {
             <CardContent className="space-y-3">
               {price.recommendedBandPaise && (
                 <div className="rounded-md bg-accent p-3">
-                  <p className="text-xs font-medium text-accent-foreground">{t('intel.recommendedBand')}</p>
+                  <p className="text-xs font-medium text-accent-foreground">
+                    {t('intel.recommendedBand')}
+                  </p>
                   <p className="mt-0.5 text-lg font-bold tracking-tight text-foreground">
                     {paiseToCompactRupees(price.recommendedBandPaise.low)} –{' '}
                     {paiseToCompactRupees(price.recommendedBandPaise.high)}
@@ -453,7 +468,9 @@ function SourceQualitySection() {
               <tr key={s.source} className="border-b border-border/60 last:border-0">
                 <td className="py-2 font-medium text-foreground">{sourceLabel(s.source, lang)}</td>
                 <td className="py-2 text-right text-muted-foreground">{s.leads}</td>
-                <td className="py-2 text-right text-muted-foreground">{ratioPct(s.qualifiedRate)}</td>
+                <td className="py-2 text-right text-muted-foreground">
+                  {ratioPct(s.qualifiedRate)}
+                </td>
                 <td className="py-2 text-right text-muted-foreground">{ratioPct(s.visitRate)}</td>
                 <td className="py-2 text-right text-muted-foreground">{s.avgQualScore}</td>
               </tr>

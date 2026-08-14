@@ -8,7 +8,14 @@ import {
   useUpdateBusinessProfile,
   useUpdateBusinessSettings,
 } from '@/hooks/use-settings';
-import { SettingsCard, SaveButton, FormRow } from '@/components/settings/settings-kit';
+import {
+  SettingsCard,
+  SaveButton,
+  FormRow,
+  ReadOnlyFieldset,
+  ReadOnlyNotice,
+} from '@/components/settings/settings-kit';
+import { usePermissions } from '@/hooks/use-permissions';
 import { useToast } from '@/providers/toast-provider';
 import { BusinessHoursEditor } from '@/components/settings/business-hours-editor';
 import { Field } from '@/components/ui/field';
@@ -20,7 +27,15 @@ import { LoadingState, ErrorState } from '@/components/ui/states';
 import type { OfficeHours } from '@/lib/feature-types';
 import type { BusinessProfile } from '@/lib/types';
 
-const TIMEZONES = ['Asia/Kolkata', 'Asia/Dubai', 'Asia/Singapore', 'Asia/Kathmandu', 'Asia/Dhaka', 'Asia/Colombo', 'UTC'];
+const TIMEZONES = [
+  'Asia/Kolkata',
+  'Asia/Dubai',
+  'Asia/Singapore',
+  'Asia/Kathmandu',
+  'Asia/Dhaka',
+  'Asia/Colombo',
+  'UTC',
+];
 const TZ_OPTIONS = TIMEZONES.map((tz) => ({ label: tz, value: tz }));
 
 export default function BusinessProfilePage() {
@@ -60,10 +75,13 @@ function ProfileFormInner({
   };
   const [form, setForm] = useState(initial);
   const set =
-    (k: keyof typeof form) => (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+    (k: keyof typeof form) =>
+    (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
       setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const toast = useToast();
+  // PATCH /business/me is @Roles(MANAGER).
+  const { canManage } = usePermissions();
   const dirty = JSON.stringify(form) !== JSON.stringify(initial);
 
   return (
@@ -76,62 +94,93 @@ function ProfileFormInner({
         });
       }}
     >
-      <SettingsCard
-        title="Business profile"
-        description="This information appears on customer-facing messages and invoices."
-        footer={<SaveButton isPending={update.isPending} isSuccess={update.isSuccess} isError={update.isError} dirty={dirty} />}
-      >
-        <div className="flex items-center gap-4">
-          <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl border border-border bg-muted">
-            {form.logo ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={form.logo} alt="Logo" className="h-full w-full object-cover" />
+      <ReadOnlyFieldset readOnly={!canManage}>
+        <SettingsCard
+          title="Business profile"
+          description="This information appears on customer-facing messages and invoices."
+          footer={
+            canManage ? (
+              <SaveButton
+                isPending={update.isPending}
+                isSuccess={update.isSuccess}
+                isError={update.isError}
+                dirty={dirty}
+              />
             ) : (
-              <Building2 className="h-6 w-6 text-muted-foreground" />
-            )}
+              <ReadOnlyNotice>
+                Only a manager or owner can edit the business profile.
+              </ReadOnlyNotice>
+            )
+          }
+        >
+          <div className="flex items-center gap-4">
+            <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl border border-border bg-muted">
+              {form.logo ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={form.logo} alt="Logo" className="h-full w-full object-cover" />
+              ) : (
+                <Building2 className="h-6 w-6 text-muted-foreground" />
+              )}
+            </div>
+            <Field
+              label="Logo URL"
+              className="flex-1"
+              hint="Paste a hosted image URL (square works best)."
+            >
+              <Input value={form.logo} onChange={set('logo')} placeholder="https://…/logo.png" />
+            </Field>
           </div>
-          <Field label="Logo URL" className="flex-1" hint="Paste a hosted image URL (square works best).">
-            <Input value={form.logo} onChange={set('logo')} placeholder="https://…/logo.png" />
-          </Field>
-        </div>
 
-        <FormRow>
-          <Field label="Business name">
-            <Input value={form.name} onChange={set('name')} required />
-          </Field>
-          <Field label="Industry">
-            <Input value={business.industry} disabled />
-          </Field>
-        </FormRow>
+          <FormRow>
+            <Field label="Business name">
+              <Input value={form.name} onChange={set('name')} required />
+            </Field>
+            <Field label="Industry">
+              <Input value={business.industry} disabled />
+            </Field>
+          </FormRow>
 
-        <Field label="Description">
-          <Textarea value={form.description} onChange={set('description')} rows={3} placeholder="What your business does…" />
-        </Field>
+          <Field label="Description">
+            <Textarea
+              value={form.description}
+              onChange={set('description')}
+              rows={3}
+              placeholder="What your business does…"
+            />
+          </Field>
 
-        <FormRow>
-          <Field label="Contact phone">
-            <Input value={form.phone} onChange={set('phone')} placeholder="+91…" />
-          </Field>
-          <Field label="Contact email">
-            <Input type="email" value={form.email} onChange={set('email')} placeholder="hello@business.in" />
-          </Field>
-        </FormRow>
+          <FormRow>
+            <Field label="Contact phone">
+              <Input value={form.phone} onChange={set('phone')} placeholder="+91…" />
+            </Field>
+            <Field label="Contact email">
+              <Input
+                type="email"
+                value={form.email}
+                onChange={set('email')}
+                placeholder="hello@business.in"
+              />
+            </Field>
+          </FormRow>
 
-        <FormRow>
-          <Field label="Website">
-            <Input value={form.website} onChange={set('website')} placeholder="https://…" />
-          </Field>
-          <Field label="Timezone">
-            <Select options={TZ_OPTIONS} value={form.timezone} onChange={set('timezone')} />
-          </Field>
-        </FormRow>
-      </SettingsCard>
+          <FormRow>
+            <Field label="Website">
+              <Input value={form.website} onChange={set('website')} placeholder="https://…" />
+            </Field>
+            <Field label="Timezone">
+              <Select options={TZ_OPTIONS} value={form.timezone} onChange={set('timezone')} />
+            </Field>
+          </FormRow>
+        </SettingsCard>
+      </ReadOnlyFieldset>
     </form>
   );
 }
 
 function HoursForm() {
   const toast = useToast();
+  // PATCH /business/settings is @Roles(MANAGER).
+  const { canManage } = usePermissions();
   const { data: settings, isLoading, isError, refetch } = useBusinessSettings();
   const update = useUpdateBusinessSettings();
   const [hours, setHours] = useState<OfficeHours | null>(null);
@@ -167,31 +216,44 @@ function HoursForm() {
         );
       }}
     >
-      <SettingsCard
-        title="Business hours"
-        description="When closed, the AI sends your away message instead of replying live."
-        footer={<SaveButton isPending={update.isPending} isSuccess={update.isSuccess} isError={update.isError} dirty={dirty} />}
-      >
-        <Switch
-          checked={enabled}
-          onChange={setEnabled}
-          label="Enforce business hours"
-          description="Outside these hours, customers receive your away message."
-        />
-        {enabled && (
-          <>
-            <BusinessHoursEditor value={hours} onChange={setHours} />
-            <Field label="Away message" hint="Sent automatically outside business hours.">
-              <Textarea
-                value={outsideMsg}
-                onChange={(e) => setOutsideMsg(e.target.value)}
-                rows={2}
-                placeholder="Thanks for reaching out! We’re currently closed and will reply when we reopen."
+      <ReadOnlyFieldset readOnly={!canManage}>
+        <SettingsCard
+          title="Business hours"
+          description="When closed, the AI sends your away message instead of replying live."
+          footer={
+            canManage ? (
+              <SaveButton
+                isPending={update.isPending}
+                isSuccess={update.isSuccess}
+                isError={update.isError}
+                dirty={dirty}
               />
-            </Field>
-          </>
-        )}
-      </SettingsCard>
+            ) : (
+              <ReadOnlyNotice>Only a manager or owner can change business hours.</ReadOnlyNotice>
+            )
+          }
+        >
+          <Switch
+            checked={enabled}
+            onChange={setEnabled}
+            label="Enforce business hours"
+            description="Outside these hours, customers receive your away message."
+          />
+          {enabled && (
+            <>
+              <BusinessHoursEditor value={hours} onChange={setHours} />
+              <Field label="Away message" hint="Sent automatically outside business hours.">
+                <Textarea
+                  value={outsideMsg}
+                  onChange={(e) => setOutsideMsg(e.target.value)}
+                  rows={2}
+                  placeholder="Thanks for reaching out! We’re currently closed and will reply when we reopen."
+                />
+              </Field>
+            </>
+          )}
+        </SettingsCard>
+      </ReadOnlyFieldset>
     </form>
   );
 }

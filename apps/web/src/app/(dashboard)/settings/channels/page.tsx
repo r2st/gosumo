@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useChannels, useConnectChannel, useDisconnectChannel } from '@/hooks/use-settings';
 import { useTestChannel, useWebChatEmbed, useToggleChannel } from '@/hooks/use-channels';
+import { usePermissions } from '@/hooks/use-permissions';
 import { SettingsCard } from '@/components/settings/settings-kit';
 import { Button } from '@/components/ui/button';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
@@ -168,6 +169,9 @@ export default function ChannelsPage() {
   const { data, isLoading, isError, refetch } = useChannels();
   const disconnect = useDisconnectChannel();
   const toggleChannel = useToggleChannel();
+  // Connect, disconnect and test are @Roles(MANAGER); the enable/disable
+  // toggle is an undecorated write, so it only needs STAFF.
+  const { canManage, canWrite } = usePermissions();
   const testChannel = useTestChannel();
   const embedMutation = useWebChatEmbed();
 
@@ -234,7 +238,10 @@ export default function ChannelsPage() {
     <>
       {/* ── Connected channels ──────────────────────────────────────────── */}
       {connected.length > 0 && (
-        <SettingsCard title="Connected channels" description="Channels currently routing messages into GoSumo.">
+        <SettingsCard
+          title="Connected channels"
+          description="Channels currently routing messages into GoSumo."
+        >
           <div className="space-y-3">
             {connected.map((channel) => {
               const isTesting = testingIds.has(channel.id);
@@ -251,11 +258,15 @@ export default function ChannelsPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <p className="truncate font-medium">{channel.displayName}</p>
-                        <Badge tone={STATUS[channel.status].tone}>{STATUS[channel.status].label}</Badge>
+                        <Badge tone={STATUS[channel.status].tone}>
+                          {STATUS[channel.status].label}
+                        </Badge>
                       </div>
                       <p className="truncate text-xs text-muted-foreground">
                         {channelLabel(channel.type)} · {channel.accountId}
-                        {channel.lastMessageAt ? ` · last message ${timeAgo(channel.lastMessageAt)}` : ''}
+                        {channel.lastMessageAt
+                          ? ` · last message ${timeAgo(channel.lastMessageAt)}`
+                          : ''}
                       </p>
                       {channel.status === 'ERROR' && channel.errorMessage && (
                         <p className="mt-0.5 flex items-center gap-1 text-xs text-danger">
@@ -278,12 +289,18 @@ export default function ChannelsPage() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => copyToClipboard(channel.webhookUrl, `webhook-${channel.id}`)}
+                          onClick={() =>
+                            copyToClipboard(channel.webhookUrl, `webhook-${channel.id}`)
+                          }
                         >
                           {copiedKey === `webhook-${channel.id}` ? (
-                            <><CheckCircle2 className="h-3.5 w-3.5 text-success" /> Copied</>
+                            <>
+                              <CheckCircle2 className="h-3.5 w-3.5 text-success" /> Copied
+                            </>
                           ) : (
-                            <><Copy className="h-3.5 w-3.5" /> Copy URL</>
+                            <>
+                              <Copy className="h-3.5 w-3.5" /> Copy URL
+                            </>
                           )}
                         </Button>
                       </div>
@@ -300,14 +317,16 @@ export default function ChannelsPage() {
 
                   {/* Action row: Test | Embed | Disconnect + Toggle */}
                   <div className="mt-3 flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      loading={isTesting}
-                      onClick={() => handleTest(channel.id)}
-                    >
-                      <Wifi className="h-3.5 w-3.5" /> Test
-                    </Button>
+                    {canManage && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        loading={isTesting}
+                        onClick={() => handleTest(channel.id)}
+                      >
+                        <Wifi className="h-3.5 w-3.5" /> Test
+                      </Button>
+                    )}
 
                     {channel.type === 'WEB_CHAT' && (
                       <Button
@@ -319,24 +338,31 @@ export default function ChannelsPage() {
                       </Button>
                     )}
 
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      loading={disconnect.isPending}
-                      onClick={() => disconnect.mutate(channel.id)}
-                    >
-                      <Unplug className="h-3.5 w-3.5" /> Disconnect
-                    </Button>
+                    {canManage && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        loading={disconnect.isPending}
+                        onClick={() => disconnect.mutate(channel.id)}
+                      >
+                        <Unplug className="h-3.5 w-3.5" /> Disconnect
+                      </Button>
+                    )}
 
-                    <div className="ml-auto">
-                      <Switch
-                        checked={isEnabled}
-                        onChange={(next) =>
-                          toggleChannel.mutate({ channelId: channel.id, enabled: next })
-                        }
-                        disabled={toggleChannel.isPending}
-                      />
-                    </div>
+                    {/* PATCH /channels/:id/toggle carries no @Roles(), so it
+                        falls to the guard's STAFF+ default — a rung lower than
+                        connect and disconnect. */}
+                    {canWrite && (
+                      <div className="ml-auto">
+                        <Switch
+                          checked={isEnabled}
+                          onChange={(next) =>
+                            toggleChannel.mutate({ channelId: channel.id, enabled: next })
+                          }
+                          disabled={toggleChannel.isPending}
+                        />
+                      </div>
+                    )}
                   </div>
 
                   {/* Test result inline feedback */}
@@ -367,14 +393,25 @@ export default function ChannelsPage() {
       )}
 
       {/* ── Available channels ──────────────────────────────────────────── */}
-      <SettingsCard title="Available channels" description="Connect a new channel to start receiving messages.">
+      <SettingsCard
+        title="Available channels"
+        description="Connect a new channel to start receiving messages."
+      >
         <div className="grid gap-3 sm:grid-cols-2">
           {CHANNELS.map((def) => {
             const Icon = def.icon;
             const isConnected = connectedTypes.has(def.type);
             return (
-              <div key={def.type} className="flex items-start gap-3 rounded-lg border border-border p-3.5">
-                <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white', def.color)}>
+              <div
+                key={def.type}
+                className="flex items-start gap-3 rounded-lg border border-border p-3.5"
+              >
+                <div
+                  className={cn(
+                    'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white',
+                    def.color,
+                  )}
+                >
                   <Icon className="h-5 w-5" />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -387,9 +424,16 @@ export default function ChannelsPage() {
                     )}
                   </div>
                   <p className="mt-0.5 text-xs text-muted-foreground">{def.blurb}</p>
-                  <Button size="sm" variant={isConnected ? 'outline' : 'primary'} className="mt-2.5" onClick={() => setConnectDef(def)}>
-                    <Plug className="h-3.5 w-3.5" /> {isConnected ? 'Add another' : 'Connect'}
-                  </Button>
+                  {canManage && (
+                    <Button
+                      size="sm"
+                      variant={isConnected ? 'outline' : 'primary'}
+                      className="mt-2.5"
+                      onClick={() => setConnectDef(def)}
+                    >
+                      <Plug className="h-3.5 w-3.5" /> {isConnected ? 'Add another' : 'Connect'}
+                    </Button>
+                  )}
                 </div>
               </div>
             );
@@ -429,7 +473,10 @@ function ConnectModal({ def, onClose }: { def: ChannelDef | null; onClose: () =>
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    connect.mutate({ path: def.connectPath, body: buildConnectBody(def.type, values) }, { onSuccess: onClose });
+    connect.mutate(
+      { path: def.connectPath, body: buildConnectBody(def.type, values) },
+      { onSuccess: onClose },
+    );
   };
 
   return (
@@ -454,7 +501,10 @@ function ConnectModal({ def, onClose }: { def: ChannelDef | null; onClose: () =>
           <Field key={f.name} label={f.label}>
             {f.options ? (
               <Select
-                options={[{ label: 'Select…', value: '' }, ...f.options.map((o) => ({ label: humanizeEnum(o), value: o }))]}
+                options={[
+                  { label: 'Select…', value: '' },
+                  ...f.options.map((o) => ({ label: humanizeEnum(o), value: o })),
+                ]}
                 value={values[f.name] ?? ''}
                 onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
               />
@@ -469,7 +519,9 @@ function ConnectModal({ def, onClose }: { def: ChannelDef | null; onClose: () =>
             )}
           </Field>
         ))}
-        {connect.isError && <p className="text-sm text-danger">Connection failed. Double-check your credentials.</p>}
+        {connect.isError && (
+          <p className="text-sm text-danger">Connection failed. Double-check your credentials.</p>
+        )}
       </form>
     </Modal>
   );
@@ -535,16 +587,38 @@ function EmbedModal({
 function buildConnectBody(type: ChannelType, v: Record<string, string>): Record<string, unknown> {
   switch (type) {
     case 'SMS':
-      return { displayName: v.displayName, provider: v.provider, phoneNumber: v.phoneNumber, accountSid: v.accountSid, authToken: v.authToken };
+      return {
+        displayName: v.displayName,
+        provider: v.provider,
+        phoneNumber: v.phoneNumber,
+        accountSid: v.accountSid,
+        authToken: v.authToken,
+      };
     case 'WEB_CHAT':
       return {
         displayName: v.displayName,
         title: v.title || 'Chat with us',
         primaryColor: v.primaryColor || '#4f46e5',
-        widgetConfig: { title: v.title || 'Chat with us', primaryColor: v.primaryColor || '#4f46e5', position: 'BOTTOM_RIGHT', allowedOrigins: [] },
+        widgetConfig: {
+          title: v.title || 'Chat with us',
+          primaryColor: v.primaryColor || '#4f46e5',
+          position: 'BOTTOM_RIGHT',
+          allowedOrigins: [],
+        },
       };
     case 'EMAIL':
-      return { displayName: v.displayName, fromEmail: v.fromEmail, fromName: v.fromName, smtp: { host: v.smtpHost, port: Number(v.smtpPort) || 587, user: v.smtpUser, pass: v.smtpPass, imap: { host: v.imapHost, port: Number(v.imapPort) || 993 } } };
+      return {
+        displayName: v.displayName,
+        fromEmail: v.fromEmail,
+        fromName: v.fromName,
+        smtp: {
+          host: v.smtpHost,
+          port: Number(v.smtpPort) || 587,
+          user: v.smtpUser,
+          pass: v.smtpPass,
+          imap: { host: v.imapHost, port: Number(v.imapPort) || 993 },
+        },
+      };
     default:
       return v;
   }

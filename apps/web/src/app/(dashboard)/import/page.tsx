@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { Upload, Download, FileUp } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
+import { usePermissions } from '@/hooks/use-permissions';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
@@ -62,7 +63,9 @@ function splitLine(line: string): string[] {
 function parseCsv(text: string): CsvImportRow[] {
   const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (lines.length < 2) return [];
-  const headers = splitLine(lines[0]!).map((h) => HEADER_ALIASES[h.toLowerCase().replace(/[\s_]+/g, '')] ?? null);
+  const headers = splitLine(lines[0]!).map(
+    (h) => HEADER_ALIASES[h.toLowerCase().replace(/[\s_]+/g, '')] ?? null,
+  );
   const rows: CsvImportRow[] = [];
   for (let i = 1; i < lines.length; i++) {
     const cells = splitLine(lines[i]!);
@@ -79,6 +82,9 @@ export default function ImportPage() {
   const [text, setText] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const importMut = useImportCsv();
+  // POST /realty/leads/import is an undecorated write — STAFF and above. The
+  // sample-CSV download is generated client-side and stays available to all.
+  const { canWrite } = usePermissions();
 
   const rows = useMemo(() => parseCsv(text), [text]);
   const result = importMut.data;
@@ -138,12 +144,11 @@ export default function ImportPage() {
             <>
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium">{rows.length} rows parsed</p>
-                <Button
-                  loading={importMut.isPending}
-                  onClick={() => importMut.mutate(rows)}
-                >
-                  <Upload className="h-4 w-4" /> Import {rows.length} leads
-                </Button>
+                {canWrite && (
+                  <Button loading={importMut.isPending} onClick={() => importMut.mutate(rows)}>
+                    <Upload className="h-4 w-4" /> Import {rows.length} leads
+                  </Button>
+                )}
               </div>
 
               <div className="overflow-x-auto rounded-lg border border-border">
@@ -179,7 +184,8 @@ export default function ImportPage() {
           ) : (
             text.trim().length > 0 && (
               <p className="text-xs text-muted-foreground">
-                No valid rows found. Ensure the first line is a header with a <code>phone</code> column.
+                No valid rows found. Ensure the first line is a header with a <code>phone</code>{' '}
+                column.
               </p>
             )
           )}

@@ -9,6 +9,7 @@ import { paiseToCompactRupees } from '@/lib/format';
 import { matchBorder, matchTone } from '@/lib/realty-ui';
 import { cn } from '@/lib/utils';
 import type { Lead } from '@/lib/realty-types';
+import { usePermissions } from '@/hooks/use-permissions';
 
 /**
  * Verified inventory units ranked by fit against a lead's BLTC requirement.
@@ -18,10 +19,24 @@ export function LeadMatchedUnits({ lead, limit = 8 }: { lead: Lead; limit?: numb
   const match = useMatchForLead();
   const runMatch = match.mutate;
   const units = match.data ?? [];
+  // `POST /realty/leads/:id/match` computes matches rather than changing
+  // anything, but the verb makes it a write, so the guard's STAFF+ default
+  // refuses it for a VIEWER. Skip the call rather than render a failure that
+  // looks like a bug. (Worth reclassifying server-side — see the note in the
+  // matching section of the leads docs.)
+  const { canWrite } = usePermissions();
 
   useEffect(() => {
-    runMatch({ id: lead.id, limit });
-  }, [lead.id, limit, runMatch]);
+    if (canWrite) runMatch({ id: lead.id, limit });
+  }, [lead.id, limit, runMatch, canWrite]);
+
+  if (!canWrite) {
+    return (
+      <p className="rounded-lg border border-dashed border-border py-6 text-center text-xs text-muted-foreground">
+        Unit matching isn&apos;t available for read-only roles.
+      </p>
+    );
+  }
 
   if (match.isPending) {
     return (
@@ -48,7 +63,10 @@ export function LeadMatchedUnits({ lead, limit = 8 }: { lead: Lead; limit?: numb
       {units.map((u) => (
         <li
           key={u.unitId}
-          className={cn('rounded-lg border border-l-4 border-border bg-card p-3 shadow-sm', matchBorder(u.fitScore))}
+          className={cn(
+            'rounded-lg border border-l-4 border-border bg-card p-3 shadow-sm',
+            matchBorder(u.fitScore),
+          )}
         >
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
@@ -65,7 +83,10 @@ export function LeadMatchedUnits({ lead, limit = 8 }: { lead: Lead; limit?: numb
           <div className="mt-2 flex items-center justify-between gap-2">
             <span className="text-sm font-semibold">{paiseToCompactRupees(u.allInPricePaise)}</span>
             {u.reasons.length > 0 && (
-              <span className="truncate text-[11px] text-muted-foreground" title={u.reasons.join(' · ')}>
+              <span
+                className="truncate text-[11px] text-muted-foreground"
+                title={u.reasons.join(' · ')}
+              >
                 {u.reasons[0]}
               </span>
             )}

@@ -39,14 +39,15 @@ export interface ApiErrorBody {
 
 export type ChannelType = 'WHATSAPP' | 'INSTAGRAM' | 'SMS' | 'WEB_CHAT' | 'EMAIL';
 
-export type UserRole = 'OWNER' | 'MANAGER' | 'STAFF';
+/**
+ * Includes VIEWER: the API issues VIEWER tokens and `GET /auth/me` returns the
+ * role verbatim, so omitting it here did not stop a VIEWER signing in — it only
+ * stopped TypeScript noticing that write controls were being rendered for one.
+ * Kept identical to `Role` in ./feature-types, which the team surfaces use.
+ */
+export type UserRole = 'OWNER' | 'MANAGER' | 'STAFF' | 'VIEWER';
 
-export type ConversationStatus =
-  | 'OPEN'
-  | 'PENDING'
-  | 'RESOLVED'
-  | 'ESCALATED'
-  | 'BOT_HANDLING';
+export type ConversationStatus = 'OPEN' | 'PENDING' | 'RESOLVED' | 'ESCALATED' | 'BOT_HANDLING';
 
 export type MessageDirection = 'INBOUND' | 'OUTBOUND' | 'INTERNAL';
 export type MessageStatus = 'QUEUED' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED';
@@ -63,21 +64,13 @@ export type MessageContentType =
   | 'STICKER';
 
 export type HitlTaskType =
-  | 'DRAFT_REVIEW'
-  | 'ESCALATION'
-  | 'APPROVAL_REQUIRED'
-  | 'QUALITY_CHECK'
-  | 'CUSTOMER_REQUEST';
+  'DRAFT_REVIEW' | 'ESCALATION' | 'APPROVAL_REQUIRED' | 'QUALITY_CHECK' | 'CUSTOMER_REQUEST';
 export type HitlTaskStatus = 'PENDING' | 'IN_PROGRESS' | 'RESOLVED' | 'EXPIRED' | 'ESCALATED';
 export type HitlPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
 
 export type ChurnRiskLevel = 'LOW' | 'MEDIUM' | 'HIGH';
 export type SentimentLabel =
-  | 'VERY_NEGATIVE'
-  | 'NEGATIVE'
-  | 'NEUTRAL'
-  | 'POSITIVE'
-  | 'VERY_POSITIVE';
+  'VERY_NEGATIVE' | 'NEGATIVE' | 'NEUTRAL' | 'POSITIVE' | 'VERY_POSITIVE';
 
 export type OrderStatus =
   | 'DRAFT'
@@ -92,21 +85,10 @@ export type OrderStatus =
 export type FulfillmentType = 'DELIVERY' | 'PICKUP' | 'DIGITAL' | 'IN_STORE';
 
 export type BookingStatus =
-  | 'CONFIRMED'
-  | 'PENDING'
-  | 'CANCELLED'
-  | 'COMPLETED'
-  | 'NO_SHOW'
-  | 'RESCHEDULED';
+  'CONFIRMED' | 'PENDING' | 'CANCELLED' | 'COMPLETED' | 'NO_SHOW' | 'RESCHEDULED';
 
 export type PaymentStatus =
-  | 'PENDING'
-  | 'AUTHORIZED'
-  | 'CAPTURED'
-  | 'FAILED'
-  | 'REFUNDED'
-  | 'PARTIALLY_REFUNDED'
-  | 'EXPIRED';
+  'PENDING' | 'AUTHORIZED' | 'CAPTURED' | 'FAILED' | 'REFUNDED' | 'PARTIALLY_REFUNDED' | 'EXPIRED';
 export type PaymentMethod = 'UPI' | 'CARD' | 'NETBANKING' | 'WALLET' | 'COD' | 'EMI';
 
 export type CatalogItemType = 'PRODUCT' | 'SERVICE' | 'PACKAGE' | 'DIGITAL';
@@ -333,11 +315,27 @@ export interface Client {
 }
 
 export type ClientTimelineItem =
-  | { type: 'MESSAGE'; timestamp: ISODate; data: { direction: MessageDirection; preview: string; conversationId: UUID } }
+  | {
+      type: 'MESSAGE';
+      timestamp: ISODate;
+      data: { direction: MessageDirection; preview: string; conversationId: UUID };
+    }
   | { type: 'ORDER'; timestamp: ISODate; data: { orderId: UUID; status: string; amount: number } }
-  | { type: 'BOOKING'; timestamp: ISODate; data: { bookingId: UUID; status: string; serviceName: string } }
-  | { type: 'PAYMENT'; timestamp: ISODate; data: { paymentId: UUID; status: string; amount: number } }
-  | { type: 'CAMPAIGN'; timestamp: ISODate; data: { campaignId: UUID; campaignName: string; event: string } };
+  | {
+      type: 'BOOKING';
+      timestamp: ISODate;
+      data: { bookingId: UUID; status: string; serviceName: string };
+    }
+  | {
+      type: 'PAYMENT';
+      timestamp: ISODate;
+      data: { paymentId: UUID; status: string; amount: number };
+    }
+  | {
+      type: 'CAMPAIGN';
+      timestamp: ISODate;
+      data: { campaignId: UUID; campaignName: string; event: string };
+    };
 
 /** Timeline event as returned by the API (different shape from ClientTimelineItem). */
 export interface TimelineEvent {

@@ -29,6 +29,28 @@ vi.mock('@/providers/toast-provider', () => ({
   useToast: () => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn() }),
 }));
 
+// The page's action bar is role-gated (see @/hooks/use-permissions), so the
+// tests need a session. Without a provider the hook correctly reports
+// read-only and every write control disappears — which is its own test, in
+// src/__tests__/viewer-gating.test.tsx.
+const authValue = {
+  status: 'authenticated' as const,
+  user: {
+    id: 'u1',
+    email: 'staff@acme.in',
+    name: 'Staff',
+    role: 'OWNER' as const,
+    businessId: 'biz-1',
+    twoFactorEnabled: true,
+    createdAt: '2026-01-01T00:00:00.000Z',
+  },
+  business: null,
+};
+vi.mock('@/providers/auth-provider', () => ({
+  useAuth: () => authValue,
+  useOptionalAuth: () => authValue,
+}));
+
 import LeadDetailPage from './page';
 
 function makeLead(overrides: Partial<Lead> = {}): Lead {
@@ -76,7 +98,12 @@ function makeLead(overrides: Partial<Lead> = {}): Lead {
 
 describe('LeadDetailPage', () => {
   it('renders the lead header, breadcrumb, BLTC, and action buttons', () => {
-    useLead.mockReturnValue({ data: makeLead(), isLoading: false, isError: false, refetch: vi.fn() });
+    useLead.mockReturnValue({
+      data: makeLead(),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
     render(<LeadDetailPage />);
 
     // Breadcrumb + name
@@ -106,7 +133,12 @@ describe('LeadDetailPage', () => {
   });
 
   it('shows a not-found state when the lead does not exist', () => {
-    useLead.mockReturnValue({ data: undefined, isLoading: false, isError: false, refetch: vi.fn() });
+    useLead.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
     render(<LeadDetailPage />);
     expect(screen.getByText('Lead not found')).toBeInTheDocument();
   });

@@ -14,16 +14,36 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { StatusBadge } from '@/components/status-badge';
 import { LoadingState, ErrorState } from '@/components/ui/states';
-import { useBooking, useCancelBooking, useCompleteBooking, useUpdateBooking } from '@/hooks/use-bookings';
+import {
+  useBooking,
+  useCancelBooking,
+  useCompleteBooking,
+  useUpdateBooking,
+} from '@/hooks/use-bookings';
 import { formatDateTimeIST, humanizeEnum, paiseToRupees } from '@/lib/format';
+import { usePermissions } from '@/hooks/use-permissions';
 
-const PAYMENT_TONE = { PAID: 'success', PARTIAL: 'warning', UNPAID: 'neutral', REFUNDED: 'info' } as const;
+const PAYMENT_TONE = {
+  PAID: 'success',
+  PARTIAL: 'warning',
+  UNPAID: 'neutral',
+  REFUNDED: 'info',
+} as const;
 
-export function BookingDetailDrawer({ bookingId, onClose }: { bookingId: string | null; onClose: () => void }) {
+export function BookingDetailDrawer({
+  bookingId,
+  onClose,
+}: {
+  bookingId: string | null;
+  onClose: () => void;
+}) {
   const { data: booking, isLoading, isError, error, refetch } = useBooking(bookingId);
   const update = useUpdateBooking();
   const cancel = useCancelBooking();
   const complete = useCompleteBooking();
+  // Confirm, reschedule, complete, no-show and cancel are all undecorated
+  // writes — STAFF and above. The drawer itself stays readable.
+  const { canWrite } = usePermissions();
 
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
   const [newTime, setNewTime] = useState('');
@@ -31,7 +51,9 @@ export function BookingDetailDrawer({ bookingId, onClose }: { bookingId: string 
   const [reason, setReason] = useState('');
   const [refund, setRefund] = useState(false);
 
-  const isTerminal = booking ? ['CANCELLED', 'COMPLETED', 'NO_SHOW'].includes(booking.status) : false;
+  const isTerminal = booking
+    ? ['CANCELLED', 'COMPLETED', 'NO_SHOW'].includes(booking.status)
+    : false;
 
   const submitReschedule = (e: FormEvent) => {
     e.preventDefault();
@@ -63,7 +85,7 @@ export function BookingDetailDrawer({ bookingId, onClose }: { bookingId: string 
       title={booking ? (booking.service?.name ?? 'Booking') : 'Booking'}
       description={booking ? formatDateTimeIST(booking.startTime) : undefined}
       footer={
-        booking && !isTerminal ? (
+        booking && !isTerminal && canWrite ? (
           <>
             {(booking.status === 'PENDING' || booking.status === 'RESCHEDULED') && (
               <Button
@@ -84,7 +106,12 @@ export function BookingDetailDrawer({ bookingId, onClose }: { bookingId: string 
             >
               <Clock className="h-4 w-4" /> Reschedule
             </Button>
-            <Button size="sm" variant="secondary" loading={complete.isPending} onClick={() => complete.mutate({ id: booking.id })}>
+            <Button
+              size="sm"
+              variant="secondary"
+              loading={complete.isPending}
+              onClick={() => complete.mutate({ id: booking.id })}
+            >
               Complete
             </Button>
             <Button
@@ -95,7 +122,12 @@ export function BookingDetailDrawer({ bookingId, onClose }: { bookingId: string 
             >
               <UserX className="h-4 w-4" /> No-show
             </Button>
-            <Button size="sm" variant="ghost" className="text-danger hover:text-danger" onClick={() => setCancelOpen(true)}>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-danger hover:text-danger"
+              onClick={() => setCancelOpen(true)}
+            >
               Cancel
             </Button>
           </>
@@ -110,7 +142,9 @@ export function BookingDetailDrawer({ bookingId, onClose }: { bookingId: string 
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <StatusBadge value={booking.status} />
-            <Badge tone={PAYMENT_TONE[booking.paymentStatus] ?? 'neutral'}>{humanizeEnum(booking.paymentStatus)}</Badge>
+            <Badge tone={PAYMENT_TONE[booking.paymentStatus] ?? 'neutral'}>
+              {humanizeEnum(booking.paymentStatus)}
+            </Badge>
           </div>
 
           <section className="rounded-lg border border-border p-4">
@@ -118,10 +152,16 @@ export function BookingDetailDrawer({ bookingId, onClose }: { bookingId: string 
               <User className="h-3.5 w-3.5" /> Client
             </p>
             <div className="flex items-center gap-3">
-              <Avatar name={booking.client?.name ?? 'Client'} src={booking.client?.avatarUrl} size="md" />
+              <Avatar
+                name={booking.client?.name ?? 'Client'}
+                src={booking.client?.avatarUrl}
+                size="md"
+              />
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">{booking.client?.name ?? '—'}</p>
-                <p className="truncate text-xs text-muted-foreground">{booking.client?.phone ?? booking.client?.email ?? '—'}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {booking.client?.phone ?? booking.client?.email ?? '—'}
+                </p>
               </div>
             </div>
           </section>
@@ -137,14 +177,22 @@ export function BookingDetailDrawer({ bookingId, onClose }: { bookingId: string 
             <section className="space-y-3">
               {booking.notes && (
                 <div>
-                  <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Internal notes</p>
-                  <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">{booking.notes}</p>
+                  <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Internal notes
+                  </p>
+                  <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
+                    {booking.notes}
+                  </p>
                 </div>
               )}
               {booking.clientNotes && (
                 <div>
-                  <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Client notes</p>
-                  <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">{booking.clientNotes}</p>
+                  <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Client notes
+                  </p>
+                  <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
+                    {booking.clientNotes}
+                  </p>
                 </div>
               )}
             </section>
@@ -169,7 +217,12 @@ export function BookingDetailDrawer({ bookingId, onClose }: { bookingId: string 
             <Button variant="outline" type="button" onClick={() => setRescheduleOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" form="reschedule-form" loading={update.isPending} disabled={!newTime}>
+            <Button
+              type="submit"
+              form="reschedule-form"
+              loading={update.isPending}
+              disabled={!newTime}
+            >
               Reschedule
             </Button>
           </>
@@ -177,7 +230,12 @@ export function BookingDetailDrawer({ bookingId, onClose }: { bookingId: string 
       >
         <form id="reschedule-form" onSubmit={submitReschedule}>
           <Field label="New date & time">
-            <Input type="datetime-local" value={newTime} onChange={(e) => setNewTime(e.target.value)} required />
+            <Input
+              type="datetime-local"
+              value={newTime}
+              onChange={(e) => setNewTime(e.target.value)}
+              required
+            />
           </Field>
         </form>
       </Modal>
@@ -193,7 +251,12 @@ export function BookingDetailDrawer({ bookingId, onClose }: { bookingId: string 
             <Button variant="outline" type="button" onClick={() => setCancelOpen(false)}>
               Keep booking
             </Button>
-            <Button variant="danger" type="submit" form="cancel-booking-form" loading={cancel.isPending}>
+            <Button
+              variant="danger"
+              type="submit"
+              form="cancel-booking-form"
+              loading={cancel.isPending}
+            >
               Cancel booking
             </Button>
           </>
@@ -201,10 +264,20 @@ export function BookingDetailDrawer({ bookingId, onClose }: { bookingId: string 
       >
         <form id="cancel-booking-form" onSubmit={submitCancel} className="space-y-4">
           <Field label="Reason" hint="Optional">
-            <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} placeholder="Why is this booking being cancelled?" />
+            <Textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={3}
+              placeholder="Why is this booking being cancelled?"
+            />
           </Field>
           {booking?.paymentStatus === 'PAID' && (
-            <Switch checked={refund} onChange={setRefund} label="Refund payment" description="Issue a refund for this booking." />
+            <Switch
+              checked={refund}
+              onChange={setRefund}
+              label="Refund payment"
+              description="Issue a refund for this booking."
+            />
           )}
         </form>
       </Modal>
