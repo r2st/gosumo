@@ -88,6 +88,7 @@ describe('RealtyLeadsService (remaining branches)', () => {
   let service: RealtyLeadsService;
   let repository: jest.Mocked<RealtyLeadsRepository>;
   let tenant: { assertTeamMember: jest.Mock };
+  let emitter: { emit: jest.Mock };
 
   beforeEach(async () => {
     const mockRepository: Partial<Record<keyof RealtyLeadsRepository, jest.Mock>> = {
@@ -101,12 +102,13 @@ describe('RealtyLeadsService (remaining branches)', () => {
       countByStage: jest.fn(),
     };
     tenant = { assertTeamMember: jest.fn().mockResolvedValue(undefined) };
+    emitter = { emit: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RealtyLeadsService,
         { provide: RealtyLeadsRepository, useValue: mockRepository },
-        { provide: EventEmitter2, useValue: { emit: jest.fn() } },
+        { provide: EventEmitter2, useValue: emitter },
         { provide: TenantService, useValue: tenant },
       ],
     }).compile();
@@ -353,6 +355,170 @@ describe('RealtyLeadsService (remaining branches)', () => {
     });
   });
 
+  // ── the rest of the BLTC slots ────────────────────────────────────────────
+
+  /**
+   * Every slot runs through the same `setSlot` helper, but each is wired up
+   * separately, and a slot wired to the wrong comparator silently overwrites a
+   * buyer's stated requirement with whatever the AI extracted from the latest
+   * message. The contradiction list is the only thing standing between "the
+   * model misheard 2BHK as 3BHK" and a lead whose brief is now wrong.
+   */
+  describe('applyBltcUpdate — the remaining slots', () => {
+    const CASES: { slot: string; existing: Record<string, unknown>; before: unknown; dto: Record<string, unknown>; incoming: unknown }[] = [
+      {
+        slot: 'budgetMaxPaise',
+        // The column holds rupees; the DTO speaks paise. ₹90,000 → 9,000,000p.
+        existing: { budget_max: new Prisma.Decimal(90_000) },
+        before: 9_000_000,
+        dto: { budgetMaxPaise: 12_000_000 },
+        incoming: 12_000_000,
+      },
+      {
+        slot: 'timelineMonths',
+        existing: { timeline_months: 3 },
+        before: 3,
+        dto: { timelineMonths: 12 },
+        incoming: 12,
+      },
+      {
+        slot: 'config',
+        existing: { config: '2BHK' },
+        before: '2BHK',
+        dto: { config: '3BHK' },
+        incoming: '3BHK',
+      },
+      {
+        slot: 'purpose',
+        existing: { purpose: 'END_USE' },
+        before: 'END_USE',
+        dto: { purpose: 'INVESTMENT' },
+        incoming: 'INVESTMENT',
+      },
+      {
+        slot: 'financing',
+        existing: { financing: 'CASH' },
+        before: 'CASH',
+        dto: { financing: 'LOAN' },
+        incoming: 'LOAN',
+      },
+    ];
+
+    it.each(CASES)('surfaces a contradicting $slot instead of overwriting it', async ({ slot, existing, before, dto, incoming }) => {
+      repository.findById.mockResolvedValue(makeLead(existing) as never);
+
+      const result = await service.applyBltcUpdate(BUSINESS_ID, LEAD_ID, dto as never);
+
+      expect(result.contradictions).toEqual([{ slot, existing: before, incoming }]);
+    });
+
+    it.each(CASES)('overwrites a contradicting $slot when the caller forces it', async ({ slot, existing, dto, incoming }) => {
+      repository.findById.mockResolvedValue(makeLead(existing) as never);
+
+      const result = await service.applyBltcUpdate(
+        BUSINESS_ID,
+        LEAD_ID,
+        { ...dto, force: true } as never,
+      );
+
+      expect(result.contradictions).toEqual([]);
+      expect(result.lead).toBeDefined();
+      expect(slot).toBeTruthy();
+      expect(incoming).toBeDefined();
+    });
+
+    it.each(CASES)('fills an unanswered $slot without calling it a contradiction', async ({ dto }) => {
+      // The default lead has every slot null.
+      const result = await service.applyBltcUpdate(BUSINESS_ID, LEAD_ID, dto as never);
+
+      expect(result.contradictions).toEqual([]);
+    });
+
+    it('collects a contradiction from every slot in one update', async () => {
+      repository.findById.mockResolvedValue(
+        makeLead({
+          budget_min: new Prisma.Decimal(5_000_000),
+          budget_max: new Prisma.Decimal(9_000_000),
+          timeline_months: 3,
+          config: '2BHK',
+          purpose: 'END_USE',
+          financing: 'CASH',
+        }) as never,
+      );
+
+      const result = await service.applyBltcUpdate(BUSINESS_ID, LEAD_ID, {
+        budgetMinPaise: 1_000_000,
+        budgetMaxPaise: 12_000_000,
+        timelineMonths: 12,
+        config: '3BHK',
+        purpose: 'INVESTMENT',
+        financing: 'LOAN',
+      } as never);
+
+      expect(result.contradictions.map((c) => c.slot).sort()).toEqual([
+        'budgetMaxPaise',
+        'budgetMinPaise',
+        'config',
+        'financing',
+        'purpose',
+        'timelineMonths',
+      ]);
+      // Nothing was written — a wholly contradicted update must not half-apply.
+      expect(repository.update).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        LEAD_ID,
+        expect.not.objectContaining({ config: '3BHK' }),
+      );
+    });
+  });
+
+  // ── null columns on the way out ───────────────────────────────────────────
+
+  /**
+   * `localities` and `matched_unit_ids` are array columns that predate their
+   * NOT NULL defaults, so old rows still carry NULL. The mapper has to hand the
+   * API an empty array for those: a `null` where the DTO promises an array
+   * crashes every client that iterates it.
+   */
+  describe('mapping a row with null array columns', () => {
+    it('reads a null locality column as an empty list', async () => {
+      repository.findById.mockResolvedValue(
+        makeLead({ localities: null, matched_unit_ids: null }) as never,
+      );
+
+      const lead = await service.getLead(BUSINESS_ID, LEAD_ID);
+
+      expect(lead.bltc.localities).toEqual([]);
+      expect(lead.matchedUnitIds).toEqual([]);
+    });
+
+    it('emits an empty match list on the hot alert when the column is null', async () => {
+      // Cold lead crossing the hot threshold in one update, on a row whose
+      // match list was never populated.
+      repository.findById.mockResolvedValue(
+        makeLead({ qual_score: 0, matched_unit_ids: null }) as never,
+      );
+      repository.update.mockResolvedValue(
+        makeLead({ assigned_agent_id: null, matched_unit_ids: null }) as never,
+      );
+
+      const result = await service.applyBltcUpdate(BUSINESS_ID, LEAD_ID, {
+        budgetMinPaise: 5_000_000,
+        budgetMaxPaise: 9_000_000,
+        timelineMonths: 1,
+        config: '3BHK',
+        purpose: 'END_USE',
+        financing: 'CASH',
+        engagementTurns: 5,
+      } as never);
+
+      expect(result.score.score).toBeGreaterThanOrEqual(75);
+      const hot = emitter.emit.mock.calls.find(([name]: [string]) => name === 'realty.lead.hot');
+      expect(hot).toBeDefined();
+      expect(hot![1]).toMatchObject({ matchedUnitIds: [], assignedAgentId: undefined });
+    });
+  });
+
   // ── ensureLeadByPhone: the losing side of a create race ───────────────────
 
   describe('ensureLeadByPhone', () => {
@@ -414,6 +580,19 @@ describe('RealtyLeadsService (remaining branches)', () => {
       // because lead capture threw is worse — this listener must never
       // propagate.
       await expect(service.handleMessageReceived(event)).resolves.toBeUndefined();
+    });
+
+    it('still logs a rejection that is not an Error object', async () => {
+      // A driver-level rejection can be a bare string or a plain object. If the
+      // handler assumed `.message`, the log line would read "undefined" and the
+      // failure would be untraceable.
+      repository.findByPhone.mockRejectedValue('ECONNRESET' as never);
+      const logged = jest.spyOn(service['logger'], 'error').mockImplementation(() => undefined);
+
+      await expect(service.handleMessageReceived(event)).resolves.toBeUndefined();
+
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining('ECONNRESET'));
+      logged.mockRestore();
     });
 
     it('ignores a message with no sender identifier', async () => {
