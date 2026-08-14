@@ -29,6 +29,24 @@ export const CONFIDENCE_GUIDED = 0.5;
  */
 export const MIN_AUTO_EXECUTE_BAND = 0.5;
 
+/**
+ * Floor on a tenant-configured draft-review band, and the mirror image of
+ * `MIN_AUTO_EXECUTE_BAND`.
+ *
+ * The GUIDED edge is derived as `min(CONFIDENCE_GUIDED, draftReview)`, so a
+ * stored `draftReview: 0` drags it to 0 too — and since every score is clamped
+ * to 0–1, `score >= 0` always holds and ESCALATION becomes unreachable. The
+ * band that exists to hand a conversation to a human disappears, and the
+ * low-confidence decisions that should have gone to a person are filed as
+ * drafts instead.
+ *
+ * `MIN_AUTO_EXECUTE_BAND` stops a tenant removing human *review* from the top
+ * of the scale; this stops them removing human *hand-off* from the bottom. The
+ * floor is deliberately just above zero rather than a policy number: a narrow
+ * escalation band is a legitimate choice, an empty one is not.
+ */
+export const MIN_DRAFT_REVIEW_BAND = 0.01;
+
 // ─────────────────────────────────────────────
 // Confidence formula weights
 // confidence = (dataAvailability × W_DATA) + (policyClarity × W_POLICY)

@@ -390,6 +390,36 @@ describe('resolveBands', () => {
     // right up until it is divided by 100 and becomes 0.009.
     expect(resolveBands(stored)).toEqual(DEFAULT_BANDS);
   });
+
+  /**
+   * `MIN_AUTO_EXECUTE_BAND` guards the top of the scale. The bottom had no
+   * guard, and it fails the same way read from the other end: GUIDED is derived
+   * as `min(CONFIDENCE_GUIDED, draftReview)`, so a stored 0 drags it to 0 —
+   * and because every score is clamped to 0–1, `score >= 0` always holds. The
+   * ESCALATION band empties, and the low-confidence decisions meant for a
+   * person are filed as drafts instead.
+   */
+  it('refuses a draft edge of zero, which would empty the escalation band', () => {
+    expect(resolveBands({ autoExecute: 90, draftReview: 0 })).toEqual(DEFAULT_BANDS);
+  });
+
+  it('keeps the escalation band reachable for every accepted pair', () => {
+    for (let draft = 0; draft <= 100; draft += 1) {
+      const bands = resolveBands({ autoExecute: 95, draftReview: draft });
+      // Whatever the tenant stored, some score must still route to ESCALATION.
+      expect(bands.guided).toBeGreaterThan(0);
+    }
+  });
+
+  it('still honours a narrow escalation band, which is a legitimate choice', () => {
+    // The floor rejects an *empty* band, not a small one — a tenant who wants
+    // most things drafted rather than escalated is not misconfigured.
+    expect(resolveBands({ autoExecute: 90, draftReview: 5 })).toEqual({
+      autoExecute: 0.9,
+      draftReview: 0.05,
+      guided: 0.05,
+    });
+  });
 });
 
 describe('tenant bands drive the routing mode', () => {
@@ -435,5 +465,30 @@ describe('tenant bands drive the routing mode', () => {
     const bands = resolveBands({ autoExecute: 95, draftReview: 90 });
     expect(service.toMode(0.92, bands)).toBe(ConfidenceMode.DRAFT);
     expect(service.toMode(0.7, bands)).toBe(ConfidenceMode.GUIDED);
+  });
+
+  it('still hands a hopeless score to a human when the tenant stored a zero draft edge', () => {
+    // The whole point of the floor: a worthless score must not come back as a
+    // draft for somebody to approve. Before it, these bands were
+    // `{ auto: 0.9, draft: 0, guided: 0 }` and every score below the gate was
+    // a DRAFT — the ESCALATION band could not be reached at all.
+    const bands = resolveBands({ autoExecute: 90, draftReview: 0 });
+
+    expect(service.toMode(0, bands)).toBe(ConfidenceMode.ESCALATION);
+    expect(service.toMode(0.1, bands)).toBe(ConfidenceMode.ESCALATION);
+  });
+
+  it('flags a zero-confidence decision as requiring escalation whatever the tenant stored', () => {
+    const escalating = service.calculate({
+      ...perfect,
+      // Caps the score at 0 — there is no reading of this that is safe to
+      // auto-execute or to file as a draft.
+      forceEscalate: true,
+      thresholds: { autoExecute: 90, draftReview: 0 },
+    });
+
+    expect(escalating.finalScore).toBe(0);
+    expect(escalating.mode).toBe(ConfidenceMode.ESCALATION);
+    expect(escalating.requiresEscalation).toBe(true);
   });
 });

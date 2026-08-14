@@ -5,6 +5,7 @@ import {
   CONFIDENCE_DRAFT_REVIEW,
   CONFIDENCE_GUIDED,
   MIN_AUTO_EXECUTE_BAND,
+  MIN_DRAFT_REVIEW_BAND,
   WEIGHT_DATA_AVAILABILITY,
   WEIGHT_POLICY_CLARITY,
   SENTIMENT_CRITICAL_THRESHOLD,
@@ -74,12 +75,14 @@ export const DEFAULT_BANDS: ConfidenceBands = {
  * conversion does not fail loudly — it silently sets the auto-execute gate to
  * 90.0, which no score can reach, so nothing would ever auto-execute.
  *
- * Anything that would *widen* the auto-execute band beyond what a human
- * configured is rejected rather than clamped. The update DTO bounds each field
- * to 0–100 but permits `autoExecute: 0`, and settings written before that DTO
- * existed were not bounded at all; a stored 0 would hand every decision to the
- * AI and remove human review from the tenant entirely. A pair we cannot make
- * sense of falls back to the defaults, which are safe by construction.
+ * Anything that would remove a human from the loop — at either end of the
+ * scale — is rejected rather than clamped. The update DTO bounds each field to
+ * 0–100 but permits a stored 0 at both ends, and settings written before that
+ * DTO existed were not bounded at all. `autoExecute: 0` hands every decision
+ * to the AI and removes human *review*; `draftReview: 0` drags the derived
+ * GUIDED edge to 0, and since scores are clamped to 0–1 that makes ESCALATION
+ * unreachable and removes human *hand-off*. A pair we cannot make sense of
+ * falls back to the defaults, which are safe by construction.
  */
 export function resolveBands(thresholds?: {
   autoExecute?: number;
@@ -103,6 +106,12 @@ export function resolveBands(thresholds?: {
   // A floor on the gate itself. `autoExecute: 0` passes every check above and
   // every ordering check in the service, and means "never ask a human".
   if (autoExecute < MIN_AUTO_EXECUTE_BAND) return DEFAULT_BANDS;
+  // And the mirror image at the other end. The GUIDED edge below is derived
+  // from `draftReview`, so a stored 0 drags it to 0 as well — and since scores
+  // are clamped to 0–1, `score >= 0` always holds and ESCALATION becomes
+  // unreachable. That is the same failure as `autoExecute: 0`, read from the
+  // other end: the band that hands a conversation to a human disappears.
+  if (draftReview < MIN_DRAFT_REVIEW_BAND) return DEFAULT_BANDS;
 
   return {
     autoExecute,
