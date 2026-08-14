@@ -405,3 +405,204 @@ export interface AiSummaryDto {
   modelId?: string;
   generatedAt: string;
 }
+
+// ─────────────────────────────────────────────
+// Dashboard-shaped report DTOs
+//
+// The five endpoints below reshape one or more service metrics into the exact
+// payload the dashboard renders. They were previously untyped, so the response
+// contract lived only in the controller body and in `apps/web/src/lib/types.ts`
+// — nothing checked the two against each other. These interfaces are the
+// server-side half of that contract; field names mirror the frontend types
+// (`DashboardMetrics`, `ConversationReport`, `RevenueReport`, `ClientReport`,
+// `AutonomyReport`) one-for-one.
+//
+// Fields fixed at 0 / [] / {} are not yet sourced — the shape is stable and the
+// dashboard renders an empty state for them.
+// ─────────────────────────────────────────────
+
+/** Inclusive period echoed on every dashboard-shaped report. */
+export interface ReportPeriodDto {
+  from: string;
+  to: string;
+}
+
+export interface DashboardChannelDto {
+  channelType: ChannelType;
+  messageCount: number;
+  conversationCount: number;
+}
+
+/** `GET /analytics/dashboard` — the "today" summary tile row. */
+export interface DashboardMetricsDto {
+  period: ReportPeriodDto;
+  conversations: {
+    total: number;
+    open: number;
+    resolved: number;
+    escalated: number;
+    avgResolutionTimeMs: number;
+    avgFirstResponseTimeMs: number;
+  };
+  messages: {
+    inbound: number;
+    outbound: number;
+    aiSent: number;
+    humanSent: number;
+  };
+  ai: {
+    /** 0–100. */
+    autonomyRate: number;
+    /** 0–100. */
+    avgConfidence: number;
+    autoExecuted: number;
+    reviewed: number;
+    escalated: number;
+    /** 0–100. */
+    approvalRate: number;
+  };
+  revenue: {
+    /** Gross revenue today, in paise. */
+    total: number;
+    orders: number;
+    payments: number;
+    /** Average order value, in paise. */
+    avgOrderValue: number;
+  };
+  clients: {
+    total: number;
+    newThisPeriod: number;
+    activeThisPeriod: number;
+    churnRisk: number;
+  };
+  channels: DashboardChannelDto[];
+}
+
+export interface ConversationSeriesPointDto {
+  /** Bucket start (ISO-8601, UTC). */
+  date: string;
+  created: number;
+  resolved: number;
+  escalated: number;
+  avgResolutionTimeMs: number;
+}
+
+export interface ConversationChannelBreakdownDto {
+  channel: ChannelType;
+  count: number;
+  avgResolutionTimeMs: number;
+}
+
+export interface TopIntentDto {
+  intent: string;
+  count: number;
+}
+
+/** `GET /analytics/conversations` — the Conversations tab report. */
+export interface ConversationReportDto {
+  summary: {
+    total: number;
+    avgResolutionTimeMs: number;
+    avgFirstResponseTimeMs: number;
+  };
+  timeSeries: ConversationSeriesPointDto[];
+  channelBreakdown: ConversationChannelBreakdownDto[];
+  topIntents: TopIntentDto[];
+}
+
+export interface RevenueSeriesPointDto {
+  /** Bucket start (ISO-8601, UTC). */
+  date: string;
+  /** Gross revenue in the bucket, in paise. */
+  revenue: number;
+  orders: number;
+  /** Refunds in the bucket, in paise. */
+  refunds: number;
+}
+
+/** `GET /analytics/revenue` — the Revenue tab report. All amounts in paise. */
+export interface RevenueReportDto {
+  summary: {
+    totalRevenue: number;
+    totalOrders: number;
+    avgOrderValue: number;
+    totalRefunds: number;
+    netRevenue: number;
+  };
+  timeSeries: RevenueSeriesPointDto[];
+}
+
+export interface AcquisitionSeriesPointDto {
+  /** Bucket start (ISO-8601, UTC). */
+  date: string;
+  newClients: number;
+}
+
+export interface TopTagDto {
+  tag: string;
+  count: number;
+}
+
+/** `GET /analytics/clients` — the Clients tab report. */
+export interface ClientReportDto {
+  summary: {
+    total: number;
+    newClients: number;
+    returning: number;
+    /** Average lifetime value, in paise. */
+    avgLtv: number;
+    churnRiskHigh: number;
+  };
+  acquisitionTimeSeries: AcquisitionSeriesPointDto[];
+  churnRiskBreakdown: { low: number; medium: number; high: number };
+  /** Sentiment label → client count. */
+  sentimentDistribution: Record<string, number>;
+  topTags: TopTagDto[];
+  /** Channel → client count. */
+  channelPreferences: Record<string, number>;
+}
+
+export interface AutonomySeriesPointDto {
+  /** Bucket start (ISO-8601, UTC). */
+  date: string;
+  /** 0–100. */
+  autonomyRate: number;
+  autoExecuted: number;
+  reviewed: number;
+  escalated: number;
+}
+
+export interface IntentAutonomyDto {
+  intent: string;
+  count: number;
+  /** 0–100. */
+  autonomyRate: number;
+  /** 0–100. */
+  avgConfidence: number;
+}
+
+/** A confidence decile rendered as a chart label, e.g. `"80-90"`. */
+export interface ConfidenceBucketLabelDto {
+  bucket: string;
+  count: number;
+}
+
+export interface EscalationReasonCountDto {
+  reason: string;
+  count: number;
+}
+
+/** `GET /analytics/autonomy` — the AI Performance tab report. */
+export interface AutonomyReportDto {
+  summary: {
+    /** 0–100. */
+    autonomyRate: number;
+    /** Change vs the preceding period, in percentage points. */
+    trend: number;
+    totalDecisions: number;
+  };
+  timeSeries: AutonomySeriesPointDto[];
+  intentBreakdown: IntentAutonomyDto[];
+  confidenceDistribution: ConfidenceBucketLabelDto[];
+  topEscalationReasons: EscalationReasonCountDto[];
+}

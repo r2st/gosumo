@@ -8,13 +8,18 @@ import {
   AnalyticsRangeQueryDto,
   AnalyticsTopQueryDto,
   AutonomyMetricsDto,
+  AutonomyReportDto,
   BookingMetricsDto,
   ClientAcquisitionMetricsDto,
+  ClientReportDto,
   ClientRetentionMetricsDto,
   ConfidenceDistributionDto,
+  ConversationReportDto,
+  DashboardMetricsDto,
   EscalationReasonDto,
   ExportReportQueryDto,
   ResponseTimeMetricsDto,
+  RevenueReportDto,
   StaffMetricsDto,
   TopProductDto,
 } from './dto';
@@ -54,7 +59,7 @@ export class AnalyticsController {
   @Get('dashboard')
   @ApiOperation({ summary: 'Dashboard summary for today (cached 5 minutes)' })
   @ApiResponse({ status: 200, description: 'Dashboard summary metrics' })
-  async getDashboard(@TenantId() tenantId: string) {
+  async getDashboard(@TenantId() tenantId: string): Promise<DashboardMetricsDto> {
     const s = await this.analyticsService.getDashboardSummary(tenantId);
     const now = new Date();
     const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -109,7 +114,7 @@ export class AnalyticsController {
   async getConversations(
     @TenantId() tenantId: string,
     @Query() query: AnalyticsRangeQueryDto,
-  ) {
+  ): Promise<ConversationReportDto> {
     const m = await this.analyticsService.getConversationMetrics(tenantId, query);
     return {
       summary: {
@@ -153,7 +158,7 @@ export class AnalyticsController {
   async getRevenue(
     @TenantId() tenantId: string,
     @Query() query: AnalyticsRangeQueryDto,
-  ) {
+  ): Promise<RevenueReportDto> {
     const m = await this.analyticsService.getRevenueMetrics(tenantId, query);
     return {
       summary: {
@@ -307,7 +312,7 @@ export class AnalyticsController {
   async getClients(
     @TenantId() tenantId: string,
     @Query() query: AnalyticsRangeQueryDto,
-  ) {
+  ): Promise<ClientReportDto> {
     const [acq, ret] = await Promise.all([
       this.analyticsService.getClientAcquisitionMetrics(tenantId, query),
       this.analyticsService.getClientRetentionMetrics(tenantId, query),
@@ -344,7 +349,7 @@ export class AnalyticsController {
   async getAutonomyAggregated(
     @TenantId() tenantId: string,
     @Query() query: AnalyticsRangeQueryDto,
-  ) {
+  ): Promise<AutonomyReportDto> {
     const [autonomy, confidence, escalations] = await Promise.all([
       this.analyticsService.getAutonomyMetrics(tenantId, query),
       this.analyticsService.getConfidenceDistribution(tenantId, query),
