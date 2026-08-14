@@ -3,6 +3,7 @@ import { PrismaService } from '../../common/services/prisma.service';
 import { MessageDirection, MessageStatus } from '@gosumo/shared';
 import type { messages, file_uploads } from '@prisma/client';
 import { Prisma, MessageType, FileUploadType } from '@prisma/client';
+import { escapeLikeTerm } from '../../common/utils/search-pattern.util';
 import { MAX_SEARCH_RESULTS, SEARCHABLE_MESSAGE_TYPES } from './message.constants';
 
 // ─────────────────────────────────────────────
@@ -244,7 +245,10 @@ export class MessageRepository {
       // structured payloads have no denormalized text_content to match.
       type: { in: SEARCHABLE_MESSAGE_TYPES },
       text_content: {
-        contains: query,
+        // Escaped, not raw: `%` and `_` in a term would otherwise act as LIKE
+        // wildcards, and `q=%` would sequentially scan and return the tenant's
+        // entire message history. See search-pattern.util.ts.
+        contains: escapeLikeTerm(query),
         mode: 'insensitive',
       },
     };

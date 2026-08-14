@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import type { clients, segments } from '@prisma/client';
 import { ChannelType } from '@gosumo/shared';
 import { PrismaService } from '../../common/services/prisma.service';
+import { escapeLikeTerm } from '../../common/utils/search-pattern.util';
 
 // ─────────────────────────────────────────────
 // Filter & pagination types
@@ -102,10 +103,12 @@ export class ContactRepository {
     const where: Prisma.clientsWhereInput = { business_id: businessId, deleted_at: null };
 
     if (filters.search) {
+      // Escaped so `%`/`_` are searched for, not executed as LIKE wildcards.
+      const search = escapeLikeTerm(filters.search);
       where.OR = [
-        { name: { contains: filters.search, mode: 'insensitive' } },
-        { email: { contains: filters.search, mode: 'insensitive' } },
-        { phone: { contains: filters.search, mode: 'insensitive' } },
+        { name: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+        { phone: { contains: search, mode: 'insensitive' } },
       ];
     }
     if (filters.tags?.length) {

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
+import { escapeLikeTerm } from '../../common/utils/search-pattern.util';
 import { OrderStatus, ResourceNotFoundError } from '@gosumo/shared';
 import { Prisma, OrderStatus as PrismaOrderStatus } from '@prisma/client';
 import type { orders } from '@prisma/client';
@@ -136,7 +137,8 @@ export class OrderRepository {
     }
     if (filters.search) {
       where.order_number = {
-        contains: filters.search,
+        // Escaped so `%`/`_` are searched for, not executed as LIKE wildcards.
+        contains: escapeLikeTerm(filters.search),
         mode: 'insensitive',
       };
     }

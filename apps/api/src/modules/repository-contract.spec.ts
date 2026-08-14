@@ -465,7 +465,14 @@ function valueForParameter(name: string, dataMode: DataMode = 'full'): unknown {
   }
   if (/(tags|labels|localities|amenities)$/i.test(name)) return ['alpha'];
   if (/range$/i.test(name)) return { from: new Date(0), to: new Date(1) };
-  if (/(filters?|options?|opts|query|params|criteria|where)$/i.test(name)) return {};
+  // `query` is the exception in this group: on a repository it is always the
+  // free-text search term (`search(businessId, query: string, filters)`), never
+  // an options bag — the bag is spelled `filters` here. Handing it `{}` used to
+  // be invisible because the value went straight into a Prisma `contains`,
+  // which the recording double never validates; now that search terms are
+  // escaped before they get there, a non-string is caught at the call.
+  if (/^q(uery)?$|(term|search)$/i.test(name)) return 'search term';
+  if (/(filters?|options?|opts|params|criteria|where)$/i.test(name)) return {};
   if (/(ids|list)$/i.test(name)) return [RECORD_ID];
   if (/(limit|offset|page|size|count|days|hours|minutes|score|index|n)$/i.test(name)) return 20;
   if (/(date|since|until|from|to|now|before|after|at)$/i.test(name)) return new Date(0);

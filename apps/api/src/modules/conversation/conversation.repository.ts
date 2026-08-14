@@ -3,6 +3,7 @@ import { PrismaService } from '../../common/services/prisma.service';
 import { ConversationStatus, ChannelType, ResourceNotFoundError } from '@gosumo/shared';
 import { Prisma } from '@prisma/client';
 import type { conversations } from '@prisma/client';
+import { escapeLikeTerm } from '../../common/utils/search-pattern.util';
 import { SNOOZE_WAKE_BATCH_SIZE } from './conversation.constants';
 
 // ─────────────────────────────────────────────
@@ -295,9 +296,11 @@ export class ConversationRepository {
     }
 
     if (filters.search) {
+      // Escaped so `%`/`_` are searched for, not executed as LIKE wildcards.
+      const search = escapeLikeTerm(filters.search);
       where.OR = [
-        { subject: { contains: filters.search, mode: 'insensitive' } },
-        { current_topic: { contains: filters.search, mode: 'insensitive' } },
+        { subject: { contains: search, mode: 'insensitive' } },
+        { current_topic: { contains: search, mode: 'insensitive' } },
       ];
     }
 

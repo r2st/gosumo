@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { generateCorrelationId } from '@gosumo/shared';
 import { PrismaService } from '../../../../common/services/prisma.service';
+import { escapeLikeTerm } from '../../../../common/utils/search-pattern.util';
 import { RealtyLeadsService } from '../../../realty-leads/realty-leads.service';
 import type { LeadResponseDto } from '../../../realty-leads/realty-leads.service';
 import { RealtyInventoryService } from '../../../realty-inventory/realty-inventory.service';
@@ -215,7 +216,10 @@ export class VoiceNoteProcessorService {
         business_id: businessId,
         OR: [
           { name: { equals: command.agentName, mode: 'insensitive' } },
-          { name: { contains: command.agentName, mode: 'insensitive' } },
+          // The name is transcribed speech, so it is untrusted text like any
+          // other search term — escaped so `%`/`_` cannot act as wildcards and
+          // resolve the command to an arbitrary agent.
+          { name: { contains: escapeLikeTerm(command.agentName), mode: 'insensitive' } },
           { email: { equals: command.agentName, mode: 'insensitive' } },
         ],
       },

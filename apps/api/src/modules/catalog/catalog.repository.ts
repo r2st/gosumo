@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
+import { escapeLikeTerm } from '../../common/utils/search-pattern.util';
 import { Prisma } from '@prisma/client';
 import type {
   catalog_categories,
@@ -393,11 +394,13 @@ export class CatalogRepository {
       where.tags = { hasSome: filters.tags };
     }
     if (filters.search) {
+      // Escaped so `%`/`_` are searched for, not executed as LIKE wildcards.
+      const search = escapeLikeTerm(filters.search);
       where.OR = [
-        { name: { contains: filters.search, mode: 'insensitive' } },
-        { description: { contains: filters.search, mode: 'insensitive' } },
-        { sku: { contains: filters.search, mode: 'insensitive' } },
-        { short_description: { contains: filters.search, mode: 'insensitive' } },
+        { name: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+        { sku: { contains: search, mode: 'insensitive' } },
+        { short_description: { contains: search, mode: 'insensitive' } },
       ];
     }
 
@@ -429,17 +432,20 @@ export class CatalogRepository {
     query: string,
     limit: number = 10,
   ): Promise<(catalog_items & { category: catalog_categories | null; variants: catalog_variants[] })[]> {
+    // Escaped so `%`/`_` are searched for, not executed as LIKE wildcards.
+    const search = escapeLikeTerm(query);
+
     return this.prisma.catalog_items.findMany({
       where: {
         business_id: businessId,
         is_active: true,
         deleted_at: null,
         OR: [
-          { name: { contains: query, mode: 'insensitive' } },
-          { description: { contains: query, mode: 'insensitive' } },
-          { sku: { contains: query, mode: 'insensitive' } },
-          { ai_description: { contains: query, mode: 'insensitive' } },
-          { short_description: { contains: query, mode: 'insensitive' } },
+          { name: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } },
+          { sku: { contains: search, mode: 'insensitive' } },
+          { ai_description: { contains: search, mode: 'insensitive' } },
+          { short_description: { contains: search, mode: 'insensitive' } },
         ],
       },
       include: {

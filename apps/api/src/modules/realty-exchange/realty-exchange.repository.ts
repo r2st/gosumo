@@ -8,6 +8,7 @@ import type {
   realty_projects,
 } from '@prisma/client';
 import { PrismaService } from '../../common/services/prisma.service';
+import { escapeLikeTerm } from '../../common/utils/search-pattern.util';
 
 export interface CreateSyndicationData {
   businessId: string;
@@ -212,7 +213,9 @@ export class RealtyExchangeRepository {
       deleted_at: null,
     };
     if (filters.status) where.status = filters.status;
-    if (filters.locality) where.locality = { contains: filters.locality, mode: 'insensitive' };
+    if (filters.locality)
+      // Escaped so `%`/`_` are searched for, not executed as LIKE wildcards.
+      where.locality = { contains: escapeLikeTerm(filters.locality), mode: 'insensitive' };
     return this.prisma.realty_resale_listings.findMany({
       where,
       orderBy: { created_at: 'desc' },
@@ -234,8 +237,13 @@ export class RealtyExchangeRepository {
       status: 'ACTIVE',
       business_id: { not: requesterBusinessId },
     };
-    if (filters.locality) where.locality = { contains: filters.locality, mode: 'insensitive' };
-    if (filters.config) where.config = { contains: filters.config, mode: 'insensitive' };
+    // Escaped with more at stake than elsewhere: this read is cross-tenant by
+    // design, so an unescaped `locality=%` would not narrow the supply at all
+    // and would hand the caller every other business's active listings.
+    if (filters.locality)
+      where.locality = { contains: escapeLikeTerm(filters.locality), mode: 'insensitive' };
+    if (filters.config)
+      where.config = { contains: escapeLikeTerm(filters.config), mode: 'insensitive' };
     return this.prisma.realty_resale_listings.findMany({ where });
   }
 

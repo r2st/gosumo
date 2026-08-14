@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { realty_projects, realty_units, realty_assets } from '@prisma/client';
 import { PrismaService } from '../../common/services/prisma.service';
+import { escapeLikeTerm } from '../../common/utils/search-pattern.util';
 import { AVAILABILITY_FRESHNESS_HOURS } from './realty-inventory.constants';
 
 export interface CreateProjectData {
@@ -109,7 +110,9 @@ export class RealtyInventoryRepository {
       business_id: businessId,
       deleted_at: null,
     };
-    if (filters.locality) where.locality = { contains: filters.locality, mode: 'insensitive' };
+    if (filters.locality)
+      // Escaped so `%`/`_` are searched for, not executed as LIKE wildcards.
+      where.locality = { contains: escapeLikeTerm(filters.locality), mode: 'insensitive' };
     if (filters.status) where.status = filters.status as realty_projects['status'];
     return this.prisma.realty_projects.findMany({
       where,

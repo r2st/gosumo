@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { realty_leads } from '@prisma/client';
 import { PrismaService } from '../../common/services/prisma.service';
+import { escapeLikeTerm } from '../../common/utils/search-pattern.util';
 
 // ─────────────────────────────────────────────
 // Types
@@ -204,10 +205,12 @@ export class RealtyLeadsRepository {
     if (filters.source) where.source = filters.source as realty_leads['source'];
     if (filters.assignedAgentId) where.assigned_agent_id = filters.assignedAgentId;
     if (filters.search) {
+      // Escaped so `%`/`_` are searched for, not executed as LIKE wildcards.
+      const search = escapeLikeTerm(filters.search);
       where.OR = [
-        { name: { contains: filters.search, mode: 'insensitive' } },
-        { whatsapp_phone: { contains: filters.search, mode: 'insensitive' } },
-        { email: { contains: filters.search, mode: 'insensitive' } },
+        { name: { contains: search, mode: 'insensitive' } },
+        { whatsapp_phone: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
       ];
     }
 

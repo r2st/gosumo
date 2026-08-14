@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import type { canned_responses } from '@prisma/client';
 import { ChannelType } from '@gosumo/shared';
 import { PrismaService } from '../../common/services/prisma.service';
+import { escapeLikeTerm } from '../../common/utils/search-pattern.util';
 
 export interface CannedResponseListFilters {
   search?: string;
@@ -134,11 +135,13 @@ export class CannedResponseRepository {
     const and: Prisma.canned_responsesWhereInput[] = [];
 
     if (filters.search) {
+      // Escaped so `%`/`_` are searched for, not executed as LIKE wildcards.
+      const search = escapeLikeTerm(filters.search);
       and.push({
         OR: [
-          { title: { contains: filters.search, mode: 'insensitive' } },
-          { content: { contains: filters.search, mode: 'insensitive' } },
-          { shortcut: { contains: filters.search, mode: 'insensitive' } },
+          { title: { contains: search, mode: 'insensitive' } },
+          { content: { contains: search, mode: 'insensitive' } },
+          { shortcut: { contains: search, mode: 'insensitive' } },
         ],
       });
     }

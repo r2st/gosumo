@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
+import { escapeLikeTerm } from '../../common/utils/search-pattern.util';
 import { ChannelType, ResourceNotFoundError } from '@gosumo/shared';
 import { Prisma, $Enums } from '@prisma/client';
 import type { clients, channel_contacts } from '@prisma/client';
@@ -315,7 +316,8 @@ export class ClientIntelligenceRepository {
 
     // Text search across name, email, phone
     if (filters.search) {
-      const searchTerm = filters.search;
+      // Escaped so `%`/`_` are searched for, not executed as LIKE wildcards.
+      const searchTerm = escapeLikeTerm(filters.search);
       where.OR = [
         { name: { contains: searchTerm, mode: 'insensitive' } },
         { email: { contains: searchTerm, mode: 'insensitive' } },
