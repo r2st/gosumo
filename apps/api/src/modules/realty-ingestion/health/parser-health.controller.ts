@@ -14,7 +14,12 @@ export class ParserHealthController {
 
   @Get()
   @ApiOperation({ summary: 'Latest health report per portal parser' })
-  @ApiResponse({ status: 200, description: 'Paginated parser health list for this business' })
+  @ApiResponse({
+    status: 200,
+    // Neither paginated nor tenant-scoped, whatever the old text said: it is
+    // the whole set, one row per portal, and parsers are global code.
+    description: 'The most recent health check for each portal parser',
+  })
   async latest() {
     return this.health.getLatestReports();
   }

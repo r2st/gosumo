@@ -43,11 +43,26 @@ export class ParserHealthRepository {
     });
   }
 
+  /**
+   * The most recent check per portal.
+   *
+   * Raw, because Prisma's `distinct` is not `DISTINCT ON` — the two look alike
+   * and behave nothing alike. Prisma sends an ordinary SELECT and de-duplicates
+   * the result in Node, so this read returned every health check ever recorded,
+   * each carrying its `details` JSONB of per-sample outcomes, to hand back one
+   * row per portal. Weekly writes make that slow to bite rather than harmless:
+   * the table has no retention sweep, so it only ever grows.
+   *
+   * `DISTINCT ON (portal)` with a matching ORDER BY walks the
+   * `(portal, checked_at DESC)` index and stops at the first row of each
+   * portal, which is the plan the previous comment claimed was already
+   * happening.
+   */
   async latestAll(): Promise<realty_parser_health_checks[]> {
-    // One most-recent row per portal (Postgres DISTINCT ON via orderBy).
-    return this.prisma.realty_parser_health_checks.findMany({
-      distinct: ['portal'],
-      orderBy: [{ portal: 'asc' }, { checked_at: 'desc' }],
-    });
+    return this.prisma.$queryRaw<realty_parser_health_checks[]>`
+      SELECT DISTINCT ON (portal) *
+      FROM realty_parser_health_checks
+      ORDER BY portal ASC, checked_at DESC
+    `;
   }
 }
