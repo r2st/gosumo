@@ -51,6 +51,12 @@ function setSearchParams(params: Record<string, string>) {
   Object.entries(params).forEach(([k, v]) => mockSearchParams.set(k, v));
 }
 
+/** Put the tokens where the API actually delivers them — the URL fragment. */
+function setHash(params: Record<string, string>) {
+  const q = new URLSearchParams(params).toString();
+  window.location.hash = q ? `#${q}` : '';
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 describe('AuthCallbackPage', () => {
@@ -63,6 +69,7 @@ describe('AuthCallbackPage', () => {
 
   afterEach(() => {
     setSearchParams({});
+    window.location.hash = '';
   });
 
   it('stores tokens, refreshes auth state, then navigates to /dashboard', async () => {
@@ -84,6 +91,69 @@ describe('AuthCallbackPage', () => {
     await waitFor(() => {
       expect(mockReplace).toHaveBeenCalledWith('/dashboard');
     });
+  });
+
+  /**
+   * The API returns the tokens in the fragment rather than the query string: a
+   * fragment is never put on the wire, so the seven-day refresh token stays out
+   * of the reverse proxy's access log and out of the `Referer` header this page
+   * sends on its next request. If this page ever stops reading the fragment,
+   * sign-in silently breaks; if it stops clearing it, the credentials sit in
+   * the tab's history entry for anyone with the machine.
+   */
+  it('reads the tokens from the URL fragment', async () => {
+    setHash({ accessToken: 'access-frag', refreshToken: 'refresh-frag', expiresIn: '900' });
+
+    render(<AuthCallbackPage />);
+
+    await waitFor(() => {
+      expect(mockRefreshProfile).toHaveBeenCalledTimes(1);
+    });
+    expect(tokenStoreState.accessToken).toBe('access-frag');
+    expect(tokenStoreState.refreshToken).toBe('refresh-frag');
+  });
+
+  it('clears the fragment from the address bar once the tokens are stored', async () => {
+    const replaceState = vi.spyOn(window.history, 'replaceState');
+    setHash({ accessToken: 'access-frag', refreshToken: 'refresh-frag' });
+
+    render(<AuthCallbackPage />);
+
+    await waitFor(() => {
+      // Rewritten to the bare path — jsdom serves this page from "/".
+      expect(replaceState).toHaveBeenCalledWith(null, '', window.location.pathname);
+    });
+    const [, , url] = replaceState.mock.calls[0]!;
+    expect(String(url)).not.toContain('refresh-frag');
+    replaceState.mockRestore();
+  });
+
+  it('prefers the fragment over a query string carrying different tokens', async () => {
+    // Belt and braces: if a stale link still carries query tokens, the freshly
+    // issued fragment pair is the one that wins.
+    setSearchParams({ accessToken: 'access-query', refreshToken: 'refresh-query' });
+    setHash({ accessToken: 'access-frag', refreshToken: 'refresh-frag' });
+
+    render(<AuthCallbackPage />);
+
+    await waitFor(() => {
+      expect(mockRefreshProfile).toHaveBeenCalledTimes(1);
+    });
+    expect(tokenStoreState.accessToken).toBe('access-frag');
+    expect(tokenStoreState.refreshToken).toBe('refresh-frag');
+  });
+
+  it('still accepts the query form, so a dashboard ahead of the API keeps working', async () => {
+    setSearchParams({ accessToken: 'access-query', refreshToken: 'refresh-query' });
+
+    render(<AuthCallbackPage />);
+
+    await waitFor(() => {
+      expect(mockRefreshProfile).toHaveBeenCalledTimes(1);
+    });
+    expect(tokenStoreState.accessToken).toBe('access-query');
+    // Nothing to scrub from the address bar — there was no fragment.
+    expect(window.location.hash).toBe('');
   });
 
   it('redirects to /login with error when tokens are missing', async () => {

@@ -15,12 +15,25 @@ function CallbackHandler() {
     if (processed.current) return;
     processed.current = true;
 
-    const accessToken = searchParams.get('accessToken');
-    const refreshToken = searchParams.get('refreshToken');
+    // The API hands the tokens back in the URL fragment: a fragment never
+    // leaves the browser, so the refresh token stays out of the proxy access
+    // log and out of the `Referer` header this page sends next. The query
+    // string is still read as a fallback so a dashboard deployed ahead of the
+    // API keeps working through the rollout.
+    const rawHash = typeof window === 'undefined' ? '' : (window.location.hash ?? '');
+    const hash = new URLSearchParams(rawHash.replace(/^#/, ''));
+    const accessToken = hash.get('accessToken') ?? searchParams.get('accessToken');
+    const refreshToken = hash.get('refreshToken') ?? searchParams.get('refreshToken');
 
     if (accessToken && refreshToken) {
       tokenStore.setAccessToken(accessToken);
       tokenStore.setRefreshToken(refreshToken);
+
+      // Drop the credentials out of the address bar before anything else runs,
+      // so they are not left sitting in the tab's history entry.
+      if (rawHash) {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
 
       // Hydrate AuthProvider state so DashboardShell sees 'authenticated'
       // before the client-side navigation fires.

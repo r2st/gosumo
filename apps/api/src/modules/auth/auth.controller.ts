@@ -136,13 +136,23 @@ export class AuthController {
       'app.frontendUrl',
       'http://localhost:3001',
     );
-    const redirectUrl =
-      `${frontendUrl}/auth/callback` +
-      `?accessToken=${encodeURIComponent(tokens.accessToken)}` +
+    // The tokens go in the URL *fragment*, not the query string.
+    //
+    // A fragment is never transmitted: it does not appear in the request line,
+    // so it stays out of the reverse proxy's access log, out of any upstream
+    // CDN, and out of the `Referer` header the callback page sends on its next
+    // request. A query string is in all three, and `refreshToken` is a
+    // seven-day credential — one that reaches an access log is a silent
+    // account takeover for as long as the log is retained.
+    //
+    // The dashboard's callback page reads the fragment; it also still accepts
+    // the query form, so deploy the web app before the API.
+    const fragment =
+      `accessToken=${encodeURIComponent(tokens.accessToken)}` +
       `&refreshToken=${encodeURIComponent(tokens.refreshToken)}` +
       `&expiresIn=${tokens.expiresIn}`;
 
-    res.redirect(redirectUrl);
+    res.redirect(`${frontendUrl}/auth/callback#${fragment}`);
   }
 
   // ─────────────────────────────────────────────
