@@ -9,6 +9,7 @@ import {
   IsInt,
   IsNotEmpty,
   IsArray,
+  IsUrl,
   MaxLength,
   Min,
   Max,
@@ -18,7 +19,18 @@ import { Type } from 'class-transformer';
 import { ChannelType, MessageStatus, MessageDirection } from '@gosumo/shared';
 import { NotificationTemplateChannel } from '@prisma/client';
 import { IsCalendarDateString } from '../../../common/validators/is-calendar-date.validator';
-import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../message.constants';
+import {
+  IsSafeFilename,
+  IsSafeStorageKey,
+} from '../../../common/validators/is-safe-storage-key.validator';
+import {
+  DEFAULT_PAGE_SIZE,
+  MAX_CDN_URL_LENGTH,
+  MAX_MEDIA_DIMENSION,
+  MAX_MIME_TYPE_LENGTH,
+  MAX_PAGE_SIZE,
+  MAX_UPLOAD_SIZE_BYTES,
+} from '../message.constants';
 import { SEARCH_TERM_MAX_LENGTH } from '../../../common/validators/search-term.constants';
 
 // ─────────────────────────────────────────────
@@ -278,42 +290,53 @@ export class MessageResponseDto {
 export class AttachMediaDto {
   @ApiProperty({ description: 'Content type: IMAGE | VIDEO | AUDIO | DOCUMENT' })
   @IsString()
+  @MaxLength(32)
   type!: string;
 
-  @ApiProperty({ description: 'Original filename' })
+  @ApiProperty({ description: 'Original filename (a single name, never a path)' })
   @IsString()
   @MaxLength(500)
+  @IsSafeFilename()
   filename!: string;
 
-  @ApiProperty({ description: 'MIME type' })
+  @ApiProperty({ description: 'MIME type, e.g. image/jpeg' })
   @IsString()
+  @MaxLength(MAX_MIME_TYPE_LENGTH)
   mimeType!: string;
 
   @ApiProperty({ description: 'File size in bytes' })
   @Type(() => Number)
   @IsInt()
   @Min(0)
+  @Max(MAX_UPLOAD_SIZE_BYTES)
   sizeBytes!: number;
 
   @ApiProperty({ description: 'GoSumo S3 object key (never a channel CDN URL)' })
   @IsString()
+  @IsSafeStorageKey()
   storageKey!: string;
 
   @ApiPropertyOptional({ description: 'Public CDN URL after processing' })
   @IsOptional()
   @IsString()
+  @MaxLength(MAX_CDN_URL_LENGTH)
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   cdnUrl?: string;
 
   @ApiPropertyOptional({ description: 'Image/video width in px' })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
+  @Min(0)
+  @Max(MAX_MEDIA_DIMENSION)
   width?: number;
 
   @ApiPropertyOptional({ description: 'Image/video height in px' })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
+  @Min(0)
+  @Max(MAX_MEDIA_DIMENSION)
   height?: number;
 
   @ApiPropertyOptional({ description: 'Whether the file is publicly accessible' })

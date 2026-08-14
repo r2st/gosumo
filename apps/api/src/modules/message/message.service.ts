@@ -35,8 +35,17 @@ import {
 import {
   resolveMessageType,
   resolveFileUploadType,
+  clampMediaInt,
+  isMimeTypeConsistent,
+  MAX_CDN_URL_LENGTH,
+  MAX_MEDIA_DIMENSION,
+  MAX_UPLOAD_SIZE_BYTES,
   MEDIA_CONTENT_TYPES,
 } from './message.constants';
+import {
+  isSafeFilename,
+  isSafeStorageKey,
+} from '../../common/utils/storage-key.util';
 
 // ─────────────────────────────────────────────
 // Response interface for paginated messages
@@ -287,6 +296,11 @@ export class MessageService {
   /**
    * Attach an S3-backed media file to an existing message. The `storageKey`
    * must point at GoSumo storage — never an external channel CDN URL.
+   *
+   * The DTO has already bounded each field on its own. What it cannot check is
+   * the pair: `type` and `mimeType` are separate properties, and an IMAGE
+   * declaring `text/html` is the combination that turns a public object into
+   * stored XSS the moment anything serves it.
    */
   async attachMedia(
     businessId: string,
@@ -294,6 +308,11 @@ export class MessageService {
     dto: AttachMediaDto,
   ): Promise<file_uploads> {
     await this.getMessageById(businessId, messageId);
+    if (!isMimeTypeConsistent(dto.type, dto.mimeType)) {
+      throw new BadRequestException(
+        `mimeType "${dto.mimeType}" is not a valid content type for ${dto.type}`,
+      );
+    }
     return this.repository.createFileUpload({
       business_id: businessId,
       message_id: messageId,
@@ -467,18 +486,48 @@ export class MessageService {
       (content.storageKey as string) ?? (content.storage_key as string);
     if (!storageKey) return; // media not yet re-uploaded to GoSumo storage
 
+    // This path never sees `AttachMediaDto`, so it repeats its checks. The
+    // content payload comes off an inbound channel webhook or a caller-built
+    // message body, which is exactly the provenance the DTO distrusts — and
+    // the row it writes is the same row, read back by the same consumers.
+    //
+    // A bad attachment is dropped rather than thrown: the message itself has
+    // already been stored and is append-only, and losing the whole message
+    // over its attachment metadata would be the worse failure. The warning is
+    // what makes the drop visible.
+    if (!isSafeStorageKey(storageKey)) {
+      this.logger.warn(
+        `Refusing unsafe storage key on message ${messageId} — media not attached`,
+      );
+      return;
+    }
+
+    const rawFilename = content.filename;
+    const filename = isSafeFilename(rawFilename)
+      ? rawFilename
+      : `${type.toLowerCase()}-${messageId}`;
+
+    const rawMime = content.mimeType;
+    const mimeType = isMimeTypeConsistent(type, rawMime)
+      ? (rawMime as string)
+      : 'application/octet-stream';
+
+    const cdnUrl = typeof content.url === 'string' && content.url.length <= MAX_CDN_URL_LENGTH
+      ? content.url
+      : undefined;
+
     try {
       await this.repository.createFileUpload({
         business_id: businessId,
         message_id: messageId,
         type: resolveFileUploadType(type),
-        filename: (content.filename as string) ?? `${type.toLowerCase()}-${messageId}`,
-        mime_type: (content.mimeType as string) ?? 'application/octet-stream',
-        size_bytes: Number(content.sizeBytes ?? 0),
+        filename,
+        mime_type: mimeType,
+        size_bytes: clampMediaInt(content.sizeBytes, MAX_UPLOAD_SIZE_BYTES),
         storage_key: storageKey,
-        cdn_url: (content.url as string) ?? undefined,
-        width: content.width ? Number(content.width) : undefined,
-        height: content.height ? Number(content.height) : undefined,
+        cdn_url: cdnUrl,
+        width: content.width ? clampMediaInt(content.width, MAX_MEDIA_DIMENSION) : undefined,
+        height: content.height ? clampMediaInt(content.height, MAX_MEDIA_DIMENSION) : undefined,
       });
     } catch (error) {
       this.logger.warn(

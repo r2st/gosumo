@@ -28,6 +28,7 @@ import { CreateOrderDto } from './order/dto';
 import { SnoozeConversationDto, AssignConversationDto } from './conversation/dto';
 import { CreateLeadDto } from './realty-leads/dto';
 import { DispatchNotificationDto } from './notification/dto';
+import { AttachMediaDto } from './message/dto';
 import { CreateBookingDto } from './booking/dto';
 import { CreateApiKeyDto, API_KEY_SCOPES } from './integrations/dto/create-api-key.dto';
 
@@ -513,5 +514,101 @@ describe('API key creation', () => {
 
   it('rejects an injected key hash', async () => {
     await expectRejected(CreateApiKeyDto, { name: 'CI', key_hash: 'a'.repeat(64) });
+  });
+});
+
+// ─────────────────────────────────────────────
+// AttachMediaDto
+//
+// `file_uploads` rows describe bytes GoSumo has already stored, and every
+// column on them is caller-supplied. Two of the bounds below are the
+// database's own — `mime_type` is VARCHAR(100) and `size_bytes` is int4 — so
+// without them the failure is a 500 from Prisma rather than a 400 naming the
+// field. The rest keep a pointer from being aimed somewhere else.
+// ─────────────────────────────────────────────
+
+describe('AttachMediaDto', () => {
+  const valid = {
+    type: 'IMAGE',
+    filename: 'photo.jpg',
+    mimeType: 'image/jpeg',
+    sizeBytes: 20480,
+    storageKey: 'biz/img/photo.jpg',
+  };
+
+  it('accepts an ordinary attachment', async () => {
+    const dto = await validate<AttachMediaDto>(AttachMediaDto, { ...valid });
+    expect(dto.storageKey).toBe('biz/img/photo.jpg');
+    expect(dto.sizeBytes).toBe(20480);
+  });
+
+  it('accepts the optional fields when they are well-formed', async () => {
+    const dto = await validate<AttachMediaDto>(AttachMediaDto, {
+      ...valid,
+      cdnUrl: 'https://cdn.gosumo.test/biz/img/photo.jpg',
+      width: 1920,
+      height: 1080,
+      isPublic: true,
+    });
+    expect(dto.width).toBe(1920);
+  });
+
+  it.each([
+    ['a traversal key', 'biz/../../etc/passwd'],
+    ['an absolute key', '/etc/passwd'],
+    ['a URL in the key field', 'https://evil.test/payload'],
+    ['a backslash key', 'biz\\..\\secret'],
+    ['an empty key', ''],
+  ])('rejects %s', async (_label, storageKey) => {
+    const messages = await expectRejected(AttachMediaDto, { ...valid, storageKey });
+    expect(messages.join(' ')).toContain('storageKey');
+  });
+
+  it('rejects a storage key past the S3 key limit', async () => {
+    await expectRejected(AttachMediaDto, { ...valid, storageKey: 'a'.repeat(1025) });
+  });
+
+  it('rejects a filename that is a path', async () => {
+    const messages = await expectRejected(AttachMediaDto, {
+      ...valid,
+      filename: '../../.ssh/authorized_keys',
+    });
+    expect(messages.join(' ')).toContain('filename');
+  });
+
+  it('rejects a mime type longer than the column', async () => {
+    // VARCHAR(100): without this bound the insert fails, not the request.
+    await expectRejected(AttachMediaDto, {
+      ...valid,
+      mimeType: `image/${'a'.repeat(120)}`,
+    });
+  });
+
+  it('rejects a declared size beyond the 100 MiB ceiling', async () => {
+    await expectRejected(AttachMediaDto, { ...valid, sizeBytes: 200 * 1024 * 1024 });
+  });
+
+  it('rejects a declared size that would overflow int4', async () => {
+    await expectRejected(AttachMediaDto, { ...valid, sizeBytes: 1e15 });
+  });
+
+  it('rejects a negative size', async () => {
+    await expectRejected(AttachMediaDto, { ...valid, sizeBytes: -1 });
+  });
+
+  it('rejects a javascript: cdn url', async () => {
+    // Rendered as a link in the dashboard; a non-http scheme is stored XSS.
+    await expectRejected(AttachMediaDto, {
+      ...valid,
+      cdnUrl: 'javascript:alert(1)',
+    });
+  });
+
+  it('rejects a negative dimension', async () => {
+    await expectRejected(AttachMediaDto, { ...valid, width: -5 });
+  });
+
+  it('rejects an unknown property', async () => {
+    await expectRejected(AttachMediaDto, { ...valid, is_processed: true });
   });
 });

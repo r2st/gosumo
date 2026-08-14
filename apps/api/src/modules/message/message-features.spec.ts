@@ -195,6 +195,182 @@ describe('MessageService — features', () => {
         }),
       );
     });
+
+    // The DTO bounds each field alone; only the service sees the pair. An
+    // IMAGE declaring `text/html` is the combination that matters — these rows
+    // carry `is_public`, so it is a stored-XSS setup for whatever serves the
+    // object, and `image/*` is what makes it look benign in a listing.
+    it.each([
+      ['html on an image', 'IMAGE', 'text/html'],
+      ['a script on a sticker', 'STICKER', 'application/javascript'],
+      ['audio on a video', 'VIDEO', 'audio/mpeg'],
+      ['a bare token with no subtype', 'IMAGE', 'image'],
+      ['a type with a parameter', 'IMAGE', 'image/jpeg; charset=utf-8'],
+    ])('rejects %s', async (_label, type, mimeType) => {
+      repository.findById.mockResolvedValue(makeMessage());
+
+      await expect(
+        service.attachMedia(BUSINESS_ID, MESSAGE_ID, {
+          type,
+          filename: 'x.bin',
+          mimeType,
+          sizeBytes: 10,
+          storageKey: 'biz/x.bin',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(repository.createFileUpload).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a jpeg image', 'IMAGE', 'image/jpeg'],
+      ['a webp sticker', 'STICKER', 'image/webp'],
+      ['an mp4 video', 'VIDEO', 'video/mp4'],
+      ['an ogg voice note', 'AUDIO', 'audio/ogg'],
+      // A document legitimately spans every family, so it is unconstrained.
+      ['a pdf document', 'DOCUMENT', 'application/pdf'],
+      ['a zip document', 'DOCUMENT', 'application/zip'],
+    ])('accepts %s', async (_label, type, mimeType) => {
+      repository.findById.mockResolvedValue(makeMessage());
+      repository.createFileUpload.mockResolvedValue({ id: 'file-1' });
+
+      await expect(
+        service.attachMedia(BUSINESS_ID, MESSAGE_ID, {
+          type,
+          filename: 'x.bin',
+          mimeType,
+          sizeBytes: 10,
+          storageKey: 'biz/x.bin',
+        }),
+      ).resolves.toEqual({ id: 'file-1' });
+    });
+  });
+
+  // ─── media from inbound content ──────────────
+  //
+  // This path writes the same `file_uploads` row without ever going through
+  // `AttachMediaDto`, and its input is an inbound channel payload — the least
+  // trusted source in the platform. It has to repeat the DTO's checks.
+
+  describe('media on an inbound message', () => {
+    function makeInbound(content: Record<string, unknown>): StoreInboundMessageDto {
+      const dto = new StoreInboundMessageDto();
+      dto.conversationId = CONVERSATION_ID;
+      dto.channelAccountId = CHANNEL_ACCOUNT_ID;
+      dto.channel = ChannelType.WHATSAPP;
+      dto.externalId = 'wamid.media';
+      dto.senderType = 'CLIENT';
+      dto.content = content;
+      return dto;
+    }
+
+    beforeEach(() => {
+      repository.findByExternalId.mockResolvedValue(null);
+      repository.create.mockResolvedValue(makeMessage({ type: MessageType.IMAGE }));
+      repository.createFileUpload.mockResolvedValue({});
+    });
+
+    it('drops the attachment rather than storing a traversal key', async () => {
+      await service.storeInboundMessage(
+        BUSINESS_ID,
+        makeInbound({ type: 'IMAGE', storageKey: 'biz/../../etc/passwd' }),
+      );
+
+      expect(repository.createFileUpload).not.toHaveBeenCalled();
+      // The message itself is append-only and must still be stored — losing it
+      // over its attachment metadata would be the worse failure.
+      expect(repository.create).toHaveBeenCalled();
+    });
+
+    it('drops the attachment rather than storing a URL as a key', async () => {
+      await service.storeInboundMessage(
+        BUSINESS_ID,
+        makeInbound({ type: 'IMAGE', storageKey: 'https://evil.test/p.jpg' }),
+      );
+
+      expect(repository.createFileUpload).not.toHaveBeenCalled();
+    });
+
+    it('replaces a path-shaped filename with a safe generated one', async () => {
+      await service.storeInboundMessage(
+        BUSINESS_ID,
+        makeInbound({
+          type: 'IMAGE',
+          storageKey: 'biz/img/x.jpg',
+          filename: '../../.ssh/authorized_keys',
+        }),
+      );
+
+      expect(repository.createFileUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ filename: `image-${MESSAGE_ID}` }),
+      );
+    });
+
+    it('falls back to an opaque mime type when the declared one lies', async () => {
+      await service.storeInboundMessage(
+        BUSINESS_ID,
+        makeInbound({
+          type: 'IMAGE',
+          storageKey: 'biz/img/x.jpg',
+          mimeType: 'text/html',
+        }),
+      );
+
+      expect(repository.createFileUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ mime_type: 'application/octet-stream' }),
+      );
+    });
+
+    it('clamps a declared size that would overflow the int4 column', async () => {
+      // Reaching Postgres with this is a 500; the message is already stored,
+      // so the descriptive metadata is clamped rather than lost.
+      await service.storeInboundMessage(
+        BUSINESS_ID,
+        makeInbound({
+          type: 'IMAGE',
+          storageKey: 'biz/img/x.jpg',
+          sizeBytes: 1e15,
+        }),
+      );
+
+      const call = repository.createFileUpload.mock.calls[0][0];
+      expect(call.size_bytes).toBe(100 * 1024 * 1024);
+      expect(call.size_bytes).toBeLessThan(2 ** 31);
+    });
+
+    it('clamps a negative size to zero', async () => {
+      await service.storeInboundMessage(
+        BUSINESS_ID,
+        makeInbound({ type: 'IMAGE', storageKey: 'biz/img/x.jpg', sizeBytes: -9 }),
+      );
+
+      expect(repository.createFileUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ size_bytes: 0 }),
+      );
+    });
+
+    it('still stores an entirely well-formed attachment unchanged', async () => {
+      await service.storeInboundMessage(
+        BUSINESS_ID,
+        makeInbound({
+          type: 'IMAGE',
+          url: 'https://cdn.gosumo/x.jpg',
+          storageKey: 'biz/img/x.jpg',
+          mimeType: 'image/jpeg',
+          filename: 'x.jpg',
+          sizeBytes: 1024,
+        }),
+      );
+
+      expect(repository.createFileUpload).toHaveBeenCalledWith(
+        expect.objectContaining({
+          storage_key: 'biz/img/x.jpg',
+          mime_type: 'image/jpeg',
+          filename: 'x.jpg',
+          size_bytes: 1024,
+          cdn_url: 'https://cdn.gosumo/x.jpg',
+        }),
+      );
+    });
   });
 
   // ─── reactions ───────────────────────────────
