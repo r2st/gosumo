@@ -42,6 +42,8 @@ import * as path from 'path';
 import { PATH_METADATA } from '@nestjs/common/constants';
 
 import { IS_PUBLIC_KEY } from '../common/interceptors/tenant.interceptor';
+import { AUTH_THROTTLE_BUCKET } from './auth/auth-throttle.decorator';
+import { AUTH_THROTTLE_BUCKETS } from './auth/auth-throttle.constants';
 
 // ─────────────────────────────────────────────
 // Discovery
@@ -597,6 +599,91 @@ describe('credential-exchange routes carry their credential in the body', () => 
     // (`@Body('refreshToken')`). What must not appear is an untyped body on an
     // unauthenticated route.
     expect(src).toMatch(/@Body\(\s*['"][a-zA-Z]+['"]\s*\)|@Body\(\)\s*\w+:\s*\w+Dto/);
+  });
+});
+
+/**
+ * Every `@Public()` auth route is rationed.
+ *
+ * Authentication is not the only thing a token provides — it also bounds how
+ * often a caller can reach a route at all. The routes on this list have given
+ * that up by definition, so each one needs an explicit ceiling in its place.
+ * Without one, `register` mints businesses in a loop and `forgot-password`
+ * mails anyone, repeatedly, from our domain.
+ *
+ * Both directions are closed. A new unthrottled auth route fails here, and a
+ * bucket that stops existing in `AUTH_THROTTLE_BUCKETS` fails here too — so a
+ * decorator can never point at a rule that was deleted out from under it and
+ * silently ration nothing.
+ */
+describe('public auth routes are rate limited', () => {
+  /**
+   * The OAuth pair is exempt: Passport intercepts `googleAuth` before the
+   * handler runs, and `googleCallback` is reachable only with an authorization
+   * code Google itself issued. Neither does work an anonymous caller can aim.
+   */
+  const EXEMPT = new Set(['AuthController.googleAuth', 'AuthController.googleCallback']);
+
+  const AUTH_PUBLIC = PUBLIC_ROUTES.map((r) => r.handler)
+    .filter((h) => h.startsWith('AuthController.'))
+    .filter((h) => !EXEMPT.has(h));
+
+  it('found the auth routes to check', () => {
+    expect(AUTH_PUBLIC.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it.each(AUTH_PUBLIC)('%s declares an @AuthThrottle bucket', (handler) => {
+    const [controllerName, handlerName] = handler.split('.') as [string, string];
+    const controller = CONTROLLERS.find((c) => c.name === controllerName)!;
+    const fn = (controller.cls.prototype as Record<string, unknown>)[handlerName];
+
+    const bucket =
+      Reflect.getMetadata(AUTH_THROTTLE_BUCKET, fn as object) ??
+      Reflect.getMetadata(AUTH_THROTTLE_BUCKET, controller.cls);
+
+    expect(typeof bucket).toBe('string');
+    // A bucket with no rule behind it throttles nothing at all, which is the
+    // one failure mode that looks exactly like success in review.
+    expect(Object.keys(AUTH_THROTTLE_BUCKETS)).toContain(bucket);
+  });
+
+  it('every configured bucket is actually attached to a route', () => {
+    const inUse = new Set(
+      CONTROLLERS.flatMap((c) =>
+        c.handlers.map((h) =>
+          Reflect.getMetadata(
+            AUTH_THROTTLE_BUCKET,
+            (c.cls.prototype as Record<string, unknown>)[h] as object,
+          ),
+        ),
+      ).filter((b): b is string => typeof b === 'string'),
+    );
+
+    // An orphaned bucket is dead configuration that reads as protection.
+    expect([...Object.keys(AUTH_THROTTLE_BUCKETS)].sort()).toEqual([...inUse].sort());
+  });
+
+  it('every rule sets a positive limit over a positive window', () => {
+    for (const [name, rule] of Object.entries(AUTH_THROTTLE_BUCKETS)) {
+      expect(rule.ip.limit).toBeGreaterThan(0);
+      expect(rule.ip.windowMs).toBeGreaterThan(0);
+      if (rule.subject) {
+        expect(rule.subject.limit).toBeGreaterThan(0);
+        expect(rule.subject.windowMs).toBeGreaterThan(0);
+        expect(rule.subject.field).toBeTruthy();
+      }
+      // A limit high enough to be theatre is worse than none, because it stops
+      // anyone looking again.
+      expect(rule.ip.limit).toBeLessThanOrEqual(100);
+      expect(name).toBeTruthy();
+    }
+  });
+
+  it('the endpoint that sends mail is limited per recipient, not just per caller', () => {
+    // An IP ceiling alone still lets a distributed caller mail one victim
+    // without limit — the property that makes this endpoint an open relay.
+    const rule = AUTH_THROTTLE_BUCKETS['forgot-password'];
+    expect(rule?.subject?.field).toBe('email');
   });
 });
 

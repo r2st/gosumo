@@ -11,6 +11,8 @@ import { SessionService } from './session.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { RolesGuard } from './guards/roles.guard';
+import { AuthThrottleGuard } from './auth-throttle.guard';
+import { AuthThrottleLimiter } from './auth-throttle.limiter';
 import { redisProvider, REDIS_CLIENT } from './redis.provider';
 import { PrismaService } from '../../common/services/prisma.service';
 
@@ -51,9 +53,26 @@ import { PrismaService } from '../../common/services/prisma.service';
       provide: APP_GUARD,
       useClass: RolesGuard,
     },
+    // Rations the `@Public()` auth routes, which are the only ones an
+    // anonymous caller can reach. Like RolesGuard it is global but opt-in:
+    // without an `@AuthThrottle()` bucket on the handler it returns true
+    // before doing any work, so no other route is affected.
+    AuthThrottleLimiter,
+    {
+      provide: APP_GUARD,
+      useClass: AuthThrottleGuard,
+    },
     redisProvider,
     PrismaService,
   ],
-  exports: [AuthService, SessionService, JwtStrategy, RolesGuard, PrismaService, REDIS_CLIENT],
+  exports: [
+    AuthService,
+    SessionService,
+    JwtStrategy,
+    RolesGuard,
+    AuthThrottleLimiter,
+    PrismaService,
+    REDIS_CLIENT,
+  ],
 })
 export class AuthModule {}

@@ -27,8 +27,10 @@ import { SessionDto } from './dto/session.dto';
 import { SessionMeta } from './session.service';
 import { GoogleProfile } from './strategies/google.strategy';
 import { Public } from '../../common/decorators/public.decorator';
+import { AuthThrottle } from './auth-throttle.decorator';
 import { SelfService } from './decorators/self-service.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+import { clientIp } from '../../common/utils/client-ip.util';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -45,10 +47,12 @@ export class AuthController {
   // ─────────────────────────────────────────────
 
   @Public()
+  @AuthThrottle('register')
   @Post('register')
   @ApiOperation({ summary: 'Register a new business and owner account' })
   @ApiResponse({ status: 201, description: 'Account created', type: AuthTokensDto })
   @ApiResponse({ status: 409, description: 'Email already in use' })
+  @ApiResponse({ status: 429, description: 'Too many signup attempts from this address' })
   async register(@Body() dto: RegisterDto, @Req() req: Request) {
     const tokens = await this.authService.register(dto, this.sessionMeta(req));
     const payload = JSON.parse(Buffer.from(tokens.accessToken.split('.')[1]!.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
@@ -68,11 +72,13 @@ export class AuthController {
   }
 
   @Public()
+  @AuthThrottle('login')
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login with email and password' })
   @ApiResponse({ status: 200, description: 'Login successful', type: AuthTokensDto })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
+  @ApiResponse({ status: 429, description: 'Too many login attempts from this address' })
   async login(@Body() dto: LoginDto, @Req() req: Request) {
     const tokens = await this.authService.login(dto, this.sessionMeta(req));
     // Decode user info from the access token to include in response
@@ -93,11 +99,13 @@ export class AuthController {
   }
 
   @Public()
+  @AuthThrottle('refresh')
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Refresh access token using a refresh token' })
   @ApiResponse({ status: 200, description: 'Tokens refreshed', type: AuthTokensDto })
   @ApiResponse({ status: 401, description: 'Invalid or expired refresh token' })
+  @ApiResponse({ status: 429, description: 'Too many refresh attempts from this address' })
   async refresh(@Body('refreshToken') refreshToken: string): Promise<AuthTokensDto> {
     return this.authService.refreshTokens(refreshToken);
   }
@@ -142,10 +150,12 @@ export class AuthController {
   // ─────────────────────────────────────────────
 
   @Public()
+  @AuthThrottle('forgot-password')
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Request a password reset link' })
   @ApiResponse({ status: 200, description: 'Reset link sent if the account exists' })
+  @ApiResponse({ status: 429, description: 'Too many reset requests' })
   async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<{ message: string }> {
     await this.authService.requestPasswordReset(dto.email);
     // Identical response regardless of account existence (no enumeration).
@@ -153,11 +163,13 @@ export class AuthController {
   }
 
   @Public()
+  @AuthThrottle('reset-password')
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Reset password using a reset token' })
   @ApiResponse({ status: 200, description: 'Password reset successfully' })
   @ApiResponse({ status: 400, description: 'Invalid or expired token' })
+  @ApiResponse({ status: 429, description: 'Too many reset attempts from this address' })
   async resetPassword(@Body() dto: ResetPasswordDto): Promise<{ message: string }> {
     await this.authService.resetPassword(dto);
     return { message: 'Password has been reset. Please log in with your new password.' };
@@ -242,13 +254,10 @@ export class AuthController {
   }
 
   private sessionMeta(req: Request): SessionMeta {
-    const forwarded = req.headers['x-forwarded-for'];
-    const ip =
-      (Array.isArray(forwarded) ? forwarded[0] : forwarded?.split(',')[0]?.trim()) ??
-      req.ip ??
-      null;
     return {
-      ip,
+      // Shared with AuthThrottleGuard so a session record and the throttle
+      // window that admitted it always name the same caller.
+      ip: clientIp(req),
       userAgent: req.headers['user-agent'] ?? null,
     };
   }
