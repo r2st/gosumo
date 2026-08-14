@@ -108,7 +108,10 @@ export default function CatalogPage() {
               />
             </div>
             <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-              <Switch checked={lowStock} onChange={setLowStock} /> Low stock only
+              {/* The visible text is a sibling, and a <label> around a
+                  <button role="switch"> does not name it — hence the prop. */}
+              <Switch checked={lowStock} onChange={setLowStock} label="Low stock only" /> Low
+              stock only
             </label>
             <div className="relative w-full sm:w-64">
               <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
