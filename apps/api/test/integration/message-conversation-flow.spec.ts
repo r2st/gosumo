@@ -68,9 +68,10 @@ const AGENT_ID = '00000000-0000-4000-a000-000000000030';
 // In-memory stores
 //
 // These implement the repository surface the two services actually call, with
-// the semantics the services depend on: business scoping on every read,
-// "active" excluding RESOLVED (which is what makes a resolved thread reopen
-// rather than continue), and creation defaults matching the real Prisma writes.
+// the semantics the services depend on: business scoping on every read, a
+// status-blind newest-first thread lookup (which is what lets a resolved thread
+// reopen instead of forking), and creation defaults matching the real Prisma
+// writes.
 // ─────────────────────────────────────────────
 
 class FakeConversationRepository {
@@ -84,23 +85,26 @@ class FakeConversationRepository {
     return row && row.business_id === businessId && !row.deleted_at ? row : null;
   }
 
-  async findActiveByClientAndChannel(
+  async findLatestByClientAndChannel(
     businessId: string,
     clientId: string,
     channelAccountId: string,
   ): Promise<conversations | null> {
-    for (const row of this.rows.values()) {
-      if (
-        row.business_id === businessId &&
-        row.client_id === clientId &&
-        row.channel_account_id === channelAccountId &&
-        row.status !== ConversationStatus.RESOLVED &&
-        !row.deleted_at
-      ) {
-        return row;
-      }
-    }
-    return null;
+    // Status-blind, newest first — matching the real query. A RESOLVED thread
+    // comes back so the handler can reopen it instead of forking a duplicate.
+    const matches = [...this.rows.values()]
+      .filter(
+        (row) =>
+          row.business_id === businessId &&
+          row.client_id === clientId &&
+          row.channel_account_id === channelAccountId &&
+          !row.deleted_at,
+      )
+      .sort(
+        (a, b) =>
+          (b.last_message_at?.getTime() ?? 0) - (a.last_message_at?.getTime() ?? 0),
+      );
+    return matches[0] ?? null;
   }
 
   async create(data: CreateConversationData): Promise<conversations> {
@@ -477,7 +481,7 @@ describe('message ↔ conversation flows (integration)', () => {
   /** Drive an inbound event and hand back the conversation it landed on. */
   const receiveAndGet = async (): Promise<conversations> => {
     await receive();
-    const conversation = await conversationRepo.findActiveByClientAndChannel(
+    const conversation = await conversationRepo.findLatestByClientAndChannel(
       BUSINESS_ID,
       CLIENT_ID,
       CHANNEL_ACCOUNT_ID,
@@ -523,7 +527,7 @@ describe('message ↔ conversation flows (integration)', () => {
       await receive({ clientId: null as unknown as string });
 
       expect(
-        await conversationRepo.findActiveByClientAndChannel(
+        await conversationRepo.findLatestByClientAndChannel(
           BUSINESS_ID,
           CLIENT_ID,
           CHANNEL_ACCOUNT_ID,
@@ -544,40 +548,57 @@ describe('message ↔ conversation flows (integration)', () => {
 
   describe('auto-reopen on a new customer message', () => {
     /**
-     * ⚠️ This pins CURRENT behaviour, which contradicts the module's documented
-     * rule. `apps/api/src/modules/conversation/CLAUDE.md` states: "a resolved
-     * conversation is auto-reopened when a new message arrives from the same
-     * client; never create a duplicate."
+     * The module's documented rule (`modules/conversation/CLAUDE.md`): "a
+     * resolved conversation is auto-reopened when a new message arrives from
+     * the same client; never create a duplicate."
      *
-     * It does not. `findOrCreate` looks the thread up through
-     * `findActiveByClientAndChannel`, whose WHERE clause carries
-     * `status: { not: RESOLVED }` — so a resolved thread is never returned and a
-     * second conversation is created instead. The `status === RESOLVED` branch
-     * in `handleMessageReceived` is consequently unreachable: its only input is
-     * `findOrCreate`, which cannot hand it a RESOLVED row.
-     *
-     * The test asserts what the code does rather than what the doc says, so the
-     * suite stays honest, and is written to fail loudly if the behaviour is
-     * changed — at which point this block is the place to flip.
+     * This used to be the one place the code disagreed with that doc —
+     * `findOrCreate` looked the thread up through a query that filtered
+     * RESOLVED out, so the client got a second thread and the RESOLVED arm of
+     * the reopen branch was dead code. The lookup is status-blind now; these
+     * two tests are what keeps it that way.
      */
-    it('starts a second thread when a RESOLVED thread receives a new message', async () => {
+    it('reopens the RESOLVED thread rather than starting a second one', async () => {
       const conversation = await receiveAndGet();
       await conversationService.resolveConversation(BUSINESS_ID, conversation.id);
 
       await receive();
 
-      const active = await conversationRepo.findActiveByClientAndChannel(
+      const reopened = await conversationRepo.findById(
+        BUSINESS_ID,
+        conversation.id,
+      );
+      expect(reopened!.status).toBe(ConversationStatus.OPEN);
+      // Reopening clears the resolution timestamp, so the SLA clock restarts.
+      expect(reopened!.resolved_at).toBeNull();
+      // …and the lookup still lands on that same single thread.
+      const latest = await conversationRepo.findLatestByClientAndChannel(
         BUSINESS_ID,
         CLIENT_ID,
         CHANNEL_ACCOUNT_ID,
       );
-      expect(active).not.toBeNull();
-      expect(active!.id).not.toBe(conversation.id);
-      expect(active!.status).toBe(ConversationStatus.OPEN);
-      // The original stays resolved — nothing reopened it.
-      expect(
-        (await conversationRepo.findById(BUSINESS_ID, conversation.id))!.status,
-      ).toBe(ConversationStatus.RESOLVED);
+      expect(latest!.id).toBe(conversation.id);
+    });
+
+    it('emits RESOLVED → OPEN for the reopened thread, and no second conversation.created', async () => {
+      const conversation = await receiveAndGet();
+      await conversationService.resolveConversation(BUSINESS_ID, conversation.id);
+
+      const changes: unknown[] = [];
+      const created: unknown[] = [];
+      events.on('conversation.status.changed', (e) => changes.push(e));
+      events.on('conversation.created', (e) => created.push(e));
+
+      await receive();
+
+      expect(changes).toEqual([
+        expect.objectContaining({
+          conversationId: conversation.id,
+          previousStatus: ConversationStatus.RESOLVED,
+          newStatus: ConversationStatus.OPEN,
+        }),
+      ]);
+      expect(created).toEqual([]);
     });
 
     it('reopens a SNOOZED thread before its wake job is due', async () => {
