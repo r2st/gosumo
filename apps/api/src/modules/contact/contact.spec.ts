@@ -16,7 +16,7 @@ import { NotFoundException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContactService } from './contact.service';
-import { ContactRepository } from './contact.repository';
+import { ContactRepository, SegmentFilter } from './contact.repository';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
 const CONTACT_ID = '00000000-0000-4000-a000-000000000020';
@@ -216,10 +216,86 @@ describe('ContactService', () => {
     });
   });
 
+  describe('listSegments', () => {
+    it('returns a member count for every segment', async () => {
+      repo.findSegments.mockResolvedValue([
+        makeSegment({ id: 's1', name: 'High LTV', filter: { minLtv: 1000 } }),
+        makeSegment({ id: 's2', name: 'Churn risk', filter: { minChurnRisk: 70 } }),
+      ]);
+      repo.countBySegmentFilter.mockImplementation(async (_b: string, f: SegmentFilter) =>
+        f.minLtv ? 12 : 4,
+      );
+
+      const result = await service.listSegments(BUSINESS_ID);
+
+      expect(result.map((s) => [s.id, s.memberCount])).toEqual([
+        ['s1', 12],
+        ['s2', 4],
+      ]);
+    });
+
+    it('counts an identical filter once and reuses it', async () => {
+      repo.findSegments.mockResolvedValue([
+        makeSegment({ id: 's1', name: 'A', filter: { minLtv: 1000 } }),
+        makeSegment({ id: 's2', name: 'B', filter: { minLtv: 1000 } }),
+        makeSegment({ id: 's3', name: 'C', filter: { minLtv: 5000 } }),
+      ]);
+      repo.countBySegmentFilter.mockResolvedValue(7);
+
+      const result = await service.listSegments(BUSINESS_ID);
+
+      expect(repo.countBySegmentFilter).toHaveBeenCalledTimes(2);
+      expect(result.map((s) => s.memberCount)).toEqual([7, 7, 7]);
+    });
+
+    it('evaluates counts in bounded batches rather than all at once', async () => {
+      const segments = Array.from({ length: 9 }, (_, i) =>
+        makeSegment({ id: `s${i}`, name: `Segment ${i}`, filter: { minLtv: i * 100 } }),
+      );
+      repo.findSegments.mockResolvedValue(segments);
+
+      let inFlight = 0;
+      let peakInFlight = 0;
+      repo.countBySegmentFilter.mockImplementation(async () => {
+        inFlight += 1;
+        peakInFlight = Math.max(peakInFlight, inFlight);
+        await new Promise((resolve) => setImmediate(resolve));
+        inFlight -= 1;
+        return 1;
+      });
+
+      const result = await service.listSegments(BUSINESS_ID);
+
+      expect(result).toHaveLength(9);
+      expect(repo.countBySegmentFilter).toHaveBeenCalledTimes(9);
+      // Nine distinct filters used to open nine simultaneous connections.
+      expect(peakInFlight).toBeLessThanOrEqual(4);
+    });
+
+    it('returns an empty list without querying counts', async () => {
+      repo.findSegments.mockResolvedValue([]);
+
+      const result = await service.listSegments(BUSINESS_ID);
+
+      expect(result).toEqual([]);
+      expect(repo.countBySegmentFilter).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getSegment', () => {
     it('throws 404 when the segment does not exist', async () => {
       repo.findSegmentById.mockResolvedValue(null);
       await expect(service.getSegment(BUSINESS_ID, SEGMENT_ID)).rejects.toThrow(NotFoundException);
+    });
+
+    it('still counts a single segment on the by-id path', async () => {
+      repo.findSegmentById.mockResolvedValue(makeSegment());
+      repo.countBySegmentFilter.mockResolvedValue(3);
+
+      const result = await service.getSegment(BUSINESS_ID, SEGMENT_ID);
+
+      expect(result.memberCount).toBe(3);
+      expect(repo.countBySegmentFilter).toHaveBeenCalledWith(BUSINESS_ID, { minLtv: 1000 });
     });
   });
 

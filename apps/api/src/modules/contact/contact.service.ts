@@ -19,6 +19,17 @@ import {
 const MAX_TAG_LENGTH = 50;
 
 /**
+ * How many segment member-counts to evaluate at once in `listSegments`.
+ *
+ * Segments are dynamic, so a count is a live `clients` scan per stored filter —
+ * there is no membership table to join and no way to fold arbitrary predicates
+ * into one query. Fanning every segment out at once let a tenant with dozens of
+ * segments open dozens of simultaneous connections on a pool that is shared
+ * platform-wide. Four at a time keeps the endpoint fast without that spike.
+ */
+const SEGMENT_COUNT_CONCURRENCY = 4;
+
+/**
  * ContactService — contact management and segmentation.
  *
  * "Contacts" are the existing `clients` table; this module adds tagging and
@@ -153,7 +164,34 @@ export class ContactService {
 
   async listSegments(businessId: string): Promise<SegmentResponseDto[]> {
     const segments = await this.repository.findSegments(businessId);
-    return Promise.all(segments.map((s) => this.toSegmentDto(businessId, s)));
+
+    // Segments that store the same filter resolve to the same count, so they
+    // share one query; the rest are evaluated in bounded batches.
+    const countByFilter = new Map<string, number>();
+    const filterByKey = new Map(segments.map((s) => [this.filterKey(s), s.filter]));
+    const pending = [...filterByKey.keys()];
+
+    for (let i = 0; i < pending.length; i += SEGMENT_COUNT_CONCURRENCY) {
+      const batch = pending.slice(i, i + SEGMENT_COUNT_CONCURRENCY);
+      const counts = await Promise.all(
+        batch.map((key) =>
+          this.repository.countBySegmentFilter(
+            businessId,
+            filterByKey.get(key) as unknown as SegmentFilter,
+          ),
+        ),
+      );
+      batch.forEach((key, idx) => countByFilter.set(key, counts[idx] as number));
+    }
+
+    return segments.map((s) =>
+      this.toSegmentDtoWithCount(s, countByFilter.get(this.filterKey(s)) ?? 0),
+    );
+  }
+
+  /** Stable identity for a stored segment filter, used to collapse duplicates. */
+  private filterKey(segment: segments): string {
+    return JSON.stringify(segment.filter ?? null);
   }
 
   async getSegment(businessId: string, id: string): Promise<SegmentResponseDto> {
@@ -235,13 +273,20 @@ export class ContactService {
   }
 
   private async toSegmentDto(businessId: string, s: segments): Promise<SegmentResponseDto> {
-    const filter = s.filter as unknown as SegmentFilterDto;
-    const memberCount = await this.repository.countBySegmentFilter(businessId, filter as SegmentFilter);
+    const memberCount = await this.repository.countBySegmentFilter(
+      businessId,
+      s.filter as unknown as SegmentFilter,
+    );
+    return this.toSegmentDtoWithCount(s, memberCount);
+  }
+
+  /** Shape a segment row once its member count is already known. */
+  private toSegmentDtoWithCount(s: segments, memberCount: number): SegmentResponseDto {
     return {
       id: s.id,
       name: s.name,
       description: s.description,
-      filter,
+      filter: s.filter as unknown as SegmentFilterDto,
       isActive: s.is_active,
       memberCount,
       createdAt: s.created_at.toISOString(),
