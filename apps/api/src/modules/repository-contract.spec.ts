@@ -195,6 +195,25 @@ interface PrismaCall {
   model: string;
   op: string;
   args: Record<string, unknown>;
+  /** SQL text, for `$queryRaw`-family calls only. Parameters appear as `?`. */
+  sql?: string;
+}
+
+/**
+ * The SQL text of a `$queryRaw`-family call, with parameters collapsed to `?`.
+ *
+ * Two call shapes reach here. The tagged-template form (`$queryRaw`...``) is
+ * invoked with a TemplateStringsArray and the interpolated values; joining the
+ * static fragments yields the statement with each bind hole marked. The
+ * `...Unsafe` form takes the statement as a plain string. Anything else — a
+ * `Prisma.sql` fragment object, say — has no readable text, so it yields the
+ * empty string and is skipped by the callers rather than guessed at.
+ */
+function rawSql(args: unknown[]): string {
+  const [first] = args;
+  if (Array.isArray(first)) return first.join('?');
+  if (typeof first === 'string') return first;
+  return '';
 }
 
 /** Stands in for a `Prisma.Decimal` column on a read row. */
@@ -262,8 +281,18 @@ function makeRecordingPrisma(): { prisma: PrismaService; calls: PrismaCall[] } {
               ? (arg as (tx: unknown) => unknown)(prisma)
               : Promise.all((arg as unknown[]) ?? []);
         }
-        if (model === '$queryRaw' || model === '$queryRawUnsafe') return () => Promise.resolve([]);
-        if (model === '$executeRaw' || model === '$executeRawUnsafe') return () => Promise.resolve(0);
+        if (model === '$queryRaw' || model === '$queryRawUnsafe') {
+          return (...a: unknown[]) => {
+            calls.push({ model, op: 'raw', args: {}, sql: rawSql(a) });
+            return Promise.resolve([]);
+          };
+        }
+        if (model === '$executeRaw' || model === '$executeRawUnsafe') {
+          return (...a: unknown[]) => {
+            calls.push({ model, op: 'raw', args: {}, sql: rawSql(a) });
+            return Promise.resolve(0);
+          };
+        }
         return modelProxy(model);
       },
     },
@@ -479,6 +508,22 @@ const METHOD_CASES = REPOSITORIES.flatMap((repo) =>
   repo.methods.map((method) => [`${repo.name}.${method}`, repo, method] as const),
 );
 
+/**
+ * Whether a raw statement reads or writes any table carrying `business_id`.
+ *
+ * Table names are taken from the positions SQL puts them in — after FROM,
+ * JOIN, UPDATE, INSERT INTO, DELETE FROM — and matched against the tenant
+ * models parsed from the schema. Names that are not tenant tables (a CTE, a
+ * `jsonb_array_elements` call, `businesses` itself) simply do not match, so
+ * statements touching only those are not asserted against.
+ */
+function rawTouchesTenantTable(sql: string): boolean {
+  const names = [...sql.matchAll(/\b(?:from|join|update|into)\s+"?(\w+)"?/gi)].map((m) =>
+    (m[1] as string).toLowerCase(),
+  );
+  return names.some((n) => TENANT_MODELS.has(n));
+}
+
 /** Reads the tenant predicate out of a `where` clause, including `AND` arrays. */
 function whereCarriesTenant(where: unknown, depth = 0): boolean {
   if (!where || typeof where !== 'object' || depth > 5) return false;
@@ -680,6 +725,61 @@ describe('Every repository query on a tenant table is tenant-scoped', () => {
     for (const match of tenantValues) {
       expect(match).toContain(BUSINESS_ID);
     }
+  });
+
+  /**
+   * Raw SQL is checked too, and by a deliberately blunt rule.
+   *
+   * The model proxy above sees `prisma.conversations.findMany(...)`; it cannot
+   * see `prisma.$queryRaw`, which reaches Postgres as opaque text. Every raw
+   * statement in the repositories is correctly scoped today, but nothing was
+   * asserting it, so the tenant ratchet had a hole exactly the width of the
+   * hand-written SQL — the queries least likely to get it right.
+   *
+   * The rule: a statement naming a tenant table must mention `business_id`.
+   * That is weaker than the structured check, which knows *which* WHERE the
+   * predicate sits in. It has to be — several of these scope a joined table
+   * transitively (`FROM clients c JOIN channel_contacts cc ON cc.client_id =
+   * c.id WHERE c.business_id = ?`), which is correct and which a per-table
+   * rule would reject. Blunt and honest beats precise and wrong: this catches
+   * the statement that forgot the tenant entirely, which is the mistake that
+   * actually leaks rows.
+   */
+  it.each(METHOD_CASES)('%s scopes the raw SQL it runs', async (label, repo, method) => {
+    const { calls } = await runMethod(repo, method);
+
+    const unscoped = calls
+      .filter((c) => c.op === 'raw' && c.sql)
+      .filter((c) => rawTouchesTenantTable(c.sql as string))
+      .filter((c) => !/\bbusiness_id\b/i.test(c.sql as string))
+      .map((c) => (c.sql as string).replace(/\s+/g, ' ').trim().slice(0, 120));
+
+    // `listBusinessIdsWithLeads` is the one raw statement that spans tenants on
+    // purpose; it is in GLOBAL_SWEEPS with the reason written out.
+    if (unscoped.length > 0 && isExemptFromTenantScoping(label)) return;
+
+    expect(unscoped).toEqual([]);
+  });
+
+  /**
+   * The raw check above passes trivially if no raw statement is ever recorded —
+   * which is exactly what happened before this change, when the double returned
+   * `[]` for `$queryRaw` without noting the call. This asserts the tap is live:
+   * the repositories run raw SQL against tenant tables, and the harness sees it.
+   */
+  it('actually observes the raw SQL the repositories run', async () => {
+    const seen: string[] = [];
+
+    for (const [label, repo, method] of METHOD_CASES) {
+      const { calls } = await runMethod(repo, method);
+      if (calls.some((c) => c.op === 'raw' && c.sql && rawTouchesTenantTable(c.sql))) {
+        seen.push(label);
+      }
+    }
+
+    // eslint-disable-next-line no-console
+    console.log(`${seen.length} repository methods run raw SQL against a tenant table`);
+    expect(seen.length).toBeGreaterThanOrEqual(15);
   });
 });
 
