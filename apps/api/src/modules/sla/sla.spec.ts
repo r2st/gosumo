@@ -358,6 +358,87 @@ describe('SlaService', () => {
       const result = await service.sweepOverdueBreaches(BUSINESS_ID);
       expect(result.swept).toBe(0);
     });
+
+    it('looks each policy up once per sweep, not once per breach', async () => {
+      // Five trackers sharing two policies used to cost five identical
+      // findPolicyById round trips; the per-sweep cache makes it two.
+      const overdue = [
+        makeTracker({ id: 't1', policy_id: 'policy-a' }),
+        makeTracker({ id: 't2', policy_id: 'policy-a' }),
+        makeTracker({ id: 't3', policy_id: 'policy-b' }),
+        makeTracker({ id: 't4', policy_id: 'policy-a' }),
+        makeTracker({ id: 't5', policy_id: 'policy-b' }),
+      ];
+      repo.findOverdueUnmetTrackers.mockResolvedValue(overdue);
+      repo.markBreachedOnly.mockImplementation(async (_b: string, id: string) => {
+        const source = overdue.find((t) => t.id === id)!;
+        return makeTracker({ id, policy_id: source.policy_id, breached: true });
+      });
+      repo.findPolicyById.mockImplementation(async (_b: string, id: string) =>
+        makePolicy({ id }),
+      );
+
+      const result = await service.sweepOverdueBreaches(BUSINESS_ID);
+
+      expect(result.swept).toBe(5);
+      expect(repo.findPolicyById).toHaveBeenCalledTimes(2);
+      expect(repo.findPolicyById).toHaveBeenCalledWith(BUSINESS_ID, 'policy-a');
+      expect(repo.findPolicyById).toHaveBeenCalledWith(BUSINESS_ID, 'policy-b');
+      // Every breach still escalates — the cache changes query count, not behaviour.
+      expect(repo.markEscalated).toHaveBeenCalledTimes(5);
+      expect(
+        emitter.emit.mock.calls.filter((c: unknown[]) => c[0] === 'sla.escalated'),
+      ).toHaveLength(5);
+    });
+
+    it('caches a missing policy so a deleted one is not refetched per breach', async () => {
+      const overdue = [
+        makeTracker({ id: 't1', policy_id: 'gone' }),
+        makeTracker({ id: 't2', policy_id: 'gone' }),
+        makeTracker({ id: 't3', policy_id: 'gone' }),
+      ];
+      repo.findOverdueUnmetTrackers.mockResolvedValue(overdue);
+      repo.markBreachedOnly.mockImplementation(async (_b: string, id: string) =>
+        makeTracker({ id, policy_id: 'gone', breached: true }),
+      );
+      repo.findPolicyById.mockResolvedValue(null);
+
+      const result = await service.sweepOverdueBreaches(BUSINESS_ID);
+
+      expect(result.swept).toBe(3);
+      expect(repo.findPolicyById).toHaveBeenCalledTimes(1);
+      // No policy ⇒ no escalation actions to run.
+      expect(repo.markEscalated).not.toHaveBeenCalled();
+    });
+
+    it('does not cache across separate sweeps, so a policy edit is picked up', async () => {
+      repo.findOverdueUnmetTrackers.mockResolvedValue([makeTracker({ id: 't1' })]);
+      repo.markBreachedOnly.mockImplementation(async (_b: string, id: string) =>
+        makeTracker({ id, breached: true }),
+      );
+      repo.findPolicyById.mockResolvedValue(makePolicy());
+
+      await service.sweepOverdueBreaches(BUSINESS_ID);
+      await service.sweepOverdueBreaches(BUSINESS_ID);
+
+      expect(repo.findPolicyById).toHaveBeenCalledTimes(2);
+    });
+
+    it('still queries the policy on the event-driven single-breach path', async () => {
+      repo.findBreachTracker.mockResolvedValue(
+        makeTracker({ due_at: new Date('2020-01-01T00:00:00Z') }),
+      );
+      repo.markMet.mockResolvedValue(makeTracker({ breached: true }));
+      repo.findPolicyById.mockResolvedValue(makePolicy());
+
+      await service.handleMessageSent({
+        businessId: BUSINESS_ID,
+        conversationId: CONVERSATION_ID,
+      } as never);
+
+      expect(repo.findPolicyById).toHaveBeenCalledTimes(1);
+      expect(repo.markEscalated).toHaveBeenCalledTimes(1);
+    });
   });
 
   // ───────────────────────────────────────────

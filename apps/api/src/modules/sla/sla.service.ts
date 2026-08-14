@@ -222,15 +222,24 @@ export class SlaService {
     const now = new Date();
     const overdue = await this.repository.findOverdueUnmetTrackers(businessId, now, SWEEP_BATCH_SIZE);
 
+    // A sweep handles up to SWEEP_BATCH_SIZE trackers that typically share a
+    // handful of policies between them. Without this cache, escalation refetches
+    // the same few policies once per breach — up to 200 identical round trips.
+    const policyCache = new Map<string, sla_policies | null>();
+
     for (const tracker of overdue) {
       const updated = await this.repository.markBreachedOnly(businessId, tracker.id, now);
-      await this.onBreachDetected(businessId, updated);
+      await this.onBreachDetected(businessId, updated, policyCache);
     }
 
     return { swept: overdue.length };
   }
 
-  private async onBreachDetected(businessId: string, breach: sla_breaches): Promise<void> {
+  private async onBreachDetected(
+    businessId: string,
+    breach: sla_breaches,
+    policyCache?: Map<string, sla_policies | null>,
+  ): Promise<void> {
     const actualMinutes = Math.round(
       breach.target_minutes + Math.max(0, (Date.now() - breach.due_at.getTime()) / 60_000),
     );
@@ -249,11 +258,15 @@ export class SlaService {
     };
     this.eventEmitter.emit('sla.breached', event);
 
-    await this.escalate(businessId, breach);
+    await this.escalate(businessId, breach, policyCache);
   }
 
-  private async escalate(businessId: string, breach: sla_breaches): Promise<void> {
-    const policy = await this.repository.findPolicyById(businessId, breach.policy_id);
+  private async escalate(
+    businessId: string,
+    breach: sla_breaches,
+    policyCache?: Map<string, sla_policies | null>,
+  ): Promise<void> {
+    const policy = await this.findPolicyCached(businessId, breach.policy_id, policyCache);
     const actions = (policy?.escalation_actions as unknown as SlaEscalationAction[] | undefined) ?? [];
     if (!actions.length) return;
 
@@ -274,6 +287,30 @@ export class SlaService {
     }
 
     await this.repository.markEscalated(businessId, breach.id, new Date());
+  }
+
+  /**
+   * Look a policy up, reusing a caller-supplied cache when one is in play.
+   *
+   * The cache is per-sweep, never a field — a long-lived cache would serve a
+   * stale `escalation_actions` after a policy edit. Misses are cached too, so a
+   * deleted policy is not re-queried for every breach that still references it.
+   */
+  private async findPolicyCached(
+    businessId: string,
+    policyId: string,
+    cache?: Map<string, sla_policies | null>,
+  ): Promise<sla_policies | null> {
+    if (!cache) {
+      return this.repository.findPolicyById(businessId, policyId);
+    }
+    const cached = cache.get(policyId);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const policy = await this.repository.findPolicyById(businessId, policyId);
+    cache.set(policyId, policy);
+    return policy;
   }
 
   // ───────────────────────────────────────────────────────────────────
