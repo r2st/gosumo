@@ -12,6 +12,7 @@
  */
 
 import { Test, TestingModule } from '@nestjs/testing';
+import { Logger } from '@nestjs/common';
 
 import {
   RealtyVisitsRepository,
@@ -19,6 +20,7 @@ import {
   TERMINAL_STATUSES,
 } from './realty-sitevisits.repository';
 import type { VisitListFilters } from './realty-sitevisits.repository';
+import { CALENDAR_MAX_VISITS } from './realty-sitevisits.constants';
 import { PrismaService } from '../../common/services/prisma.service';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
@@ -323,7 +325,7 @@ describe('RealtyVisitsRepository', () => {
     });
   });
 
-  it('lists a calendar range inclusive of both ends', async () => {
+  it('lists a calendar range inclusive of both ends, under a row ceiling', async () => {
     const from = new Date('2026-08-01T00:00:00Z');
     const to = new Date('2026-08-07T00:00:00Z');
 
@@ -336,6 +338,32 @@ describe('RealtyVisitsRepository', () => {
         scheduled_at: { gte: from, lte: to },
       },
       orderBy: [{ scheduled_at: 'asc' }],
+      take: CALENDAR_MAX_VISITS,
     });
+  });
+
+  it('warns when the calendar ceiling truncated the range', async () => {
+    // A dense tenant can hit the cap inside a span the service considers legal.
+    // Truncating is acceptable; truncating silently is not — the operator has
+    // no other signal that the calendar they are looking at is incomplete.
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    prisma.realty_site_visits.findMany.mockResolvedValueOnce(
+      Array.from({ length: CALENDAR_MAX_VISITS }, () => ({})) as never,
+    );
+
+    await repository.listInRange(BUSINESS_ID, new Date('2026-01-01Z'), new Date('2026-06-01Z'));
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('ceiling'));
+    warn.mockRestore();
+  });
+
+  it('stays quiet when the range fits under the ceiling', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    prisma.realty_site_visits.findMany.mockResolvedValueOnce([{}, {}] as never);
+
+    await repository.listInRange(BUSINESS_ID, new Date('2026-01-01Z'), new Date('2026-06-01Z'));
+
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });

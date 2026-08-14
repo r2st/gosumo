@@ -304,6 +304,36 @@ describe('RealtyVisitsService — retrieval, stats and degradation', () => {
         BadRequestException,
       );
     });
+
+    /**
+     * `from`/`to` are caller-supplied and were passed straight through, so an
+     * epoch-to-far-future range read the tenant's entire visit history into
+     * memory and mapped every row to a DTO. The span cap is what stops one
+     * query string from becoming an unbounded response.
+     */
+    it('refuses a range wider than the calendar cap without touching the database', async () => {
+      await expect(
+        service.getCalendar(BUSINESS_ID, '1970-01-01T00:00:00.000Z', '2999-01-01T00:00:00.000Z'),
+      ).rejects.toThrow(/must not exceed 366 days/);
+      expect(repository.listInRange).not.toHaveBeenCalled();
+    });
+
+    it('serves a range exactly at the cap', async () => {
+      // 366 days inclusive of a leap year — the widest legal calendar view.
+      repository.listInRange.mockResolvedValue([makeVisit()] as never);
+
+      await expect(
+        service.getCalendar(BUSINESS_ID, '2026-01-01T00:00:00.000Z', '2027-01-02T00:00:00.000Z'),
+      ).resolves.toHaveLength(1);
+      expect(repository.listInRange).toHaveBeenCalled();
+    });
+
+    it('refuses a range one day past the cap', async () => {
+      await expect(
+        service.getCalendar(BUSINESS_ID, '2026-01-01T00:00:00.000Z', '2027-01-03T00:00:00.000Z'),
+      ).rejects.toThrow(BadRequestException);
+      expect(repository.listInRange).not.toHaveBeenCalled();
+    });
   });
 
   // ── Soft delete ──────────────────────────────

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { realty_site_visits } from '@prisma/client';
 import { PrismaService } from '../../common/services/prisma.service';
+import { CALENDAR_MAX_VISITS } from './realty-sitevisits.constants';
 
 // ─────────────────────────────────────────────
 // Types
@@ -163,20 +164,36 @@ export class RealtyVisitsRepository {
     return out;
   }
 
-  /** All active + non-deleted visits in a time range — powers the calendar view. */
+  /**
+   * All active + non-deleted visits in a time range — powers the calendar view.
+   *
+   * Capped at {@link CALENDAR_MAX_VISITS}. The service already refuses spans
+   * wider than a year, so this only bites on a tenant dense enough to exceed
+   * the ceiling inside a legal range; it exists so no single request can read
+   * an unbounded number of rows into memory.
+   */
   async listInRange(
     businessId: string,
     from: Date,
     to: Date,
   ): Promise<realty_site_visits[]> {
-    return this.prisma.realty_site_visits.findMany({
+    const visits = await this.prisma.realty_site_visits.findMany({
       where: {
         business_id: businessId,
         deleted_at: null,
         scheduled_at: { gte: from, lte: to },
       },
       orderBy: [{ scheduled_at: 'asc' }],
+      take: CALENDAR_MAX_VISITS,
     });
+
+    if (visits.length === CALENDAR_MAX_VISITS) {
+      this.logger.warn(
+        `Calendar range ${from.toISOString()}..${to.toISOString()} for business ${businessId} hit ` +
+          `the ${CALENDAR_MAX_VISITS}-row ceiling — the response is truncated. Narrow the range.`,
+      );
+    }
+    return visits;
   }
 
   private buildWhere(

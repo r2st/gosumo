@@ -33,6 +33,7 @@ import {
   REALTY_VISIT_JOBS,
   VISIT_REMINDER_OFFSETS_MINUTES,
   DEFAULT_VISIT_DURATION_MINUTES,
+  CALENDAR_MAX_RANGE_DAYS,
   VisitReminderJobData,
 } from './realty-sitevisits.constants';
 import {
@@ -44,6 +45,7 @@ import {
 } from './dto';
 
 const IST_TIMEZONE = 'Asia/Kolkata';
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 // ─────────────────────────────────────────────
 // Response DTO
@@ -213,12 +215,27 @@ export class RealtyVisitsService {
     return { total, completed: counts['COMPLETED'] ?? 0, noShow: counts['NO_SHOW'] ?? 0 };
   }
 
-  /** Visits within a date range for the calendar view. */
+  /**
+   * Visits within a date range for the calendar view.
+   *
+   * The span is capped: `from`/`to` come straight from the query string, and
+   * without a ceiling `from=1970-01-01&to=2999-01-01` read every visit the
+   * tenant has ever booked into memory and mapped all of it to DTOs — an
+   * unbounded response any authenticated user could ask for. A year covers
+   * every real calendar view; wider queries belong on the paginated list.
+   */
   async getCalendar(businessId: string, from: string, to: string): Promise<SiteVisitDto[]> {
     const fromDate = new Date(from);
     const toDate = new Date(to);
     if (toDate <= fromDate) {
       throw new BadRequestException('`to` must be after `from`');
+    }
+    const spanDays = (toDate.getTime() - fromDate.getTime()) / MS_PER_DAY;
+    if (spanDays > CALENDAR_MAX_RANGE_DAYS) {
+      throw new BadRequestException(
+        `Calendar range must not exceed ${CALENDAR_MAX_RANGE_DAYS} days (requested ${Math.ceil(spanDays)}). ` +
+          'Use the paginated visit list for wider queries.',
+      );
     }
     const visits = await this.repository.listInRange(businessId, fromDate, toDate);
     return visits.map((v) => this.mapResponse(v));

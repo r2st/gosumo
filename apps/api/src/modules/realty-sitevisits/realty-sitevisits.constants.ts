@@ -20,6 +20,22 @@ export const VISIT_REMINDER_OFFSETS_MINUTES = [1440, 120];
 /** Default visit duration when the caller does not specify one. */
 export const DEFAULT_VISIT_DURATION_MINUTES = 45;
 
+/**
+ * Widest span the calendar endpoint will serve in one request.
+ *
+ * `GET calendar` takes a caller-supplied `from`/`to` and returned every row in
+ * between with no ceiling, so `from=1970-01-01&to=2999-01-01` read the tenant's
+ * entire visit history into memory and mapped all of it to DTOs. A year covers
+ * any real calendar view; beyond that the caller wants the paginated list.
+ */
+export const CALENDAR_MAX_RANGE_DAYS = 366;
+
+/**
+ * Hard row ceiling on a single calendar range, as a backstop for a dense tenant
+ * inside an otherwise legal span. Exceeding it is logged, not silent.
+ */
+export const CALENDAR_MAX_VISITS = 5000;
+
 export interface VisitReminderJobData {
   businessId: string;
   visitId: string;
