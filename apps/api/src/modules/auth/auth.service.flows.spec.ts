@@ -214,6 +214,24 @@ describe('AuthService — refresh, reset, throttling, sessions', () => {
       );
     });
 
+    it('gives every signed token its own jti', async () => {
+      jwt.verify.mockReturnValue(payload);
+      repo.findTeamMemberById.mockResolvedValue(buildTeamMember());
+
+      await service.refreshTokens('valid-refresh');
+      await service.refreshTokens('valid-refresh');
+
+      // Four signings (two pairs). Every claim except `jti` is identical across
+      // them, and `iat` is second-granular, so without a per-token id these can
+      // serialise to the same bytes — which is what broke rotation detection.
+      const ids = jwt.signAsync.mock.calls.map(
+        ([claims]: [JwtPayload]) => claims.jti,
+      );
+      expect(ids).toHaveLength(4);
+      expect(ids.every((id: unknown) => typeof id === 'string' && id.length > 0)).toBe(true);
+      expect(new Set(ids).size).toBe(4);
+    });
+
     it('rejects a token whose signature does not verify', async () => {
       jwt.verify.mockImplementation(() => {
         throw new Error('jwt malformed');

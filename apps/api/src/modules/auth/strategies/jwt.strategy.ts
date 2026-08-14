@@ -12,6 +12,20 @@ export interface JwtPayload {
   email: string;
   role: string;
   sessionId?: string;
+  /**
+   * Unique id for this individual token (RFC 7519 `jti`).
+   *
+   * Every other claim in this payload is stable across a refresh — `sessionId`
+   * deliberately so — which left `iat` as the only thing distinguishing a
+   * rotated token from the one it replaced. `iat` has one-second resolution, so
+   * a rotation that completed inside the same second re-signed a byte-identical
+   * refresh token, and the "has this token been rotated away?" check in
+   * `SessionService.verifyRefreshToken` compares hashes: an identical token
+   * hashes identically, so a replayed old token was indistinguishable from the
+   * legitimate new one and passed. `jti` makes each signing unique by
+   * construction, independent of the clock.
+   */
+  jti?: string;
   iat?: number;
   exp?: number;
 }

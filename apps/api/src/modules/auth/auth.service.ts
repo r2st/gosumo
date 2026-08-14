@@ -444,7 +444,7 @@ export class AuthService {
     teamMember: TeamMemberWithBusiness,
     sessionId: string,
   ): Promise<AuthTokensDto> {
-    const payload: JwtPayload = {
+    const payload: Omit<JwtPayload, 'jti'> = {
       sub: teamMember.id,
       businessId: teamMember.business_id,
       email: teamMember.email,
@@ -452,9 +452,27 @@ export class AuthService {
       sessionId,
     };
 
+    // A distinct `jti` per token. Without one, every claim that varies between a
+    // token and its replacement is derived from the clock: refresh tokens keep
+    // the same `sessionId` by design, and `iat`/`exp` are whole seconds. Two
+    // rotations landing in the same second therefore produced two byte-identical
+    // refresh tokens, which defeats rotation detection entirely — the old token
+    // still hashes to the stored value, so replaying it looks legitimate and the
+    // session is never revoked. Signing each token with its own UUID guarantees
+    // uniqueness without depending on how fast the caller refreshes.
+    //
+    // The access and refresh token get *different* ids as well, so a token can
+    // be identified as one or the other by id alone (needed by any future
+    // per-token denylist, which must not kill both halves of a pair at once).
     const [accessToken, refreshToken] = await Promise.all([
-      this.jwtService.signAsync(payload, { expiresIn: ACCESS_TOKEN_TTL }),
-      this.jwtService.signAsync(payload, { expiresIn: REFRESH_TOKEN_TTL }),
+      this.jwtService.signAsync(
+        { ...payload, jti: randomUUID() },
+        { expiresIn: ACCESS_TOKEN_TTL },
+      ),
+      this.jwtService.signAsync(
+        { ...payload, jti: randomUUID() },
+        { expiresIn: REFRESH_TOKEN_TTL },
+      ),
     ]);
 
     const tokens = new AuthTokensDto();
