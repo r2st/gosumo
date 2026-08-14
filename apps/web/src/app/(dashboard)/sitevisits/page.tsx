@@ -88,7 +88,7 @@ export default function SiteVisitsPage() {
         {visitsQ.isLoading ? (
           <LoadingState label="Loading visits…" />
         ) : visitsQ.isError ? (
-          <ErrorState message="Could not load site visits." onRetry={() => visitsQ.refetch()} />
+          <ErrorState message="Could not load site visits." error={visitsQ.error} onRetry={() => visitsQ.refetch()} />
         ) : visits.length === 0 ? (
           <EmptyState
             icon={CalendarCheck}

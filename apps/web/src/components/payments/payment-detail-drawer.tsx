@@ -102,7 +102,7 @@ export function PaymentDetailDrawer({
       {isLoading || !paymentId ? (
         <LoadingState label="Loading payment…" />
       ) : isError || !payment ? (
-        <ErrorState message={(error as Error)?.message} onRetry={() => refetch()} />
+        <ErrorState error={error} onRetry={() => refetch()} />
       ) : (
         <div className="space-y-6">
           <div className="flex items-center justify-between">

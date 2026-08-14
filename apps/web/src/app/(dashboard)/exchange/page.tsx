@@ -101,7 +101,7 @@ function SyndicationsTab() {
       {q.isLoading ? (
         <LoadingState label="Loading syndications…" />
       ) : q.isError ? (
-        <ErrorState message="Could not load syndications." onRetry={() => q.refetch()} />
+        <ErrorState message="Could not load syndications." error={q.error} onRetry={() => q.refetch()} />
       ) : syndications.length === 0 ? (
         <EmptyState
           icon={Handshake}
@@ -127,7 +127,7 @@ function ReliabilityTab() {
   return q.isLoading ? (
     <LoadingState label="Loading reliability scores…" />
   ) : q.isError ? (
-    <ErrorState message="Could not load reliability scores." onRetry={() => q.refetch()} />
+    <ErrorState message="Could not load reliability scores." error={q.error} onRetry={() => q.refetch()} />
   ) : scores.length === 0 ? (
     <EmptyState
       icon={Handshake}
@@ -147,7 +147,7 @@ function ResaleTab() {
   return q.isLoading ? (
     <LoadingState label="Loading resale listings…" />
   ) : q.isError ? (
-    <ErrorState message="Could not load resale listings." onRetry={() => q.refetch()} />
+    <ErrorState message="Could not load resale listings." error={q.error} onRetry={() => q.refetch()} />
   ) : listings.length === 0 ? (
     <EmptyState
       icon={Store}

@@ -19,6 +19,7 @@ import {
   useUpdateConversation,
 } from '@/hooks/use-queries';
 import { formatDayLabelIST, istDayKey } from '@/lib/format';
+import { friendlyError } from '@/lib/errors';
 import type { HitlTask, Message } from '@/lib/types';
 import { usePermissions } from '@/hooks/use-permissions';
 
@@ -76,7 +77,7 @@ export function ConversationThread({ conversationId }: { conversationId: string 
 
   if (convQ.isLoading) return <LoadingState label="Loading conversation…" />;
   if (convQ.isError || !conversation)
-    return <ErrorState message={(convQ.error as Error)?.message} onRetry={() => convQ.refetch()} />;
+    return <ErrorState error={convQ.error} onRetry={() => convQ.refetch()} />;
 
   const isResolved = conversation.status === 'RESOLVED';
 
@@ -221,7 +222,19 @@ export function ConversationThread({ conversationId }: { conversationId: string 
         </div>
       )}
       {send.isError && (
-        <p className="px-4 pb-2 text-xs text-danger">{(send.error as Error)?.message}</p>
+        // The reply text is only cleared on success, so it is still in the box
+        // and re-sending is just running the same handler again.
+        <div className="flex items-center gap-2 px-4 pb-2 text-xs text-danger">
+          <span>{friendlyError(send.error, 'Your reply didn’t send.')}</span>
+          <button
+            type="button"
+            onClick={onSend}
+            disabled={send.isPending || !reply.trim()}
+            className="rounded border border-current px-2 py-0.5 font-medium hover:bg-danger/10 disabled:opacity-50"
+          >
+            Retry send
+          </button>
+        </div>
       )}
     </div>
   );

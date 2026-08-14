@@ -117,7 +117,7 @@ export default function PaymentsPage() {
           {isLoading ? (
             <LoadingState />
           ) : isError ? (
-            <ErrorState message={(error as Error)?.message} onRetry={() => refetch()} />
+            <ErrorState error={error} onRetry={() => refetch()} />
           ) : isInvoices ? (
             invoices.length === 0 ? (
               <EmptyState

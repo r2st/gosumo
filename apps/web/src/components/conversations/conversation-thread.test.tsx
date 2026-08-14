@@ -11,6 +11,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import type { Conversation, HitlTask, Message } from '@/lib/types';
 import type { Role } from '@/lib/feature-types';
+import { ApiError } from '@/lib/api-client';
 
 let currentRole: Role | null = 'STAFF';
 
@@ -283,6 +284,40 @@ describe('ConversationThread — reply box', () => {
     render(<ConversationThread conversationId="c1" />);
 
     expect(screen.getByText('Outside the 24h WhatsApp window')).toBeInTheDocument();
+  });
+
+  it('translates a transport-level send failure instead of showing its raw text', () => {
+    state.send.isError = true;
+    state.send.error = new ApiError(0, 'NETWORK_ERROR', 'Unable to reach the GoSumo API. Is it running?');
+    render(<ConversationThread conversationId="c1" />);
+
+    expect(screen.getByText(/Check your internet connection/)).toBeInTheDocument();
+    expect(screen.queryByText(/Is it running/)).not.toBeInTheDocument();
+  });
+
+  it('offers a retry that re-sends the reply still sitting in the box', () => {
+    state.send.isError = true;
+    state.send.error = new Error('Gateway rejected the message');
+    render(<ConversationThread conversationId="c1" />);
+
+    const box = screen.getByPlaceholderText(/Type a reply/);
+    fireEvent.change(box, { target: { value: 'important reply' } });
+    fireEvent.click(screen.getByRole('button', { name: /retry send/i }));
+
+    expect(state.send.mutate).toHaveBeenCalledWith('important reply', expect.anything());
+  });
+
+  it('disables the retry when the box is empty, so it cannot send a blank message', () => {
+    state.send.isError = true;
+    state.send.error = new Error('Gateway rejected the message');
+    render(<ConversationThread conversationId="c1" />);
+
+    expect(screen.getByRole('button', { name: /retry send/i })).toBeDisabled();
+  });
+
+  it('offers no retry control while the send is succeeding', () => {
+    render(<ConversationThread conversationId="c1" />);
+    expect(screen.queryByRole('button', { name: /retry send/i })).not.toBeInTheDocument();
   });
 
   it('fills the box from a quick reply', () => {

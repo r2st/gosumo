@@ -30,7 +30,7 @@ export default function InventoryDetailPage() {
   const params = useParams<{ projectId: string }>();
   const projectId = params?.projectId ?? null;
   const router = useRouter();
-  const { data: project, isLoading, isError, refetch } = useProject(projectId);
+  const { data: project, isLoading, isError, error, refetch } = useProject(projectId);
 
   return (
     <div className="flex h-full flex-col">
@@ -52,7 +52,7 @@ export default function InventoryDetailPage() {
         {isLoading ? (
           <LoadingState label="Loading project…" />
         ) : isError ? (
-          <ErrorState message="Could not load this project." onRetry={() => refetch()} />
+          <ErrorState message="Could not load this project." error={error} onRetry={() => refetch()} />
         ) : !project ? (
           <EmptyState
             icon={Building2}
@@ -106,7 +106,7 @@ function ProjectDetail({ project, projectId }: { project: RealtyProject; project
           {unitsQ.isLoading ? (
             <LoadingState label="Loading units…" />
           ) : unitsQ.isError ? (
-            <ErrorState message="Could not load units." onRetry={() => unitsQ.refetch()} />
+            <ErrorState message="Could not load units." error={unitsQ.error} onRetry={() => unitsQ.refetch()} />
           ) : (
             <InventoryUnitsTable units={units} />
           )}
@@ -129,7 +129,7 @@ function ProjectDetail({ project, projectId }: { project: RealtyProject; project
               {assetsQ.isLoading ? (
                 <LoadingState label="Loading assets…" />
               ) : assetsQ.isError ? (
-                <ErrorState message="Could not load assets." onRetry={() => assetsQ.refetch()} />
+                <ErrorState message="Could not load assets." error={assetsQ.error} onRetry={() => assetsQ.refetch()} />
               ) : (
                 <InventoryAssets assets={assetsQ.data ?? []} />
               )}

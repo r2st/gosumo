@@ -124,7 +124,7 @@ export default function CatalogPage() {
         {isLoading ? (
           <LoadingState />
         ) : isError ? (
-          <ErrorState message={(error as Error)?.message} onRetry={() => refetch()} />
+          <ErrorState error={error} onRetry={() => refetch()} />
         ) : !data || data.data.length === 0 ? (
           <EmptyState
             icon={Package}

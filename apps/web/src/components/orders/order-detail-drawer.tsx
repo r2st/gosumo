@@ -69,7 +69,7 @@ export function OrderDetailDrawer({ orderId, onClose }: { orderId: string | null
       {isLoading || !orderId ? (
         <LoadingState label="Loading order…" />
       ) : isError || !order ? (
-        <ErrorState message={(error as Error)?.message} onRetry={() => refetch()} />
+        <ErrorState error={error} onRetry={() => refetch()} />
       ) : (
         <div className="space-y-6">
           <div className="flex items-center justify-between">

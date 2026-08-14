@@ -20,7 +20,7 @@ function confidenceTone(confidence: number): BadgeTone {
 }
 
 export default function ApprovalsPage() {
-  const { data, isLoading, isError, refetch } = useApprovals({ status: 'PENDING' });
+  const { data, isLoading, isError, error, refetch } = useApprovals({ status: 'PENDING' });
 
   return (
     <div className="flex h-full flex-col">
@@ -32,7 +32,7 @@ export default function ApprovalsPage() {
         {isLoading ? (
           <LoadingState label="Loading approval queue…" />
         ) : isError ? (
-          <ErrorState message="Could not load approvals." onRetry={() => refetch()} />
+          <ErrorState message="Could not load approvals." error={error} onRetry={() => refetch()} />
         ) : !data || data.length === 0 ? (
           <EmptyState
             icon={CheckSquare}

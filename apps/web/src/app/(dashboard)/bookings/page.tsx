@@ -100,7 +100,7 @@ export default function BookingsPage() {
               <LoadingState />
             ) : listQ.isError ? (
               <ErrorState
-                message={(listQ.error as Error)?.message}
+                error={listQ.error}
                 onRetry={() => listQ.refetch()}
               />
             ) : !listQ.data || listQ.data.data.length === 0 ? (

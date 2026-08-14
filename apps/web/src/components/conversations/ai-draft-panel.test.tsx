@@ -11,6 +11,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { HitlTask } from '@/lib/types';
 import type { Role } from '@/lib/feature-types';
+import { ApiError } from '@/lib/api-client';
 
 let currentRole: Role | null = 'STAFF';
 
@@ -241,7 +242,28 @@ describe('AiDraftPanel — approve / edit / reject', () => {
     rejectState.error = null;
     render(<AiDraftPanel task={makeTask()} />);
 
-    expect(screen.getByText('Action failed.')).toBeInTheDocument();
+    expect(screen.getByText('That action didn’t go through. Please try again.')).toBeInTheDocument();
+  });
+
+  it('translates a transport-level failure rather than showing its raw text', () => {
+    rejectState.isError = true;
+    rejectState.error = new ApiError(
+      0,
+      'NETWORK_ERROR',
+      'Unable to reach the GoSumo API. Is it running?',
+    );
+    render(<AiDraftPanel task={makeTask()} />);
+
+    expect(screen.getByText(/Check your internet connection/)).toBeInTheDocument();
+    expect(screen.queryByText(/Is it running/)).not.toBeInTheDocument();
+  });
+
+  it('explains a permission failure as a permission failure', () => {
+    rejectState.isError = true;
+    rejectState.error = new ApiError(403, 'FORBIDDEN', 'Forbidden');
+    render(<AiDraftPanel task={makeTask()} />);
+
+    expect(screen.getByText(/don’t have permission/)).toBeInTheDocument();
   });
 });
 

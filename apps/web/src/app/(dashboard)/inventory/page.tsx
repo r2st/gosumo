@@ -21,7 +21,7 @@ export default function InventoryPage() {
         {projectsQ.isLoading ? (
           <LoadingState label="Loading inventory…" />
         ) : projectsQ.isError ? (
-          <ErrorState message="Could not load projects." onRetry={() => projectsQ.refetch()} />
+          <ErrorState message="Could not load projects." error={projectsQ.error} onRetry={() => projectsQ.refetch()} />
         ) : projects.length === 0 ? (
           <EmptyState
             icon={Building2}

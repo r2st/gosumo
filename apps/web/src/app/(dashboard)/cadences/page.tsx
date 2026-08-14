@@ -78,12 +78,12 @@ export default function CadencesPage() {
 }
 
 function CadenceList() {
-  const { data, isLoading, isError, refetch } = useCadences();
+  const { data, isLoading, isError, error, refetch } = useCadences();
   const toggle = useUpdateCadence();
   const { canWrite } = usePermissions();
 
   if (isLoading) return <LoadingState label="Loading cadences…" />;
-  if (isError) return <ErrorState message="Could not load cadences." onRetry={() => refetch()} />;
+  if (isError) return <ErrorState message="Could not load cadences." error={error} onRetry={() => refetch()} />;
   if (!data || data.length === 0) {
     return (
       <EmptyState
@@ -139,12 +139,12 @@ function CadenceList() {
 }
 
 function TemplateLibrary() {
-  const { data, isLoading, isError, refetch } = useTemplates();
+  const { data, isLoading, isError, error, refetch } = useTemplates();
   const setApproval = useSetTemplateApproval();
   const { canWrite } = usePermissions();
 
   if (isLoading) return <LoadingState label="Loading templates…" />;
-  if (isError) return <ErrorState message="Could not load templates." onRetry={() => refetch()} />;
+  if (isError) return <ErrorState message="Could not load templates." error={error} onRetry={() => refetch()} />;
   if (!data || data.length === 0) {
     return (
       <EmptyState

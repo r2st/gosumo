@@ -21,7 +21,7 @@ export default function LeadDetailPage() {
   const params = useParams<{ leadId: string }>();
   const leadId = params?.leadId ?? null;
   const router = useRouter();
-  const { data: lead, isLoading, isError, refetch } = useLead(leadId);
+  const { data: lead, isLoading, isError, error, refetch } = useLead(leadId);
 
   return (
     <div className="flex h-full flex-col">
@@ -43,7 +43,7 @@ export default function LeadDetailPage() {
         {isLoading ? (
           <LoadingState label="Loading lead…" />
         ) : isError ? (
-          <ErrorState message="Could not load this lead." onRetry={() => refetch()} />
+          <ErrorState message="Could not load this lead." error={error} onRetry={() => refetch()} />
         ) : !lead ? (
           <EmptyState
             icon={ClipboardList}

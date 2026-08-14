@@ -29,7 +29,7 @@ import {
 export default function SyndicationDetailPage() {
   const params = useParams<{ syndicationId: string }>();
   const id = params?.syndicationId ?? null;
-  const { data: s, isLoading, isError, refetch } = useSyndication(id);
+  const { data: s, isLoading, isError, error, refetch } = useSyndication(id);
 
   return (
     <div className="flex h-full flex-col">
@@ -50,7 +50,7 @@ export default function SyndicationDetailPage() {
         {isLoading ? (
           <LoadingState label="Loading syndication…" />
         ) : isError ? (
-          <ErrorState message="Could not load this syndication." onRetry={() => refetch()} />
+          <ErrorState message="Could not load this syndication." error={error} onRetry={() => refetch()} />
         ) : !s ? (
           <EmptyState icon={Handshake} title="Syndication not found" />
         ) : (

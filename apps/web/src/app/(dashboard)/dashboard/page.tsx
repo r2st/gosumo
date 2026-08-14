@@ -50,7 +50,7 @@ export default function DashboardPage() {
 
         {metricsQ.isError ? (
           <ErrorState
-            message={(metricsQ.error as Error)?.message}
+            error={metricsQ.error}
             onRetry={() => metricsQ.refetch()}
           />
         ) : (

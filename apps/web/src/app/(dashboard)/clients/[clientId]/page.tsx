@@ -42,7 +42,7 @@ export default function ClientDetailPage() {
 
   if (clientQ.isLoading) return <LoadingState label="Loading client…" className="min-h-[60vh]" />;
   if (clientQ.isError || !clientQ.data)
-    return <ErrorState message={(clientQ.error as Error)?.message} onRetry={() => clientQ.refetch()} className="min-h-[60vh]" />;
+    return <ErrorState error={clientQ.error} onRetry={() => clientQ.refetch()} className="min-h-[60vh]" />;
 
   const client = clientQ.data;
 

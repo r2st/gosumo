@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useApproveTask, useRejectTask } from '@/hooks/use-queries';
 import type { HitlTask } from '@/lib/types';
+import { friendlyError } from '@/lib/errors';
 import { cn } from '@/lib/utils';
 import { usePermissions } from '@/hooks/use-permissions';
 
@@ -67,7 +68,7 @@ export function AiDraftPanel({ task }: { task: HitlTask }) {
 
       {(approve.isError || reject.isError) && (
         <p className="mt-2 text-xs text-danger">
-          {((approve.error ?? reject.error) as Error)?.message ?? 'Action failed.'}
+          {friendlyError(approve.error ?? reject.error, 'That action didn’t go through. Please try again.')}
         </p>
       )}
 
