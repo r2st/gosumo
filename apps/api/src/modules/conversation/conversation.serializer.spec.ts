@@ -78,6 +78,24 @@ describe('previewFromMessage', () => {
       previewFromMessage(message({ text_content: null, type: 'IMAGE', content: { type: 'IMAGE', url: 'x' } })),
     ).toBe('[image]');
   });
+
+  it('falls back to the message type when content is null entirely', () => {
+    expect(previewFromMessage(message({ text_content: null, content: null, type: 'AUDIO' }))).toBe(
+      '[audio]',
+    );
+  });
+
+  it('ignores a non-string content.text rather than rendering it', () => {
+    // The content column is polymorphic JSONB — an adapter writing
+    // `{text: {body: '…'}}` must not surface "[object Object]" in the inbox.
+    expect(
+      previewFromMessage(message({ text_content: null, type: 'TEXT', content: { text: { body: 'x' } } })),
+    ).toBe('[text]');
+  });
+
+  it('returns undefined when there is nothing to derive a preview from', () => {
+    expect(previewFromMessage(message({ text_content: null, content: null, type: null }))).toBeUndefined();
+  });
 });
 
 describe('serializeConversationListItem', () => {
@@ -120,5 +138,64 @@ describe('serializeConversationListItem', () => {
     const dto = serializeConversationListItem(baseRow({ assigned_to: 'agent-7' }));
     expect(dto.aiHandling).toBe(false);
     expect(dto.assignedTo).toBe('agent-7');
+  });
+
+  it('names an anonymous client "Unknown" and omits their empty contact fields', () => {
+    // A client created from an inbound message carries only the channel
+    // handle; the inbox still has to render a row for them.
+    const dto = serializeConversationListItem(
+      baseRow({
+        client: { id: 'client-2', name: null, phone: null, email: null, avatar_url: null } as any,
+      }),
+    );
+
+    expect(dto.client).toEqual({
+      id: 'client-2',
+      name: 'Unknown',
+      phone: undefined,
+      email: undefined,
+      avatarUrl: undefined,
+      tags: [],
+    });
+  });
+
+  it('omits the client entirely when the conversation has none', () => {
+    expect(serializeConversationListItem(baseRow({ client: null })).client).toBeUndefined();
+  });
+
+  it('substitutes empty collections for null tags and metadata', () => {
+    // Both columns are nullable; the dashboard maps over them without a guard.
+    const dto = serializeConversationListItem(
+      baseRow({ tags: null, metadata: null } as unknown as Partial<ConversationListRow>),
+    );
+
+    expect(dto.tags).toEqual([]);
+    expect(dto.metadata).toEqual({});
+  });
+
+  it('leaves the optional timestamps and text fields undefined when unset', () => {
+    const dto = serializeConversationListItem(
+      baseRow({ last_message_at: null, resolved_at: null, subject: null, external_thread_id: null }),
+    );
+
+    expect(dto.lastMessageAt).toBeUndefined();
+    expect(dto.resolvedAt).toBeUndefined();
+    expect(dto.subject).toBeUndefined();
+    expect(dto.externalThreadId).toBeUndefined();
+  });
+
+  it('renders the timestamps of a resolved conversation as ISO strings', () => {
+    const dto = serializeConversationListItem(
+      baseRow({
+        subject: 'Refund request',
+        external_thread_id: 'wamid.X',
+        resolved_at: new Date('2026-06-28T09:30:00.000Z'),
+      }),
+    );
+
+    expect(dto.resolvedAt).toBe('2026-06-28T09:30:00.000Z');
+    expect(dto.createdAt).toBe('2026-06-27T10:00:00.000Z');
+    expect(dto.subject).toBe('Refund request');
+    expect(dto.externalThreadId).toBe('wamid.X');
   });
 });
