@@ -289,7 +289,7 @@ describe('cancel prompt', () => {
   });
 
   it('hides the refund toggle when nothing was ever paid', () => {
-    openCancel(order({ status: 'DRAFT', paymentId: null }));
+    openCancel(order({ status: 'DRAFT', paymentId: undefined }));
     expect(screen.queryByText(/refund payment/i)).toBeNull();
   });
 
