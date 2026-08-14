@@ -156,4 +156,68 @@ describe('RealtyIvrService', () => {
     expect(leads.ingestLead).not.toHaveBeenCalled();
     expect(channel.sendMessage).not.toHaveBeenCalled();
   });
+
+  /**
+   * A greeting that does not go out must not lose the lead.
+   *
+   * The capture and the greeting are two independent things that can fail
+   * apart: a missed call is a real buyer whether or not WhatsApp accepted the
+   * outbound message. Only the "no WhatsApp account" arm of that was covered;
+   * these are the two ways a send that was actually attempted can fail.
+   */
+  describe('a greeting that fails to send', () => {
+    it('keeps the captured lead when the adapter reports failure', async () => {
+      channel.sendMessage.mockResolvedValue({ success: false, error: 'recipient not on WhatsApp' });
+      const call = parseIvrCallback({ phone: '9876543210' })!;
+
+      const result = await service.processIvrCallback(BUSINESS_ID, call);
+
+      expect(leads.ingestLead).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({
+        leadId: 'lead_1',
+        merged: false,
+        // Reported honestly: the lead is in, the greeting is not.
+        whatsappTriggered: false,
+        // The send was attempted, so this is a failure and not a de-dup.
+        deduped: false,
+      });
+    });
+
+    it('tolerates an adapter that reports failure without saying why', async () => {
+      channel.sendMessage.mockResolvedValue({ success: false });
+      const call = parseIvrCallback({ phone: '9876543210' })!;
+
+      await expect(service.processIvrCallback(BUSINESS_ID, call)).resolves.toMatchObject({
+        leadId: 'lead_1',
+        whatsappTriggered: false,
+      });
+    });
+
+    it.each([
+      ['an Error', new Error('Meta 500')],
+      ['a non-Error rejection', 'socket hang up'],
+    ])('swallows %s thrown by the adapter and still reports the lead', async (_label, thrown) => {
+      channel.sendMessage.mockRejectedValue(thrown);
+      const call = parseIvrCallback({ phone: '9876543210' })!;
+
+      // A webhook has to ack fast; a dispatch failure cannot propagate out of
+      // the handler and turn into a provider retry storm.
+      await expect(service.processIvrCallback(BUSINESS_ID, call)).resolves.toEqual({
+        leadId: 'lead_1',
+        merged: false,
+        whatsappTriggered: false,
+        deduped: false,
+      });
+    });
+  });
+
+  it('reports a merged lead as merged rather than created', async () => {
+    leads.ingestLead.mockResolvedValue({ leadId: 'lead_9', merged: true });
+    const call = parseIvrCallback({ phone: '9876543210' })!;
+
+    await expect(service.processIvrCallback(BUSINESS_ID, call)).resolves.toMatchObject({
+      leadId: 'lead_9',
+      merged: true,
+    });
+  });
 });

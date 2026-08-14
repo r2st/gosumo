@@ -211,6 +211,76 @@ describe('WebhookDlqService.capture', () => {
     expect(queue.add).not.toHaveBeenCalled();
   });
 
+  /**
+   * The minimum a caller can hand over.
+   *
+   * `capture` runs in a catch block, so the delivery it gets is whatever the
+   * handler had managed to assemble before it threw — which may be very
+   * little. Every optional field has a fallback for that reason, and each one
+   * had only ever been exercised on its populated side.
+   */
+  it('fills in every optional field a half-assembled delivery is missing', async () => {
+    const { service, repository } = build();
+
+    await service.capture(
+      {
+        businessId: BUSINESS_ID,
+        source: 'STRIPE',
+        eventType: 'charge.failed',
+        externalId: 'charge.failed_ch_9',
+        payload: undefined as unknown as Record<string, unknown>,
+      },
+      new Error('boom'),
+      NOW,
+    );
+
+    expect(repository.capture).toHaveBeenCalledWith(
+      expect.objectContaining({
+        // Absent optionals become explicit nulls / empty JSON, never
+        // `undefined` — Prisma would reject the column write.
+        webhookEventId: null,
+        correlationId: null,
+        payload: {},
+        headers: {},
+      }),
+    );
+  });
+
+  it('describes a thrown non-Error and stores no stack for it', async () => {
+    // Adapters reject with strings often enough that `err.message` on the
+    // capture path would read as "undefined" in the operator's console.
+    const { service, repository } = build();
+
+    await service.capture(delivery, 'socket hang up', NOW);
+
+    expect(repository.capture).toHaveBeenCalledWith(
+      expect.objectContaining({ errorMessage: 'socket hang up', errorStack: null }),
+    );
+  });
+
+  it('stores no stack for an Error that has none', async () => {
+    const { service, repository } = build();
+    const stackless = new Error('no stack here');
+    delete (stackless as { stack?: string }).stack;
+
+    await service.capture(delivery, stackless, NOW);
+
+    expect(repository.capture).toHaveBeenCalledWith(
+      expect.objectContaining({ errorMessage: 'no stack here', errorStack: null }),
+    );
+  });
+
+  it('defaults the clock to now when the caller does not pass one', async () => {
+    const { service, repository } = build();
+    const before = Date.now();
+
+    await service.capture(delivery, new Error('boom'));
+
+    const { lastAttemptAt } = repository.capture.mock.calls[0][0];
+    expect(lastAttemptAt.getTime()).toBeGreaterThanOrEqual(before);
+    expect(lastAttemptAt.getTime()).toBeLessThanOrEqual(Date.now());
+  });
+
   it('keeps the entry when the queue refuses the job, so the sweep can find it', async () => {
     const { service, queue } = build();
     queue.add.mockRejectedValueOnce(new Error('redis down'));
