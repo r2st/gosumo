@@ -10,9 +10,13 @@ generator client {
 }
 
 datasource db {
-  provider   = "postgresql"
-  url        = env("DATABASE_URL")
-  extensions = [uuidOssp(map: "uuid-ossp"), pgcrypto]
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  // pg_trgm backs the GIN indexes on the free-text search columns
+  // (messages.text_content, conversations.subject/current_topic,
+  // clients.name/email/phone). Those searches are `ILIKE '%term%'`, which no
+  // btree index can serve — see migration 0034.
+  extensions = [uuidOssp(map: "uuid-ossp"), pgcrypto, pgTrgm(map: "pg_trgm")]
 }
 
 // ─────────────────────────────────────────────
@@ -830,6 +834,13 @@ model clients {
   @@index([business_id, ltv_score])
   @@index([business_id, last_interaction_at])
   @@index([consumer_user_id])
+  // Contact search is `ILIKE '%term%'` across all three columns at once. Neither
+  // uq_clients_business_* index can seek on an unanchored pattern, so the search
+  // fell back to scanning the whole table — every tenant's rows, not just the
+  // caller's. Trigram GIN turns each arm of the OR into a bitmap scan.
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@index([email(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@index([phone(ops: raw("gin_trgm_ops"))], type: Gin)
   @@map("clients")
 }
 
@@ -985,10 +996,22 @@ model conversations {
   sla_breaches     sla_breaches[]
 
   @@index([business_id, status, last_message_at(sort: Desc)])
+  // The inbox's default view applies no status filter, so the index above
+  // cannot serve it — status sits between business_id and the sort column.
+  // Without this the most-loaded screen in the product sorted the tenant's
+  // entire conversation table on every page load.
+  @@index([business_id, last_message_at(sort: Desc)])
   @@index([business_id, client_id])
   @@index([business_id, assigned_to, status])
   @@index([business_id, channel, status])
   @@index([client_id, status])
+  // The snooze-wake sweep filters (business_id, status, snoozed_until) and
+  // orders by snoozed_until; the status index above stops one column short and
+  // left it sorting every snoozed row to return one batch.
+  @@index([business_id, status, snoozed_until])
+  // Conversation search — same unanchored-ILIKE story as clients.
+  @@index([subject(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@index([current_topic(ops: raw("gin_trgm_ops"))], type: Gin)
   @@map("conversations")
 }
 
@@ -1049,6 +1072,12 @@ model messages {
   @@index([business_id, sender_type, created_at(sort: Desc)])
   @@index([external_id])
   @@index([campaign_id])
+  // Message search. The business_id+created_at index above made a *common*
+  // term look cheap — the LIMIT filled before the scan got far. A term that
+  // matches nothing (the normal case for a real search box) read the whole
+  // table. This is the largest and fastest-growing table in the schema, so it
+  // is also where the unindexed scan hurts most.
+  @@index([text_content(ops: raw("gin_trgm_ops"))], type: Gin)
   @@map("messages")
 }
 
