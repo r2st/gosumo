@@ -1,4 +1,4 @@
-import { ChannelType, ConversationStatus, IntentType, MessageStatus, OrderStatus, PaymentStatus, BookingStatus, ShipmentStatus } from '../enums';
+import { ChannelType, ConversationStatus, IntentType, OrderStatus, PaymentStatus, BookingStatus } from '../enums';
 import { ConfidenceScore, SuggestedAction } from '../interfaces';
 
 // ─────────────────────────────────────────────

@@ -9,7 +9,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { GoSumoError } from '@gosumo/shared';
+import { GoSumoError, ErrorCode, errorCodeForStatus } from '@gosumo/shared';
 
 /**
  * Prisma error codes that correspond to a client mistake rather than a server
@@ -27,9 +27,24 @@ const PRISMA_ERROR_MAP: Record<string, { status: HttpStatus; message: string }> 
   P2000: { status: HttpStatus.BAD_REQUEST, message: 'Provided value is too long for the field' },
 };
 
+/** The set of valid `ErrorCode` values, for narrowing untrusted strings. */
+const ERROR_CODES = new Set<string>(Object.values(ErrorCode));
+
+/** Narrows a handler-supplied `error` field to a taxonomy code, or undefined. */
+function asErrorCode(value: unknown): ErrorCode | undefined {
+  return typeof value === 'string' && ERROR_CODES.has(value)
+    ? (value as ErrorCode)
+    : undefined;
+}
+
 export interface ApiError {
   statusCode: number;
-  error: string;
+  /**
+   * A stable `ErrorCode` — always, whatever raised the failure. Typed errors
+   * supply their own; everything else is classified from the status via
+   * `errorCodeForStatus`. Clients may branch on this, so it is public API.
+   */
+  error: ErrorCode;
   message: string | string[];
   traceId: string;
   timestamp: string;
@@ -49,7 +64,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
       (request.headers['x-correlation-id'] as string | undefined) ?? uuidv4();
 
     let statusCode = HttpStatus.INTERNAL_SERVER_ERROR;
-    let error = 'Internal Server Error';
+    /**
+     * Set only when the throw site named its own code. Left undefined
+     * otherwise, so the status-derived code is used instead — that way every
+     * response carries one vocabulary regardless of how it was raised.
+     */
+    let code: ErrorCode | undefined;
     let message: string | string[] = 'An unexpected error occurred';
     /** Log-only detail from a typed error; never merged into the response. */
     let context: Record<string, unknown> | undefined;
@@ -59,7 +79,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       // deliberately safe to return. Everything sensitive lives in `context`,
       // which goes to the log line below and never into the body.
       statusCode = exception.httpStatus;
-      error = exception.code;
+      code = exception.code;
       message = exception.message;
       context = exception.context;
     } else if (exception instanceof HttpException) {
@@ -68,27 +88,30 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
       if (typeof exceptionResponse === 'string') {
         message = exceptionResponse;
-        error = exception.message;
       } else if (typeof exceptionResponse === 'object' && exceptionResponse !== null) {
         const resp = exceptionResponse as Record<string, unknown>;
         message = (resp['message'] as string | string[] | undefined) ?? exception.message;
-        error = (resp['error'] as string | undefined) ?? exception.message;
+        // A handler may name a taxonomy code explicitly by throwing
+        // `new BadRequestException({ message, error: ErrorCode.X })`. Anything
+        // else in `error` is Nest's own prose ("Bad Request") — drop it and
+        // classify from the status instead.
+        code = asErrorCode(resp['error']);
       }
     } else if (exception instanceof Prisma.PrismaClientKnownRequestError) {
       const mapped = PRISMA_ERROR_MAP[exception.code];
       if (mapped) {
         statusCode = mapped.status;
         message = mapped.message;
-        error = HttpStatus[mapped.status] ?? 'Error';
       }
       // Unmapped Prisma codes fall through as a 500 with the generic message
       // below — the driver's own text can carry table and column names.
-    } else if (exception instanceof Error) {
-      // Deliberately NOT surfacing `exception.message` here. Unhandled errors
-      // routinely embed connection strings, SQL fragments, and file paths;
-      // the detail goes to the log (with the traceId) instead of the client.
-      error = 'Internal Server Error';
     }
+    // Any other throwable stays a 500 with the generic message. Deliberately
+    // NOT surfacing `exception.message`: unhandled errors routinely embed
+    // connection strings, SQL fragments, and file paths. The detail goes to
+    // the log (with the traceId) instead of the client.
+
+    const error = code ?? errorCodeForStatus(statusCode);
 
     const errorResponse: ApiError = {
       statusCode,

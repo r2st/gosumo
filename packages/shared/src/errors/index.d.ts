@@ -30,10 +30,14 @@ export declare enum ErrorCode {
     RESOURCE_NOT_FOUND = "RESOURCE_NOT_FOUND",
     /** The request was well-formed but semantically invalid. */
     VALIDATION_FAILED = "VALIDATION_FAILED",
+    /** No usable credentials were presented, or they have expired. */
+    UNAUTHENTICATED = "UNAUTHENTICATED",
     /** The resource exists but the caller may not act on it. */
     FORBIDDEN = "FORBIDDEN",
     /** The action conflicts with the resource's current state. */
     CONFLICT = "CONFLICT",
+    /** The caller has exceeded a rate limit or quota. */
+    RATE_LIMIT_EXCEEDED = "RATE_LIMIT_EXCEEDED",
     /** A third-party service failed or answered unusably. */
     EXTERNAL_SERVICE_ERROR = "EXTERNAL_SERVICE_ERROR",
     /** Required configuration is missing or unusable at runtime. */
@@ -41,7 +45,9 @@ export declare enum ErrorCode {
     /** An inbound provider payload could not be understood. */
     PAYLOAD_PARSE_ERROR = "PAYLOAD_PARSE_ERROR",
     /** The operation is valid in general but unsupported on this channel/plan. */
-    UNSUPPORTED_OPERATION = "UNSUPPORTED_OPERATION"
+    UNSUPPORTED_OPERATION = "UNSUPPORTED_OPERATION",
+    /** An unclassified server fault. The catch-all — never a caller's mistake. */
+    INTERNAL_ERROR = "INTERNAL_ERROR"
 }
 export interface GoSumoErrorOptions {
     /** The underlying failure, preserved for the log's stack chain. */
@@ -93,6 +99,17 @@ export declare class ResourceNotFoundError extends GoSumoError {
 export declare class ValidationError extends GoSumoError {
     readonly code = ErrorCode.VALIDATION_FAILED;
     readonly httpStatus = 400;
+    constructor(message: string, options?: GoSumoErrorOptions);
+}
+/**
+ * No usable credentials were presented, or they have expired.
+ *
+ * Distinct from `ForbiddenActionError`: this says "we do not know who you are",
+ * so a caller can react by refreshing a token rather than giving up.
+ */
+export declare class UnauthenticatedError extends GoSumoError {
+    readonly code = ErrorCode.UNAUTHENTICATED;
+    readonly httpStatus = 401;
     constructor(message: string, options?: GoSumoErrorOptions);
 }
 /** The resource is visible to the caller but this action is not permitted. */
@@ -158,6 +175,48 @@ export declare class UnsupportedOperationError extends GoSumoError {
     readonly httpStatus = 422;
     constructor(message: string, options?: GoSumoErrorOptions);
 }
+/**
+ * The caller has exceeded a rate limit or plan quota.
+ *
+ * Retryable by definition — the same request succeeds once the window rolls
+ * over. `retryAfterSeconds` goes to `context` for the log and is what a caller
+ * should wait before trying again.
+ */
+export declare class RateLimitExceededError extends GoSumoError {
+    readonly retryAfterSeconds?: number | undefined;
+    readonly code = ErrorCode.RATE_LIMIT_EXCEEDED;
+    readonly httpStatus = 429;
+    readonly retryable = true;
+    constructor(message: string, retryAfterSeconds?: number | undefined, options?: GoSumoErrorOptions);
+}
+/**
+ * An unclassified server fault.
+ *
+ * The catch-all the exception filter falls back to. Retryable: a 500 that was
+ * not deliberately classified is more often a transient fault than a permanent
+ * one, and a caller that already decided to retry should not be talked out of it.
+ */
+export declare class InternalError extends GoSumoError {
+    readonly code = ErrorCode.INTERNAL_ERROR;
+    readonly httpStatus = 500;
+    readonly retryable = true;
+    constructor(message: string, options?: GoSumoErrorOptions);
+}
+/**
+ * The canonical HTTP-status → `ErrorCode` mapping.
+ *
+ * Most of the platform still throws framework exceptions (`NotFoundException`
+ * and friends), which carry a status but no taxonomy code. This is what lets
+ * the API's exception filter put a stable code on *every* response, so clients
+ * can branch on one vocabulary regardless of how a failure was raised. Where a
+ * throw site does supply a code, that code always wins — this is only the
+ * fallback.
+ *
+ * Statuses that have no dedicated code fall back by class: any other 4xx is the
+ * caller's mistake (`VALIDATION_FAILED`), anything else is ours
+ * (`INTERNAL_ERROR`).
+ */
+export declare function errorCodeForStatus(status: number): ErrorCode;
 /** Narrowing helper for `catch (err: unknown)` blocks. */
 export declare function isGoSumoError(err: unknown): err is GoSumoError;
 /**

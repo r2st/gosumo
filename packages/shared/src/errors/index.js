@@ -26,8 +26,9 @@
  * `message` stays safe to show a caller.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.UnsupportedOperationError = exports.PayloadParseError = exports.ConfigurationError = exports.ExternalServiceError = exports.ConflictError = exports.ForbiddenActionError = exports.ValidationError = exports.ResourceNotFoundError = exports.GoSumoError = exports.ErrorCode = void 0;
+exports.InternalError = exports.RateLimitExceededError = exports.UnsupportedOperationError = exports.PayloadParseError = exports.ConfigurationError = exports.ExternalServiceError = exports.ConflictError = exports.ForbiddenActionError = exports.UnauthenticatedError = exports.ValidationError = exports.ResourceNotFoundError = exports.GoSumoError = exports.ErrorCode = void 0;
 exports.isRetryableStatus = isRetryableStatus;
+exports.errorCodeForStatus = errorCodeForStatus;
 exports.isGoSumoError = isGoSumoError;
 exports.isRetryableError = isRetryableError;
 exports.errorMessage = errorMessage;
@@ -38,10 +39,14 @@ var ErrorCode;
     ErrorCode["RESOURCE_NOT_FOUND"] = "RESOURCE_NOT_FOUND";
     /** The request was well-formed but semantically invalid. */
     ErrorCode["VALIDATION_FAILED"] = "VALIDATION_FAILED";
+    /** No usable credentials were presented, or they have expired. */
+    ErrorCode["UNAUTHENTICATED"] = "UNAUTHENTICATED";
     /** The resource exists but the caller may not act on it. */
     ErrorCode["FORBIDDEN"] = "FORBIDDEN";
     /** The action conflicts with the resource's current state. */
     ErrorCode["CONFLICT"] = "CONFLICT";
+    /** The caller has exceeded a rate limit or quota. */
+    ErrorCode["RATE_LIMIT_EXCEEDED"] = "RATE_LIMIT_EXCEEDED";
     /** A third-party service failed or answered unusably. */
     ErrorCode["EXTERNAL_SERVICE_ERROR"] = "EXTERNAL_SERVICE_ERROR";
     /** Required configuration is missing or unusable at runtime. */
@@ -50,6 +55,8 @@ var ErrorCode;
     ErrorCode["PAYLOAD_PARSE_ERROR"] = "PAYLOAD_PARSE_ERROR";
     /** The operation is valid in general but unsupported on this channel/plan. */
     ErrorCode["UNSUPPORTED_OPERATION"] = "UNSUPPORTED_OPERATION";
+    /** An unclassified server fault. The catch-all — never a caller's mistake. */
+    ErrorCode["INTERNAL_ERROR"] = "INTERNAL_ERROR";
 })(ErrorCode || (exports.ErrorCode = ErrorCode = {}));
 /**
  * Base class for every deliberate GoSumo failure.
@@ -120,6 +127,20 @@ class ValidationError extends GoSumoError {
     }
 }
 exports.ValidationError = ValidationError;
+/**
+ * No usable credentials were presented, or they have expired.
+ *
+ * Distinct from `ForbiddenActionError`: this says "we do not know who you are",
+ * so a caller can react by refreshing a token rather than giving up.
+ */
+class UnauthenticatedError extends GoSumoError {
+    code = ErrorCode.UNAUTHENTICATED;
+    httpStatus = 401;
+    constructor(message, options = {}) {
+        super(message, options);
+    }
+}
+exports.UnauthenticatedError = UnauthenticatedError;
 /** The resource is visible to the caller but this action is not permitted. */
 class ForbiddenActionError extends GoSumoError {
     code = ErrorCode.FORBIDDEN;
@@ -211,6 +232,83 @@ class UnsupportedOperationError extends GoSumoError {
     }
 }
 exports.UnsupportedOperationError = UnsupportedOperationError;
+/**
+ * The caller has exceeded a rate limit or plan quota.
+ *
+ * Retryable by definition — the same request succeeds once the window rolls
+ * over. `retryAfterSeconds` goes to `context` for the log and is what a caller
+ * should wait before trying again.
+ */
+class RateLimitExceededError extends GoSumoError {
+    retryAfterSeconds;
+    code = ErrorCode.RATE_LIMIT_EXCEEDED;
+    httpStatus = 429;
+    retryable = true;
+    constructor(message, retryAfterSeconds, options = {}) {
+        super(message, {
+            ...options,
+            context: { retryAfterSeconds, ...options.context },
+        });
+        this.retryAfterSeconds = retryAfterSeconds;
+    }
+}
+exports.RateLimitExceededError = RateLimitExceededError;
+/**
+ * An unclassified server fault.
+ *
+ * The catch-all the exception filter falls back to. Retryable: a 500 that was
+ * not deliberately classified is more often a transient fault than a permanent
+ * one, and a caller that already decided to retry should not be talked out of it.
+ */
+class InternalError extends GoSumoError {
+    code = ErrorCode.INTERNAL_ERROR;
+    httpStatus = 500;
+    retryable = true;
+    constructor(message, options = {}) {
+        super(message, options);
+    }
+}
+exports.InternalError = InternalError;
+/**
+ * The canonical HTTP-status → `ErrorCode` mapping.
+ *
+ * Most of the platform still throws framework exceptions (`NotFoundException`
+ * and friends), which carry a status but no taxonomy code. This is what lets
+ * the API's exception filter put a stable code on *every* response, so clients
+ * can branch on one vocabulary regardless of how a failure was raised. Where a
+ * throw site does supply a code, that code always wins — this is only the
+ * fallback.
+ *
+ * Statuses that have no dedicated code fall back by class: any other 4xx is the
+ * caller's mistake (`VALIDATION_FAILED`), anything else is ours
+ * (`INTERNAL_ERROR`).
+ */
+function errorCodeForStatus(status) {
+    switch (status) {
+        case 400:
+            return ErrorCode.VALIDATION_FAILED;
+        case 401:
+            return ErrorCode.UNAUTHENTICATED;
+        case 403:
+            return ErrorCode.FORBIDDEN;
+        case 404:
+            return ErrorCode.RESOURCE_NOT_FOUND;
+        case 409:
+            return ErrorCode.CONFLICT;
+        case 422:
+            return ErrorCode.UNSUPPORTED_OPERATION;
+        case 429:
+            return ErrorCode.RATE_LIMIT_EXCEEDED;
+        case 502:
+        case 503:
+        case 504:
+            return ErrorCode.EXTERNAL_SERVICE_ERROR;
+        default:
+            return status >= 400 && status < 500
+                ? ErrorCode.VALIDATION_FAILED
+                : ErrorCode.INTERNAL_ERROR;
+    }
+}
 /** Narrowing helper for `catch (err: unknown)` blocks. */
 function isGoSumoError(err) {
     return err instanceof GoSumoError;
