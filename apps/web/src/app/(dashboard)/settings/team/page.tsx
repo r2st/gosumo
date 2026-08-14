@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react';
 import { Shield, Trash2, UserPlus } from 'lucide-react';
 import { useInviteMember, useRemoveMember, useTeam, useUpdateMemberRole } from '@/hooks/use-settings';
+import { useAuth } from '@/providers/auth-provider';
 import { SettingsCard } from '@/components/settings/settings-kit';
 import { Button } from '@/components/ui/button';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
@@ -23,6 +24,14 @@ const ROLE_TONE: Record<Role, BadgeTone> = {
   VIEWER: 'warning',
 };
 
+/** Shown in place of the role dropdown when the viewer cannot change roles. */
+const ROLE_LABEL: Record<Role, string> = {
+  OWNER: 'Owner',
+  MANAGER: 'Manager',
+  STAFF: 'Staff',
+  VIEWER: 'Viewer',
+};
+
 const ROLE_DESC: Record<AssignableRole, string> = {
   MANAGER: 'Manage conversations, catalog, settings and AI config.',
   STAFF: 'Handle conversations and review HITL tasks.',
@@ -37,10 +46,17 @@ const ROLE_OPTIONS = [
 
 export default function TeamPage() {
   const { data, isLoading, isError, refetch } = useTeam();
+  const { user } = useAuth();
   const updateRole = useUpdateMemberRole();
   const removeMember = useRemoveMember();
   const [inviteOpen, setInviteOpen] = useState(false);
   const [toRemove, setToRemove] = useState<TeamMember | null>(null);
+
+  // Mirrors what the API enforces: OWNER and MANAGER may invite and remove,
+  // only OWNER may change a role. The server is the authority — this only
+  // keeps the page from offering buttons that come back 403.
+  const canManage = user?.role === 'OWNER' || user?.role === 'MANAGER';
+  const canChangeRoles = user?.role === 'OWNER';
 
   if (isLoading) return <LoadingState />;
   if (isError || !data) return <ErrorState onRetry={() => void refetch()} />;
@@ -50,11 +66,13 @@ export default function TeamPage() {
   return (
     <>
       <SettingsCard title="Team members" description="Invite teammates and control what they can access.">
-        <div className="flex justify-end">
-          <Button size="sm" onClick={() => setInviteOpen(true)}>
-            <UserPlus className="h-4 w-4" /> Invite member
-          </Button>
-        </div>
+        {canManage && (
+          <div className="flex justify-end">
+            <Button size="sm" onClick={() => setInviteOpen(true)}>
+              <UserPlus className="h-4 w-4" /> Invite member
+            </Button>
+          </div>
+        )}
 
         {members.length === 0 ? (
           <EmptyState icon={UserPlus} title="No team members yet" description="Invite your first teammate to collaborate." />
@@ -85,9 +103,10 @@ export default function TeamPage() {
                         </div>
                       </TD>
                       <TD>
-                        {isOwner ? (
-                          <Badge tone={ROLE_TONE.OWNER}>
-                            <Shield className="h-3 w-3" /> Owner
+                        {isOwner || !canChangeRoles ? (
+                          <Badge tone={ROLE_TONE[m.role]}>
+                            {isOwner && <Shield className="h-3 w-3" />}
+                            {ROLE_LABEL[m.role]}
                           </Badge>
                         ) : (
                           <Select
@@ -106,7 +125,7 @@ export default function TeamPage() {
                       </TD>
                       <TD className="text-muted-foreground">{m.lastActiveAt ? timeAgo(m.lastActiveAt) : '—'}</TD>
                       <TD className="text-right">
-                        {!isOwner && (
+                        {!isOwner && canManage && (
                           <button
                             onClick={() => setToRemove(m)}
                             className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-danger"
