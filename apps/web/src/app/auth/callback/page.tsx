@@ -22,8 +22,10 @@ function CallbackHandler() {
     // API keeps working through the rollout.
     const rawHash = typeof window === 'undefined' ? '' : (window.location.hash ?? '');
     const hash = new URLSearchParams(rawHash.replace(/^#/, ''));
-    const accessToken = hash.get('accessToken') ?? searchParams.get('accessToken');
-    const refreshToken = hash.get('refreshToken') ?? searchParams.get('refreshToken');
+    // `useSearchParams()` is typed nullable — it is null on a statically
+    // rendered pass, where reading it would throw before the fragment is read.
+    const accessToken = hash.get('accessToken') ?? searchParams?.get('accessToken') ?? null;
+    const refreshToken = hash.get('refreshToken') ?? searchParams?.get('refreshToken') ?? null;
 
     if (accessToken && refreshToken) {
       tokenStore.setAccessToken(accessToken);

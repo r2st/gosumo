@@ -11,7 +11,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CatalogCategory } from '@/lib/commerce-types';
-import type { CatalogItem } from '@/lib/types';
+import type { CatalogItem, CatalogVariant } from '@/lib/types';
 
 const mutations = {
   create: vi.fn(),
@@ -49,6 +49,20 @@ const CATEGORIES: CatalogCategory[] = [
   { id: 'c1', name: 'Beverages', description: 'Drinks', itemCount: 3 } as CatalogCategory,
   { id: 'c2', name: 'Snacks', description: null, itemCount: 1 } as CatalogCategory,
 ];
+
+/** A fully populated variant, including the fields the form has no input for. */
+const LARGE_VARIANT: CatalogVariant = {
+  id: 'var-1',
+  itemId: 'item-1',
+  name: 'Large',
+  sku: 'CB-01-L',
+  price: 30_000,
+  discountPrice: 27_000,
+  stockQuantity: 4,
+  isActive: true,
+  attributes: { size: 'L' },
+  imageUrl: 'https://cdn.example/l.jpg',
+};
 
 function makeItem(overrides: Partial<CatalogItem> = {}): CatalogItem {
   return {
@@ -395,22 +409,7 @@ describe('ProductFormModal variants', () => {
  */
 describe('ProductFormModal — loading an existing item', () => {
   it('seeds every field from the item, including its variants', () => {
-    renderForm(
-      makeItem({
-        variants: [
-          {
-            name: 'Large',
-            sku: 'CB-01-L',
-            price: 30_000,
-            discountPrice: 27_000,
-            stockQuantity: 4,
-            isActive: true,
-            attributes: { size: 'L' },
-            imageUrl: 'https://cdn.example/l.jpg',
-          },
-        ],
-      } as Partial<CatalogItem>),
-    );
+    renderForm(makeItem({ variants: [LARGE_VARIANT] }));
 
     expect(nameInput()).toHaveValue('Cold Brew');
     expect(screen.getByPlaceholderText('One-line summary')).toHaveValue('Iced coffee');
@@ -425,13 +424,7 @@ describe('ProductFormModal — loading an existing item', () => {
   });
 
   it('edits a loaded variant’s stock, and clears it back to unset', () => {
-    renderForm(
-      makeItem({
-        variants: [
-          { name: 'Large', sku: 'CB-01-L', price: 30_000, stockQuantity: 4, isActive: true, attributes: {} },
-        ],
-      } as Partial<CatalogItem>),
-    );
+    renderForm(makeItem({ variants: [LARGE_VARIANT] }));
 
     const stock = screen.getByDisplayValue('4');
     fireEvent.change(stock, { target: { value: '9' } });
@@ -445,22 +438,16 @@ describe('ProductFormModal — loading an existing item', () => {
   });
 
   it('round-trips a loaded variant back to the API unchanged', () => {
-    const variant = {
-      name: 'Large',
-      sku: 'CB-01-L',
-      price: 30_000,
-      discountPrice: 27_000,
-      stockQuantity: 4,
-      isActive: true,
-      attributes: { size: 'L' },
-      imageUrl: 'https://cdn.example/l.jpg',
-    };
-    renderForm(makeItem({ variants: [variant] } as Partial<CatalogItem>));
+    renderForm(makeItem({ variants: [LARGE_VARIANT] }));
 
     fireEvent.submit(document.querySelector('#product-form') as HTMLFormElement);
 
     const [{ body }] = mutations.update.mock.calls[0];
-    expect(body.variants).toEqual([variant]);
+    // The server-owned keys (`id`, `itemId`) are the API's to assign; every
+    // field the operator can influence must survive the round trip, including
+    // the SKU and image the form has no input for.
+    const { id: _id, itemId: _itemId, ...draft } = LARGE_VARIANT;
+    expect(body.variants).toEqual([draft]);
   });
 
   it('renders a nullable column as an empty field rather than the text "null"', () => {
