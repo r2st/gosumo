@@ -86,7 +86,8 @@ describe('SlaService', () => {
       findBreachTracker: jest.fn(),
       findBreachesForConversation: jest.fn(),
       markMet: jest.fn(),
-      markBreachedOnly: jest.fn(),
+      markBreachedBatch: jest.fn(),
+      markEscalatedBatch: jest.fn(),
       markEscalated: jest.fn(),
       findOverdueUnmetTrackers: jest.fn(),
       listBreaches: jest.fn(),
@@ -342,15 +343,68 @@ describe('SlaService', () => {
     it('marks overdue unmet trackers as breached and escalates each', async () => {
       const overdue = [makeTracker(), makeTracker({ id: 'tracker-2' })];
       repo.findOverdueUnmetTrackers.mockResolvedValue(overdue);
-      repo.markBreachedOnly.mockImplementation(async (id) => makeTracker({ id, breached: true }));
       repo.findPolicyById.mockResolvedValue(makePolicy());
 
       const result = await service.sweepOverdueBreaches(BUSINESS_ID);
 
       expect(result.swept).toBe(2);
-      expect(repo.markBreachedOnly).toHaveBeenCalledTimes(2);
       expect(emitter.emit).toHaveBeenCalledWith('sla.breached', expect.anything());
-      expect(repo.markEscalated).toHaveBeenCalledTimes(2);
+      // Both writes are batched: one statement each, not one per tracker.
+      expect(repo.markBreachedBatch).toHaveBeenCalledTimes(1);
+      expect(repo.markBreachedBatch).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        [TRACKER_ID, 'tracker-2'],
+        expect.any(Date),
+      );
+      expect(repo.markEscalatedBatch).toHaveBeenCalledTimes(1);
+      expect(repo.markEscalatedBatch).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        [TRACKER_ID, 'tracker-2'],
+        expect.any(Date),
+      );
+    });
+
+    it('emits one sla.breached per tracker even though the write is batched', async () => {
+      repo.findOverdueUnmetTrackers.mockResolvedValue([
+        makeTracker({ id: 't1' }),
+        makeTracker({ id: 't2' }),
+        makeTracker({ id: 't3' }),
+      ]);
+      repo.findPolicyById.mockResolvedValue(makePolicy());
+
+      await service.sweepOverdueBreaches(BUSINESS_ID);
+
+      expect(
+        emitter.emit.mock.calls.filter((c: unknown[]) => c[0] === 'sla.breached'),
+      ).toHaveLength(3);
+    });
+
+    it('reports the breach as breached in the emitted event without reading the row back', async () => {
+      // markBreachedBatch writes exactly `breached` and `breached_at`, so the
+      // sweep reconstructs the updated row rather than refetching it.
+      repo.findOverdueUnmetTrackers.mockResolvedValue([
+        makeTracker({ id: 't1', breached: false }),
+      ]);
+      repo.findPolicyById.mockResolvedValue(makePolicy());
+
+      await service.sweepOverdueBreaches(BUSINESS_ID);
+
+      const breached = emitter.emit.mock.calls.find(
+        (c: unknown[]) => c[0] === 'sla.breached',
+      );
+      expect(breached?.[1]).toMatchObject({ conversationId: CONVERSATION_ID });
+      // No per-tracker read was needed to build that payload.
+      expect(repo.findBreachTracker).not.toHaveBeenCalled();
+    });
+
+    it('scopes both batch writes to the tenant', async () => {
+      repo.findOverdueUnmetTrackers.mockResolvedValue([makeTracker({ id: 't1' })]);
+      repo.findPolicyById.mockResolvedValue(makePolicy());
+
+      await service.sweepOverdueBreaches(BUSINESS_ID);
+
+      expect(repo.markBreachedBatch.mock.calls[0]![0]).toBe(BUSINESS_ID);
+      expect(repo.markEscalatedBatch.mock.calls[0]![0]).toBe(BUSINESS_ID);
     });
 
     it('returns swept: 0 when nothing is overdue', async () => {
@@ -370,10 +424,6 @@ describe('SlaService', () => {
         makeTracker({ id: 't5', policy_id: 'policy-b' }),
       ];
       repo.findOverdueUnmetTrackers.mockResolvedValue(overdue);
-      repo.markBreachedOnly.mockImplementation(async (_b: string, id: string) => {
-        const source = overdue.find((t) => t.id === id)!;
-        return makeTracker({ id, policy_id: source.policy_id, breached: true });
-      });
       repo.findPolicyById.mockImplementation(async (_b: string, id: string) =>
         makePolicy({ id }),
       );
@@ -385,7 +435,11 @@ describe('SlaService', () => {
       expect(repo.findPolicyById).toHaveBeenCalledWith(BUSINESS_ID, 'policy-a');
       expect(repo.findPolicyById).toHaveBeenCalledWith(BUSINESS_ID, 'policy-b');
       // Every breach still escalates — the cache changes query count, not behaviour.
-      expect(repo.markEscalated).toHaveBeenCalledTimes(5);
+      expect(repo.markEscalatedBatch).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        ['t1', 't2', 't3', 't4', 't5'],
+        expect.any(Date),
+      );
       expect(
         emitter.emit.mock.calls.filter((c: unknown[]) => c[0] === 'sla.escalated'),
       ).toHaveLength(5);
@@ -398,24 +452,18 @@ describe('SlaService', () => {
         makeTracker({ id: 't3', policy_id: 'gone' }),
       ];
       repo.findOverdueUnmetTrackers.mockResolvedValue(overdue);
-      repo.markBreachedOnly.mockImplementation(async (_b: string, id: string) =>
-        makeTracker({ id, policy_id: 'gone', breached: true }),
-      );
       repo.findPolicyById.mockResolvedValue(null);
 
       const result = await service.sweepOverdueBreaches(BUSINESS_ID);
 
       expect(result.swept).toBe(3);
       expect(repo.findPolicyById).toHaveBeenCalledTimes(1);
-      // No policy ⇒ no escalation actions to run.
-      expect(repo.markEscalated).not.toHaveBeenCalled();
+      // No policy ⇒ no escalation actions to run, so the batch is empty.
+      expect(repo.markEscalatedBatch).toHaveBeenCalledWith(BUSINESS_ID, [], expect.any(Date));
     });
 
     it('does not cache across separate sweeps, so a policy edit is picked up', async () => {
       repo.findOverdueUnmetTrackers.mockResolvedValue([makeTracker({ id: 't1' })]);
-      repo.markBreachedOnly.mockImplementation(async (_b: string, id: string) =>
-        makeTracker({ id, breached: true }),
-      );
       repo.findPolicyById.mockResolvedValue(makePolicy());
 
       await service.sweepOverdueBreaches(BUSINESS_ID);

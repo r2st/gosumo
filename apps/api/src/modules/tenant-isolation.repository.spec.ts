@@ -397,9 +397,16 @@ const CASES: Case[] = [
     run: (r: SlaRepository, b, id) => r.markMet(b, id, new Date(0), false),
   },
   {
-    name: 'SlaRepository.markBreachedOnly',
+    // Batch sweep writes are still tenant-scoped: the id list narrows the rows,
+    // business_id is what stops it reaching another tenant's trackers.
+    name: 'SlaRepository.markBreachedBatch',
     repo: SlaRepository,
-    run: (r: SlaRepository, b, id) => r.markBreachedOnly(b, id, new Date(0)),
+    run: (r: SlaRepository, b, id) => r.markBreachedBatch(b, [id], new Date(0)),
+  },
+  {
+    name: 'SlaRepository.markEscalatedBatch',
+    repo: SlaRepository,
+    run: (r: SlaRepository, b, id) => r.markEscalatedBatch(b, [id], new Date(0)),
   },
   {
     name: 'SlaRepository.markEscalated',

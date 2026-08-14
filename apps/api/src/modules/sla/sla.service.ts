@@ -221,16 +221,37 @@ export class SlaService {
   async sweepOverdueBreaches(businessId: string): Promise<{ swept: number }> {
     const now = new Date();
     const overdue = await this.repository.findOverdueUnmetTrackers(businessId, now, SWEEP_BATCH_SIZE);
+    if (overdue.length === 0) {
+      return { swept: 0 };
+    }
+
+    // One UPDATE for the batch rather than one per tracker. Every row gets the
+    // same `breached_at`, and they were all selected as `breached: false`, so
+    // the batch write is equivalent to the per-row loop it replaces.
+    await this.repository.markBreachedBatch(
+      businessId,
+      overdue.map((t) => t.id),
+      now,
+    );
 
     // A sweep handles up to SWEEP_BATCH_SIZE trackers that typically share a
     // handful of policies between them. Without this cache, escalation refetches
     // the same few policies once per breach — up to 200 identical round trips.
     const policyCache = new Map<string, sla_policies | null>();
 
+    // `markBreachedBatch` writes exactly these two fields, so the updated row is
+    // known without reading it back.
+    const escalatedIds: string[] = [];
     for (const tracker of overdue) {
-      const updated = await this.repository.markBreachedOnly(businessId, tracker.id, now);
-      await this.onBreachDetected(businessId, updated, policyCache);
+      const breach: sla_breaches = { ...tracker, breached: true, breached_at: now };
+      const escalated = await this.emitBreach(businessId, breach, policyCache);
+      if (escalated) {
+        escalatedIds.push(tracker.id);
+      }
     }
+
+    // Likewise one UPDATE for every tracker whose policy actually escalated.
+    await this.repository.markEscalatedBatch(businessId, escalatedIds, new Date());
 
     return { swept: overdue.length };
   }
@@ -240,6 +261,24 @@ export class SlaService {
     breach: sla_breaches,
     policyCache?: Map<string, sla_policies | null>,
   ): Promise<void> {
+    if (await this.emitBreach(businessId, breach, policyCache)) {
+      await this.repository.markEscalated(businessId, breach.id, new Date());
+    }
+  }
+
+  /**
+   * Emit `sla.breached` and any configured escalations, and report whether the
+   * breach escalated — but write nothing.
+   *
+   * Split out from {@link onBreachDetected} so the sweep can collect the ids
+   * that escalated and persist them in one statement, while the event-driven
+   * single-breach path keeps writing its own row immediately.
+   */
+  private async emitBreach(
+    businessId: string,
+    breach: sla_breaches,
+    policyCache?: Map<string, sla_policies | null>,
+  ): Promise<boolean> {
     const actualMinutes = Math.round(
       breach.target_minutes + Math.max(0, (Date.now() - breach.due_at.getTime()) / 60_000),
     );
@@ -258,17 +297,21 @@ export class SlaService {
     };
     this.eventEmitter.emit('sla.breached', event);
 
-    await this.escalate(businessId, breach, policyCache);
+    return this.escalate(businessId, breach, policyCache);
   }
 
+  /**
+   * Emit one `sla.escalated` per configured action. Returns whether anything
+   * escalated, which is what gates the `escalated` / `escalated_at` write.
+   */
   private async escalate(
     businessId: string,
     breach: sla_breaches,
     policyCache?: Map<string, sla_policies | null>,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const policy = await this.findPolicyCached(businessId, breach.policy_id, policyCache);
     const actions = (policy?.escalation_actions as unknown as SlaEscalationAction[] | undefined) ?? [];
-    if (!actions.length) return;
+    if (!actions.length) return false;
 
     for (const action of actions) {
       const event: SlaEscalatedEvent = {
@@ -286,7 +329,7 @@ export class SlaService {
       this.eventEmitter.emit('sla.escalated', event);
     }
 
-    await this.repository.markEscalated(businessId, breach.id, new Date());
+    return true;
   }
 
   /**

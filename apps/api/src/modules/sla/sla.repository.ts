@@ -214,18 +214,7 @@ export class SlaRepository {
     });
   }
 
-  /** Flip a tracker to breached without marking it met — the sweep path. */
-  async markBreachedOnly(
-    businessId: string,
-    id: string,
-    breachedAt: Date,
-  ): Promise<sla_breaches> {
-    return this.prisma.sla_breaches.update({
-      where: { id, business_id: businessId },
-      data: { breached: true, breached_at: breachedAt },
-    });
-  }
-
+  /** Record that a single breach escalated — the event-driven path. */
   async markEscalated(
     businessId: string,
     id: string,
@@ -235,6 +224,42 @@ export class SlaRepository {
       where: { id, business_id: businessId },
       data: { escalated: true, escalated_at: escalatedAt },
     });
+  }
+
+  /**
+   * Mark a whole sweep batch breached in one statement.
+   *
+   * The sweep selected these ids with `breached: false` and writes the same
+   * `breachedAt` to every row, so this is equivalent to the per-row update it
+   * replaces — minus up to {@link findOverdueUnmetTrackers}'s limit round
+   * trips. `business_id` stays in the WHERE clause: a batch write is still a
+   * tenant-scoped write.
+   */
+  async markBreachedBatch(
+    businessId: string,
+    ids: string[],
+    breachedAt: Date,
+  ): Promise<number> {
+    if (ids.length === 0) return 0;
+    const { count } = await this.prisma.sla_breaches.updateMany({
+      where: { id: { in: ids }, business_id: businessId },
+      data: { breached: true, breached_at: breachedAt },
+    });
+    return count;
+  }
+
+  /** Batch counterpart to {@link markEscalated}, for the same reason. */
+  async markEscalatedBatch(
+    businessId: string,
+    ids: string[],
+    escalatedAt: Date,
+  ): Promise<number> {
+    if (ids.length === 0) return 0;
+    const { count } = await this.prisma.sla_breaches.updateMany({
+      where: { id: { in: ids }, business_id: businessId },
+      data: { escalated: true, escalated_at: escalatedAt },
+    });
+    return count;
   }
 
   /** Trackers whose deadline has passed with no activity yet — a sweep target. */

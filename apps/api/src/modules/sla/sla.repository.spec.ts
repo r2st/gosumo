@@ -48,6 +48,7 @@ describe('SlaRepository', () => {
       findFirst: jest.Mock;
       findMany: jest.Mock;
       update: jest.Mock;
+      updateMany: jest.Mock;
       count: jest.Mock;
     };
     conversations: { findFirst: jest.Mock };
@@ -67,6 +68,7 @@ describe('SlaRepository', () => {
         findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn().mockResolvedValue({ id: TRACKER_ID }),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
         count: jest.fn().mockResolvedValue(0),
       },
       conversations: { findFirst: jest.fn().mockResolvedValue(null) },
@@ -373,13 +375,40 @@ describe('SlaRepository', () => {
       });
     });
 
-    it('markBreachedOnly flips the flag without claiming the clock was met', async () => {
-      await repository.markBreachedOnly(BUSINESS_ID, TRACKER_ID, NOW);
+    it('markBreachedBatch flips the whole sweep without claiming the clocks were met', async () => {
+      await repository.markBreachedBatch(BUSINESS_ID, ['t1', 't2', 't3'], NOW);
 
-      const call = prisma.sla_breaches.update.mock.calls[0]![0];
-      expect(call.where).toEqual({ id: TRACKER_ID, business_id: BUSINESS_ID });
+      const call = prisma.sla_breaches.updateMany.mock.calls[0]![0];
+      // The tenant scope survives the move to a batch write.
+      expect(call.where).toEqual({ id: { in: ['t1', 't2', 't3'] }, business_id: BUSINESS_ID });
       expect(call.data).toEqual({ breached: true, breached_at: NOW });
       expect(call.data).not.toHaveProperty('met_at');
+      // One statement for the batch, not one per tracker.
+      expect(prisma.sla_breaches.updateMany).toHaveBeenCalledTimes(1);
+      expect(prisma.sla_breaches.update).not.toHaveBeenCalled();
+    });
+
+    it('markBreachedBatch issues no query for an empty batch', async () => {
+      const count = await repository.markBreachedBatch(BUSINESS_ID, [], NOW);
+
+      expect(count).toBe(0);
+      expect(prisma.sla_breaches.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('markEscalatedBatch records the escalations under the tenant scope', async () => {
+      await repository.markEscalatedBatch(BUSINESS_ID, ['t1', 't2'], NOW);
+
+      expect(prisma.sla_breaches.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['t1', 't2'] }, business_id: BUSINESS_ID },
+        data: { escalated: true, escalated_at: NOW },
+      });
+    });
+
+    it('markEscalatedBatch issues no query for an empty batch', async () => {
+      const count = await repository.markEscalatedBatch(BUSINESS_ID, [], NOW);
+
+      expect(count).toBe(0);
+      expect(prisma.sla_breaches.updateMany).not.toHaveBeenCalled();
     });
 
     it('markEscalated records the escalation under the tenant scope', async () => {
