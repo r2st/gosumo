@@ -272,6 +272,77 @@ describe('SlaService — branches', () => {
     });
   });
 
+  /**
+   * The two list endpoints, driven with rows in them.
+   *
+   * Both were only ever called against an empty repository result, so the
+   * `.map(toDto)` in each never ran: the controller could have been returning
+   * raw snake_case Prisma rows to the dashboard and the suite would have
+   * stayed green. These assert the shape actually crossing the wire.
+   */
+  describe('list endpoints map their rows to DTOs', () => {
+    it('renders every policy through toPolicyDto', async () => {
+      repo.findAllPolicies.mockResolvedValue([
+        makePolicy(),
+        makePolicy({ id: 'p-2', name: 'Email standard', is_active: false, priority: 1 }),
+      ]);
+
+      const list = await service.listPolicies(BUSINESS_ID);
+
+      expect(list).toHaveLength(2);
+      expect(list[0]).toMatchObject({
+        id: POLICY_ID,
+        name: 'WhatsApp VIP',
+        // camelCase, and the timestamps serialised — not the Prisma row.
+        isActive: true,
+        firstResponseTargetMinutes: 15,
+        resolutionTargetMinutes: 60,
+        createdAt: '2026-06-01T00:00:00.000Z',
+      });
+      expect(list[1]).toMatchObject({ id: 'p-2', isActive: false, priority: 1 });
+      expect(list[0]).not.toHaveProperty('business_id');
+      expect(list[0]).not.toHaveProperty('is_active');
+    });
+
+    it('maps the breach page and carries the pagination through untouched', async () => {
+      repo.listBreaches.mockResolvedValue({
+        data: [makeTracker(), makeTracker({ id: 't-2', breached: true })],
+        total: 42,
+        page: 2,
+        limit: 20,
+        totalPages: 3,
+      } as Awaited<ReturnType<SlaRepository['listBreaches']>>);
+
+      const page = await service.listBreaches(BUSINESS_ID, {});
+
+      expect(page).toMatchObject({ total: 42, page: 2, limit: 20, totalPages: 3 });
+      expect(page.data.map((b) => b.id)).toEqual([TRACKER_ID, 't-2']);
+      expect(page.data[0]).toMatchObject({
+        conversationId: CONVERSATION_ID,
+        breachType: 'FIRST_RESPONSE',
+        dueAt: '2026-06-01T00:15:00.000Z',
+        breached: false,
+      });
+      expect(page.data[1]?.breached).toBe(true);
+      expect(page.data[0]).not.toHaveProperty('conversation_id');
+    });
+
+    it('returns an empty page rather than a null one when nothing matched', async () => {
+      repo.listBreaches.mockResolvedValue({
+        data: [],
+        total: 0,
+        page: 1,
+        limit: 20,
+        totalPages: 0,
+      } as Awaited<ReturnType<SlaRepository['listBreaches']>>);
+
+      const page = await service.listBreaches(BUSINESS_ID, {});
+
+      expect(page.data).toEqual([]);
+      expect(page.total).toBe(0);
+    });
+  });
+
   describe('listener resilience', () => {
     it('swallows a non-Error thrown out of the repository', async () => {
       repo.getConversationSummary.mockRejectedValue('connection reset');

@@ -689,6 +689,50 @@ describe('ChannelAdapterService — adapter registry', () => {
     expect(status['registeredChannels']).toContain(ChannelType.WHATSAPP);
     expect(status['adapterCount']).toBe(1);
   });
+
+  /**
+   * The three registry passthroughs nothing was driving.
+   *
+   * Each resolves an adapter and forwards one call, so the failure they guard
+   * against is the resolution going wrong — a media download or a capability
+   * query silently answered by the wrong channel's adapter, or by none.
+   */
+  it('routes a media download to the adapter for that channel', async () => {
+    const adapter = await buildAdapter();
+    const bytes = Buffer.from('voice-note-ogg-bytes');
+    jest.spyOn(adapter, 'downloadMedia').mockResolvedValue(bytes);
+    service.registerAdapter(adapter);
+
+    await expect(service.downloadMedia(ChannelType.WHATSAPP, 'media_123')).resolves.toBe(bytes);
+    expect(adapter.downloadMedia).toHaveBeenCalledWith('media_123');
+  });
+
+  it('refuses a media download for a channel with no adapter', async () => {
+    // Better a 404 than a download attempted against whichever adapter
+    // happened to be registered first.
+    await expect(service.downloadMedia(ChannelType.INSTAGRAM, 'media_123')).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+
+  it('reads capabilities off the adapter for the requested channel', async () => {
+    const adapter = await buildAdapter();
+    service.registerAdapter(adapter);
+
+    expect(service.getCapabilities(ChannelType.WHATSAPP)).toEqual(adapter.getCapabilities());
+    expect(() => service.getCapabilities(ChannelType.SMS)).toThrow(NotFoundException);
+  });
+
+  it('collects capabilities for every registered channel, keyed by channel', async () => {
+    expect(service.getAllCapabilities()).toEqual({});
+
+    const adapter = await buildAdapter();
+    service.registerAdapter(adapter);
+
+    const all = service.getAllCapabilities();
+    expect(Object.keys(all)).toEqual([ChannelType.WHATSAPP]);
+    expect(all[ChannelType.WHATSAPP]).toEqual(adapter.getCapabilities());
+  });
 });
 
 // ─────────────────────────────────────────────

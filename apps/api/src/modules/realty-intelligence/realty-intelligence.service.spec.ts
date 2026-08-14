@@ -438,5 +438,66 @@ describe('RealtyIntelligenceService', () => {
         metricType: IntelligenceMetricType.SOURCE_QUALITY,
       });
     });
+
+    /**
+     * Both cases above assert the *call*, never the *result* — the repository
+     * was stubbed empty, so the row-to-DTO mapping never ran. This drives a
+     * real row through it. What matters: the three timestamps serialise, and
+     * `min_n_threshold` survives the rename, because that field is what tells
+     * the dashboard an aggregate is suppression-safe.
+     */
+    it('maps each row to the DTO the dashboard consumes', async () => {
+      repository.listByBusiness.mockResolvedValue([
+        {
+          id: 'agg-1',
+          business_id: BUSINESS_ID,
+          corridor: 'Whitefield',
+          metric_type: IntelligenceMetricType.SOURCE_QUALITY,
+          metric_value: { bySource: { '99acres': { qualifiedRate: 0.42 } } },
+          sample_size: 37,
+          min_n_threshold: 5,
+          period_start: new Date('2026-06-01T00:00:00Z'),
+          period_end: new Date('2026-07-01T00:00:00Z'),
+          created_at: new Date('2026-07-01T02:30:00Z'),
+          updated_at: new Date('2026-07-01T02:30:00Z'),
+        },
+      ] as unknown as Awaited<ReturnType<RealtyIntelligenceRepository['listByBusiness']>>);
+
+      const [dto] = await service.listAggregates(BUSINESS_ID);
+
+      expect(dto).toEqual({
+        id: 'agg-1',
+        corridor: 'Whitefield',
+        metricType: IntelligenceMetricType.SOURCE_QUALITY,
+        metricValue: { bySource: { '99acres': { qualifiedRate: 0.42 } } },
+        sampleSize: 37,
+        minNThreshold: 5,
+        periodStart: '2026-06-01T00:00:00.000Z',
+        periodEnd: '2026-07-01T00:00:00.000Z',
+        updatedAt: '2026-07-01T02:30:00.000Z',
+      });
+      // The tenant discriminator is not part of the response body.
+      expect(dto).not.toHaveProperty('business_id');
+    });
+  });
+
+  describe('listCorridors', () => {
+    it('returns the tenant’s corridors from the repository', async () => {
+      repository.listCorridors.mockResolvedValue(['Hinjewadi', 'Wakad']);
+
+      await expect(service.listCorridors(BUSINESS_ID)).resolves.toEqual(['Hinjewadi', 'Wakad']);
+      expect(repository.listCorridors).toHaveBeenCalledWith(BUSINESS_ID);
+    });
+  });
+
+  describe('getOptInStatus', () => {
+    // Consent is opt-in only, so the read has to report both states faithfully
+    // — a stuck `true` would enrol a tenant's leads into the network.
+    it.each([true, false])('reports the stored consent flag (%s)', async (flag) => {
+      repository.getOptInStatus.mockResolvedValue(flag);
+
+      await expect(service.getOptInStatus(BUSINESS_ID)).resolves.toBe(flag);
+      expect(repository.getOptInStatus).toHaveBeenCalledWith(BUSINESS_ID);
+    });
   });
 });

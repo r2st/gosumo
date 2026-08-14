@@ -166,4 +166,63 @@ describe('validateBltcMerge', () => {
     const res = validateBltcMerge(existing, { config: undefined });
     expect(res.consistent).toBe(true);
   });
+
+  /**
+   * Every slot, not just `config`.
+   *
+   * Each slot passes its own "is it filled" and "does it differ" pair into the
+   * shared `conflict()` helper, and a wrong pair only misbehaves for that one
+   * slot — a `!=` where `!==` belongs, or a `localities` check that treats the
+   * empty array as filled. Testing one slot proved the helper worked and left
+   * the other six predicates unexecuted, so this walks all of them.
+   */
+  describe.each([
+    ['budgetMinPaise', 30 * LAKH, 45 * LAKH],
+    ['budgetMaxPaise', 60 * LAKH, 90 * LAKH],
+    ['timelineMonths', 6, 12],
+    ['config', '2BHK', '3BHK'],
+    ['purpose', 'END_USE', 'INVEST'],
+    ['financing', 'CASH', 'NEEDS_LOAN'],
+    ['localities', ['Wakad'], ['Baner']],
+  ] as ReadonlyArray<readonly [keyof BltcProfile, unknown, unknown]>)(
+    '%s',
+    (slot, filled, other) => {
+      const withSlot = profile({ [slot]: filled } as Partial<BltcProfile>);
+
+      it('conflicts when the incoming value differs from the filled slot', () => {
+        const res = validateBltcMerge(withSlot, { [slot]: other } as Partial<BltcProfile>);
+        const conflict = res.contradictions.find((c) => c.code === 'slot_overwrite_conflict');
+        expect(conflict?.slots).toEqual([slot]);
+        // A conflicting overwrite is a WARN, never a hard error: the newer
+        // value may simply be the customer changing their mind.
+        expect(conflict?.severity).toBe('WARN');
+      });
+
+      it('stays quiet when the incoming value repeats the filled slot', () => {
+        const res = validateBltcMerge(withSlot, { [slot]: filled } as Partial<BltcProfile>);
+        expect(codes(res)).not.toContain('slot_overwrite_conflict');
+      });
+
+      it('stays quiet when the existing slot is empty', () => {
+        // Filling a blank is not an overwrite. `localities` makes the point:
+        // its empty state is `[]`, not null, so a length check is the only
+        // thing that distinguishes "unknown" from "known to be nothing".
+        const res = validateBltcMerge(profile(), { [slot]: other } as Partial<BltcProfile>);
+        expect(codes(res)).not.toContain('slot_overwrite_conflict');
+      });
+    },
+  );
+
+  it('reorders localities without calling it a conflict only when the values match exactly', () => {
+    // The localities comparison is a JSON.stringify, so order is significant.
+    // That is a deliberate conservatism — ['Wakad','Baner'] arriving as
+    // ['Baner','Wakad'] is surfaced for a human rather than silently merged.
+    const twoAreas = profile({ localities: ['Wakad', 'Baner'] });
+    expect(codes(validateBltcMerge(twoAreas, { localities: ['Wakad', 'Baner'] }))).not.toContain(
+      'slot_overwrite_conflict',
+    );
+    expect(codes(validateBltcMerge(twoAreas, { localities: ['Baner', 'Wakad'] }))).toContain(
+      'slot_overwrite_conflict',
+    );
+  });
 });
