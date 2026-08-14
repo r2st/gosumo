@@ -310,18 +310,25 @@ export class InstagramAdapter extends BaseChannelAdapter {
     const payload = req.body as IgWebhookPayload;
     const results: NormalizedMessage[] = [];
 
-    if (payload.object !== 'instagram') return results;
+    if (payload?.object !== 'instagram') return results;
+    if (!Array.isArray(payload.entry)) return results;
 
     for (const entry of payload.entry) {
-      for (const event of entry.messaging ?? []) {
-        if (event.message?.is_echo) continue;
-        if (!event.message && !event.postback && !event.reaction) continue;
+      const messaging = entry?.messaging;
+      if (!Array.isArray(messaging)) continue;
+      for (const event of messaging) {
+        if (event?.message?.is_echo) continue;
+        if (!event?.message && !event?.postback && !event?.reaction) continue;
 
         try {
           results.push(this.buildNormalizedMessage(event));
         } catch (err) {
+          // `event.sender.id`, un-chained, was itself one of the throws that
+          // lands here — an event with a message but no sender crashed the
+          // handler meant to contain it, so the failure escaped this loop and
+          // the caller discarded every good message in the same payload.
           this.logger.warn(
-            `Could not parse Instagram event from ${event.sender.id}: ` +
+            `Could not parse Instagram event from ${event.sender?.id}: ` +
               `${err instanceof Error ? err.message : String(err)}`,
           );
         }
@@ -726,12 +733,17 @@ export class InstagramAdapter extends BaseChannelAdapter {
  */
 export function isNonMessageEventOnly(body: unknown): boolean {
   const payload = body as IgWebhookPayload;
-  if (!payload?.entry) return false;
+  if (!Array.isArray(payload?.entry)) return false;
 
+  // Defensive for the same reason as WhatsApp's `isStatusUpdateOnly`: the
+  // controller calls this ahead of its try/catch, so an unwalkable shape would
+  // turn a malformed POST into a 500 and invite Meta to retry it.
   for (const entry of payload.entry) {
-    for (const event of entry.messaging ?? []) {
-      if (event.message?.is_echo) continue;
-      if (event.message || event.postback || event.reaction) {
+    const messaging = entry?.messaging;
+    if (!Array.isArray(messaging)) continue;
+    for (const event of messaging) {
+      if (event?.message?.is_echo) continue;
+      if (event?.message || event?.postback || event?.reaction) {
         return false;
       }
     }

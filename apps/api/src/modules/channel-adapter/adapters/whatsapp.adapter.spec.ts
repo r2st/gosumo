@@ -959,4 +959,128 @@ describe('isStatusUpdateOnly', () => {
     expect(isStatusUpdateOnly(undefined)).toBe(false);
     expect(isStatusUpdateOnly({})).toBe(false);
   });
+
+  /**
+   * The controller calls this before its try/catch and before the signature is
+   * checked, so anything this function throws leaves a `@Public()` route
+   * answering 500 — the one response that makes Meta redeliver, and keep
+   * redelivering. Each shape below threw before; a body we cannot classify has
+   * to fall through to the parser instead.
+   */
+  it.each([
+    ['entry item with no changes', { entry: [{ id: 'w' }] }],
+    ['null changes', { entry: [{ id: 'w', changes: null }] }],
+    ['changes that is not an array', { entry: [{ id: 'w', changes: {} }] }],
+    ['entry that is a string', { entry: 'nope' }],
+    ['entry that is a number', { entry: 7 }],
+  ])('treats an unwalkable envelope as not-status-only: %s', (_label, body) => {
+    expect(() => isStatusUpdateOnly(body)).not.toThrow();
+    // Not-status-only, so the route hands it to the parser, which reports a
+    // reason. Claiming "status update, nothing to do" about a shape we could
+    // not read would discard a message we never looked for.
+    expect(isStatusUpdateOnly(body)).toBe(false);
+  });
+
+  it.each([
+    ['null change item', { entry: [{ id: 'w', changes: [null] }] }],
+    ['change with no value', { entry: [{ id: 'w', changes: [{ field: 'messages' }] }] }],
+    ['null value.messages', { entry: [{ id: 'w', changes: [{ field: 'messages', value: null }] }] }],
+  ])('reads a walkable change carrying no messages as status-only: %s', (_label, body) => {
+    expect(() => isStatusUpdateOnly(body)).not.toThrow();
+    expect(isStatusUpdateOnly(body)).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────
+// parseInboundAll — per-message failure isolation
+// ─────────────────────────────────────────────
+
+describe('WhatsAppAdapter.parseInboundAll isolation', () => {
+  let adapter: WhatsAppAdapter;
+
+  beforeEach(() => {
+    adapter = configured();
+    jest
+      .spyOn((adapter as unknown as { logger: { warn: () => void } }).logger, 'warn')
+      .mockImplementation(() => undefined);
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  const envelope = (value: unknown): RawRequest => ({
+    headers: {},
+    body: {
+      object: 'whatsapp_business_account',
+      entry: [{ id: 'waba-1', changes: [{ field: 'messages', value }] }],
+    },
+    query: {},
+  });
+
+  const goodMessage = (id: string) => ({
+    id,
+    from: '919876543210',
+    timestamp: '1700000000',
+    type: 'text',
+    text: { body: 'hello' },
+  });
+
+  it('keeps the good messages when a sibling entry is null', () => {
+    // The per-message loop existed to isolate exactly this, but the contact
+    // lookup sat *outside* its try — so one null entry threw past the catch,
+    // the service turned it into a payload-wide parse failure, and both real
+    // messages were lost with no row and no event.
+    const parsed = adapter.parseInboundAll(
+      envelope({
+        metadata: { phone_number_id: 'pn-1', display_phone_number: '+911111111111' },
+        contacts: [{ wa_id: '919876543210', profile: { name: 'Asha' } }],
+        messages: [goodMessage('wamid.1'), null, goodMessage('wamid.2')],
+      }),
+    );
+
+    expect(parsed.map((m) => m.externalId)).toEqual(['wamid.1', 'wamid.2']);
+    expect(parsed[0]!.sender.displayName).toBe('Asha');
+  });
+
+  it('keeps the good messages when the contacts array carries a null', () => {
+    const parsed = adapter.parseInboundAll(
+      envelope({
+        metadata: { phone_number_id: 'pn-1', display_phone_number: '+911111111111' },
+        contacts: [null, { wa_id: '919876543210', profile: { name: 'Asha' } }],
+        messages: [goodMessage('wamid.1')],
+      }),
+    );
+
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]!.sender.displayName).toBe('Asha');
+  });
+
+  it('skips a message whose contact entry has no profile', () => {
+    // `contact?.profile.name` is only half-chained; the contact matches, the
+    // profile is absent, and the throw has to stay inside the loop.
+    const parsed = adapter.parseInboundAll(
+      envelope({
+        metadata: { phone_number_id: 'pn-1', display_phone_number: '+911111111111' },
+        contacts: [{ wa_id: '919876543210' }],
+        messages: [goodMessage('wamid.1'), { ...goodMessage('wamid.2'), from: '910000000000' }],
+      }),
+    );
+
+    expect(parsed.map((m) => m.externalId)).toEqual(['wamid.2']);
+  });
+
+  it('returns nothing rather than throwing on an unwalkable envelope', () => {
+    // A throw here would be reported as "could not parse" for the whole POST;
+    // returning empty lets the service ask `parseInbound` for the real reason.
+    for (const body of [
+      { object: 'whatsapp_business_account', entry: null },
+      { object: 'whatsapp_business_account', entry: [{ changes: 'nope' }] },
+      { object: 'whatsapp_business_account', entry: [{ changes: [{ field: 'messages' }] }] },
+      {
+        object: 'whatsapp_business_account',
+        entry: [{ changes: [{ field: 'messages', value: { messages: 'nope' } }] }],
+      },
+    ]) {
+      expect(adapter.parseInboundAll({ headers: {}, body, query: {} })).toEqual([]);
+    }
+  });
 });

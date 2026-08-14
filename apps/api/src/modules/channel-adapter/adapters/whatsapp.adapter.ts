@@ -296,11 +296,12 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
   /**
    * Parse a Meta webhook payload into GoSumo's NormalizedMessage format.
    *
-   * Meta batches multiple events in one POST. This implementation returns
-   * the first parseable message. The controller calls this once per webhook
-   * request; if the payload contains multiple messages you should loop
-   * over the entries and call parseInbound per entry (or refactor to
-   * parseInboundAll which returns an array).
+   * Meta batches multiple events in one POST, and this returns only the first
+   * parseable one. The webhook route therefore does *not* call it —
+   * `parseInboundAll` is the production path. What is left for this method is
+   * the `ChannelAdapter` interface contract and the diagnostic role the batch
+   * pipeline gives it: when `parseInboundAll` yields nothing, this is called to
+   * turn "no messages" into a reason.
    *
    * Throws if the payload contains no parseable message (e.g. a pure
    * status-update webhook that has no `messages` array).
@@ -364,19 +365,27 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
     const payload = req.body as MetaWebhookPayload;
     const results: NormalizedMessage[] = [];
 
-    if (payload.object !== 'whatsapp_business_account') return results;
+    if (payload?.object !== 'whatsapp_business_account') return results;
+    if (!Array.isArray(payload.entry)) return results;
 
     for (const entry of payload.entry) {
+      if (!Array.isArray(entry?.changes)) continue;
       for (const change of entry.changes) {
-        if (change.field !== 'messages') continue;
+        if (change?.field !== 'messages') continue;
 
         const value = change.value;
-        if (!value.messages) continue;
+        if (!Array.isArray(value?.messages)) continue;
 
         for (const metaMsg of value.messages) {
-          const contact = value.contacts?.find((c) => c.wa_id === metaMsg.from);
-
+          // The whole per-message body sits inside the try, including the
+          // contact lookup. It used to sit outside, so a `messages` array
+          // carrying one null entry (or a `contacts` array carrying one) threw
+          // past the isolation this loop exists to provide: the caller turns
+          // that into a parse failure for the entire payload, and the good
+          // messages beside it are dropped with it.
           try {
+            const contact = value.contacts?.find((c) => c?.wa_id === metaMsg?.from);
+
             results.push({
               id: generateId(),
               externalId: metaMsg.id,
@@ -398,8 +407,10 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
               },
             });
           } catch (err) {
+            // Optional-chained: a null `metaMsg` is one of the shapes that gets
+            // us here, and a throw from the handler would defeat the catch.
             this.logger.warn(
-              `Could not parse message ${metaMsg.id} (type: ${metaMsg.type}): ${err instanceof Error ? err.message : String(err)}`,
+              `Could not parse message ${metaMsg?.id} (type: ${metaMsg?.type}): ${err instanceof Error ? err.message : String(err)}`,
             );
           }
         }
@@ -855,11 +866,18 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
  */
 export function isStatusUpdateOnly(body: unknown): boolean {
   const payload = body as MetaWebhookPayload;
-  if (!payload?.entry) return false;
+  if (!Array.isArray(payload?.entry)) return false;
 
+  // Every dereference below is defensive on purpose. The controller calls this
+  // *before* its try/catch and before the signature check, so a shape this
+  // function cannot walk becomes a 500 out of a `@Public()` route — which is
+  // precisely the response that makes Meta retry, and retry, and retry. A
+  // payload we cannot classify is not status-only; let it fall through to the
+  // parser, which reports the problem without taking the route down.
   for (const entry of payload.entry) {
+    if (!Array.isArray(entry?.changes)) return false;
     for (const change of entry.changes) {
-      if (change.field === 'messages' && change.value.messages?.length) {
+      if (change?.field === 'messages' && change.value?.messages?.length) {
         return false;
       }
     }

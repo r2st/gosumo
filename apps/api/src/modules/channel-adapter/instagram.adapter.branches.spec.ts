@@ -444,6 +444,62 @@ describe('InstagramAdapter — parseInboundAll branches', () => {
     expect(result).toHaveLength(1);
     expect(result[0]?.externalId).toBe('mid.GOOD');
   });
+
+  /**
+   * The skip-and-continue above only holds while the catch handler itself can
+   * run. It logged `event.sender.id` un-chained, and "no sender" is one of the
+   * shapes that reaches it — so the handler threw, the throw escaped the loop,
+   * and the service reported the whole POST as unparseable. Every good message
+   * delivered alongside it was discarded: no row, no event, and a 200 back to
+   * Meta so it never redelivered.
+   */
+  it('keeps the good messages when a sibling event has no sender', () => {
+    const result = adapter.parseInboundAll(
+      request(
+        makeWebhookPayload([
+          { recipient: { id: IG_BUSINESS_ID }, timestamp: 1, message: { mid: 'mid.NOSENDER' } },
+          {
+            sender: { id: SENDER_IGSID },
+            recipient: { id: IG_BUSINESS_ID },
+            timestamp: 1700000000000,
+            message: { mid: 'mid.GOOD', text: 'still here' },
+          },
+        ]),
+      ),
+    );
+
+    expect(result.map((m) => m.externalId)).toEqual(['mid.GOOD']);
+  });
+
+  it('keeps the good messages when a sibling event has no recipient', () => {
+    const result = adapter.parseInboundAll(
+      request(
+        makeWebhookPayload([
+          { sender: { id: SENDER_IGSID }, timestamp: 1, message: { mid: 'mid.NORECIPIENT' } },
+          {
+            sender: { id: SENDER_IGSID },
+            recipient: { id: IG_BUSINESS_ID },
+            timestamp: 1700000000000,
+            message: { mid: 'mid.GOOD', text: 'still here' },
+          },
+        ]),
+      ),
+    );
+
+    expect(result.map((m) => m.externalId)).toEqual(['mid.GOOD']);
+  });
+
+  it('returns nothing rather than throwing on an unwalkable envelope', () => {
+    for (const payload of [
+      { object: 'instagram', entry: null },
+      { object: 'instagram', entry: 'nope' },
+      { object: 'instagram', entry: [null] },
+      { object: 'instagram', entry: [{ id: IG_BUSINESS_ID, messaging: 'nope' }] },
+      { object: 'instagram', entry: [{ id: IG_BUSINESS_ID, messaging: [null] }] },
+    ]) {
+      expect(adapter.parseInboundAll(request(payload))).toEqual([]);
+    }
+  });
 });
 
 // ─────────────────────────────────────────────
@@ -461,6 +517,20 @@ describe('isNonMessageEventOnly — branches', () => {
 
   it('returns false for a payload with no entry key', () => {
     expect(isNonMessageEventOnly({ object: 'instagram' })).toBe(false);
+  });
+
+  /**
+   * Called ahead of the controller's try/catch, so a throw here is a 500 out of
+   * a `@Public()` route — the response that makes Meta redeliver on a loop.
+   */
+  it.each([
+    ['null entry', { entry: null }],
+    ['entry that is a number', { entry: 7 }],
+    ['null entry item', { entry: [null] }],
+    ['messaging that is not an array', { entry: [{ id: 'x', messaging: {} }] }],
+    ['null messaging item', { entry: [{ id: 'x', messaging: [null] }] }],
+  ])('does not throw on a malformed payload: %s', (_label, body) => {
+    expect(() => isNonMessageEventOnly(body)).not.toThrow();
   });
 
   it('returns false when a postback is present', () => {
