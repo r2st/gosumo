@@ -5,7 +5,6 @@ import type {
   catalog_categories,
   catalog_items,
   catalog_variants,
-  catalog_packages,
 } from '@prisma/client';
 
 // ─────────────────────────────────────────────

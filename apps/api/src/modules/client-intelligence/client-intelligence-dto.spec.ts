@@ -7,7 +7,7 @@ import { plainToInstance } from 'class-transformer';
 import { ListClientsQueryDto } from './dto';
 
 describe('ListClientsQueryDto validation', () => {
-  async function validateDto(plain: Record<string, any>) {
+  async function validateDto(plain: Record<string, unknown>) {
     const dto = plainToInstance(ListClientsQueryDto, plain);
     return validate(dto, { whitelist: true, forbidNonWhitelisted: true });
   }

@@ -1,4 +1,4 @@
-import { ConfidenceMode, IntentType } from '@gosumo/shared';
+import { IntentType } from '@gosumo/shared';
 
 /**
  * AI Engine tuning constants.

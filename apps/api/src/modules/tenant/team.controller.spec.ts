@@ -4,11 +4,13 @@ import { TeamMemberRole } from '@gosumo/database';
 import { TeamController } from './team.controller';
 import { TenantService } from './tenant.service';
 import { PrismaService } from '../../common/services/prisma.service';
+import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+import type { InviteMemberDto } from './dto/invite-member.dto';
 
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
 const MEMBER_ID = '22222222-2222-2222-2222-222222222222';
 
-function makeMember(overrides: Record<string, any> = {}) {
+function makeMember(overrides: Record<string, unknown> = {}) {
   return { id: MEMBER_ID, name: 'Staff Person', email: 'staff@example.com', role: 'STAFF', status: 'ACTIVE', avatar_url: null, last_active_at: null, created_at: new Date('2024-01-01'), ...overrides };
 }
 
@@ -74,8 +76,8 @@ describe('TeamController', () => {
     it('should delegate to tenantService.inviteMember with user sub', async () => {
       const invited = makeMember({ status: 'INVITED' });
       tenantService.inviteMember.mockResolvedValue(invited);
-      const user = { sub: 'owner-id-123' } as any;
-      const dto = { email: 'new@example.com', name: 'New', role: 'STAFF' } as any;
+      const user: AuthenticatedUser = { sub: 'owner-id-123', businessId: TENANT_ID, role: 'OWNER' };
+      const dto = { email: 'new@example.com', name: 'New', role: 'STAFF' } as unknown as InviteMemberDto;
       const result = await controller.inviteMember(TENANT_ID, user, dto);
       expect(result).toEqual(invited);
       expect(tenantService.inviteMember).toHaveBeenCalledWith(TENANT_ID, dto, 'owner-id-123');
@@ -87,7 +89,7 @@ describe('TeamController', () => {
 
     /** The acting user, as `@CurrentUser()` would supply them. */
     function actor(sub: string) {
-      return { sub, businessId: TENANT_ID, role: 'OWNER' } as any;
+      return { sub, businessId: TENANT_ID, role: 'OWNER' } satisfies AuthenticatedUser;
     }
 
     /** Queue up the actor lookup, then the demotion-target lookup. */

@@ -595,19 +595,20 @@ describe('JwtAuthGuard — global registration', () => {
     // Import the module metadata to verify APP_GUARD is registered
     const { AuthModule } = await import('./auth.module');
     const moduleMetadata = Reflect.getMetadata('providers', AuthModule) as Array<
-      { provide: unknown; useClass: unknown } | Function
+      { provide: unknown; useClass: unknown } | NewableFunction
     >;
 
+    // APP_GUARD is a Symbol/InjectionToken — assert a provider is registered
+    // against it, and that its useClass is JwtAuthGuard.
     const appGuardProvider = moduleMetadata?.find(
       (p) => typeof p === 'object' && p !== null && 'provide' in p
         && (p as { provide: unknown }).provide?.toString?.().includes('APP_GUARD'),
     );
+    expect(appGuardProvider).toBeDefined();
 
-    // APP_GUARD is a Symbol/InjectionToken — check that a guard provider exists
-    // with useClass pointing to JwtAuthGuard
     const guardProviders = moduleMetadata?.filter(
       (p) => typeof p === 'object' && p !== null && 'useClass' in p,
-    ) as Array<{ provide: unknown; useClass: Function }>;
+    ) as Array<{ provide: unknown; useClass: NewableFunction }>;
 
     const hasJwtAuthGuard = guardProviders?.some(
       (p) => p.useClass?.name === 'JwtAuthGuard',

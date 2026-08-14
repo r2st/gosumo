@@ -22,7 +22,7 @@
  */
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { Prisma, RealtyIntegrationProvider } from '@prisma/client';
+import { RealtyIntegrationProvider } from '@prisma/client';
 import { ResourceNotFoundError } from '@gosumo/shared';
 
 import { RealtyIntegrationsRepository } from './realty-integrations.repository';

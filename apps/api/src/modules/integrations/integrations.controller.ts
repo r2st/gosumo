@@ -4,7 +4,6 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
-import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../common/services/prisma.service';
 
 @ApiTags('integrations')
@@ -18,7 +17,7 @@ export class IntegrationsController {
   @Get('google-calendar')
   @ApiOperation({ summary: 'Get Google Calendar integration status' })
   @ApiResponse({ status: 200, description: 'Paginated google calendar list for this business' })
-  async getCalendar(@TenantId() tenantId: string) {
+  async getCalendar(@TenantId() _tenantId: string) {
     return {
       connected: false,
       email: null,
@@ -31,7 +30,7 @@ export class IntegrationsController {
   @Post('google-calendar/connect')
   @ApiOperation({ summary: 'Start Google Calendar OAuth flow' })
   @ApiResponse({ status: 201, description: 'Result of the connect action' })
-  async connectCalendar(@TenantId() tenantId: string) {
+  async connectCalendar(@TenantId() _tenantId: string) {
     // Placeholder — would redirect to Google OAuth consent screen
     return { authUrl: null, message: 'Google Calendar integration is not configured yet. Please set up OAuth credentials in the admin panel.' };
   }
@@ -49,7 +48,7 @@ export class IntegrationsController {
   @Get('credentials')
   @ApiOperation({ summary: 'List saved integration credentials' })
   @ApiResponse({ status: 200, description: 'Paginated credential list for this business' })
-  async listCredentials(@TenantId() tenantId: string) {
+  async listCredentials(@TenantId() _tenantId: string) {
     // Return empty list — no integrations configured yet
     return { integrations: [] };
   }
@@ -61,7 +60,7 @@ export class IntegrationsController {
   async saveCredentials(
     @TenantId() tenantId: string,
     @Param('provider') provider: string,
-    @Body() body: Record<string, unknown>,
+    @Body() _body: Record<string, unknown>,
   ) {
     this.logger.log(`Saving ${provider} credentials for tenant ${tenantId}`);
     return {

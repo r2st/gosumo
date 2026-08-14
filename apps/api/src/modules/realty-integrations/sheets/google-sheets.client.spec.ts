@@ -64,10 +64,8 @@ jest.mock('googleapis', () => ({
   },
 }));
 
-/* eslint-disable import/first */
 import { GoogleSheetsClient, GoogleSheetsCredentials } from './google-sheets.client';
 import type { SheetRow } from './sheets-row-mapper';
-/* eslint-enable import/first */
 
 const CONFIG = {
   GOOGLE_CLIENT_ID: 'client-id',

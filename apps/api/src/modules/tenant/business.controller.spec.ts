@@ -3,10 +3,11 @@ import { BusinessController } from './business.controller';
 import { TenantService } from './tenant.service';
 import { SubscriptionService } from './services/subscription.service';
 import { PrismaService } from '../../common/services/prisma.service';
+import type { UpdateBusinessDto } from './dto/update-business.dto';
 
 const BIZ_ID = '11111111-1111-1111-1111-111111111111';
 
-function makeBiz(overrides: Record<string, any> = {}) {
+function makeBiz(overrides: Record<string, unknown> = {}) {
   return { id: BIZ_ID, name: 'Test Biz', email: 'test@example.com', profile: {}, ai_settings: {}, ...overrides };
 }
 
@@ -47,7 +48,7 @@ describe('BusinessController', () => {
     it('should forward the DTO to tenantService.updateBusiness', async () => {
       const updated = makeBiz({ name: 'Updated' });
       tenantService.updateBusiness.mockResolvedValue(updated);
-      const result = await controller.updateMe(BIZ_ID, { name: 'Updated' } as any);
+      const result = await controller.updateMe(BIZ_ID, { name: 'Updated' } as UpdateBusinessDto);
       expect(result).toEqual(updated);
       expect(tenantService.updateBusiness).toHaveBeenCalledWith(BIZ_ID, { name: 'Updated' });
     });
@@ -104,7 +105,7 @@ describe('BusinessController', () => {
         isActive: true,
       };
       subscriptionService.getSubscription.mockResolvedValue(sub);
-      const result = (await controller.getSubscription(BIZ_ID)) as any;
+      const result = (await controller.getSubscription(BIZ_ID)) as Record<string, unknown>;
       expect(result.plan).toBe('GROWTH');
       expect(result.status).toBe('ACTIVE');
       expect(result.priceMonthlyPaise).toBe(299900);
@@ -119,13 +120,13 @@ describe('BusinessController', () => {
         pricePaise: 299900,
         isActive: false,
       });
-      const result = (await controller.getSubscription(BIZ_ID)) as any;
+      const result = (await controller.getSubscription(BIZ_ID)) as Record<string, unknown>;
       expect(result.status).toBe('INACTIVE');
     });
 
     it('should return fallback defaults when service throws', async () => {
       subscriptionService.getSubscription.mockRejectedValue(new Error('not found'));
-      const result = await controller.getSubscription(BIZ_ID) as any;
+      const result = await controller.getSubscription(BIZ_ID) as Record<string, unknown>;
       expect(result.plan).toBe('STARTER');
       expect(result.status).toBe('ACTIVE');
       expect(result.currentPeriodStart).toBeDefined();

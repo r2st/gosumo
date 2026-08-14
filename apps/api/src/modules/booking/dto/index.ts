@@ -7,12 +7,10 @@ import {
   IsInt,
   IsArray,
   IsBoolean,
-  IsUrl,
   ValidateNested,
   Min,
   Max,
   MaxLength,
-  ArrayMinSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';

@@ -5,12 +5,9 @@ import {
   IsUUID,
   IsEnum,
   IsInt,
-  IsNumber,
-  IsArray,
   Min,
   Max,
   MaxLength,
-  ValidateNested,
   IsBoolean,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';

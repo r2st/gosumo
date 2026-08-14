@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
-import { AgentPerformanceRepository, AgentSummary, DateRange } from './agent-performance.repository';
+import { AgentPerformanceRepository, AgentSummary } from './agent-performance.repository';
 import { SlaService } from '../sla/sla.service';
 import { AgentPerformanceDto, AgentLeaderboardDto, ResolvedRangeDto } from './dto';
 

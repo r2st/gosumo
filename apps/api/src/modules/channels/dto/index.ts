@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsObject, IsBoolean } from "class-validator";
+import { IsString, IsOptional, IsObject } from "class-validator";
 
 export class ConnectChannelDto {
   @IsOptional()

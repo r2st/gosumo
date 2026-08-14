@@ -39,11 +39,11 @@ const PHONE_RE = /(?:\+?91[\s-]?|0)?([6-9]\d{4}[\s-]?\d{5})/;
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
 
 // Label patterns tried in order; first hit wins. Tolerant of ":" / "-" and case.
-const NAME_LABELS = [/name\s*[:\-]\s*([^\n\r]+)/i, /from\s*[:\-]\s*([A-Za-z][^\n\r<]+)/i];
-const PHONE_LABELS = [/(?:phone|mobile|contact)\s*(?:no\.?|number)?\s*[:\-]\s*([^\n\r]+)/i];
-const EMAIL_LABELS = [/e-?mail\s*(?:id)?\s*[:\-]\s*([^\n\r]+)/i];
+const NAME_LABELS = [/name\s*[:-]\s*([^\n\r]+)/i, /from\s*[:-]\s*([A-Za-z][^\n\r<]+)/i];
+const PHONE_LABELS = [/(?:phone|mobile|contact)\s*(?:no\.?|number)?\s*[:-]\s*([^\n\r]+)/i];
+const EMAIL_LABELS = [/e-?mail\s*(?:id)?\s*[:-]\s*([^\n\r]+)/i];
 const LISTING_LABELS = [
-  /(?:property|project|listing|regarding|enquiry for|interested in)\s*[:\-]\s*([^\n\r]+)/i,
+  /(?:property|project|listing|regarding|enquiry for|interested in)\s*[:-]\s*([^\n\r]+)/i,
 ];
 
 function detectPortal(input: PortalEmailInput): RealtyPortal {

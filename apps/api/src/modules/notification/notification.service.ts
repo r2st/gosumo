@@ -604,7 +604,7 @@ export class NotificationService {
     idOrProviderId: string,
     dto: UpdateDeliveryStatusDto,
   ): Promise<NotificationDto> {
-    let row =
+    const row =
       (await this.repository.findById(businessId, idOrProviderId)) ??
       (await this.repository.findByProviderMessageId(businessId, idOrProviderId)) ??
       (dto.providerMessageId

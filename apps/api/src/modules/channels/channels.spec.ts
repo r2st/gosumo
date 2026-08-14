@@ -1,9 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { ChannelType } from '@gosumo/shared';
 import { ChannelsController } from './channels.controller';
 import { ChannelsService } from './channels.service';
+import type { ConnectChannelDto } from './dto';
 
 /* ─── Mocks ─────────────────────────────────────────────────────────────── */
 
@@ -32,7 +32,7 @@ describe('ChannelsController', () => {
 
   describe('connectChannel — channel type normalisation', () => {
     const businessId = 'biz-001';
-    const body = { displayName: 'Test Channel' } as any;
+    const body = { displayName: 'Test Channel' } as ConnectChannelDto;
 
     it('should accept lowercase channel type (whatsapp)', async () => {
       mockChannelsService.connectChannel.mockResolvedValue({ id: 'ch-1' });

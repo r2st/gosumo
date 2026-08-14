@@ -6,7 +6,7 @@
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { MigrationKind, MigrationStatus } from '@gosumo/shared';
+import { MigrationStatus } from '@gosumo/shared';
 
 import { MigrationService } from './migration.service';
 import { RealtyPilotRepository } from './realty-pilot.repository';

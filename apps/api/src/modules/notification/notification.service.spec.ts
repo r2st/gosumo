@@ -21,15 +21,46 @@ const nextId = () => `id-${++idSeq}`;
 // In-memory fake repository
 // ─────────────────────────────────────────────
 
+/**
+ * Rows in these fakes mirror Prisma model rows, which mix typed scalar columns
+ * with untyped JSON columns. `FakeRow` pins the two identifiers the fakes
+ * actually branch on and leaves the rest loose, so fixtures stay terse.
+ */
+type FakeRow = { id: string; business_id: string } & Record<string, unknown>;
+
+/** A repository input DTO, as the service under test passes it. */
+type FakeInput = Record<string, unknown>;
+
+/** Fields `createNotification` reads off its input. */
+type CreateNotificationInput = {
+  businessId: string;
+  clientId?: string | null;
+  channel: unknown;
+  category: unknown;
+  status: unknown;
+  templateId?: string | null;
+  eventType?: string | null;
+  recipient: string;
+  subject?: string | null;
+  content?: unknown;
+  data?: unknown;
+  dedupeKey?: string | null;
+  batchId?: string | null;
+  campaignId?: string | null;
+  maxAttempts?: number;
+  scheduledAt?: Date | null;
+};
+
 class FakeRepo {
-  notifications = new Map<string, any>();
-  templates = new Map<string, any>();
-  triggers = new Map<string, any>();
-  preferences: any[] = [];
-  clients = new Map<string, any>();
+  notifications = new Map<string, FakeRow>();
+  templates = new Map<string, FakeRow>();
+  triggers = new Map<string, FakeRow>();
+  preferences: FakeRow[] = [];
+  clients = new Map<string, FakeRow>();
 
   // Notifications
-  createNotification = jest.fn(async (data: any) => {
+  createNotification = jest.fn(async (input: FakeInput) => {
+    const data = input as CreateNotificationInput;
     if (data.dedupeKey) {
       const dup = [...this.notifications.values()].find(
         (n) => n.dedupe_key === data.dedupeKey && n.business_id === data.businessId,
@@ -97,7 +128,7 @@ class FakeRepo {
     );
   });
 
-  updateNotification = jest.fn(async (b: string, id: string, data: any) => {
+  updateNotification = jest.fn(async (b: string, id: string, data: FakeInput) => {
     const row = this.notifications.get(id);
     if (!row || row.business_id !== b) {
       throw new Prisma.PrismaClientKnownRequestError('not found', {
@@ -107,7 +138,7 @@ class FakeRepo {
     }
     for (const [k, v] of Object.entries(data)) {
       if (v && typeof v === 'object' && 'increment' in (v as object)) {
-        row[k] = (row[k] ?? 0) + (v as any).increment;
+        row[k] = ((row[k] as number) ?? 0) + (v as { increment: number }).increment;
       } else {
         row[k] = v;
       }
@@ -118,7 +149,7 @@ class FakeRepo {
 
   list = jest.fn(
     async (_businessId: string, _filters: Record<string, unknown>) => ({
-      data: [] as any[],
+      data: [] as FakeRow[],
       total: 0,
       page: 1,
       limit: 20,
@@ -136,7 +167,7 @@ class FakeRepo {
   }));
 
   // Templates
-  createTemplate = jest.fn(async (data: any) => {
+  createTemplate = jest.fn(async (data: FakeInput) => {
     const row = {
       id: nextId(),
       ...data,
@@ -147,7 +178,7 @@ class FakeRepo {
       updated_at: new Date(),
       deleted_at: null,
     };
-    this.templates.set(row.id, row);
+    this.templates.set(row.id, row as unknown as FakeRow);
     return row;
   });
   findTemplateById = jest.fn(async (b: string, id: string) => {
@@ -175,9 +206,9 @@ class FakeRepo {
     },
   );
   listTemplates = jest.fn(async () => [...this.templates.values()]);
-  updateTemplate = jest.fn(async (b: string, id: string, data: any) => {
+  updateTemplate = jest.fn(async (b: string, id: string, data: FakeInput) => {
     const t = this.templates.get(id);
-    Object.assign(t, data, { updated_at: new Date() });
+    Object.assign(t!, data, { updated_at: new Date() });
     return { ...t };
   });
   softDeleteTemplate = jest.fn(async (b: string, id: string) => {
@@ -189,7 +220,16 @@ class FakeRepo {
   listPreferences = jest.fn(async (b: string, c: string) =>
     this.preferences.filter((p) => p.business_id === b && p.client_id === c),
   );
-  upsertPreference = jest.fn(async (data: any) => {
+  upsertPreference = jest.fn(async (input: FakeInput) => {
+    const data = input as {
+      businessId: string;
+      clientId: string;
+      channel: unknown;
+      category: unknown;
+      isEnabled: boolean;
+      quietHoursStart?: number | null;
+      quietHoursEnd?: number | null;
+    };
     const row = {
       id: nextId(),
       business_id: data.businessId,
@@ -205,7 +245,7 @@ class FakeRepo {
   });
 
   // Triggers
-  createTrigger = jest.fn(async (data: any) => {
+  createTrigger = jest.fn(async (data: FakeInput) => {
     const row = {
       id: nextId(),
       ...data,
@@ -213,7 +253,7 @@ class FakeRepo {
       updated_at: new Date(),
       deleted_at: null,
     };
-    this.triggers.set(row.id, row);
+    this.triggers.set(row.id, row as unknown as FakeRow);
     return row;
   });
   findTriggerById = jest.fn(async (b: string, id: string) => {
@@ -229,9 +269,9 @@ class FakeRepo {
         (!activeOnly || t.is_active),
     ),
   );
-  updateTrigger = jest.fn(async (b: string, id: string, data: any) => {
+  updateTrigger = jest.fn(async (b: string, id: string, data: FakeInput) => {
     const t = this.triggers.get(id);
-    Object.assign(t, data, { updated_at: new Date() });
+    Object.assign(t!, data, { updated_at: new Date() });
     return { ...t };
   });
   softDeleteTrigger = jest.fn(async (b: string, id: string) => {
@@ -351,7 +391,7 @@ describe('NotificationService.dispatch', () => {
 
     expect(result.skipped).toBe(false);
     expect(result.notification.status).toBe(NotificationStatus.QUEUED);
-    expect(result.notification.content.text).toBe('Hi Asha');
+    expect((result.notification.content as { text: string }).text).toBe('Hi Asha');
     expect(queue.add).toHaveBeenCalledTimes(1);
     expect(emitted(emitter, 'notification.queued')).toHaveLength(1);
   });
@@ -410,6 +450,7 @@ describe('NotificationService.dispatch', () => {
     const { service, repo } = makeService();
     repo.seedClient();
     repo.preferences.push({
+      id: nextId(),
       business_id: BUSINESS,
       client_id: CLIENT,
       channel: NotificationTemplateChannel.WHATSAPP,
@@ -478,9 +519,9 @@ describe('NotificationService.processDispatch', () => {
 
     expect(send).toHaveBeenCalledTimes(1);
     const updated = repo.notifications.get(row.id);
-    expect(updated.status).toBe(NotificationStatus.SENT);
-    expect(updated.provider_message_id).toBe('p1');
-    expect(updated.attempts).toBe(1);
+    expect(updated!.status).toBe(NotificationStatus.SENT);
+    expect(updated!.provider_message_id).toBe('p1');
+    expect(updated!.attempts).toBe(1);
     expect(emitted(emitter, 'notification.sent')).toHaveLength(1);
   });
 
@@ -499,9 +540,9 @@ describe('NotificationService.processDispatch', () => {
     await service.processDispatch(BUSINESS, row.id);
 
     const updated = repo.notifications.get(row.id);
-    expect(updated.status).toBe(NotificationStatus.QUEUED);
-    expect(updated.attempts).toBe(1);
-    expect(updated.failure_reason).toBe('timeout');
+    expect(updated!.status).toBe(NotificationStatus.QUEUED);
+    expect(updated!.attempts).toBe(1);
+    expect(updated!.failure_reason).toBe('timeout');
     // Re-queued for a retry.
     expect(queue.add).toHaveBeenCalledTimes(1);
     expect(queue.add.mock.calls[0][2].delay).toBeGreaterThan(0);
@@ -515,8 +556,8 @@ describe('NotificationService.processDispatch', () => {
     await service.processDispatch(BUSINESS, row.id);
 
     const updated = repo.notifications.get(row.id);
-    expect(updated.status).toBe(NotificationStatus.FAILED);
-    expect(updated.failed_at).not.toBeNull();
+    expect(updated!.status).toBe(NotificationStatus.FAILED);
+    expect(updated!.failed_at).not.toBeNull();
     expect(emitted(emitter, 'notification.failed')).toHaveLength(1);
   });
 
@@ -526,7 +567,7 @@ describe('NotificationService.processDispatch', () => {
     });
     const row = repo.seedNotification({ attempts: 2, max_attempts: 3 });
     await service.processDispatch(BUSINESS, row.id);
-    expect(repo.notifications.get(row.id).status).toBe(NotificationStatus.FAILED);
+    expect(repo.notifications.get(row.id)!.status).toBe(NotificationStatus.FAILED);
   });
 
   it('re-queues without consuming an attempt when rate limited', async () => {
@@ -543,7 +584,7 @@ describe('NotificationService.processDispatch', () => {
     await service.processDispatch(BUSINESS, row.id);
 
     expect(send).not.toHaveBeenCalled();
-    expect(repo.notifications.get(row.id).attempts).toBe(0);
+    expect(repo.notifications.get(row.id)!.attempts).toBe(0);
     expect(queue.add).toHaveBeenCalledTimes(1); // re-queued
   });
 });
@@ -603,8 +644,8 @@ describe('NotificationService.handleEventTrigger', () => {
     expect(repo.createNotification).toHaveBeenCalledTimes(1);
     expect(queue.add).toHaveBeenCalledTimes(1);
     const created = [...repo.notifications.values()][0];
-    expect(created.event_type).toBe('order.confirmed');
-    expect(created.dedupe_key).toBe('order.confirmed:ORD-1:WHATSAPP');
+    expect(created!.event_type).toBe('order.confirmed');
+    expect(created!.dedupe_key).toBe('order.confirmed:ORD-1:WHATSAPP');
   });
 
   it('does not dispatch when a configured trigger condition fails', async () => {
@@ -858,12 +899,12 @@ describe('NotificationService.dispatchBatch', () => {
     expect(rows).toHaveLength(2);
     // Every row shares the batch id and inherits the MARKETING default.
     expect(new Set(rows.map((r) => r.batch_id)).size).toBe(1);
-    expect(rows[0].batch_id).toBe(result.batchId);
+    expect(rows[0]!.batch_id).toBe(result.batchId);
     expect(rows.every((r) => r.category === NotificationCategory.MARKETING)).toBe(true);
     // Per-recipient data wins over the shared data.
-    expect(rows[0].content.text).toBe('Hi Asha, 20% off');
-    expect(rows[1].content.text).toBe('Hi there, 20% off');
-    expect(rows[0].campaign_id).toBeNull();
+    expect((rows[0]!.content as { text: string }).text).toBe('Hi Asha, 20% off');
+    expect((rows[1]!.content as { text: string }).text).toBe('Hi there, 20% off');
+    expect(rows[0]!.campaign_id).toBeNull();
   });
 
   it('resolves a template by name and threads category, campaignId and clientId', async () => {
@@ -885,11 +926,11 @@ describe('NotificationService.dispatchBatch', () => {
 
     expect(result.queued).toBe(1);
     const row = [...repo.notifications.values()][0];
-    expect(row.category).toBe(NotificationCategory.TRANSACTIONAL);
-    expect(row.campaign_id).toBe('campaign-1');
-    expect(row.client_id).toBe(CLIENT);
-    expect(row.recipient).toBe('+919876543210');
-    expect(row.content.text).toBe('Deal for Asha');
+    expect(row!.category).toBe(NotificationCategory.TRANSACTIONAL);
+    expect(row!.campaign_id).toBe('campaign-1');
+    expect(row!.client_id).toBe(CLIENT);
+    expect(row!.recipient).toBe('+919876543210');
+    expect((row!.content as { text: string }).text).toBe('Deal for Asha');
   });
 
   it('counts recipients with no resolvable address as skipped, not queued', async () => {
@@ -946,8 +987,8 @@ describe('NotificationService.processBatch', () => {
     await service.processBatch(BUSINESS, [bad.id, ok1.id, ok2.id]);
 
     expect(send).toHaveBeenCalledTimes(2);
-    expect(repo.notifications.get(ok1.id).status).toBe(NotificationStatus.SENT);
-    expect(repo.notifications.get(ok2.id).status).toBe(NotificationStatus.SENT);
+    expect(repo.notifications.get(ok1.id)!.status).toBe(NotificationStatus.SENT);
+    expect(repo.notifications.get(ok2.id)!.status).toBe(NotificationStatus.SENT);
   });
 
   it('keeps going when one item throws a non-Error value', async () => {
@@ -985,7 +1026,7 @@ describe('NotificationService scheduling', () => {
     const job = queue.add.mock.calls.find((c) => c[0] === NOTIFICATION_JOBS.DISPATCH);
     expect(job[2].delay).toBeGreaterThan(0);
     expect(job[2].delay).toBeLessThanOrEqual(600_000);
-    expect([...repo.notifications.values()][0].scheduled_at).toEqual(scheduledAt);
+    expect([...repo.notifications.values()][0]!.scheduled_at).toEqual(scheduledAt);
   });
 
   it('defers a MARKETING notification landing inside quiet hours', async () => {
@@ -1013,7 +1054,7 @@ describe('NotificationService scheduling', () => {
 
     const row = [...repo.notifications.values()][0];
     // 23:30 IST → deferred to 07:00 IST, i.e. 7.5 hours out.
-    expect(row.scheduled_at.getTime() - Date.now()).toBe(450 * 60_000);
+    expect((row!.scheduled_at as Date).getTime() - Date.now()).toBe(450 * 60_000);
   });
 
   it('keeps a later explicit scheduledAt in preference to the quiet-hours end', async () => {
@@ -1040,7 +1081,7 @@ describe('NotificationService scheduling', () => {
       scheduledAt: later.toISOString(),
     });
 
-    expect([...repo.notifications.values()][0].scheduled_at).toEqual(later);
+    expect([...repo.notifications.values()][0]!.scheduled_at).toEqual(later);
   });
 
   it('throws NotFound when the dispatch names a client that does not exist', async () => {
@@ -1097,8 +1138,8 @@ describe('NotificationService.processDispatch edge cases', () => {
     await service.processDispatch(BUSINESS, row.id);
 
     const stored = repo.notifications.get(row.id);
-    expect(stored.status).toBe(NotificationStatus.SENT);
-    expect(stored.provider_message_id).toBeNull();
+    expect(stored!.status).toBe(NotificationStatus.SENT);
+    expect(stored!.provider_message_id).toBeNull();
   });
 
   it('records "Unknown error" when a retryable failure carries no message', async () => {
@@ -1108,8 +1149,8 @@ describe('NotificationService.processDispatch edge cases', () => {
     await service.processDispatch(BUSINESS, row.id);
 
     const stored = repo.notifications.get(row.id);
-    expect(stored.status).toBe(NotificationStatus.QUEUED);
-    expect(stored.failure_reason).toBe('Unknown error');
+    expect(stored!.status).toBe(NotificationStatus.QUEUED);
+    expect(stored!.failure_reason).toBe('Unknown error');
   });
 
   it('records "Unknown error" when a permanent failure carries no message', async () => {
@@ -1121,8 +1162,8 @@ describe('NotificationService.processDispatch edge cases', () => {
     await service.processDispatch(BUSINESS, row.id);
 
     const stored = repo.notifications.get(row.id);
-    expect(stored.status).toBe(NotificationStatus.FAILED);
-    expect(stored.failure_reason).toBe('Unknown error');
+    expect(stored!.status).toBe(NotificationStatus.FAILED);
+    expect(stored!.failure_reason).toBe('Unknown error');
     expect(emitted(emitter, 'notification.failed')[0][1].reason).toBe('Unknown error');
   });
 
@@ -1343,7 +1384,7 @@ describe('NotificationService templates (optional fields)', () => {
       content: { text: 'Hi {{ firstName }} on {{ date }}' },
     });
 
-    expect(updated.variables.sort()).toEqual(['date', 'firstName']);
+    expect(updated!.variables.sort()).toEqual(['date', 'firstName']);
   });
 
   it('prefers explicit variables over derivation when content also changes', async () => {
@@ -1359,7 +1400,7 @@ describe('NotificationService templates (optional fields)', () => {
       variables: ['pinned'],
     });
 
-    expect(updated.variables).toEqual(['pinned']);
+    expect(updated!.variables).toEqual(['pinned']);
   });
 
   it('updates variables alone without touching the content', async () => {
@@ -1374,7 +1415,7 @@ describe('NotificationService templates (optional fields)', () => {
       variables: ['name', 'city'],
     });
 
-    expect(updated.variables).toEqual(['name', 'city']);
+    expect(updated!.variables).toEqual(['name', 'city']);
     expect(repo.updateTemplate.mock.calls[0]?.[2].content).toBeUndefined();
   });
 
@@ -1392,9 +1433,9 @@ describe('NotificationService templates (optional fields)', () => {
       language: 'ta',
     });
 
-    expect(updated.externalName).toBe('tpl_v3');
-    expect(updated.isActive).toBe(false);
-    expect(updated.language).toBe('ta');
+    expect(updated!.externalName).toBe('tpl_v3');
+    expect(updated!.isActive).toBe(false);
+    expect(updated!.language).toBe('ta');
   });
 
   it('throws NotFound for an unknown template id', async () => {
@@ -1459,7 +1500,7 @@ describe('NotificationService templates (optional fields)', () => {
 
     await service.deleteTemplate(BUSINESS, created.id);
 
-    expect(repo.templates.get(created.id).deleted_at).toBeInstanceOf(Date);
+    expect(repo.templates.get(created.id)!.deleted_at).toBeInstanceOf(Date);
   });
 });
 
@@ -1502,7 +1543,7 @@ describe('NotificationService preferences (branches)', () => {
 });
 
 describe('NotificationService triggers (branches)', () => {
-  const seedTrigger = async (service: NotificationService, repo: any) => {
+  const seedTrigger = async (service: NotificationService, _repo: FakeRepo) => {
     const template = await service.createTemplate(BUSINESS, {
       channel: NotificationTemplateChannel.SMS,
       name: 'trig-tpl',
@@ -1540,11 +1581,11 @@ describe('NotificationService triggers (branches)', () => {
       conditions: [{ path: 'total', op: 'gt', value: 100 }],
     });
 
-    expect(updated.templateId).toBe(replacement.id);
-    expect(updated.category).toBe(NotificationCategory.REMINDER);
-    expect(updated.isActive).toBe(false);
-    expect(updated.delayMinutes).toBe(15);
-    expect(updated.conditions).toHaveLength(1);
+    expect(updated!.templateId).toBe(replacement.id);
+    expect(updated!.category).toBe(NotificationCategory.REMINDER);
+    expect(updated!.isActive).toBe(false);
+    expect(updated!.delayMinutes).toBe(15);
+    expect(updated!.conditions).toHaveLength(1);
   });
 
   it('throws NotFound when deleting an unknown trigger', async () => {
@@ -1557,13 +1598,13 @@ describe('NotificationService triggers (branches)', () => {
   it('soft-deletes a trigger and maps null conditions to an empty list', async () => {
     const { service, repo } = makeService();
     const { trigger } = await seedTrigger(service, repo);
-    repo.triggers.get(trigger.id).conditions = null;
+    repo.triggers.get(trigger.id)!.conditions = null;
 
     const [dto] = await service.listTriggers(BUSINESS);
     expect(dto?.conditions).toEqual([]);
 
     await service.deleteTrigger(BUSINESS, trigger.id);
-    expect(repo.triggers.get(trigger.id).deleted_at).toBeInstanceOf(Date);
+    expect(repo.triggers.get(trigger.id)!.deleted_at).toBeInstanceOf(Date);
   });
 });
 
@@ -1600,10 +1641,10 @@ describe('NotificationService.handleEventTrigger branches', () => {
     });
 
     const row = [...repo.notifications.values()][0];
-    expect(row.template_id).toBe(template.id);
-    expect(row.content.text).toBe('Order order-1 received');
-    expect(row.dedupe_key).toBe('order.created:order-1:SMS');
-    expect(row.scheduled_at.getTime()).toBeGreaterThan(Date.now());
+    expect(row!.template_id).toBe(template.id);
+    expect((row!.content as { text: string }).text).toBe('Order order-1 received');
+    expect(row!.dedupe_key).toBe('order.created:order-1:SMS');
+    expect((row!.scheduled_at as Date).getTime()).toBeGreaterThan(Date.now());
   });
 
   it('falls back to the built-in body when a trigger has no template at all', async () => {
@@ -1621,8 +1662,8 @@ describe('NotificationService.handleEventTrigger branches', () => {
 
     // No client and no recipient override → recorded as SKIPPED, still rendered.
     const row = [...repo.notifications.values()][0];
-    expect(row.content.text).toMatch(/order created/);
-    expect(row.template_id).toBeNull();
+    expect((row!.content as { text: string }).text).toMatch(/order created/);
+    expect(row!.template_id).toBeNull();
   });
 
   it('treats null trigger conditions as "always match"', async () => {
@@ -1632,7 +1673,7 @@ describe('NotificationService.handleEventTrigger branches', () => {
       eventType: 'order.created',
       channel: NotificationTemplateChannel.SMS,
     });
-    repo.triggers.get(trigger.id).conditions = null;
+    repo.triggers.get(trigger.id)!.conditions = null;
 
     await service.handleEventTrigger('order.created', {
       businessId: BUSINESS,
@@ -1682,7 +1723,7 @@ describe('NotificationService.handleEventTrigger branches', () => {
     });
 
     const row = [...repo.notifications.values()][0];
-    expect(row.dedupe_key).toBe(`order.created:${expectedEntity}:SMS`);
+    expect(row!.dedupe_key).toBe(`order.created:${expectedEntity}:SMS`);
   });
 
   it('falls back to a generated id when the payload carries no entity id', async () => {
@@ -1699,7 +1740,7 @@ describe('NotificationService.handleEventTrigger branches', () => {
     });
 
     const row = [...repo.notifications.values()][0];
-    expect(row.dedupe_key).toMatch(/^order\.created:.+:SMS$/);
+    expect(row!.dedupe_key).toMatch(/^order\.created:.+:SMS$/);
   });
 });
 

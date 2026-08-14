@@ -2,7 +2,6 @@ import {
   IsString,
   IsOptional,
   IsArray,
-  IsEmail,
   IsUUID,
   ValidateNested,
   ArrayMaxSize,

@@ -92,15 +92,6 @@ function makeTextWebhookPayload(overrides: Record<string, unknown> = {}): Record
 }
 
 /**
- * Compute a valid HMAC-SHA256 signature for a payload.
- */
-function sign(payload: unknown, secret: string): string {
-  const body = JSON.stringify(payload);
-  const hash = crypto.createHmac('sha256', secret).update(Buffer.from(body)).digest('hex');
-  return `sha256=${hash}`;
-}
-
-/**
  * Build a RawRequest with a valid signature.
  */
 function buildSignedRequest(payload: unknown, secret: string): RawRequest {

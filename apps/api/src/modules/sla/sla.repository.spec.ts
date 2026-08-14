@@ -104,14 +104,14 @@ describe('SlaRepository', () => {
     it('keeps an explicit priority of 0 rather than re-defaulting it', async () => {
       await repository.createPolicy(BUSINESS_ID, { ...base, priority: 0 });
 
-      const { data } = prisma.sla_policies.create.mock.calls[0]?.[0];
+      const { data } = prisma.sla_policies.create.mock.calls[0]![0];
       expect(data.priority).toBe(0);
     });
 
     it('keeps isActive=false — a policy created disabled stays disabled', async () => {
       await repository.createPolicy(BUSINESS_ID, { ...base, isActive: false });
 
-      const { data } = prisma.sla_policies.create.mock.calls[0]?.[0];
+      const { data } = prisma.sla_policies.create.mock.calls[0]![0];
       expect(data.is_active).toBe(false);
     });
 
@@ -161,7 +161,7 @@ describe('SlaRepository', () => {
       patch: Parameters<SlaRepository['updatePolicy']>[2],
     ): Promise<Record<string, unknown>> {
       await repository.updatePolicy(BUSINESS_ID, POLICY_ID, patch);
-      return prisma.sla_policies.update.mock.calls[0]?.[0].data as Record<
+      return prisma.sla_policies.update.mock.calls[0]![0].data as Record<
         string,
         unknown
       >;
@@ -224,7 +224,7 @@ describe('SlaRepository', () => {
     it('stamps deleted_at under the tenant scope instead of deleting the row', async () => {
       await repository.softDeletePolicy(BUSINESS_ID, POLICY_ID);
 
-      const call = prisma.sla_policies.update.mock.calls[0]?.[0];
+      const call = prisma.sla_policies.update.mock.calls[0]![0];
       expect(call.where).toEqual({ id: POLICY_ID, business_id: BUSINESS_ID });
       expect(call.data.deleted_at).toBeInstanceOf(Date);
     });
@@ -275,7 +275,7 @@ describe('SlaRepository', () => {
       );
 
       const { data, skipDuplicates } =
-        prisma.sla_breaches.createMany.mock.calls[0]?.[0];
+        prisma.sla_breaches.createMany.mock.calls[0]![0];
       expect(skipDuplicates).toBe(true);
       expect(data).toHaveLength(2);
 
@@ -376,7 +376,7 @@ describe('SlaRepository', () => {
     it('markBreachedOnly flips the flag without claiming the clock was met', async () => {
       await repository.markBreachedOnly(BUSINESS_ID, TRACKER_ID, NOW);
 
-      const call = prisma.sla_breaches.update.mock.calls[0]?.[0];
+      const call = prisma.sla_breaches.update.mock.calls[0]![0];
       expect(call.where).toEqual({ id: TRACKER_ID, business_id: BUSINESS_ID });
       expect(call.data).toEqual({ breached: true, breached_at: NOW });
       expect(call.data).not.toHaveProperty('met_at');
@@ -412,7 +412,7 @@ describe('SlaRepository', () => {
         escalated: false,
       });
 
-      const where = prisma.sla_breaches.findMany.mock.calls[0]?.[0].where;
+      const where = prisma.sla_breaches.findMany.mock.calls[0]![0].where;
       expect(where).toEqual({
         business_id: BUSINESS_ID,
         breached: false,
@@ -426,7 +426,7 @@ describe('SlaRepository', () => {
         escalated: false,
       });
 
-      const where = prisma.sla_breaches.findMany.mock.calls[0]?.[0].where;
+      const where = prisma.sla_breaches.findMany.mock.calls[0]![0].where;
       expect(where).toMatchObject({ breached: true, escalated: false });
     });
 

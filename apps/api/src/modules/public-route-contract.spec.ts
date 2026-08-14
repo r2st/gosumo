@@ -344,12 +344,6 @@ const PUBLIC_ROUTES: PublicRoute[] = [
 
 const ALLOWLISTED = PUBLIC_ROUTES.map((r) => r.handler).sort();
 
-function routeFor(handler: string): PublicRoute {
-  const entry = PUBLIC_ROUTES.find((r) => r.handler === handler);
-  if (!entry) throw new Error(`No allowlist entry for ${handler}`);
-  return entry;
-}
-
 function sourceFor(handler: string): string {
   const [controllerName, handlerName] = handler.split('.') as [string, string];
   const controller = CONTROLLERS.find((c) => c.name === controllerName);

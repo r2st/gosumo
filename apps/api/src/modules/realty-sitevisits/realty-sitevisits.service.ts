@@ -13,7 +13,6 @@ import {
   generateId,
   generateCorrelationId,
   SiteVisitStatus,
-  SiteVisitOutcome,
   LeadStage,
 } from '@gosumo/shared';
 import type {

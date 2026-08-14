@@ -86,7 +86,7 @@ describe('UsageService — branches', () => {
       );
 
       expect(next).toBe(1);
-      const { profile } = repository.updateBusiness.mock.calls[0]?.[1];
+      const { profile } = repository.updateBusiness.mock.calls[0]![1];
       expect(profile.usage['2026-08'][UsageMetric.CONVERSATIONS]).toBe(1);
     });
 
@@ -104,7 +104,7 @@ describe('UsageService — branches', () => {
 
       await service.resetMonthlyUsage(BUSINESS_ID);
 
-      const { profile } = repository.updateBusiness.mock.calls[0]?.[1];
+      const { profile } = repository.updateBusiness.mock.calls[0]![1];
       expect(profile.usage).not.toHaveProperty('2026-08');
       // Prior months are history — the reset must not touch them.
       expect(profile.usage['2026-07']).toEqual({
@@ -178,7 +178,7 @@ describe('UsageService — branches', () => {
       );
 
       expect(next).toBe(1);
-      const { profile } = repository.updateBusiness.mock.calls[0]?.[1];
+      const { profile } = repository.updateBusiness.mock.calls[0]![1];
       expect(profile.usage['2026-08'][UsageMetric.CONVERSATIONS]).toBe(1);
     });
   });

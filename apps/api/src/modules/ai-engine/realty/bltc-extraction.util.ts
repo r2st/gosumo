@@ -109,8 +109,6 @@ export function extractBltc(
   return out;
 }
 
-const UNIT = /(lakh|lac|lacs|lakhs|cr|crore|crores|l)\b/;
-
 function unitToPaise(value: number, unit: string): number {
   return unit.startsWith('cr') ? Math.round(value * CRORE_PAISE) : Math.round(value * LAKH_PAISE);
 }

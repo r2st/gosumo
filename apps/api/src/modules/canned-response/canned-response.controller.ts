@@ -2,7 +2,7 @@ import { Controller, Get, Post, Patch, Delete, Param, Query, Body, HttpCode, Htt
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { CannedResponseService } from './canned-response.service';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
-import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
 import {
   CreateCannedResponseDto,

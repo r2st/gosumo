@@ -4,7 +4,6 @@ import {
   NotFoundException,
   BadRequestException,
   UnauthorizedException,
-  ConflictException,
 } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { ConfigService } from '@nestjs/config';

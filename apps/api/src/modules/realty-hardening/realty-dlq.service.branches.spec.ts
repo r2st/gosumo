@@ -88,14 +88,14 @@ describe('RealtyDlqService — branches', () => {
     it('stringifies a thrown non-Error object', async () => {
       await service.capture(BIZ, meta, { code: 'E_WEIRD' }, 1);
 
-      const { errorMessage } = repo.create.mock.calls[0]?.[0];
+      const { errorMessage } = repo.create.mock.calls[0]![0];
       expect(errorMessage).toBe('[object Object]');
     });
 
     it('stringifies a thrown undefined', async () => {
       await service.capture(BIZ, meta, undefined, 1);
 
-      expect(repo.create.mock.calls[0]?.[0].errorMessage).toBe('undefined');
+      expect(repo.create.mock.calls[0]![0].errorMessage).toBe('undefined');
     });
 
     it('records a null stack for an Error whose stack was stripped', async () => {
@@ -120,7 +120,7 @@ describe('RealtyDlqService — branches', () => {
         1,
       );
 
-      expect(repo.create.mock.calls[0]?.[0].payload).toEqual({});
+      expect(repo.create.mock.calls[0]![0].payload).toEqual({});
     });
   });
 
@@ -230,7 +230,7 @@ describe('RealtyDlqService — branches', () => {
 
       await service.replay(BIZ, DL_ID);
 
-      expect(repo.update.mock.calls[0]?.[2]).toMatchObject({
+      expect(repo.update.mock.calls[0]![2]).toMatchObject({
         error_message: 'replayer blew up',
       });
     });
@@ -273,7 +273,7 @@ describe('RealtyDlqService — branches', () => {
     it('stores a null resolution when no note is supplied', async () => {
       await service.resolve(BIZ, DL_ID, DeadLetterStatus.RESOLVED);
 
-      expect(repo.update.mock.calls[0]?.[2]).toMatchObject({
+      expect(repo.update.mock.calls[0]![2]).toMatchObject({
         status: DeadLetterStatus.RESOLVED,
         resolution: null,
       });
@@ -287,7 +287,7 @@ describe('RealtyDlqService — branches', () => {
         'duplicate of #42',
       );
 
-      expect(repo.update.mock.calls[0]?.[2]).toMatchObject({
+      expect(repo.update.mock.calls[0]![2]).toMatchObject({
         resolution: 'duplicate of #42',
       });
     });

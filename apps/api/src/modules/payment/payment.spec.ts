@@ -15,7 +15,7 @@ import {
   InitiateRefundDto,
   ConfirmCODDto,
 } from './dto';
-import { PaymentStatus, PaymentGateway, currencyToPaise } from '@gosumo/shared';
+import { PaymentStatus, PaymentGateway } from '@gosumo/shared';
 import type { OrderCreatedEvent } from '@gosumo/shared';
 
 // ─────────────────────────────────────────────
@@ -95,7 +95,6 @@ describe('PaymentService', () => {
   let razorpay: jest.Mocked<RazorpayService>;
   let stripe: jest.Mocked<StripeService>;
   let eventEmitter: jest.Mocked<EventEmitter2>;
-  let configService: jest.Mocked<ConfigService>;
 
   beforeEach(async () => {
     const mockRepository = {
@@ -159,7 +158,6 @@ describe('PaymentService', () => {
     razorpay = module.get(RazorpayService);
     stripe = module.get(StripeService);
     eventEmitter = module.get(EventEmitter2);
-    configService = module.get(ConfigService);
   });
 
   // ─────────────────────────────────────────────

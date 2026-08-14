@@ -25,7 +25,7 @@ import { RealtyTenantService } from './realty/realty-tenant.service';
 // Builders
 // ─────────────────────────────────────────────
 
-function makeContext(messageText: string, chunkAware = true): EnrichedContext {
+function makeContext(messageText: string): EnrichedContext {
   return {
     conversation: { id: 'c1', client_id: 'cl1', channel: 'WHATSAPP', channel_account_id: 'acc1' } as never,
     triggerMessage: { id: 'm1', ai_decision_id: null } as never,

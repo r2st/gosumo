@@ -235,7 +235,7 @@ describe('BookingRepository', () => {
     it('nulls every unsupplied optional column', async () => {
       await repository.createBookingAtomic(bookingData(), 1);
 
-      const { data } = tx.bookings.create.mock.calls[0]?.[0];
+      const { data } = tx.bookings.create.mock.calls[0]![0];
       expect(data).toMatchObject({
         business_id: BUSINESS_ID,
         client_id: CLIENT_ID,
@@ -268,7 +268,7 @@ describe('BookingRepository', () => {
         1,
       );
 
-      const { data } = tx.bookings.create.mock.calls[0]?.[0];
+      const { data } = tx.bookings.create.mock.calls[0]![0];
       expect(data).toMatchObject({
         catalog_item_id: 'item-1',
         staff_id: STAFF_ID,
@@ -291,7 +291,7 @@ describe('BookingRepository', () => {
         1,
       );
 
-      const { data } = tx.bookings.create.mock.calls[0]?.[0];
+      const { data } = tx.bookings.create.mock.calls[0]![0];
       expect(data.metadata).toEqual({
         source: 'whatsapp',
         conversationId: 'conv-1',
@@ -304,7 +304,7 @@ describe('BookingRepository', () => {
         1,
       );
 
-      const { data } = tx.bookings.create.mock.calls[0]?.[0];
+      const { data } = tx.bookings.create.mock.calls[0]![0];
       expect(data.metadata).toEqual({ source: 'walk-in' });
       expect(data.metadata).not.toHaveProperty('conversationId');
     });
@@ -320,7 +320,7 @@ describe('BookingRepository', () => {
         BOOKING_ID,
       );
 
-      const { where } = prisma.bookings.count.mock.calls[0]?.[0];
+      const { where } = prisma.bookings.count.mock.calls[0]![0];
       expect(where.id).toEqual({ not: BOOKING_ID });
       expect(where.business_id).toBe(BUSINESS_ID);
     });
@@ -328,7 +328,7 @@ describe('BookingRepository', () => {
     it('omits the id exclusion when no booking is being excluded', async () => {
       await repository.countOverlapping(BUSINESS_ID, null, START, END);
 
-      const { where } = prisma.bookings.count.mock.calls[0]?.[0];
+      const { where } = prisma.bookings.count.mock.calls[0]![0];
       expect(where).not.toHaveProperty('id');
       expect(where.staff_id).toBeNull();
     });
@@ -343,7 +343,7 @@ describe('BookingRepository', () => {
         END,
       );
 
-      const { where, orderBy } = prisma.bookings.findMany.mock.calls[0]?.[0];
+      const { where, orderBy } = prisma.bookings.findMany.mock.calls[0]![0];
       expect(where.staff_id).toBe(STAFF_ID);
       expect(where.start_at).toEqual({ lt: END });
       expect(where.end_at).toEqual({ gt: START });
@@ -353,7 +353,7 @@ describe('BookingRepository', () => {
     it('spans every staff member when none is given', async () => {
       await repository.findActiveBookingsInRange(BUSINESS_ID, null, START, END);
 
-      const { where } = prisma.bookings.findMany.mock.calls[0]?.[0];
+      const { where } = prisma.bookings.findMany.mock.calls[0]![0];
       expect(where).not.toHaveProperty('staff_id');
       expect(where.business_id).toBe(BUSINESS_ID);
     });
@@ -375,7 +375,7 @@ describe('BookingRepository', () => {
       filters: Parameters<BookingRepository['findBookings']>[1],
     ): Promise<Record<string, unknown>> {
       await repository.findBookings(BUSINESS_ID, filters);
-      return prisma.bookings.findMany.mock.calls[0]?.[0].where as Record<
+      return prisma.bookings.findMany.mock.calls[0]![0].where as Record<
         string,
         unknown
       >;
@@ -446,8 +446,8 @@ describe('BookingRepository', () => {
     it('counts against the same where clause it lists with', async () => {
       await repository.findBookings(BUSINESS_ID, { staffId: STAFF_ID });
 
-      expect(prisma.bookings.count.mock.calls[0]?.[0].where).toEqual(
-        prisma.bookings.findMany.mock.calls[0]?.[0].where,
+      expect(prisma.bookings.count.mock.calls[0]![0].where).toEqual(
+        prisma.bookings.findMany.mock.calls[0]![0].where,
       );
     });
   });
@@ -456,7 +456,7 @@ describe('BookingRepository', () => {
     it('returns the whole series when no cutoff is given', async () => {
       await repository.findBookingsByRecurrence(BUSINESS_ID, RECURRENCE_ID);
 
-      const { where } = prisma.bookings.findMany.mock.calls[0]?.[0];
+      const { where } = prisma.bookings.findMany.mock.calls[0]![0];
       expect(where).toEqual({
         business_id: BUSINESS_ID,
         recurrence_id: RECURRENCE_ID,
@@ -471,7 +471,7 @@ describe('BookingRepository', () => {
         START,
       );
 
-      const { where } = prisma.bookings.findMany.mock.calls[0]?.[0];
+      const { where } = prisma.bookings.findMany.mock.calls[0]![0];
       expect(where.start_at).toEqual({ gte: START });
     });
   });
@@ -640,7 +640,7 @@ describe('BookingRepository', () => {
         reason: 'Diwali holiday',
       });
 
-      const { data } = prisma.booking_blocked_slots.create.mock.calls[0]?.[0];
+      const { data } = prisma.booking_blocked_slots.create.mock.calls[0]![0];
       expect(data).toMatchObject({
         staff_id: STAFF_ID,
         reason: 'Diwali holiday',
@@ -654,7 +654,7 @@ describe('BookingRepository', () => {
 
       await repository.deleteBlock(BUSINESS_ID, BLOCK_ID);
 
-      const call = prisma.booking_blocked_slots.update.mock.calls[0]?.[0];
+      const call = prisma.booking_blocked_slots.update.mock.calls[0]![0];
       expect(call.where).toEqual({ id: BLOCK_ID, business_id: BUSINESS_ID });
       expect(call.data.deleted_at).toBeInstanceOf(Date);
     });
@@ -671,7 +671,7 @@ describe('BookingRepository', () => {
     it('findBlocksInRange ORs the staff block against the business-wide one', async () => {
       await repository.findBlocksInRange(BUSINESS_ID, STAFF_ID, START, END);
 
-      const { where } = prisma.booking_blocked_slots.findMany.mock.calls[0]?.[0];
+      const { where } = prisma.booking_blocked_slots.findMany.mock.calls[0]![0];
       expect(where.OR).toEqual([{ staff_id: null }, { staff_id: STAFF_ID }]);
       expect(where.start_at).toEqual({ lt: END });
       expect(where.end_at).toEqual({ gt: START });
@@ -680,7 +680,7 @@ describe('BookingRepository', () => {
     it('findBlocksInRange drops the staff arm for a business-wide query', async () => {
       await repository.findBlocksInRange(BUSINESS_ID, null, START, END);
 
-      const { where } = prisma.booking_blocked_slots.findMany.mock.calls[0]?.[0];
+      const { where } = prisma.booking_blocked_slots.findMany.mock.calls[0]![0];
       expect(where.OR).toEqual([{ staff_id: null }]);
     });
   });
@@ -714,7 +714,7 @@ describe('BookingRepository', () => {
       await repository.findConnection(BUSINESS_ID, null, 'outlook');
 
       const { where } =
-        prisma.booking_calendar_connections.findFirst.mock.calls[0]?.[0];
+        prisma.booking_calendar_connections.findFirst.mock.calls[0]![0];
       expect(where.provider).toBe('outlook');
     });
 
@@ -773,7 +773,7 @@ describe('BookingRepository', () => {
       await repository.deleteConnection(BUSINESS_ID, CONNECTION_ID);
 
       const call =
-        prisma.booking_calendar_connections.update.mock.calls[0]?.[0];
+        prisma.booking_calendar_connections.update.mock.calls[0]![0];
       expect(call.where).toEqual({
         id: CONNECTION_ID,
         business_id: BUSINESS_ID,
@@ -796,7 +796,7 @@ describe('BookingRepository', () => {
     it('createRecurrence nulls every unsupplied optional column', async () => {
       await repository.createRecurrence(recurrenceInput);
 
-      const { data } = prisma.booking_recurrences.create.mock.calls[0]?.[0];
+      const { data } = prisma.booking_recurrences.create.mock.calls[0]![0];
       expect(data).toMatchObject({
         business_id: BUSINESS_ID,
         catalog_item_id: null,
@@ -821,7 +821,7 @@ describe('BookingRepository', () => {
         notes: 'Weekly tutoring',
       });
 
-      const { data } = prisma.booking_recurrences.create.mock.calls[0]?.[0];
+      const { data } = prisma.booking_recurrences.create.mock.calls[0]![0];
       expect(data).toMatchObject({
         catalog_item_id: 'item-1',
         staff_id: STAFF_ID,
