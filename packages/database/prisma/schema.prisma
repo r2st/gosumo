@@ -683,6 +683,7 @@ model businesses {
   file_uploads                   file_uploads[]
   audit_logs                     audit_logs[]
   webhook_events                 webhook_events[]
+  webhook_dead_letters           webhook_dead_letters[]
   shipping_addresses             shipping_addresses[]
   shipping_options               shipping_options[]
   refunds                        refunds[]
@@ -1305,6 +1306,62 @@ model webhook_events {
   @@index([source, processed, received_at])
   @@index([business_id, received_at(sort: Desc)])
   @@map("webhook_events")
+}
+
+/// An inbound webhook whose handler threw, parked for retry instead of being lost.
+///
+/// `webhook_events` is the *idempotency* ledger: its unique `[source,
+/// external_id]` makes a provider redelivery a no-op. That is exactly why a
+/// failed delivery cannot be recovered from it — the provider's own retry is
+/// swallowed as a duplicate. This table is the separate *recovery* ledger, with
+/// its own attempt counter, backoff schedule, and operator lifecycle.
+model webhook_dead_letters {
+  id String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  /// null when the failure happened before the tenant could be resolved
+  /// (a platform-level gateway webhook whose payment row was unreadable).
+  business_id String? @db.Uuid
+
+  /// Loose reference to the `webhook_events` row. Deliberately not a foreign
+  /// key: purging the delivery log must never drop a pending recovery.
+  webhook_event_id String? @db.Uuid
+
+  /// "WHATSAPP" | "RAZORPAY" | "STRIPE" | ... — also the replayer registry key.
+  source      String @db.VarChar(50)
+  event_type  String @db.VarChar(100)
+  external_id String @db.VarChar(255)
+
+  /// Verbatim provider payload, sufficient to replay without the provider.
+  payload Json @db.JsonB
+  headers Json @default("{}") @db.JsonB
+
+  error_message String  @db.Text
+  error_stack   String? @db.Text
+
+  attempts     Int @default(0)
+  max_attempts Int @default(6)
+
+  status          DeadLetterStatus @default(PENDING)
+  /// When the next backoff-scheduled retry is due; null once terminal.
+  next_retry_at   DateTime?        @db.Timestamptz
+  last_attempt_at DateTime?        @db.Timestamptz
+  replayed_at     DateTime?        @db.Timestamptz
+  resolved_at     DateTime?        @db.Timestamptz
+  /// Free-form note captured when a human resolves/discards the entry.
+  resolution      String?          @db.Text
+  correlation_id  String?          @db.VarChar(64)
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses? @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  /// One recovery row per provider event — a webhook that fails twice updates
+  /// its attempt count rather than stacking duplicates.
+  @@unique([source, external_id])
+  @@index([status, next_retry_at])
+  @@index([business_id, status, created_at(sort: Desc)])
+  @@index([business_id, source, event_type])
+  @@map("webhook_dead_letters")
 }
 
 // ─────────────────────────────────────────────

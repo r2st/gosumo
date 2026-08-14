@@ -138,6 +138,13 @@ const GLOBAL_SWEEPS = new Set<string>([
   // Nightly Sheets export: iterates connections and calls exportForBusiness()
   // with each row's own business_id.
   'RealtyIntegrationsRepository.listConnectedByProvider',
+  // Webhook DLQ backlog gauge on GET webhook-log/dlq/stats — a count, no rows.
+  'WebhookDlqRepository.countPendingGlobal',
+  // Webhook retry recovery sweep (cron, no request tenant): returns only the
+  // entry id and its business_id, then re-enters the scoped retry path per
+  // row. It must span tenants — a parked webhook can predate any resolvable
+  // tenant, so `business_id` is nullable on that table.
+  'WebhookDlqRepository.listDueGlobal',
 ]);
 
 /** Every documented reason a query may legitimately omit the tenant predicate. */

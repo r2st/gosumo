@@ -16,9 +16,11 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  * WebhookLogService — read-only inspection over inbound webhook deliveries
  * recorded in `webhook_events` by channel-adapter and payment.
  *
- * Never writes: no replay/reprocess action here, to avoid a second module
- * mutating a table another module owns and depends on for idempotency
- * (unique constraint on `[source, external_id]`).
+ * Never writes to `webhook_events`: that table is the writing modules'
+ * idempotency ledger (unique on `[source, external_id]`), and a second module
+ * mutating it would put that guarantee at risk. Recovery of a failed delivery
+ * lives in `WebhookDlqService`, which owns its own table for exactly that
+ * reason.
  */
 @Injectable()
 export class WebhookLogService {

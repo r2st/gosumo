@@ -6,6 +6,7 @@ import { InvoiceService } from './invoice.service';
 import { PaymentRepository } from './payment.repository';
 import { RazorpayService } from './razorpay.service';
 import { StripeService } from './stripe.service';
+import { WebhookLogModule } from '../webhook-log/webhook-log.module';
 
 /**
  * PaymentModule
@@ -18,6 +19,10 @@ import { StripeService } from './stripe.service';
  * order module; cross-module side effects flow through domain events.
  */
 @Module({
+  // WebhookLogModule supplies the dead-letter queue a failed gateway webhook
+  // is parked in — without it a webhook that throws is lost, since
+  // `webhook_events` has already deduped away every gateway redelivery.
+  imports: [WebhookLogModule],
   controllers: [PaymentController],
   providers: [
     PaymentService,

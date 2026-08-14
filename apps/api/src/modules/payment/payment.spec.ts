@@ -11,6 +11,7 @@ import { PaymentService } from './payment.service';
 import { PaymentRepository } from './payment.repository';
 import { RazorpayService } from './razorpay.service';
 import { StripeService } from './stripe.service';
+import { WebhookDlqService } from '../webhook-log/webhook-dlq.service';
 import {
   CreatePaymentLinkDto,
   InitiateRefundDto,
@@ -96,6 +97,7 @@ describe('PaymentService', () => {
   let razorpay: jest.Mocked<RazorpayService>;
   let stripe: jest.Mocked<StripeService>;
   let eventEmitter: jest.Mocked<EventEmitter2>;
+  let webhookDlq: jest.Mocked<WebhookDlqService>;
 
   beforeEach(async () => {
     const mockRepository = {
@@ -143,6 +145,14 @@ describe('PaymentService', () => {
       }),
     };
 
+    // The DLQ is the recovery path for a webhook whose handler threw; here it
+    // just records that a failure was parked, so the assertions below can say
+    // so without standing up Redis.
+    const mockWebhookDlq = {
+      registerReplayer: jest.fn(),
+      capture: jest.fn().mockResolvedValue({ id: 'dlq-1' }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PaymentService,
@@ -151,6 +161,7 @@ describe('PaymentService', () => {
         { provide: StripeService, useValue: mockStripe },
         { provide: EventEmitter2, useValue: mockEventEmitter },
         { provide: ConfigService, useValue: mockConfigService },
+        { provide: WebhookDlqService, useValue: mockWebhookDlq },
       ],
     }).compile();
 
@@ -159,6 +170,7 @@ describe('PaymentService', () => {
     razorpay = module.get(RazorpayService);
     stripe = module.get(StripeService);
     eventEmitter = module.get(EventEmitter2);
+    webhookDlq = module.get(WebhookDlqService);
   });
 
   // ─────────────────────────────────────────────
@@ -577,6 +589,257 @@ describe('PaymentService', () => {
       expect(repository.findPaymentByLinkId).not.toHaveBeenCalled();
       expect(repository.updatePaymentStatus).not.toHaveBeenCalled();
       expect(eventEmitter.emit).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─────────────────────────────────────────────
+  // Webhook dead-lettering
+  // ─────────────────────────────────────────────
+
+  /**
+   * A Razorpay body whose processing is made to fail — and the same body a
+   * replayer reads back out of the DLQ.
+   */
+  const failingPayloadForReplay = JSON.stringify({
+    entity: 'event',
+    account_id: 'acc_test',
+    event: 'payment.captured',
+    contains: ['payment'],
+    payload: {
+      payment: {
+        entity: {
+          id: 'pay_dlq_1',
+          amount: 50000,
+          currency: 'INR',
+          status: 'captured',
+          method: 'upi',
+        },
+      },
+    },
+  });
+
+  /**
+   * The reason this exists: `recordWebhookEvent` writes the delivery *before*
+   * processing it, and dedupes on `(source, external_id)`. So when a handler
+   * throws, every redelivery Razorpay or Stripe makes afterwards is discarded
+   * as a duplicate — the one retry mechanism available was the one being
+   * suppressed, and the payment stayed PENDING until reconciliation happened
+   * to notice. These tests pin the recovery path that replaced that.
+   */
+  describe('webhook dead-lettering', () => {
+    const failingPayload = failingPayloadForReplay;
+
+    beforeEach(() => {
+      razorpay.verifyWebhookSignature.mockReturnValue(true);
+      repository.recordWebhookEvent.mockResolvedValue({ id: 'evt_1' } as never);
+    });
+
+    it('parks a Razorpay event whose handler threw, and still fails the request', async () => {
+      repository.findPaymentByGatewayId.mockRejectedValue(new Error('db unreachable'));
+
+      await expect(
+        service.handleRazorpayWebhook(failingPayload, 'valid_sig'),
+      ).rejects.toThrow('db unreachable');
+
+      expect(webhookDlq.capture).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: 'RAZORPAY',
+          eventType: 'payment.captured',
+          externalId: 'payment.captured_pay_dlq_1',
+          webhookEventId: 'evt_1',
+        }),
+        expect.any(Error),
+      );
+    });
+
+    it('captures the verbatim payload, since the replay has nothing else to work from', async () => {
+      repository.findPaymentByGatewayId.mockRejectedValue(new Error('db unreachable'));
+
+      await expect(
+        service.handleRazorpayWebhook(failingPayload, 'valid_sig'),
+      ).rejects.toThrow();
+
+      const captured = webhookDlq.capture.mock.calls[0]![0];
+      expect(captured.payload).toMatchObject({ event: 'payment.captured' });
+    });
+
+    it('does not mark the delivery processed when the handler threw', async () => {
+      repository.findPaymentByGatewayId.mockRejectedValue(new Error('db unreachable'));
+
+      await expect(
+        service.handleRazorpayWebhook(failingPayload, 'valid_sig'),
+      ).rejects.toThrow();
+
+      expect(repository.markWebhookProcessed).not.toHaveBeenCalled();
+    });
+
+    it('resolves the tenant from the payment row so the entry is not orphaned', async () => {
+      // The lookup succeeds, a later step is what fails.
+      repository.findPaymentByGatewayId.mockResolvedValue(
+        createMockPayment({ status: 'PENDING' }) as never,
+      );
+      repository.updatePaymentStatus.mockRejectedValue(new Error('write conflict'));
+
+      await expect(
+        service.handleRazorpayWebhook(failingPayload, 'valid_sig'),
+      ).rejects.toThrow();
+
+      expect(webhookDlq.capture).toHaveBeenCalledWith(
+        expect.objectContaining({ businessId: BUSINESS_ID }),
+        expect.any(Error),
+      );
+    });
+
+    it('falls back to a platform-level entry when the tenant cannot be resolved', async () => {
+      // Every lookup fails; a null tenant is a worse queue view, not a reason
+      // to drop the event.
+      repository.findPaymentByGatewayId.mockRejectedValue(new Error('db unreachable'));
+
+      await expect(
+        service.handleRazorpayWebhook(failingPayload, 'valid_sig'),
+      ).rejects.toThrow();
+
+      expect(webhookDlq.capture).toHaveBeenCalledWith(
+        expect.objectContaining({ businessId: null }),
+        expect.any(Error),
+      );
+    });
+
+    it('lets the original failure through even if the DLQ itself is down', async () => {
+      repository.findPaymentByGatewayId.mockRejectedValue(new Error('db unreachable'));
+      webhookDlq.capture.mockRejectedValueOnce(new Error('dlq exploded'));
+
+      await expect(
+        service.handleRazorpayWebhook(failingPayload, 'valid_sig'),
+      ).rejects.toThrow('db unreachable');
+    });
+
+    it('parks a failed Stripe event under its own event id', async () => {
+      const stripePayload = JSON.stringify({
+        id: 'evt_stripe_dlq',
+        type: 'checkout.session.completed',
+        data: { object: { id: 'cs_test_1', object: 'checkout.session' } },
+      });
+      stripe.verifyWebhookSignature.mockReturnValue(true);
+      repository.findPaymentByLinkId.mockRejectedValue(new Error('db unreachable'));
+
+      await expect(
+        service.handleStripeWebhook(stripePayload, 't=1,v1=sig'),
+      ).rejects.toThrow('db unreachable');
+
+      expect(webhookDlq.capture).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: 'STRIPE',
+          eventType: 'checkout.session.completed',
+          externalId: 'evt_stripe_dlq',
+        }),
+        expect.any(Error),
+      );
+    });
+
+    it('never dead-letters a delivery that succeeded', async () => {
+      repository.findPaymentByGatewayId.mockResolvedValue(
+        createMockPayment({ status: 'PENDING' }) as never,
+      );
+      repository.updatePaymentStatus.mockResolvedValue(
+        createMockPayment({ status: 'SUCCESS' }) as never,
+      );
+
+      await service.handleRazorpayWebhook(failingPayload, 'valid_sig');
+
+      expect(webhookDlq.capture).not.toHaveBeenCalled();
+      expect(repository.markWebhookProcessed).toHaveBeenCalledWith('evt_1');
+    });
+
+    it('never dead-letters a duplicate, which was never processed in the first place', async () => {
+      repository.recordWebhookEvent.mockResolvedValue(null);
+
+      await service.handleRazorpayWebhook(failingPayload, 'valid_sig');
+
+      expect(webhookDlq.capture).not.toHaveBeenCalled();
+    });
+
+    it('never dead-letters a forged delivery — a bad signature is not a lost event', async () => {
+      razorpay.verifyWebhookSignature.mockReturnValue(false);
+
+      await expect(
+        service.handleRazorpayWebhook(failingPayload, 'bad_sig'),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(webhookDlq.capture).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('webhook replayers', () => {
+    it('registers a replayer for each gateway it owns', () => {
+      service.onModuleInit();
+
+      expect(webhookDlq.registerReplayer).toHaveBeenCalledWith(
+        'RAZORPAY',
+        expect.any(Function),
+      );
+      expect(webhookDlq.registerReplayer).toHaveBeenCalledWith(
+        'STRIPE',
+        expect.any(Function),
+      );
+    });
+
+    it('replays a Razorpay event without re-verifying a signature it cannot re-verify', async () => {
+      // The raw bytes verification needs are not stored, and the payload only
+      // reached the DLQ because its signature already passed.
+      service.onModuleInit();
+      const replay = webhookDlq.registerReplayer.mock.calls.find(
+        ([source]) => source === 'RAZORPAY',
+      )![1];
+      repository.findPaymentByGatewayId.mockResolvedValue(
+        createMockPayment({ status: 'PENDING' }) as never,
+      );
+      repository.updatePaymentStatus.mockResolvedValue(
+        createMockPayment({ status: 'SUCCESS' }) as never,
+      );
+
+      await replay(JSON.parse(failingPayloadForReplay), {} as never);
+
+      expect(razorpay.verifyWebhookSignature).not.toHaveBeenCalled();
+      expect(repository.recordWebhookEvent).not.toHaveBeenCalled();
+      expect(repository.updatePaymentStatus).toHaveBeenCalled();
+    });
+
+    it('propagates a replay failure so the DLQ can reschedule it', async () => {
+      service.onModuleInit();
+      const replay = webhookDlq.registerReplayer.mock.calls.find(
+        ([source]) => source === 'RAZORPAY',
+      )![1];
+      repository.findPaymentByGatewayId.mockRejectedValue(new Error('still down'));
+
+      await expect(
+        replay(JSON.parse(failingPayloadForReplay), {} as never),
+      ).rejects.toThrow('still down');
+    });
+
+    it('replays a Stripe event through the same dispatch the live path uses', async () => {
+      service.onModuleInit();
+      const replay = webhookDlq.registerReplayer.mock.calls.find(
+        ([source]) => source === 'STRIPE',
+      )![1];
+      repository.findPaymentByLinkId.mockResolvedValue(
+        createMockPayment({ status: 'PENDING', gateway: 'STRIPE' }) as never,
+      );
+      repository.updatePaymentStatus.mockResolvedValue(
+        createMockPayment({ status: 'SUCCESS' }) as never,
+      );
+
+      await replay(
+        {
+          id: 'evt_stripe_replay',
+          type: 'checkout.session.completed',
+          data: { object: { id: 'cs_test_1', object: 'checkout.session' } },
+        },
+        {} as never,
+      );
+
+      expect(stripe.verifyWebhookSignature).not.toHaveBeenCalled();
+      expect(repository.updatePaymentStatus).toHaveBeenCalled();
     });
   });
 

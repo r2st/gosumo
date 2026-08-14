@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  OnModuleInit,
   UnauthorizedException,
 } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
@@ -32,6 +33,7 @@ import {
   RazorpayService,
 } from './razorpay.service';
 import { StripeService } from './stripe.service';
+import { WebhookDlqService } from '../webhook-log/webhook-dlq.service';
 import {
   CreatePaymentLinkDto,
   PaymentLinkDto,
@@ -139,7 +141,7 @@ interface StripeWebhookEvent {
  *  - order.created → auto-create payment link for ONLINE orders
  */
 @Injectable()
-export class PaymentService {
+export class PaymentService implements OnModuleInit {
   private readonly logger = new Logger(PaymentService.name);
 
   constructor(
@@ -148,7 +150,25 @@ export class PaymentService {
     private readonly stripe: StripeService,
     private readonly eventEmitter: EventEmitter2,
     private readonly configService: ConfigService,
+    private readonly webhookDlq: WebhookDlqService,
   ) {}
+
+  /**
+   * Teach the webhook DLQ how to re-run a gateway event.
+   *
+   * Both replayers skip signature verification, and must: the payload only
+   * reached the DLQ because its signature already passed, and the raw bytes
+   * that verification needs are not stored. They also skip the `webhook_events`
+   * idempotency write, which by definition already happened.
+   */
+  onModuleInit(): void {
+    this.webhookDlq.registerReplayer('RAZORPAY', async (payload) => {
+      await this.dispatchRazorpayEvent(payload as unknown as RazorpayWebhookPayload);
+    });
+    this.webhookDlq.registerReplayer('STRIPE', async (payload) => {
+      await this.dispatchStripeEvent(payload as unknown as StripeWebhookEvent);
+    });
+  }
 
   /**
    * Resolve which gateway to use for a payment link.
@@ -380,23 +400,7 @@ export class PaymentService {
 
     // Step 3: Process the event
     try {
-      switch (eventType) {
-        case 'payment_link.paid':
-          await this.handlePaymentLinkPaid(webhookData);
-          break;
-        case 'payment.authorized':
-        case 'payment.captured':
-          await this.handlePaymentCaptured(webhookData);
-          break;
-        case 'payment.failed':
-          await this.handlePaymentFailed(webhookData);
-          break;
-        case 'refund.processed':
-          await this.handleRefundProcessed(webhookData);
-          break;
-        default:
-          this.logger.debug(`Unhandled Razorpay event type: ${eventType}`);
-      }
+      await this.dispatchRazorpayEvent(webhookData);
 
       // Mark as processed
       await this.repository.markWebhookProcessed(webhookEvent.id);
@@ -404,7 +408,43 @@ export class PaymentService {
       this.logger.error(
         `Error processing Razorpay webhook ${eventType}: ${error instanceof Error ? error.message : String(error)}`,
       );
+      await this.deadLetterWebhook(
+        'RAZORPAY',
+        eventType,
+        externalId,
+        webhookData as unknown as Record<string, unknown>,
+        webhookEvent.id,
+        await this.resolveRazorpayBusinessId(webhookData),
+        error,
+      );
       throw error;
+    }
+  }
+
+  /**
+   * Route a verified Razorpay event to its handler.
+   *
+   * Split out from {@link handleRazorpayWebhook} so a DLQ replay re-runs
+   * exactly the processing that failed — not the signature check (whose raw
+   * bytes are gone) and not the idempotency write (which already happened).
+   */
+  private async dispatchRazorpayEvent(webhookData: RazorpayWebhookPayload): Promise<void> {
+    switch (webhookData.event) {
+      case 'payment_link.paid':
+        await this.handlePaymentLinkPaid(webhookData);
+        break;
+      case 'payment.authorized':
+      case 'payment.captured':
+        await this.handlePaymentCaptured(webhookData);
+        break;
+      case 'payment.failed':
+        await this.handlePaymentFailed(webhookData);
+        break;
+      case 'refund.processed':
+        await this.handleRefundProcessed(webhookData);
+        break;
+      default:
+        this.logger.debug(`Unhandled Razorpay event type: ${webhookData.event}`);
     }
   }
 
@@ -453,31 +493,141 @@ export class PaymentService {
 
     // Step 3: Process the event
     try {
-      switch (eventType) {
-        case 'checkout.session.completed':
-          await this.handleStripeCheckoutCompleted(stripeEvent);
-          break;
-        case 'checkout.session.expired':
-          await this.handleStripeCheckoutExpired(stripeEvent);
-          break;
-        case 'payment_intent.payment_failed':
-          await this.handleStripePaymentFailed(stripeEvent);
-          break;
-        case 'charge.refunded':
-        case 'refund.updated':
-          this.logger.log(`Stripe refund event: ${eventType} (${stripeEvent.id})`);
-          break;
-        default:
-          this.logger.debug(`Unhandled Stripe event type: ${eventType}`);
-      }
+      await this.dispatchStripeEvent(stripeEvent);
 
       await this.repository.markWebhookProcessed(webhookEvent.id);
     } catch (error) {
       this.logger.error(
         `Error processing Stripe webhook ${eventType}: ${error instanceof Error ? error.message : String(error)}`,
       );
+      await this.deadLetterWebhook(
+        'STRIPE',
+        eventType,
+        stripeEvent.id,
+        stripeEvent as unknown as Record<string, unknown>,
+        webhookEvent.id,
+        await this.resolveStripeBusinessId(stripeEvent),
+        error,
+      );
       throw error;
     }
+  }
+
+  /** Route a verified Stripe event to its handler. See {@link dispatchRazorpayEvent}. */
+  private async dispatchStripeEvent(stripeEvent: StripeWebhookEvent): Promise<void> {
+    switch (stripeEvent.type) {
+      case 'checkout.session.completed':
+        await this.handleStripeCheckoutCompleted(stripeEvent);
+        break;
+      case 'checkout.session.expired':
+        await this.handleStripeCheckoutExpired(stripeEvent);
+        break;
+      case 'payment_intent.payment_failed':
+        await this.handleStripePaymentFailed(stripeEvent);
+        break;
+      case 'charge.refunded':
+      case 'refund.updated':
+        this.logger.log(`Stripe refund event: ${stripeEvent.type} (${stripeEvent.id})`);
+        break;
+      default:
+        this.logger.debug(`Unhandled Stripe event type: ${stripeEvent.type}`);
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // Webhook dead-lettering
+  // ─────────────────────────────────────────────
+
+  /**
+   * Park a failed gateway webhook for retry.
+   *
+   * Without this the event is gone: `webhook_events` recorded it before
+   * processing, so every redelivery the gateway makes is discarded as a
+   * duplicate. A payment the customer really made would stay PENDING until
+   * reconciliation happened to catch it.
+   *
+   * Never throws — a DLQ that fails must not change what the gateway sees.
+   */
+  private async deadLetterWebhook(
+    source: 'RAZORPAY' | 'STRIPE',
+    eventType: string,
+    externalId: string,
+    payload: Record<string, unknown>,
+    webhookEventId: string,
+    businessId: string | null,
+    error: unknown,
+  ): Promise<void> {
+    try {
+      await this.webhookDlq.capture(
+        { businessId, webhookEventId, source, eventType, externalId, payload },
+        error,
+      );
+    } catch (dlqError) {
+      this.logger.error(
+        `Failed to dead-letter ${source} webhook ${externalId}: ` +
+          `${dlqError instanceof Error ? dlqError.message : String(dlqError)}`,
+      );
+    }
+  }
+
+  /**
+   * Best-effort tenant for a failed Razorpay event, so the entry lands in the
+   * right business's queue rather than the platform-level bucket.
+   *
+   * Returns null rather than throwing: this runs while already handling a
+   * failure, and an unresolvable tenant is a worse queue view, not a worse
+   * outcome — the retry itself does not depend on it.
+   */
+  private async resolveRazorpayBusinessId(
+    data: RazorpayWebhookPayload,
+  ): Promise<string | null> {
+    try {
+      const paymentEntityId = data.payload?.payment?.entity?.id;
+      if (paymentEntityId) {
+        const byPayment = await this.repository.findPaymentByGatewayId(paymentEntityId);
+        if (byPayment) return byPayment.business_id;
+      }
+
+      const linkId = data.payload?.payment_link?.entity?.id;
+      if (linkId) {
+        const byLink = await this.repository.findPaymentByLinkId(linkId);
+        if (byLink) return byLink.business_id;
+      }
+
+      const refundId = data.payload?.refund?.entity?.id;
+      if (refundId) {
+        const byRefund = await this.repository.findRefundByGatewayId(refundId);
+        if (byRefund) return byRefund.business_id;
+      }
+    } catch (err) {
+      this.logger.debug(
+        `Could not resolve business for Razorpay webhook: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    return null;
+  }
+
+  /** Best-effort tenant for a failed Stripe event. See {@link resolveRazorpayBusinessId}. */
+  private async resolveStripeBusinessId(
+    event: StripeWebhookEvent,
+  ): Promise<string | null> {
+    try {
+      const sessionId = event.data?.object?.id;
+      if (sessionId) {
+        const bySession = await this.repository.findPaymentByLinkId(sessionId);
+        if (bySession) return bySession.business_id;
+      }
+      const intentId = event.data?.object?.payment_intent;
+      if (intentId) {
+        const byIntent = await this.repository.findPaymentByGatewayId(intentId);
+        if (byIntent) return byIntent.business_id;
+      }
+    } catch (err) {
+      this.logger.debug(
+        `Could not resolve business for Stripe webhook: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    return null;
   }
 
   // ─────────────────────────────────────────────

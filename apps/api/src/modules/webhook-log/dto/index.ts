@@ -1,6 +1,17 @@
-import { IsOptional, IsString, IsBoolean, IsInt, Min, Max } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsBoolean,
+  IsEnum,
+  IsIn,
+  IsInt,
+  MaxLength,
+  Min,
+  Max,
+} from 'class-validator';
 import { Type, Transform } from 'class-transformer';
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { DeadLetterStatus } from '@prisma/client';
 import { IsCalendarDateString } from '../../../common/validators/is-calendar-date.validator';
 
 export class ListWebhookEventsQueryDto {
@@ -100,4 +111,92 @@ export interface WebhookStatsDto {
   unprocessed: number;
   invalidSignature: number;
   bySource: { source: string; count: number }[];
+}
+
+// ─────────────────────────────────────────────
+// Dead-letter queue
+// ─────────────────────────────────────────────
+
+/** Query filters for listing dead-lettered webhook deliveries. */
+export class ListWebhookDeadLettersQueryDto {
+  @ApiPropertyOptional({ enum: DeadLetterStatus })
+  @IsOptional()
+  @IsEnum(DeadLetterStatus)
+  status?: DeadLetterStatus;
+
+  @ApiPropertyOptional({ description: 'e.g. "RAZORPAY", "STRIPE", "WHATSAPP"' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  source?: string;
+
+  @ApiPropertyOptional({ description: 'e.g. "payment.captured"' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  eventType?: string;
+
+  @ApiPropertyOptional({ minimum: 1, maximum: 500, default: 100 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  limit?: number;
+}
+
+/** Close a dead letter out by hand: handled (RESOLVED) or dropped (DISCARDED). */
+export class ResolveWebhookDeadLetterDto {
+  @ApiProperty({ enum: [DeadLetterStatus.RESOLVED, DeadLetterStatus.DISCARDED] })
+  @IsIn([DeadLetterStatus.RESOLVED, DeadLetterStatus.DISCARDED])
+  status!: DeadLetterStatus;
+
+  @ApiPropertyOptional({ description: 'Operator note explaining the resolution' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  note?: string;
+}
+
+/** List-view row for a dead-lettered delivery — omits the raw payload. */
+export interface WebhookDeadLetterSummaryDto {
+  id: string;
+  source: string;
+  eventType: string;
+  externalId: string;
+  status: DeadLetterStatus;
+  attempts: number;
+  maxAttempts: number;
+  errorMessage: string;
+  nextRetryAt: string | null;
+  lastAttemptAt: string | null;
+  replayedAt: string | null;
+  resolvedAt: string | null;
+  resolution: string | null;
+  createdAt: string;
+}
+
+/** Detail view — adds the stored payload an operator needs to judge a replay. */
+export interface WebhookDeadLetterDetailDto extends WebhookDeadLetterSummaryDto {
+  payload: unknown;
+  headers: unknown;
+  errorStack: string | null;
+  webhookEventId: string | null;
+}
+
+export interface WebhookDeadLetterStatsDto {
+  pending: number;
+  replayed: number;
+  resolved: number;
+  discarded: number;
+  /** Sources with a replayer registered — anything else cannot be retried. */
+  sources: string[];
+}
+
+/** What a manual replay did, and the entry as it now stands. */
+export interface WebhookReplayResultDto {
+  status: 'REPLAYED' | 'RESCHEDULED' | 'DISCARDED' | 'SKIPPED';
+  /** The failure that caused a RESCHEDULED/DISCARDED outcome; null on success. */
+  error: string | null;
+  entry: WebhookDeadLetterSummaryDto;
 }
