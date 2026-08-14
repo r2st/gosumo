@@ -24,6 +24,7 @@ import {
 } from '@gosumo/shared';
 import { generateId, generateCorrelationId, normalizeIndianPhone, PayloadParseError } from '@gosumo/shared';
 import { PrismaService } from '../../common/services/prisma.service';
+import { findOrCreateClientByIdentity } from '../../common/utils/client-identity.util';
 
 /**
  * Adapters whose provider batches several messages into one webhook implement
@@ -320,20 +321,33 @@ export class ChannelAdapterService {
         });
 
         if (!channelContact) {
-          // Create client first, then channel_contact
-          const client = await this.prisma.clients.create({
-            data: {
-              business_id: channelAccount.business_id,
-              name: normalized.sender.displayName || senderExternalId,
+          // No contact for *this* channel account does not mean a new person.
+          // The same buyer who messaged on WhatsApp and now texts from the same
+          // number — or reaches a second WhatsApp account this business runs —
+          // already owns a client row holding that phone, and `clients` is
+          // unique on (business, phone) and (business, email). Creating
+          // unconditionally therefore did not make a duplicate: it raised
+          // P2002, the catch below swallowed it, and the message was lost for
+          // good, because step 2 had already written the delivery to
+          // `webhook_events` and so deduped the provider's retry away.
+          //
+          // Resolving against the identity instead is also what this module has
+          // always claimed to do: one client, one `channel_contacts` row per
+          // channel they arrive on.
+          const resolved = await findOrCreateClientByIdentity(
+            this.prisma.clients,
+            channelAccount.business_id,
+            {
               phone: senderPhone,
               email: channelType === ChannelType.EMAIL ? senderExternalId : undefined,
             },
-          });
+            normalized.sender.displayName || senderExternalId,
+          );
 
           channelContact = await this.prisma.channel_contacts.create({
             data: {
               business_id: channelAccount.business_id,
-              client_id: client.id,
+              client_id: resolved.id,
               channel_account_id: channelAccount.id,
               channel: channelType,
               external_id: senderExternalId,
@@ -343,8 +357,8 @@ export class ChannelAdapterService {
           });
 
           this.logger.log(
-            `[${traceId}] Created new client ${client.id} and contact ${channelContact.id} ` +
-              `for sender ${senderExternalId}`,
+            `[${traceId}] ${resolved.created ? 'Created new' : 'Reused'} client ${resolved.id} ` +
+              `and contact ${channelContact.id} for sender ${senderExternalId}`,
           );
         } else {
           // Update last_seen_at

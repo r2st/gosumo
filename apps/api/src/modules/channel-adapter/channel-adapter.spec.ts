@@ -36,7 +36,7 @@ function makeMockPrisma(): PrismaService {
   return {
     channel_accounts: { findFirst: jest.fn().mockResolvedValue(null) },
     channel_contacts: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
-    clients: { create: jest.fn() },
+    clients: { findFirst: jest.fn(), create: jest.fn() },
     conversations: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
     messages: { create: jest.fn() },
     webhook_events: { create: jest.fn().mockResolvedValue({ id: 'evt_1' }) },
@@ -1034,6 +1034,9 @@ function makeResolvingPrisma(
       update: jest.fn().mockResolvedValue({}),
     },
     clients: {
+      // Nothing in this business holds the sender's phone yet, so the identity
+      // is free and the service falls through to creating the client.
+      findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({ id: 'client-1' }),
       update: jest.fn().mockResolvedValue({}),
     },

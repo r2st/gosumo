@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
 import { escapeLikeTerm } from '../../common/utils/search-pattern.util';
+import { findOrCreateClientByIdentity } from '../../common/utils/client-identity.util';
+import { isUniqueViolation } from '../../common/utils/sequential-number.util';
 import { ChannelType, ResourceNotFoundError } from '@gosumo/shared';
 import { Prisma, $Enums } from '@prisma/client';
 import type { clients, channel_contacts } from '@prisma/client';
@@ -166,23 +168,30 @@ export class ClientIntelligenceRepository {
       return existingContact.client as ClientWithContacts;
     }
 
-    // No existing contact — create client + channel_contact in a transaction
-    return this.prisma.$transaction(async (tx) => {
-      const client = await tx.clients.create({
-        data: {
-          business_id: businessId,
-          name: data.name ?? null,
-          email: data.email ?? null,
-          phone: data.phone ?? null,
-          profile: {} as Prisma.InputJsonValue,
-          opt_outs: {} as Prisma.InputJsonValue,
-        },
-      });
+    // No contact on this channel account — but the person may still be someone
+    // this business already knows from another channel. `clients` is unique on
+    // (business, phone) and (business, email), so creating unconditionally did
+    // not produce a duplicate for a returning buyer: it raised P2002 and failed
+    // the call. Resolve the identity first, and only insert when it is free.
+    //
+    // The two inserts no longer share a transaction, because the identity
+    // resolution has to be able to re-read after a unique violation and a
+    // failed statement leaves a Postgres transaction unusable. What that costs
+    // is a stranded client row if the contact insert fails; what it buys is
+    // that a returning buyer resolves at all. The stranded row also heals
+    // itself — it holds the identity, so the sender's next message claims it.
+    const resolved = await findOrCreateClientByIdentity(
+      this.prisma.clients,
+      businessId,
+      { phone: data.phone, email: data.email },
+      data.name,
+    );
 
-      await tx.channel_contacts.create({
+    try {
+      await this.prisma.channel_contacts.create({
         data: {
           business_id: businessId,
-          client_id: client.id,
+          client_id: resolved.id,
           channel_account_id: channelAccountId,
           channel: channelType,
           external_id: externalId,
@@ -190,14 +199,19 @@ export class ClientIntelligenceRepository {
           channel_metadata: {} as Prisma.InputJsonValue,
         },
       });
+    } catch (err) {
+      // `[channel_account_id, external_id]` is unique: another first message
+      // from this same sender got there between our lookup and this insert.
+      // The row it wrote is the one we were about to write.
+      if (!isUniqueViolation(err)) throw err;
+    }
 
-      const result = await tx.clients.findFirstOrThrow({
-        where: { id: client.id, business_id: businessId },
-        include: this.clientIncludes,
-      });
-
-      return result as ClientWithContacts;
+    const result = await this.prisma.clients.findFirstOrThrow({
+      where: { id: resolved.id, business_id: businessId },
+      include: this.clientIncludes,
     });
+
+    return result as ClientWithContacts;
   }
 
   /**
@@ -446,6 +460,25 @@ export class ClientIntelligenceRepository {
       const secondaryProfile = (secondary.profile as Record<string, unknown>) ?? {};
       const mergedProfile = { ...secondaryProfile, ...primaryProfile };
 
+      // Soft-delete secondary, releasing the identifiers primary is about to
+      // inherit.
+      //
+      // This has to happen *before* the primary update, and it has to null the
+      // columns rather than only stamping `deleted_at`. `uq_clients_business_
+      // phone` and `uq_clients_business_email` do not exclude soft-deleted
+      // rows, so a tombstone keeps owning its phone number: merging a
+      // phone-only client into an email-only one asked Postgres for two rows
+      // with the same phone and lost, failing the whole merge — the exact
+      // operation whose entire purpose is to collapse a duplicate identity.
+      //
+      // Clearing them also keeps the tombstone from matching in
+      // `findOrCreateClientByIdentity`, so a later message from that number
+      // reaches the surviving client instead of resurrecting the loser.
+      await tx.clients.update({
+        where: { id: secondaryId, business_id: businessId },
+        data: { deleted_at: new Date(), phone: null, email: null },
+      });
+
       // Update primary with merged data
       await tx.clients.update({
         where: { id: primaryId, business_id: businessId },
@@ -460,12 +493,6 @@ export class ClientIntelligenceRepository {
           phone: primary.phone ?? secondary.phone,
           avatar_url: primary.avatar_url ?? secondary.avatar_url,
         },
-      });
-
-      // Soft-delete secondary
-      await tx.clients.update({
-        where: { id: secondaryId, business_id: businessId },
-        data: { deleted_at: new Date() },
       });
 
       // Return the updated primary

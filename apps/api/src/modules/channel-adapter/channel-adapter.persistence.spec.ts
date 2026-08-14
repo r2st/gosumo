@@ -70,7 +70,7 @@ interface PrismaDoubles {
   prisma: PrismaService;
   channel_accounts: { findFirst: jest.Mock };
   channel_contacts: { findFirst: jest.Mock; create: jest.Mock; update: jest.Mock };
-  clients: { create: jest.Mock; update: jest.Mock };
+  clients: { findFirst: jest.Mock; create: jest.Mock; update: jest.Mock };
   conversations: { findFirst: jest.Mock; create: jest.Mock; update: jest.Mock };
   messages: { create: jest.Mock };
   webhook_events: { create: jest.Mock };
@@ -97,6 +97,8 @@ function makePrisma(): PrismaDoubles {
     update: jest.fn().mockResolvedValue({}),
   };
   const clients = {
+    // No client holds this sender's phone/email yet — the first-contact case.
+    findFirst: jest.fn().mockResolvedValue(null),
     create: jest.fn().mockResolvedValue({ id: CLIENT_ID }),
     update: jest.fn().mockResolvedValue({}),
   };
@@ -178,13 +180,15 @@ describe('ChannelAdapterService — inbound persistence', () => {
     it('creates the client and the channel contact', async () => {
       await inbound(makeNormalized());
 
-      expect(db.clients.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          business_id: RESOLVED_BUSINESS_ID,
-          name: 'Priya Sharma',
-          phone: E164,
+      expect(db.clients.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            business_id: RESOLVED_BUSINESS_ID,
+            name: 'Priya Sharma',
+            phone: E164,
+          }),
         }),
-      });
+      );
       expect(db.channel_contacts.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -225,7 +229,7 @@ describe('ChannelAdapterService — inbound persistence', () => {
       );
 
       const data = db.clients.create.mock.calls[0]?.[0].data as Record<string, unknown>;
-      expect(data['phone']).toBeUndefined();
+      expect(data['phone']).toBeNull();
       // Email senders populate the email column instead.
       expect(data['email']).toBe('buyer@example.com');
     });
@@ -234,7 +238,7 @@ describe('ChannelAdapterService — inbound persistence', () => {
       await inbound(makeNormalized());
 
       const data = db.clients.create.mock.calls[0]?.[0].data as Record<string, unknown>;
-      expect(data['email']).toBeUndefined();
+      expect(data['email']).toBeNull();
     });
 
     it('falls back to the sender id when the provider sends no display name', async () => {
@@ -242,6 +246,117 @@ describe('ChannelAdapterService — inbound persistence', () => {
 
       const data = db.clients.create.mock.calls[0]?.[0].data as Record<string, unknown>;
       expect(data['name']).toBe(WA_ID);
+    });
+  });
+
+  // ── The same person, arriving on a second channel ───────
+
+  describe('a sender we already know from another channel', () => {
+    /** A client that already exists in this business holding `E164`. */
+    const KNOWN_CLIENT_ID = '00000000-0000-4000-c000-000000000009';
+
+    beforeEach(() => {
+      // No contact on *this* channel account — the buyer is arriving here for
+      // the first time — but their phone is already on a client row.
+      db.channel_contacts.findFirst.mockResolvedValue(null);
+      db.clients.findFirst.mockResolvedValue({ id: KNOWN_CLIENT_ID, deleted_at: null });
+      db.channel_contacts.create.mockResolvedValue({
+        id: CONTACT_ID,
+        client_id: KNOWN_CLIENT_ID,
+        client: { id: KNOWN_CLIENT_ID, phone: E164 },
+      });
+    });
+
+    it('attaches to the client that already holds the number', async () => {
+      await inbound(makeNormalized());
+
+      expect(db.clients.create).not.toHaveBeenCalled();
+      expect(db.channel_contacts.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ client_id: KNOWN_CLIENT_ID, external_id: WA_ID }),
+        }),
+      );
+    });
+
+    it('stores the message instead of losing it to the unique constraint', async () => {
+      // The regression this exists for: `clients.create` raised P2002 on
+      // uq_clients_business_phone, `handleInboundWebhook`'s catch swallowed it,
+      // and nothing downstream ran. The delivery was already in
+      // `webhook_events` by then, so the provider's retry was deduped away and
+      // the customer's message was gone for good.
+      await inbound(makeNormalized());
+
+      expect(db.messages.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ conversation_id: CONVERSATION_ID }),
+        }),
+      );
+    });
+
+    it('announces the resolved client, not an empty one', async () => {
+      await inbound(makeNormalized());
+
+      const event = emitter.emit.mock.calls[0]?.[1] as { clientId: string; conversationId: string };
+      expect(event.clientId).toBe(KNOWN_CLIENT_ID);
+      expect(event.conversationId).toBe(CONVERSATION_ID);
+    });
+
+    it('opens a conversation per channel account, not one shared across them', async () => {
+      // Matching the contact does not merge the threads: the WhatsApp thread
+      // and the SMS thread stay separate inboxes for the same person, which is
+      // what the conversation lookup's channel_account_id scope encodes.
+      await inbound(makeNormalized());
+
+      expect(db.conversations.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            client_id: KNOWN_CLIENT_ID,
+            channel_account_id: ACCOUNT_ID,
+          }),
+        }),
+      );
+      expect(db.conversations.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            client_id: KNOWN_CLIENT_ID,
+            channel_account_id: ACCOUNT_ID,
+          }),
+        }),
+      );
+    });
+
+    it('matches an email sender on the address the client already carries', async () => {
+      await inbound(
+        makeNormalized({
+          channel: ChannelType.EMAIL,
+          sender: { externalId: 'buyer@example.invalid', displayName: 'Buyer' },
+        }),
+        ChannelType.EMAIL,
+      );
+
+      expect(db.clients.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: expect.arrayContaining([{ email: 'buyer@example.invalid' }]),
+          }),
+        }),
+      );
+      expect(db.clients.create).not.toHaveBeenCalled();
+    });
+
+    it('does not fold an Instagram handle into whoever happens to match', async () => {
+      // An IGSID is neither a phone nor an email. There is no identity to
+      // resolve, so this is a new person until an operator merges them.
+      await inbound(
+        makeNormalized({
+          channel: ChannelType.INSTAGRAM,
+          sender: { externalId: '17841400000000000', displayName: 'insta_user' },
+        }),
+        ChannelType.INSTAGRAM,
+      );
+
+      expect(db.clients.findFirst).not.toHaveBeenCalled();
+      expect(db.clients.create).toHaveBeenCalled();
     });
   });
 

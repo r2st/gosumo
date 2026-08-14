@@ -68,7 +68,10 @@ pnpm --filter @gosumo/api test --testPathPattern=modules/client-intelligence
 
 ## Key Gotchas
 
-- **One client per (businessId, externalId, channelType).** Same phone on WhatsApp and SMS = two `channel_contacts` pointing to one `client`. Merge is manual (operator-triggered via `mergeClients()`)
+- **One client per person, one `channel_contacts` row per channel they arrive on.** Same phone on WhatsApp and SMS = two `channel_contacts` pointing to one `client`. That is enforced by `uq_clients_business_phone` / `uq_clients_business_email`, so it is not advisory: a first-contact path that inserts without resolving the identity first does not create a duplicate, it raises P2002 and fails. Use `findOrCreateClientByIdentity` (`common/utils/client-identity.util.ts`) — never a bare `clients.create`
+- **Cross-channel matching only works on a phone or an email.** An Instagram IGSID or a Web Chat session id resolves to nothing, so those senders are distinct clients until an operator runs `mergeClients()`
+- **Conversations stay per channel account** even when the contact matches — one person, two threads. `mergeClients` moves conversations between clients; it does not fold them into one
+- **`mergeClients` nulls the loser's phone/email** as it soft-deletes it. The unique constraints do not exclude soft-deleted rows, so a tombstone that kept its number would block the primary from inheriting it — and would still match on a later inbound message
 - **Churn risk event fires only on level boundary crossings** (e.g., MEDIUM → HIGH), not on every score update — prevents alert spam
 - **Facts with confidence < 0.7 are stored but excluded** from `getClientSummaryForAI()` — low-confidence facts must not pollute the AI prompt
 - `getClientSummaryForAI()` must return ≤300 chars — it is injected directly into the AI system prompt on every message

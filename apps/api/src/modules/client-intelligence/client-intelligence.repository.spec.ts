@@ -18,6 +18,7 @@
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { ChannelType, ResourceNotFoundError } from '@gosumo/shared';
+import { Prisma } from '@prisma/client';
 
 import { ClientIntelligenceRepository } from './client-intelligence.repository';
 import { PrismaService } from '../../common/services/prisma.service';
@@ -113,8 +114,9 @@ describe('ClientIntelligenceRepository', () => {
       });
     });
 
-    it('creates client + contact in one transaction when no contact exists', async () => {
+    it('creates client + contact when no contact exists and the identity is free', async () => {
       prisma.channel_contacts.findFirst.mockResolvedValue(null);
+      prisma.clients.findFirst.mockResolvedValue(null);
       prisma.clients.create.mockResolvedValue({ id: CLIENT_ID });
       prisma.clients.findFirstOrThrow.mockResolvedValue({ id: CLIENT_ID, channel_contacts: [] });
 
@@ -126,15 +128,16 @@ describe('ClientIntelligenceRepository', () => {
         { name: 'Asha', phone: '+919876543210', email: 'asha@example.invalid' },
       );
 
-      expect(prisma.$transaction).toHaveBeenCalled();
-      expect(prisma.clients.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          business_id: BUSINESS_ID,
-          name: 'Asha',
-          phone: '+919876543210',
-          email: 'asha@example.invalid',
+      expect(prisma.clients.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            business_id: BUSINESS_ID,
+            name: 'Asha',
+            phone: '+919876543210',
+            email: 'asha@example.invalid',
+          }),
         }),
-      });
+      );
       expect(prisma.channel_contacts.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           business_id: BUSINESS_ID,
@@ -152,6 +155,7 @@ describe('ClientIntelligenceRepository', () => {
 
     it('nulls the identity columns it was given nothing for', async () => {
       prisma.channel_contacts.findFirst.mockResolvedValue(null);
+      prisma.clients.findFirst.mockResolvedValue(null);
       prisma.clients.create.mockResolvedValue({ id: CLIENT_ID });
       prisma.clients.findFirstOrThrow.mockResolvedValue({ id: CLIENT_ID });
 
@@ -166,6 +170,78 @@ describe('ClientIntelligenceRepository', () => {
       const created = prisma.clients.create.mock.calls[0]![0].data;
       expect(created).toMatchObject({ name: null, email: null, phone: null });
       expect(prisma.channel_contacts.create.mock.calls[0]![0].data.display_name).toBeNull();
+    });
+
+    // ── Arriving on a second channel ──────────
+    //
+    // "One client per (businessId, externalId, channelType)" was the contract;
+    // the code inserted a client whenever the contact lookup missed. For a
+    // buyer who already existed on another channel that did not make a second
+    // row — `clients` is unique on (business, phone) and (business, email), so
+    // it raised P2002 and failed the call outright.
+
+    it('attaches to the client already holding the phone', async () => {
+      prisma.channel_contacts.findFirst.mockResolvedValue(null);
+      prisma.clients.findFirst.mockResolvedValue({ id: CLIENT_ID, deleted_at: null });
+      prisma.clients.findFirstOrThrow.mockResolvedValue({ id: CLIENT_ID, channel_contacts: [] });
+
+      await repository.findOrCreateClient(BUSINESS_ID, '919876543210', ChannelType.SMS, ACCOUNT_ID, {
+        name: 'Asha',
+        phone: '+919876543210',
+      });
+
+      expect(prisma.clients.create).not.toHaveBeenCalled();
+      expect(prisma.channel_contacts.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          client_id: CLIENT_ID,
+          channel: ChannelType.SMS,
+          external_id: '919876543210',
+        }),
+      });
+    });
+
+    it('returns the matched client rather than erroring on the constraint', async () => {
+      const existing = { id: CLIENT_ID, channel_contacts: [] };
+      prisma.channel_contacts.findFirst.mockResolvedValue(null);
+      prisma.clients.findFirst.mockResolvedValue({ id: CLIENT_ID, deleted_at: null });
+      prisma.clients.findFirstOrThrow.mockResolvedValue(existing);
+
+      await expect(
+        repository.findOrCreateClient(BUSINESS_ID, 'buyer@example.invalid', ChannelType.EMAIL, ACCOUNT_ID, {
+          email: 'buyer@example.invalid',
+        }),
+      ).resolves.toBe(existing);
+    });
+
+    it('tolerates a concurrent first message having written the contact', async () => {
+      // `[channel_account_id, external_id]` is unique. Two messages from the
+      // same new sender race, and the row the loser wanted is already there.
+      prisma.channel_contacts.findFirst.mockResolvedValue(null);
+      prisma.clients.findFirst.mockResolvedValue(null);
+      prisma.clients.create.mockResolvedValue({ id: CLIENT_ID });
+      prisma.channel_contacts.create.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: '5.0.0',
+          meta: { target: ['channel_account_id', 'external_id'] },
+        }),
+      );
+      prisma.clients.findFirstOrThrow.mockResolvedValue({ id: CLIENT_ID });
+
+      await expect(
+        repository.findOrCreateClient(BUSINESS_ID, 'ig_handle', ChannelType.INSTAGRAM, ACCOUNT_ID, {}),
+      ).resolves.toMatchObject({ id: CLIENT_ID });
+    });
+
+    it('does not swallow a contact insert that failed for another reason', async () => {
+      prisma.channel_contacts.findFirst.mockResolvedValue(null);
+      prisma.clients.findFirst.mockResolvedValue(null);
+      prisma.clients.create.mockResolvedValue({ id: CLIENT_ID });
+      prisma.channel_contacts.create.mockRejectedValue(new Error('connection reset'));
+
+      await expect(
+        repository.findOrCreateClient(BUSINESS_ID, 'ig_handle', ChannelType.INSTAGRAM, ACCOUNT_ID, {}),
+      ).rejects.toThrow('connection reset');
     });
   });
 
@@ -439,8 +515,15 @@ describe('ClientIntelligenceRepository', () => {
       prisma.clients.findFirstOrThrow.mockResolvedValue({ id: CLIENT_ID });
     }
 
-    /** The `data` of the update that writes the merged primary. */
-    const mergedData = () => prisma.clients.update.mock.calls[0]![0].data;
+    /**
+     * The `data` of the update that writes the merged primary — the *second*
+     * of the two. Retiring the secondary has to come first, because it is what
+     * releases the phone/email the primary is about to inherit.
+     */
+    const mergedData = () => prisma.clients.update.mock.calls[1]![0].data;
+
+    /** The `data` of the update that retires the secondary. */
+    const retiredData = () => prisma.clients.update.mock.calls[0]![0].data;
 
     it('throws when the primary is not in this business', async () => {
       prisma.clients.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'x' });
@@ -588,9 +671,56 @@ describe('ClientIntelligenceRepository', () => {
 
       await repository.mergeClients(BUSINESS_ID, CLIENT_ID, OTHER_CLIENT_ID);
 
-      expect(prisma.clients.update).toHaveBeenNthCalledWith(2, {
+      expect(prisma.clients.update).toHaveBeenNthCalledWith(1, {
         where: { id: OTHER_CLIENT_ID, business_id: BUSINESS_ID },
-        data: { deleted_at: expect.any(Date) },
+        data: { deleted_at: expect.any(Date), phone: null, email: null },
+      });
+    });
+
+    // ── Releasing the loser's identity ──────────
+    //
+    // `uq_clients_business_phone` / `uq_clients_business_email` do not exclude
+    // soft-deleted rows. A tombstone that keeps its phone number means the
+    // primary can never inherit it — and the merge that was supposed to
+    // collapse a duplicate identity fails on the duplicate identity.
+
+    it('retires the secondary before handing its identity to the primary', async () => {
+      primaryAndSecondary(
+        { phone: null, email: 'asha@example.invalid' },
+        { phone: '+919876543210', email: null },
+      );
+
+      await repository.mergeClients(BUSINESS_ID, CLIENT_ID, OTHER_CLIENT_ID);
+
+      // Order is the whole fix: reversed, the primary update asks Postgres for
+      // two live rows on +919876543210 and the transaction rolls back.
+      const [first, second] = prisma.clients.update.mock.calls;
+      expect(first![0].where.id).toBe(OTHER_CLIENT_ID);
+      expect(second![0].where.id).toBe(CLIENT_ID);
+      expect(second![0].data.phone).toBe('+919876543210');
+    });
+
+    it('clears the identity columns on the retired row, not just deleted_at', async () => {
+      primaryAndSecondary({}, { phone: '+919876543210', email: 'asha@example.invalid' });
+
+      await repository.mergeClients(BUSINESS_ID, CLIENT_ID, OTHER_CLIENT_ID);
+
+      // Also what stops a later inbound message on that number from claiming —
+      // and reviving — the loser instead of reaching the surviving client.
+      expect(retiredData()).toMatchObject({ phone: null, email: null });
+    });
+
+    it('leaves the primary its own identity when both rows carry one', async () => {
+      primaryAndSecondary(
+        { phone: '+919999999999', email: 'primary@example.invalid' },
+        { phone: '+919876543210', email: 'secondary@example.invalid' },
+      );
+
+      await repository.mergeClients(BUSINESS_ID, CLIENT_ID, OTHER_CLIENT_ID);
+
+      expect(mergedData()).toMatchObject({
+        phone: '+919999999999',
+        email: 'primary@example.invalid',
       });
     });
   });
