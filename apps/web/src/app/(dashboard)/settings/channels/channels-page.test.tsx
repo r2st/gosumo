@@ -8,7 +8,7 @@
  * must gate the right controls, and per-channel test results must not bleed
  * across rows.
  */
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { Channel } from '@/lib/feature-types';
 import type { Role } from '@/lib/feature-types';
@@ -481,5 +481,279 @@ describe('ChannelsPage — role gating', () => {
 
     expect(screen.getByText('Main WhatsApp')).toBeInTheDocument();
     expect(screen.getByText('Connected')).toBeInTheDocument();
+  });
+});
+
+/**
+ * Each channel type maps its typed form values onto a different connect body:
+ * SMS is flat, Web Chat nests a `widgetConfig` and fills in defaults, and Email
+ * nests SMTP with an IMAP block and coerces both ports to numbers. A wrong shape
+ * here is silently accepted by the form and rejected by the API, so the operator
+ * sees "connection failed" with no hint which field was wrong.
+ */
+describe('ChannelsPage — per-channel connect bodies', () => {
+  beforeEach(() => {
+    state.channels.data = { data: [] };
+  });
+
+  /** Open the connect modal for one of the five channel cards, in page order. */
+  function openConnect(index: number) {
+    fireEvent.click(screen.getAllByRole('button', { name: /^Connect$/ })[index]);
+  }
+
+  function fillForm(container: HTMLElement, values: Record<string, string>) {
+    const fields = container.querySelectorAll<HTMLElement>('#connect-form input, #connect-form select');
+    const labels = Array.from(container.querySelectorAll('#connect-form label')).map(
+      (l) => l.textContent ?? '',
+    );
+    for (const [label, value] of Object.entries(values)) {
+      const idx = labels.findIndex((l) => l.startsWith(label));
+      expect(idx, `no field labelled ${label}`).toBeGreaterThanOrEqual(0);
+      fireEvent.change(fields[idx], { target: { value } });
+    }
+  }
+
+  it('sends SMS credentials flat, including the provider picked from the dropdown', () => {
+    const { container } = render(<ChannelsPage />);
+    openConnect(2);
+
+    expect(screen.getByText('Connect SMS')).toBeInTheDocument();
+    fillForm(container, {
+      'Display name': 'Bulk SMS',
+      Provider: 'KALEYRA',
+      'Sender number': '+919812345678',
+      'Account SID': 'AC123',
+      'Auth token': 'secret-token',
+    });
+    fireEvent.submit(container.querySelector('#connect-form')!);
+
+    expect(state.connect.mutate).toHaveBeenCalledWith(
+      {
+        path: '/channels/sms/connect',
+        body: {
+          displayName: 'Bulk SMS',
+          provider: 'KALEYRA',
+          phoneNumber: '+919812345678',
+          accountSid: 'AC123',
+          authToken: 'secret-token',
+        },
+      },
+      expect.anything(),
+    );
+  });
+
+  it('offers the SMS provider list as a dropdown rather than free text', () => {
+    render(<ChannelsPage />);
+    openConnect(2);
+
+    const select = screen.getByText('Provider').closest('div')!.querySelector('select')!;
+    expect(within(select).getByText('Twilio')).toBeInTheDocument();
+    expect(within(select).getByText('Kaleyra')).toBeInTheDocument();
+    expect(within(select).getByText('Msg91')).toBeInTheDocument();
+  });
+
+  it('nests the Web Chat widget config and mirrors the title and colour into it', () => {
+    const { container } = render(<ChannelsPage />);
+    openConnect(3);
+
+    fillForm(container, {
+      'Display name': 'Site widget',
+      'Widget title': 'Talk to sales',
+      'Primary colour': '#ff0000',
+    });
+    fireEvent.submit(container.querySelector('#connect-form')!);
+
+    expect(state.connect.mutate).toHaveBeenCalledWith(
+      {
+        path: '/channels/web_chat/connect',
+        body: {
+          displayName: 'Site widget',
+          title: 'Talk to sales',
+          primaryColor: '#ff0000',
+          widgetConfig: {
+            title: 'Talk to sales',
+            primaryColor: '#ff0000',
+            position: 'BOTTOM_RIGHT',
+            allowedOrigins: [],
+          },
+        },
+      },
+      expect.anything(),
+    );
+  });
+
+  it('falls back to a default Web Chat title and colour when both are left blank', () => {
+    const { container } = render(<ChannelsPage />);
+    openConnect(3);
+
+    fillForm(container, { 'Display name': 'Site widget' });
+    fireEvent.submit(container.querySelector('#connect-form')!);
+
+    const { body } = state.connect.mutate.mock.calls[0][0];
+    expect(body).toMatchObject({
+      title: 'Chat with us',
+      primaryColor: '#4f46e5',
+      widgetConfig: { title: 'Chat with us', primaryColor: '#4f46e5' },
+    });
+  });
+
+  it('nests the email SMTP block with a numeric port and an IMAP sub-block', () => {
+    const { container } = render(<ChannelsPage />);
+    openConnect(4);
+
+    fillForm(container, {
+      'Display name': 'Support inbox',
+      'From email': 'support@acme.in',
+      'From name': 'Acme Support',
+      'SMTP host': 'smtp.acme.in',
+      'SMTP port': '2525',
+      'SMTP user': 'support@acme.in',
+      'SMTP password': 'hunter2',
+      'IMAP host': 'imap.acme.in',
+      'IMAP port': '1993',
+    });
+    fireEvent.submit(container.querySelector('#connect-form')!);
+
+    expect(state.connect.mutate).toHaveBeenCalledWith(
+      {
+        path: '/channels/email/connect',
+        body: {
+          displayName: 'Support inbox',
+          fromEmail: 'support@acme.in',
+          fromName: 'Acme Support',
+          smtp: {
+            host: 'smtp.acme.in',
+            port: 2525,
+            user: 'support@acme.in',
+            pass: 'hunter2',
+            imap: { host: 'imap.acme.in', port: 1993 },
+          },
+        },
+      },
+      expect.anything(),
+    );
+  });
+
+  it('falls back to the standard submission and IMAPS ports when they are left blank', () => {
+    const { container } = render(<ChannelsPage />);
+    openConnect(4);
+
+    fillForm(container, { 'Display name': 'Support inbox', 'SMTP host': 'smtp.acme.in' });
+    fireEvent.submit(container.querySelector('#connect-form')!);
+
+    const { body } = state.connect.mutate.mock.calls[0][0] as {
+      body: { smtp: { port: number; imap: { port: number } } };
+    };
+    expect(body.smtp.port).toBe(587);
+    expect(body.smtp.imap.port).toBe(993);
+  });
+
+  it('passes Instagram’s fields through unchanged', () => {
+    const { container } = render(<ChannelsPage />);
+    openConnect(1);
+
+    fillForm(container, {
+      'Display name': 'Instagram DMs',
+      'Facebook Page ID': '99887766',
+      'Page access token': 'ig-token',
+    });
+    fireEvent.submit(container.querySelector('#connect-form')!);
+
+    expect(state.connect.mutate).toHaveBeenCalledWith(
+      {
+        path: '/channels/instagram/connect',
+        body: { displayName: 'Instagram DMs', pageId: '99887766', accessToken: 'ig-token' },
+      },
+      expect.anything(),
+    );
+  });
+});
+
+describe('ChannelsPage — dismissing the modals', () => {
+  it('closes the connect modal on Cancel without connecting anything', () => {
+    state.channels.data = { data: [] };
+    render(<ChannelsPage />);
+
+    fireEvent.click(screen.getAllByRole('button', { name: /^Connect$/ })[0]);
+    expect(screen.getByText('Connect WhatsApp')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByText('Connect WhatsApp')).not.toBeInTheDocument();
+    expect(state.connect.mutate).not.toHaveBeenCalled();
+  });
+
+  it('clears the fetched snippet when the embed modal is closed', () => {
+    state.channels.data = {
+      data: [makeChannel({ id: 'ch-web', type: 'WEB_CHAT', displayName: 'Site widget' })],
+    };
+    state.embed.mutate = vi.fn((_id, opts) => opts?.onSuccess?.({ snippet: '<script/>' }));
+    render(<ChannelsPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Get Embed Code/ }));
+    expect(screen.getByText('<script/>')).toBeInTheDocument();
+
+    // The modal has both a header dismiss button and a footer one; the footer
+    // button is the one carrying visible text.
+    const footerClose = screen
+      .getAllByRole('button', { name: 'Close' })
+      .find((b) => b.textContent === 'Close')!;
+    fireEvent.click(footerClose);
+
+    // A stale snippet must not flash when the modal is opened for another channel.
+    expect(screen.queryByText('<script/>')).not.toBeInTheDocument();
+  });
+
+  it('starts a fresh connect form when a different channel is chosen', () => {
+    state.channels.data = { data: [] };
+    const { container } = render(<ChannelsPage />);
+
+    fireEvent.click(screen.getAllByRole('button', { name: /^Connect$/ })[0]);
+    fireEvent.change(container.querySelectorAll('#connect-form input')[0], {
+      target: { value: 'Typed into WhatsApp' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    fireEvent.click(screen.getAllByRole('button', { name: /^Connect$/ })[2]);
+
+    const first = container.querySelectorAll<HTMLInputElement>('#connect-form input')[0];
+    expect(first.value).toBe('');
+  });
+});
+
+describe('ChannelsPage — copy confirmation', () => {
+  it('reverts the copy confirmation after a couple of seconds', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      state.channels.data = {
+        data: [makeChannel({ id: 'ch-web', type: 'WEB_CHAT', displayName: 'Site widget' })],
+      };
+      state.embed.mutate = vi.fn((_id, opts) => opts?.onSuccess?.({ snippet: '<script/>' }));
+      render(<ChannelsPage />);
+
+      fireEvent.click(screen.getByRole('button', { name: /Get Embed Code/ }));
+      fireEvent.click(screen.getByRole('button', { name: /Copy Snippet/ }));
+      expect(await screen.findByText(/Copied!/)).toBeInTheDocument();
+
+      await act(async () => {
+        vi.advanceTimersByTime(2000);
+      });
+
+      expect(screen.queryByText(/Copied!/)).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Copy Snippet/ })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('ChannelsPage — credential hint edge cases', () => {
+  it('shows no credential line when the channel carries no metadata object at all', () => {
+    state.channels.data = {
+      data: [makeChannel({ metadata: null as unknown as Channel['metadata'] })],
+    };
+    render(<ChannelsPage />);
+
+    expect(screen.queryByText(/Access token:/)).not.toBeInTheDocument();
   });
 });
