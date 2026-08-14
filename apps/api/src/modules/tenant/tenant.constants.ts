@@ -275,3 +275,12 @@ export function usagePeriodKey(now: Date = new Date()): string {
   const month = String(now.getUTCMonth() + 1).padStart(2, '0');
   return `${year}-${month}`;
 }
+
+/**
+ * `audit_logs.resource_type` for team-membership changes.
+ *
+ * Shared between the service (invite/remove) and the controller (role change)
+ * so all three land under one value and a "who touched the team" query is a
+ * single indexed lookup on `(business_id, resource_type, resource_id)`.
+ */
+export const TEAM_MEMBER_RESOURCE = 'team_member';

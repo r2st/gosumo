@@ -57,6 +57,23 @@ blocks any body/query/param `businessId` that disagrees with the token (403 cros
 
 **Listens to:** none
 
+## Audit trail
+
+Team-membership changes write an append-only `audit_logs` row via the shared
+`AuditLogService` (`common/services/audit-log.service.ts`), under
+`resource_type: "team_member"`:
+
+| Operation | Action | Diff captured |
+|---|---|---|
+| `inviteMember` | `CREATE` | `after` = email/name/role/status of the new member |
+| `updateRole` (`TeamController`) | `UPDATE` | `before`/`after` = the old and new role |
+| `removeMember` | `DELETE` | `before` = the standing that was revoked |
+
+`team_members.role` is a single mutable column, so without this the previous
+role — and who changed it — is gone the moment the update lands. Rows are
+written **after** the operation commits, and the writer never throws: a failed
+audit write is logged, never surfaced as a failed role change.
+
 ## Tables Owned
 
 - `businesses` — core tenant record with plan, AI settings JSONB, profile JSONB

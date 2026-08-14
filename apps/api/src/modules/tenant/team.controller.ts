@@ -10,8 +10,10 @@ import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 import { ListTeamQueryDto, DEFAULT_TEAM_PAGE_SIZE } from './dto/list-team-query.dto';
-import { TeamMemberRole } from '@gosumo/database';
+import { AuditAction, TeamMemberRole } from '@gosumo/database';
 import { PrismaService } from '../../common/services/prisma.service';
+import { AuditLogService } from '../../common/services/audit-log.service';
+import { TEAM_MEMBER_RESOURCE } from './tenant.constants';
 import { PlanLimit } from '../billing/plan.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 
@@ -19,7 +21,11 @@ import { Roles } from '../auth/decorators/roles.decorator';
 @Controller('auth/team')
 export class TeamController {
   private readonly logger = new Logger(TeamController.name);
-  constructor(private readonly tenantService: TenantService, private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly tenantService: TenantService,
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditLogService,
+  ) {}
 
   /**
    * The acting user's role *as currently stored*, not as claimed by their JWT.
@@ -121,21 +127,22 @@ export class TeamController {
       throw new ForbiddenException('Only an owner may change team member roles');
     }
 
+    // Read before writing: `role` is a single mutable column, so the previous
+    // value is gone the moment the update lands and there would be nothing left
+    // to diff against. This read also backs the last-owner check below.
+    const target = await this.prisma.team_members.findFirst({
+      where: { id: memberId, business_id: tenantId, deleted_at: null },
+      select: { role: true, email: true },
+    });
+
     // Demoting the last owner leaves the business with nobody who can grant
     // roles, invite members, or manage billing — an unrecoverable state.
-    if (dto.role !== TeamMemberRole.OWNER) {
-      const target = await this.prisma.team_members.findFirst({
-        where: { id: memberId, business_id: tenantId, deleted_at: null },
-        select: { role: true },
+    if (dto.role !== TeamMemberRole.OWNER && target?.role === TeamMemberRole.OWNER) {
+      const owners = await this.prisma.team_members.count({
+        where: { business_id: tenantId, role: TeamMemberRole.OWNER, deleted_at: null },
       });
-
-      if (target?.role === TeamMemberRole.OWNER) {
-        const owners = await this.prisma.team_members.count({
-          where: { business_id: tenantId, role: TeamMemberRole.OWNER, deleted_at: null },
-        });
-        if (owners <= 1) {
-          throw new ForbiddenException('A business must always have at least one owner');
-        }
+      if (owners <= 1) {
+        throw new ForbiddenException('A business must always have at least one owner');
       }
     }
 
@@ -143,6 +150,27 @@ export class TeamController {
       where: { id: memberId, business_id: tenantId },
       data: { role: dto.role },
     });
+
+    // Granting OWNER is the widest-reaching action in the product — it hands
+    // over billing, data export, and the ability to grant OWNER again — and it
+    // used to leave no record whatsoever of who did it. Written after the
+    // update commits, so a rejected change is never described as one that
+    // happened.
+    await this.audit.record({
+      businessId: tenantId,
+      actorType: 'TEAM_MEMBER',
+      actorId: actor.id,
+      actorEmail: user.email ?? null,
+      action: AuditAction.UPDATE,
+      resourceType: TEAM_MEMBER_RESOURCE,
+      resourceId: updated.id,
+      before: { role: target?.role ?? null },
+      after: { role: updated.role },
+      description: `Changed role of ${target?.email ?? memberId} from ${
+        target?.role ?? 'unknown'
+      } to ${updated.role}`,
+    });
+
     return { id: updated.id, role: updated.role, status: updated.status };
   }
 

@@ -1,9 +1,11 @@
 import { ForbiddenException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { TeamMemberRole } from '@gosumo/database';
+import { AuditAction, TeamMemberRole } from '@gosumo/database';
 import { TeamController } from './team.controller';
 import { TenantService } from './tenant.service';
 import { PrismaService } from '../../common/services/prisma.service';
+import { AuditLogService } from '../../common/services/audit-log.service';
+import { TEAM_MEMBER_RESOURCE } from './tenant.constants';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import type { InviteMemberDto } from './dto/invite-member.dto';
 
@@ -16,6 +18,7 @@ function makeMember(overrides: Record<string, unknown> = {}) {
 
 describe('TeamController', () => {
   let controller: TeamController;
+  let audit: { record: jest.Mock };
   let tenantService: { getMembers: jest.Mock; inviteMember: jest.Mock; removeMember: jest.Mock };
   let prisma: {
     team_members: {
@@ -27,6 +30,7 @@ describe('TeamController', () => {
 
   beforeEach(async () => {
     tenantService = { getMembers: jest.fn(), inviteMember: jest.fn(), removeMember: jest.fn() };
+    audit = { record: jest.fn().mockResolvedValue(undefined) };
     prisma = {
       team_members: { update: jest.fn(), findFirst: jest.fn(), count: jest.fn() },
     };
@@ -36,6 +40,7 @@ describe('TeamController', () => {
       providers: [
         { provide: TenantService, useValue: tenantService },
         { provide: PrismaService, useValue: prisma },
+        { provide: AuditLogService, useValue: audit },
       ],
     }).compile();
 
@@ -200,6 +205,133 @@ describe('TeamController', () => {
       });
 
       expect(prisma.team_members.count).not.toHaveBeenCalled();
+    });
+
+    /**
+     * `team_members.role` is a single mutable column: the update overwrites the
+     * only record that the member ever held a different role, and nothing
+     * anywhere says who changed it. Granting OWNER hands over billing, data
+     * export, and the ability to grant OWNER again — so this is the one change
+     * in the product that most needs a trail, and had none.
+     */
+    describe('audit trail', () => {
+      it('records the actor, the target and the before/after roles', async () => {
+        withLookups(TeamMemberRole.OWNER, TeamMemberRole.STAFF);
+        prisma.team_members.update.mockResolvedValue({
+          id: MEMBER_ID,
+          role: TeamMemberRole.OWNER,
+          status: 'ACTIVE',
+        });
+
+        await controller.updateRole(
+          TENANT_ID,
+          { ...actor(OWNER_ID), email: 'owner@example.com' },
+          MEMBER_ID,
+          { role: TeamMemberRole.OWNER },
+        );
+
+        expect(audit.record).toHaveBeenCalledWith(
+          expect.objectContaining({
+            businessId: TENANT_ID,
+            actorType: 'TEAM_MEMBER',
+            actorId: OWNER_ID,
+            actorEmail: 'owner@example.com',
+            action: AuditAction.UPDATE,
+            resourceType: TEAM_MEMBER_RESOURCE,
+            resourceId: MEMBER_ID,
+            before: { role: TeamMemberRole.STAFF },
+            after: { role: TeamMemberRole.OWNER },
+          }),
+        );
+      });
+
+      it('captures the previous role by reading before the update', async () => {
+        // Read-after-write would diff the new role against itself and record a
+        // change from OWNER to OWNER — a trail that exists but says nothing.
+        withLookups(TeamMemberRole.OWNER, TeamMemberRole.STAFF);
+        prisma.team_members.update.mockResolvedValue({
+          id: MEMBER_ID,
+          role: TeamMemberRole.MANAGER,
+        });
+
+        await controller.updateRole(TENANT_ID, actor(OWNER_ID), MEMBER_ID, {
+          role: TeamMemberRole.MANAGER,
+        });
+
+        const entry = audit.record.mock.calls[0]![0] as {
+          before: { role: string };
+          after: { role: string };
+        };
+        expect(entry.before.role).toBe(TeamMemberRole.STAFF);
+        expect(entry.after.role).toBe(TeamMemberRole.MANAGER);
+      });
+
+      it('records nothing when the change is rejected', async () => {
+        // A row describing a change that did not happen is worse than none —
+        // it reads as authoritative.
+        withLookups(TeamMemberRole.STAFF);
+
+        await expect(
+          controller.updateRole(TENANT_ID, actor(MEMBER_ID), MEMBER_ID, {
+            role: TeamMemberRole.OWNER,
+          }),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+
+        expect(audit.record).not.toHaveBeenCalled();
+      });
+
+      it('records nothing when the last-owner guard rejects the demotion', async () => {
+        withLookups(TeamMemberRole.OWNER, TeamMemberRole.OWNER);
+        prisma.team_members.count.mockResolvedValue(1);
+
+        await expect(
+          controller.updateRole(TENANT_ID, actor(OWNER_ID), MEMBER_ID, {
+            role: TeamMemberRole.MANAGER,
+          }),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+
+        expect(audit.record).not.toHaveBeenCalled();
+      });
+
+      it('records after the update commits, not before', async () => {
+        // The audit row asserts that the change happened. Writing it first
+        // would make a failed UPDATE look, in the trail, like a completed
+        // promotion — and the trail is the thing anyone investigating trusts.
+        const order: string[] = [];
+        withLookups(TeamMemberRole.OWNER, TeamMemberRole.STAFF);
+        prisma.team_members.update.mockImplementation(async () => {
+          order.push('update');
+          return { id: MEMBER_ID, role: TeamMemberRole.MANAGER };
+        });
+        audit.record.mockImplementation(async () => {
+          order.push('audit');
+        });
+
+        await controller.updateRole(TENANT_ID, actor(OWNER_ID), MEMBER_ID, {
+          role: TeamMemberRole.MANAGER,
+        });
+
+        expect(order).toEqual(['update', 'audit']);
+      });
+
+      it('leans on the audit service never rejecting, and awaits it', async () => {
+        // `AuditLogService.record` swallows its own failures (pinned in its own
+        // spec), so awaiting it here cannot fail a committed change. Awaiting
+        // rather than firing-and-forgetting is deliberate: an unawaited promise
+        // rejecting after the response would be an unhandled rejection.
+        withLookups(TeamMemberRole.OWNER, TeamMemberRole.STAFF);
+        prisma.team_members.update.mockResolvedValue({
+          id: MEMBER_ID,
+          role: TeamMemberRole.MANAGER,
+        });
+
+        const result = await controller.updateRole(TENANT_ID, actor(OWNER_ID), MEMBER_ID, {
+          role: TeamMemberRole.MANAGER,
+        });
+
+        expect(result.role).toBe(TeamMemberRole.MANAGER);
+        expect(audit.record).toHaveBeenCalledTimes(1);
+      });
     });
   });
 

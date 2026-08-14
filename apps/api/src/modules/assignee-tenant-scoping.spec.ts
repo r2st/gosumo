@@ -37,6 +37,7 @@ import { HitlRepository } from './hitl/hitl.repository';
 import { RealtyLeadsService } from './realty-leads/realty-leads.service';
 import { RealtyLeadsRepository } from './realty-leads/realty-leads.repository';
 import { TenantService } from './tenant/tenant.service';
+import { AuditLogService } from '../common/services/audit-log.service';
 import { TenantRepository } from './tenant/tenant.repository';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
@@ -66,7 +67,11 @@ function makeTenantService(): TenantService {
     ),
   } as unknown as TenantRepository;
 
-  return new TenantService(repository, { emit: jest.fn() } as unknown as EventEmitter2);
+  return new TenantService(
+    repository,
+    { emit: jest.fn() } as unknown as EventEmitter2,
+    { record: jest.fn() } as unknown as AuditLogService,
+  );
 }
 
 describe('TenantService.assertTeamMember', () => {

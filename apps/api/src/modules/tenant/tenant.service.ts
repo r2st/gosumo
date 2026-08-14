@@ -11,6 +11,7 @@ import {
   channel_accounts,
   team_members,
   business_rules,
+  AuditAction,
   ChannelType,
   TeamMemberRole,
   TeamMemberStatus,
@@ -23,6 +24,7 @@ import {
   type TeamMemberRemovedEvent,
 } from '@gosumo/shared';
 import { TenantRepository } from './tenant.repository';
+import { AuditLogService } from '../../common/services/audit-log.service';
 import { roleRank } from '../auth/role-hierarchy';
 import { UpdateBusinessDto } from './dto/update-business.dto';
 import { UpdateAIConfigDto, AIConfigResponse } from './dto/ai-config.dto';
@@ -34,6 +36,7 @@ import { UpdateBusinessPoliciesDto, BusinessPoliciesResponse } from './dto/busin
 import {
   AI_CONFIG_DEFAULTS,
   POLICIES_DEFAULTS,
+  TEAM_MEMBER_RESOURCE,
   SubscriptionTier,
   resolvePlan,
   isUnlimited,
@@ -64,6 +67,7 @@ export class TenantService {
   constructor(
     private readonly repository: TenantRepository,
     private readonly eventEmitter: EventEmitter2,
+    private readonly audit: AuditLogService,
   ) {}
 
   // ─────────────────────────────────────────────
@@ -695,6 +699,20 @@ export class TenantService {
       invited_by: invitedBy,
     });
 
+    // An invite is the point at which a new email gains standing inside the
+    // tenant, at a role the inviter chose. Recorded after the row commits so
+    // the trail cannot claim a member who does not exist.
+    await this.audit.record({
+      businessId,
+      actorType: invitedBy ? 'TEAM_MEMBER' : 'SYSTEM',
+      actorId: invitedBy ?? null,
+      action: AuditAction.CREATE,
+      resourceType: TEAM_MEMBER_RESOURCE,
+      resourceId: member.id,
+      after: { email: member.email, name: member.name, role: member.role, status: member.status },
+      description: `Invited ${dto.email} as ${prismaRole}`,
+    });
+
     this.logger.log(
       `Team member invited for business ${businessId}: ${dto.email} as ${dto.role}`,
     );
@@ -762,6 +780,25 @@ export class TenantService {
       actorId,
     };
     this.eventEmitter.emit('team.member.removed', event);
+
+    // The row is soft-deleted, so the member's own record survives — but it no
+    // longer says who removed them or when. `before` snapshots the standing
+    // they held at the moment it was taken away.
+    await this.audit.record({
+      businessId,
+      actorType: actorId ? 'TEAM_MEMBER' : 'SYSTEM',
+      actorId: actorId ?? null,
+      action: AuditAction.DELETE,
+      resourceType: TEAM_MEMBER_RESOURCE,
+      resourceId: memberId,
+      before: {
+        email: member.email,
+        name: member.name,
+        role: member.role,
+        status: member.status,
+      },
+      description: `Removed team member ${member.email ?? memberId} (${member.role})`,
+    });
 
     this.logger.log(
       `Team member ${memberId} removed from business ${businessId}`,

@@ -5,9 +5,11 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
-import { TeamMemberRole, TeamMemberStatus } from '@gosumo/database';
+import { AuditAction, TeamMemberRole, TeamMemberStatus } from '@gosumo/database';
 import { TenantService } from './tenant.service';
 import { TenantRepository } from './tenant.repository';
+import { AuditLogService } from '../../common/services/audit-log.service';
+import { TEAM_MEMBER_RESOURCE } from './tenant.constants';
 import { UpdateBusinessDto } from './dto/update-business.dto';
 import { UpdateAIConfigDto } from './dto/ai-config.dto';
 import { ConnectChannelDto } from './dto/connect-channel.dto';
@@ -137,16 +139,19 @@ describe('TenantService', () => {
   let service: TenantService;
   let repository: ReturnType<typeof createMockRepository>;
   let eventEmitter: { emit: jest.Mock };
+  let audit: { record: jest.Mock };
 
   beforeEach(async () => {
     repository = createMockRepository();
     eventEmitter = { emit: jest.fn() };
+    audit = { record: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TenantService,
         { provide: TenantRepository, useValue: repository },
         { provide: EventEmitter2, useValue: eventEmitter },
+        { provide: AuditLogService, useValue: audit },
       ],
     }).compile();
 
@@ -583,6 +588,81 @@ describe('TenantService', () => {
       );
     });
 
+    /**
+     * An invite is the moment a new email gains standing inside the tenant, at
+     * a role the inviter chose. `team_members` records the role but nothing
+     * about who granted it, so without this the trail starts only once the
+     * member does something.
+     */
+    it('records the invite on the audit trail', async () => {
+      const newMember = makeTeamMember({
+        status: TeamMemberStatus.INVITED,
+        email: 'new@example.com',
+        role: TeamMemberRole.MANAGER,
+      });
+      repository.findBusinessById.mockResolvedValue(makeBusiness({ plan: 'growth' }));
+      repository.countTeamMembers.mockResolvedValue(1);
+      repository.findTeamMemberByEmail.mockResolvedValue(null);
+      repository.createTeamMember.mockResolvedValue(newMember);
+      actingAs(TeamMemberRole.OWNER);
+
+      await service.inviteMember(
+        BUSINESS_ID,
+        { email: 'new@example.com', name: 'New Staff', role: TeamRole.MANAGER },
+        OWNER_ID,
+      );
+
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          businessId: BUSINESS_ID,
+          actorType: 'TEAM_MEMBER',
+          actorId: OWNER_ID,
+          action: AuditAction.CREATE,
+          resourceType: TEAM_MEMBER_RESOURCE,
+          resourceId: newMember.id,
+          after: expect.objectContaining({
+            email: 'new@example.com',
+            role: TeamMemberRole.MANAGER,
+          }),
+        }),
+      );
+    });
+
+    it('attributes an invite with no acting user to SYSTEM', async () => {
+      // Seeding and internal provisioning call this without an actor. An
+      // unattributed row is still worth having; a row that names nobody as
+      // TEAM_MEMBER would be a lie.
+      repository.findBusinessById.mockResolvedValue(makeBusiness({ plan: 'growth' }));
+      repository.countTeamMembers.mockResolvedValue(0);
+      repository.findTeamMemberByEmail.mockResolvedValue(null);
+      repository.createTeamMember.mockResolvedValue(makeTeamMember());
+
+      await service.inviteMember(BUSINESS_ID, {
+        email: 'new@example.com',
+        name: 'New Staff',
+        role: TeamRole.STAFF,
+      });
+
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ actorType: 'SYSTEM', actorId: null }),
+      );
+    });
+
+    it('records nothing when the invite is rejected by the plan limit', async () => {
+      repository.findBusinessById.mockResolvedValue(makeBusiness({ plan: 'starter' }));
+      repository.countTeamMembers.mockResolvedValue(3);
+
+      await expect(
+        service.inviteMember(BUSINESS_ID, {
+          email: 'new@example.com',
+          name: 'New Staff',
+          role: TeamRole.STAFF,
+        }),
+      ).rejects.toBeDefined();
+
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
     it('should reject when staff limit is reached', async () => {
       repository.findBusinessById.mockResolvedValue(makeBusiness({ plan: 'starter' }));
       repository.countTeamMembers.mockResolvedValue(3); // starter limit = 3
@@ -750,6 +830,61 @@ describe('TenantService', () => {
         BUSINESS_ID,
         MEMBER_ID,
       );
+    });
+
+    /**
+     * The row is soft-deleted, so the member's record survives — but it says
+     * nothing about who revoked their access or when. `before` snapshots the
+     * standing they held at the moment it was taken away, which is the part
+     * that stops being recoverable.
+     */
+    it('records the removal with the role that was revoked', async () => {
+      const member = makeTeamMember({
+        role: TeamMemberRole.MANAGER,
+        email: 'manager@example.com',
+      });
+      repository.findTeamMemberById.mockResolvedValue(member);
+      repository.softDeleteTeamMember.mockResolvedValue({ ...member, deleted_at: new Date() });
+
+      await service.removeMember(BUSINESS_ID, MEMBER_ID, OWNER_ID);
+
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          businessId: BUSINESS_ID,
+          actorType: 'TEAM_MEMBER',
+          actorId: OWNER_ID,
+          action: AuditAction.DELETE,
+          resourceType: TEAM_MEMBER_RESOURCE,
+          resourceId: MEMBER_ID,
+          before: expect.objectContaining({
+            email: 'manager@example.com',
+            role: TeamMemberRole.MANAGER,
+          }),
+        }),
+      );
+    });
+
+    it('records nothing when the removal is refused', async () => {
+      repository.findTeamMemberById.mockResolvedValue(
+        makeTeamMember({ role: TeamMemberRole.OWNER }),
+      );
+      repository.countOwners.mockResolvedValue(1);
+
+      await expect(service.removeMember(BUSINESS_ID, MEMBER_ID)).rejects.toThrow(
+        ForbiddenException,
+      );
+
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('records nothing when the member does not exist', async () => {
+      repository.findTeamMemberById.mockResolvedValue(null);
+
+      await expect(service.removeMember(BUSINESS_ID, MEMBER_ID)).rejects.toThrow(
+        NotFoundException,
+      );
+
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it('should throw ForbiddenException when trying to remove OWNER', async () => {
@@ -1015,6 +1150,7 @@ describe('TenantService assignability', () => {
         TenantService,
         { provide: TenantRepository, useValue: repository },
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
+        { provide: AuditLogService, useValue: { record: jest.fn() } },
       ],
     }).compile();
     service = module.get<TenantService>(TenantService);

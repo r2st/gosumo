@@ -30,6 +30,7 @@ import { ChannelType } from '@gosumo/shared';
 
 import { TenantService } from './tenant.service';
 import { TenantRepository } from './tenant.repository';
+import { AuditLogService } from '../../common/services/audit-log.service';
 import { SubscriptionTier } from './tenant.constants';
 
 const BUSINESS_ID = '11111111-1111-1111-1111-111111111111';
@@ -114,6 +115,7 @@ describe('TenantService (branches)', () => {
         TenantService,
         { provide: TenantRepository, useValue: repository },
         { provide: EventEmitter2, useValue: eventEmitter },
+        { provide: AuditLogService, useValue: { record: jest.fn() } },
       ],
     }).compile();
 

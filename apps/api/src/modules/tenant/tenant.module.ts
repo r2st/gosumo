@@ -1,5 +1,6 @@
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
+import { AuditLogService } from '../../common/services/audit-log.service';
 import { TenantController } from './tenant.controller';
 import { BusinessController } from './business.controller';
 import { TeamController } from './team.controller';
@@ -29,6 +30,7 @@ import { TenantIsolationMiddleware } from './tenant-isolation.middleware';
     UsageService,
     OnboardingService,
     PrismaService,
+    AuditLogService,
   ],
   exports: [
     TenantService,
