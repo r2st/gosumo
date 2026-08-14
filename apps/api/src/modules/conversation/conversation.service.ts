@@ -150,20 +150,25 @@ export class ConversationService {
   ) {}
 
   /**
-   * Reject an assignee that is not this tenant's team member.
+   * Reject an assignee who is not an active team member of this tenant.
    *
    * `@TenantId()` scopes the conversation being written, but the assignee id
-   * arrives in the request body as a second, unscoped reference. The
-   * `conversations.assigned_to` foreign key is satisfied by *any* real member
-   * row, so without this the database happily accepts another business's
-   * member id. Omitting the assignee is fine — only a supplied one is checked.
+   * arrives in the request body as a second, unscoped reference — and unlike
+   * `tasks.assigned_to`, `conversations.assigned_to` has no foreign key at
+   * all, so the database accepts any UUID whatsoever.
+   *
+   * The check is `assertAssignableTeamMember` rather than the plain membership
+   * one because a conversation is live customer work: parking it with an
+   * INVITED member who has never signed in, or a SUSPENDED one who cannot,
+   * takes it out of the unassigned queue without putting it in front of
+   * anybody. Omitting the assignee is fine — only a supplied one is checked.
    */
   private async assertAssignee(
     businessId: string,
     assigneeId?: string | null,
   ): Promise<void> {
     if (!assigneeId) return;
-    await this.tenantService.assertTeamMember(businessId, assigneeId);
+    await this.tenantService.assertAssignableTeamMember(businessId, assigneeId);
   }
 
   // ─────────────────────────────────────────────
@@ -565,19 +570,79 @@ export class ConversationService {
     await this.assertAssignee(businessId, assigneeId);
 
     const conversation = await this.requireConversation(businessId, id);
-    const previousAssigneeId = conversation.assigned_to ?? undefined;
 
-    const updated = await this.repository.assign(businessId, id, assigneeId);
-
-    this.emitAssigned(
+    return this.commitAssignment(
       businessId,
       id,
       conversation.client_id,
       assigneeId,
-      previousAssigneeId,
+      conversation.assigned_to,
+      `assigned to ${assigneeId}`,
+    );
+  }
+
+  /**
+   * Write an assignment that was decided against `expectedAssigneeId`, and
+   * announce it only if it changed something.
+   *
+   * Two things are folded in here because both are about the same window
+   * between reading the current assignee and writing the new one:
+   *
+   *  - **The write is a compare-and-set.** If someone else moved the
+   *    conversation in that window, the write does not land and the caller is
+   *    told, rather than the loser's agent being handed an event that says
+   *    they own a conversation they do not.
+   *  - **A lost race whose outcome already matches is not a conflict.** Two
+   *    supervisors both assigning to the same agent is the end state everyone
+   *    wanted; failing the second one would be a conflict about nothing.
+   *
+   * The no-change case is silent for the same reason. `conversation.assigned`
+   * announces a transfer, so emitting one where assignee and previous assignee
+   * are the same agent means any future consumer — a re-notification, an SLA
+   * clock reset, a reassignment rule — fires on a non-event. Auto-assignment
+   * can genuinely pick the incumbent, so this is reachable, not theoretical.
+   */
+  private async commitAssignment(
+    businessId: string,
+    id: string,
+    clientId: string,
+    assigneeId: string | null,
+    expectedAssigneeId: string | null,
+    logDetail: string,
+  ): Promise<conversations> {
+    if (assigneeId === expectedAssigneeId) {
+      // Nothing to write and nothing to announce.
+      return this.requireConversation(businessId, id);
+    }
+
+    const updated = await this.repository.assignIfHeldBy(
+      businessId,
+      id,
+      assigneeId,
+      expectedAssigneeId,
     );
 
-    this.logger.log(`Conversation ${id} assigned to ${assigneeId}`);
+    if (!updated) {
+      const current = await this.requireConversation(businessId, id);
+      if (current.assigned_to === assigneeId) {
+        // Someone else got there first with the same answer.
+        return current;
+      }
+      throw new ConflictException(
+        `Conversation ${id} was reassigned by someone else — reload and retry`,
+      );
+    }
+
+    if (assigneeId) {
+      this.emitAssigned(
+        businessId,
+        id,
+        clientId,
+        assigneeId,
+        expectedAssigneeId ?? undefined,
+      );
+    }
+    this.logger.log(`Conversation ${id} ${logDetail}`);
 
     return updated;
   }
@@ -599,15 +664,44 @@ export class ConversationService {
     const conversation = await this.requireConversation(businessId, id);
 
     if (options.strategy === AutoAssignStrategy.AI) {
-      const updated = await this.repository.assign(businessId, id, null);
-      this.logger.log(`Conversation ${id} kept with AI (unassigned)`);
-      return updated;
+      return this.commitAssignment(
+        businessId,
+        id,
+        conversation.client_id,
+        null,
+        conversation.assigned_to,
+        'kept with AI (unassigned)',
+      );
     }
 
-    const candidates = options.candidateAgentIds ?? [];
-    if (candidates.length === 0) {
+    const requested = options.candidateAgentIds ?? [];
+    if (requested.length === 0) {
       throw new BadRequestException(
         `Strategy ${options.strategy} requires at least one candidate agent`,
+      );
+    }
+
+    // `candidateAgentIds` is a caller-supplied list of bare UUIDs, and
+    // `conversations.assigned_to` has no foreign key at all — the "FK to
+    // team_members" in the schema is a comment. Without this, a business could
+    // route its own conversation to another business's team member, which is
+    // the hole `assertAssignee` closes on the single-assignee path and this
+    // one skipped entirely. Unusable candidates are dropped rather than
+    // rejected: a suspended agent in a stale candidate list should be passed
+    // over, not fail the request.
+    const candidates = await this.tenantService.filterAssignableTeamMembers(
+      businessId,
+      requested,
+    );
+    if (candidates.length < requested.length) {
+      this.logger.warn(
+        `Auto-assign for ${id}: ${requested.length - candidates.length} of ` +
+          `${requested.length} candidates are not assignable in this business`,
+      );
+    }
+    if (candidates.length === 0) {
+      throw new BadRequestException(
+        `Strategy ${options.strategy} requires at least one assignable candidate agent`,
       );
     }
 
@@ -628,21 +722,14 @@ export class ConversationService {
       chosen = candidates[totalActive % candidates.length] as string;
     }
 
-    const previousAssigneeId = conversation.assigned_to ?? undefined;
-    const updated = await this.repository.assign(businessId, id, chosen);
-    this.emitAssigned(
+    return this.commitAssignment(
       businessId,
       id,
       conversation.client_id,
       chosen,
-      previousAssigneeId,
+      conversation.assigned_to,
+      `auto-assigned to ${chosen} via ${options.strategy}`,
     );
-
-    this.logger.log(
-      `Conversation ${id} auto-assigned to ${chosen} via ${options.strategy}`,
-    );
-
-    return updated;
   }
 
   // ─────────────────────────────────────────────

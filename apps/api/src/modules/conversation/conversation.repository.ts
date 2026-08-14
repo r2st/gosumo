@@ -408,6 +408,45 @@ export class ConversationRepository {
   }
 
   /**
+   * Assign only if the conversation is still held by `expectedAssigneeId`.
+   * Returns the updated row, or `null` when someone else moved it first.
+   *
+   * Assignment is read-then-write — the caller reads the current assignee to
+   * report it on `conversation.assigned`, then writes the new one. Two
+   * supervisors acting on the same conversation would both read the same
+   * "before" and both write, and the second write would win silently: the
+   * loser's agent still receives an event naming them as the new owner, opens
+   * the conversation, and works it alongside whoever actually holds it. The
+   * guard turns that into a conflict the caller can be told about.
+   *
+   * `updateMany` rather than `update` because only `updateMany` takes a
+   * non-unique field in its WHERE — the compare-and-set *is* the WHERE clause,
+   * so it and the write are one statement and nothing can interleave.
+   */
+  async assignIfHeldBy(
+    businessId: string,
+    conversationId: string,
+    assigneeId: string | null,
+    expectedAssigneeId: string | null,
+  ): Promise<conversations | null> {
+    const { count } = await this.prisma.conversations.updateMany({
+      where: {
+        id: conversationId,
+        business_id: businessId,
+        assigned_to: expectedAssigneeId,
+        deleted_at: null,
+      },
+      data: { assigned_to: assigneeId },
+    });
+    if (count === 0) return null;
+
+    return this.prisma.conversations.findFirst({
+      where: { id: conversationId, business_id: businessId },
+      include: CONVERSATION_INCLUDE,
+    });
+  }
+
+  /**
    * Count active (non-RESOLVED, non-deleted) conversations per assignee
    * among the given candidate agents. Returns a map of agentId → count.
    * Agents with zero active conversations are included with count 0.

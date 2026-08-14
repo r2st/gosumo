@@ -76,6 +76,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
     updateLastMessageAt: jest.Mock;
     incrementHumanMessageCount: jest.Mock;
     assign: jest.Mock;
+    assignIfHeldBy: jest.Mock;
     countActiveByAssignees: jest.Mock;
     countByStatus: jest.Mock;
     getResolutionStats: jest.Mock;
@@ -87,7 +88,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
   };
   let eventEmitter: { emit: jest.Mock };
   let queue: { add: jest.Mock };
-  let tenantService: { assertTeamMember: jest.Mock };
+  let tenantService: { assertAssignableTeamMember: jest.Mock; filterAssignableTeamMembers: jest.Mock };
   let errorSpy: jest.SpyInstance;
   let debugSpy: jest.SpyInstance;
 
@@ -102,6 +103,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
       updateLastMessageAt: jest.fn(),
       incrementHumanMessageCount: jest.fn(),
       assign: jest.fn(),
+      assignIfHeldBy: jest.fn(),
       countActiveByAssignees: jest.fn(),
       countByStatus: jest.fn(),
       getResolutionStats: jest.fn(),
@@ -113,7 +115,12 @@ describe('ConversationService — context, notes and handler resilience', () => 
     };
     eventEmitter = { emit: jest.fn() };
     queue = { add: jest.fn() };
-    tenantService = { assertTeamMember: jest.fn().mockResolvedValue(undefined) };
+    tenantService = {
+      assertAssignableTeamMember: jest.fn().mockResolvedValue(undefined),
+      // Auto-assign narrows its candidate list through the tenant guard;
+      // the default fake keeps every id the caller supplied.
+      filterAssignableTeamMembers: jest.fn(async (_b: string, ids: string[]) => ids),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [

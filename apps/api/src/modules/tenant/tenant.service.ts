@@ -13,6 +13,7 @@ import {
   business_rules,
   ChannelType,
   TeamMemberRole,
+  TeamMemberStatus,
   RuleType,
 } from '@gosumo/database';
 import { Prisma } from '@prisma/client';
@@ -528,6 +529,60 @@ export class TenantService {
         `Team member ${memberId} does not belong to this business`,
       );
     }
+  }
+
+  /**
+   * Assert that `memberId` names a member of `businessId` who can actually
+   * take work — a live member whose status is ACTIVE.
+   *
+   * {@link assertTeamMember} answers "is this one of ours?", which is the
+   * question for tenant isolation. Routing asks a second one: an INVITED
+   * member has never signed in and a SUSPENDED one cannot, so assigning a
+   * customer conversation to either parks it with somebody who will never open
+   * it. Nothing then notices — the conversation is assigned, so it drops out
+   * of the unassigned queue, and it is not resolved, so it never closes.
+   *
+   * @throws BadRequestException when the member is not an active member here.
+   */
+  async assertAssignableTeamMember(
+    businessId: string,
+    memberId: string,
+  ): Promise<void> {
+    const member = await this.repository.findTeamMemberById(businessId, memberId);
+    if (!member) {
+      // Same non-disclosure as assertTeamMember: "not yours" and "not real"
+      // must be indistinguishable.
+      throw new BadRequestException(
+        `Team member ${memberId} does not belong to this business`,
+      );
+    }
+    if (member.status !== TeamMemberStatus.ACTIVE) {
+      throw new BadRequestException(
+        `Team member ${memberId} is ${member.status.toLowerCase()} and cannot be assigned work`,
+      );
+    }
+  }
+
+  /**
+   * Narrow a candidate list to the members who can take work, in one query.
+   *
+   * For auto-assignment, where the caller supplies up to 100 candidate ids and
+   * checking them one at a time would be 100 round trips. Ids that are not
+   * this tenant's, are soft-deleted, or are not ACTIVE simply do not come
+   * back; the caller decides whether an empty result is an error.
+   */
+  async filterAssignableTeamMembers(
+    businessId: string,
+    memberIds: string[],
+  ): Promise<string[]> {
+    if (memberIds.length === 0) return [];
+    const members = await this.repository.findAssignableTeamMembers(
+      businessId,
+      memberIds,
+    );
+    const assignable = new Set(members.map((m) => m.id));
+    // Preserve the caller's order — round-robin's tie-break depends on it.
+    return memberIds.filter((id) => assignable.has(id));
   }
 
   /**

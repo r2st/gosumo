@@ -277,6 +277,26 @@ export class TenantRepository {
   }
 
   /**
+   * The subset of `memberIds` that are live, ACTIVE members of this business.
+   * One query for a whole candidate list.
+   */
+  async findAssignableTeamMembers(
+    businessId: string,
+    memberIds: string[],
+  ): Promise<Array<{ id: string }>> {
+    if (memberIds.length === 0) return [];
+    return this.prisma.team_members.findMany({
+      where: {
+        id: { in: memberIds },
+        business_id: businessId,
+        status: TeamMemberStatus.ACTIVE,
+        deleted_at: null,
+      },
+      select: { id: true },
+    });
+  }
+
+  /**
    * Find a team member by email within a business scope.
    */
   async findTeamMemberByEmail(

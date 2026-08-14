@@ -104,6 +104,7 @@ function createMockRepository() {
     list: jest.fn(),
     updateLastMessageAt: jest.fn(),
     assign: jest.fn(),
+    assignIfHeldBy: jest.fn(),
   };
 }
 
@@ -131,14 +132,19 @@ describe('ConversationService', () => {
   let prisma: ReturnType<typeof createMockPrisma>;
   let eventEmitter: { emit: jest.Mock };
   let queue: ReturnType<typeof createMockQueue>;
-  let tenantService: { assertTeamMember: jest.Mock };
+  let tenantService: { assertAssignableTeamMember: jest.Mock; filterAssignableTeamMembers: jest.Mock };
 
   beforeEach(async () => {
     repository = createMockRepository();
     prisma = createMockPrisma();
     eventEmitter = { emit: jest.fn() };
     queue = createMockQueue();
-    tenantService = { assertTeamMember: jest.fn().mockResolvedValue(undefined) };
+    tenantService = {
+      assertAssignableTeamMember: jest.fn().mockResolvedValue(undefined),
+      // Auto-assign narrows its candidate list through the tenant guard;
+      // the default fake keeps every id the caller supplied.
+      filterAssignableTeamMembers: jest.fn(async (_b: string, ids: string[]) => ids),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -499,7 +505,7 @@ describe('ConversationService', () => {
       const conversation = makeConversation({ assigned_to: null });
       const updated = makeConversation({ assigned_to: ASSIGNEE_ID });
       repository.findById.mockResolvedValue(conversation);
-      repository.assign.mockResolvedValue(updated);
+      repository.assignIfHeldBy.mockResolvedValue(updated);
 
       const result = await service.assignConversation(
         BUSINESS_ID,
@@ -508,10 +514,11 @@ describe('ConversationService', () => {
       );
 
       expect(result).toEqual(updated);
-      expect(repository.assign).toHaveBeenCalledWith(
+      expect(repository.assignIfHeldBy).toHaveBeenCalledWith(
         BUSINESS_ID,
         CONVERSATION_ID,
         ASSIGNEE_ID,
+        null,
       );
       expect(eventEmitter.emit).toHaveBeenCalledWith(
         'conversation.assigned',
@@ -529,7 +536,7 @@ describe('ConversationService', () => {
      * database will not catch another tenant's member id arriving in the body.
      */
     it('rejects an assignee outside the tenant before writing', async () => {
-      tenantService.assertTeamMember.mockRejectedValue(
+      tenantService.assertAssignableTeamMember.mockRejectedValue(
         new BadRequestException('Team member does not belong to this business'),
       );
 
@@ -537,7 +544,7 @@ describe('ConversationService', () => {
         service.assignConversation(BUSINESS_ID, CONVERSATION_ID, ASSIGNEE_ID),
       ).rejects.toThrow(BadRequestException);
 
-      expect(tenantService.assertTeamMember).toHaveBeenCalledWith(
+      expect(tenantService.assertAssignableTeamMember).toHaveBeenCalledWith(
         BUSINESS_ID,
         ASSIGNEE_ID,
       );

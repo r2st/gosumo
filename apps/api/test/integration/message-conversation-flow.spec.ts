@@ -381,11 +381,15 @@ describe('message ↔ conversation flows (integration)', () => {
             // Membership is checked against (business, member), not business
             // alone — the whole point of the guard is that a *member id from
             // another tenant* is refused on a correctly-scoped request.
-            assertTeamMember: jest.fn(async (businessId: string, memberId: string) => {
+            assertAssignableTeamMember: jest.fn(async (businessId: string, memberId: string) => {
               if (businessId !== BUSINESS_ID || memberId !== AGENT_ID) {
                 throw new NotFoundException('Team member not found');
               }
             }),
+            filterAssignableTeamMembers: jest.fn(
+              async (businessId: string, memberIds: string[]) =>
+                businessId === BUSINESS_ID ? memberIds.filter((id) => id === AGENT_ID) : [],
+            ),
           },
         },
         {

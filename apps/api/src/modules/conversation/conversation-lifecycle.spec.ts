@@ -81,6 +81,7 @@ function createMockRepository() {
     updateLastMessageAt: jest.fn(),
     incrementHumanMessageCount: jest.fn(),
     assign: jest.fn(),
+    assignIfHeldBy: jest.fn(),
     countActiveByAssignees: jest.fn(),
     countByStatus: jest.fn(),
     getResolutionStats: jest.fn(),
@@ -101,14 +102,19 @@ describe('ConversationService — lifecycle & features', () => {
   let prisma: ReturnType<typeof createMockPrisma>;
   let eventEmitter: { emit: jest.Mock };
   let queue: { add: jest.Mock };
-  let tenantService: { assertTeamMember: jest.Mock };
+  let tenantService: { assertAssignableTeamMember: jest.Mock; filterAssignableTeamMembers: jest.Mock };
 
   beforeEach(async () => {
     repository = createMockRepository();
     prisma = createMockPrisma();
     eventEmitter = { emit: jest.fn() };
     queue = { add: jest.fn() };
-    tenantService = { assertTeamMember: jest.fn().mockResolvedValue(undefined) };
+    tenantService = {
+      assertAssignableTeamMember: jest.fn().mockResolvedValue(undefined),
+      // Auto-assign narrows its candidate list through the tenant guard;
+      // the default fake keeps every id the caller supplied.
+      filterAssignableTeamMembers: jest.fn(async (_b: string, ids: string[]) => ids),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -286,7 +292,7 @@ describe('ConversationService — lifecycle & features', () => {
 
     /** The escalation target is the same unscoped body reference as assign. */
     it('rejects a routing target outside the tenant before writing', async () => {
-      tenantService.assertTeamMember.mockRejectedValue(
+      tenantService.assertAssignableTeamMember.mockRejectedValue(
         new BadRequestException('Team member does not belong to this business'),
       );
 
@@ -309,7 +315,7 @@ describe('ConversationService — lifecycle & features', () => {
 
       await service.escalateConversation(BUSINESS_ID, CONVERSATION_ID, {});
 
-      expect(tenantService.assertTeamMember).not.toHaveBeenCalled();
+      expect(tenantService.assertAssignableTeamMember).not.toHaveBeenCalled();
       expect(repository.update).toHaveBeenCalled();
     });
   });
@@ -318,24 +324,38 @@ describe('ConversationService — lifecycle & features', () => {
 
   describe('autoAssign', () => {
     it('AI strategy unassigns and emits nothing', async () => {
-      repository.findById.mockResolvedValue(makeConversation());
+      repository.findById.mockResolvedValue(makeConversation({ assigned_to: AGENT_A }));
       const updated = makeConversation({ assigned_to: null });
-      repository.assign.mockResolvedValue(updated);
+      repository.assignIfHeldBy.mockResolvedValue(updated);
 
       const result = await service.autoAssign(BUSINESS_ID, CONVERSATION_ID, {
         strategy: AutoAssignStrategy.AI,
       });
 
       expect(result).toEqual(updated);
-      expect(repository.assign).toHaveBeenCalledWith(
+      // The write is guarded on the assignee that was read, so handing the
+      // conversation back to the AI cannot silently undo a human claim made
+      // in the meantime.
+      expect(repository.assignIfHeldBy).toHaveBeenCalledWith(
         BUSINESS_ID,
         CONVERSATION_ID,
         null,
+        AGENT_A,
       );
       expect(eventEmitter.emit).not.toHaveBeenCalledWith(
         'conversation.assigned',
         expect.anything(),
       );
+    });
+
+    it('does not write or announce when the conversation is already with the AI', async () => {
+      repository.findById.mockResolvedValue(makeConversation({ assigned_to: null }));
+
+      await service.autoAssign(BUSINESS_ID, CONVERSATION_ID, {
+        strategy: AutoAssignStrategy.AI,
+      });
+
+      expect(repository.assignIfHeldBy).not.toHaveBeenCalled();
     });
 
     it('LEAST_BUSY picks the agent with fewest active conversations', async () => {
@@ -344,7 +364,7 @@ describe('ConversationService — lifecycle & features', () => {
         [AGENT_A]: 5,
         [AGENT_B]: 2,
       });
-      repository.assign.mockResolvedValue(
+      repository.assignIfHeldBy.mockResolvedValue(
         makeConversation({ assigned_to: AGENT_B }),
       );
 
@@ -353,10 +373,11 @@ describe('ConversationService — lifecycle & features', () => {
         candidateAgentIds: [AGENT_A, AGENT_B],
       });
 
-      expect(repository.assign).toHaveBeenCalledWith(
+      expect(repository.assignIfHeldBy).toHaveBeenCalledWith(
         BUSINESS_ID,
         CONVERSATION_ID,
         AGENT_B,
+        null,
       );
       expect(eventEmitter.emit).toHaveBeenCalledWith(
         'conversation.assigned',
@@ -371,7 +392,7 @@ describe('ConversationService — lifecycle & features', () => {
         [AGENT_A]: 2,
         [AGENT_B]: 1,
       });
-      repository.assign.mockResolvedValue(
+      repository.assignIfHeldBy.mockResolvedValue(
         makeConversation({ assigned_to: AGENT_B }),
       );
 
@@ -380,10 +401,11 @@ describe('ConversationService — lifecycle & features', () => {
         candidateAgentIds: [AGENT_A, AGENT_B],
       });
 
-      expect(repository.assign).toHaveBeenCalledWith(
+      expect(repository.assignIfHeldBy).toHaveBeenCalledWith(
         BUSINESS_ID,
         CONVERSATION_ID,
         AGENT_B,
+        null,
       );
     });
 
@@ -394,6 +416,143 @@ describe('ConversationService — lifecycle & features', () => {
           strategy: AutoAssignStrategy.ROUND_ROBIN,
         }),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    // ── candidate scoping ──
+    //
+    // `candidateAgentIds` is a caller-supplied list of bare UUIDs, and
+    // `conversations.assigned_to` carries no foreign key at all — the schema's
+    // "FK to team_members" is a comment. Nothing but this guard stands between
+    // the body and the column.
+
+    it('never assigns to a candidate the tenant guard rejects', async () => {
+      const FOREIGN_AGENT = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+      repository.findById.mockResolvedValue(makeConversation());
+      tenantService.filterAssignableTeamMembers.mockResolvedValue([AGENT_B]);
+      repository.countActiveByAssignees.mockResolvedValue({ [AGENT_B]: 0 });
+      repository.assignIfHeldBy.mockResolvedValue(
+        makeConversation({ assigned_to: AGENT_B }),
+      );
+
+      await service.autoAssign(BUSINESS_ID, CONVERSATION_ID, {
+        strategy: AutoAssignStrategy.LEAST_BUSY,
+        // The foreign id is the least busy by a mile — zero conversations here.
+        candidateAgentIds: [FOREIGN_AGENT, AGENT_B],
+      });
+
+      expect(tenantService.filterAssignableTeamMembers).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        [FOREIGN_AGENT, AGENT_B],
+      );
+      expect(repository.assignIfHeldBy).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        CONVERSATION_ID,
+        AGENT_B,
+        null,
+      );
+    });
+
+    it('rejects the request when no candidate is assignable', async () => {
+      repository.findById.mockResolvedValue(makeConversation());
+      // Every candidate is another tenant's, suspended, or never signed in.
+      tenantService.filterAssignableTeamMembers.mockResolvedValue([]);
+
+      await expect(
+        service.autoAssign(BUSINESS_ID, CONVERSATION_ID, {
+          strategy: AutoAssignStrategy.LEAST_BUSY,
+          candidateAgentIds: [AGENT_A, AGENT_B],
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(repository.assignIfHeldBy).not.toHaveBeenCalled();
+    });
+
+    it('counts load only among the candidates that survived the guard', async () => {
+      repository.findById.mockResolvedValue(makeConversation());
+      tenantService.filterAssignableTeamMembers.mockResolvedValue([AGENT_A]);
+      repository.countActiveByAssignees.mockResolvedValue({ [AGENT_A]: 7 });
+      repository.assignIfHeldBy.mockResolvedValue(
+        makeConversation({ assigned_to: AGENT_A }),
+      );
+
+      await service.autoAssign(BUSINESS_ID, CONVERSATION_ID, {
+        strategy: AutoAssignStrategy.ROUND_ROBIN,
+        candidateAgentIds: [AGENT_A, AGENT_B],
+      });
+
+      // Counting the rejected agent's load would skew the round-robin cursor.
+      expect(repository.countActiveByAssignees).toHaveBeenCalledWith(BUSINESS_ID, [
+        AGENT_A,
+      ]);
+    });
+
+    // ── concurrency ──
+
+    it('reports a conflict when someone else reassigned it first', async () => {
+      repository.findById
+        .mockResolvedValueOnce(makeConversation({ assigned_to: null }))
+        // The re-read after the failed compare-and-set: a third agent holds it.
+        .mockResolvedValueOnce(makeConversation({ assigned_to: AGENT_A }));
+      tenantService.filterAssignableTeamMembers.mockResolvedValue([AGENT_B]);
+      repository.countActiveByAssignees.mockResolvedValue({ [AGENT_B]: 0 });
+      repository.assignIfHeldBy.mockResolvedValue(null);
+
+      await expect(
+        service.autoAssign(BUSINESS_ID, CONVERSATION_ID, {
+          strategy: AutoAssignStrategy.LEAST_BUSY,
+          candidateAgentIds: [AGENT_B],
+        }),
+      ).rejects.toThrow(ConflictException);
+
+      // The loser must not announce an ownership it does not have.
+      expect(eventEmitter.emit).not.toHaveBeenCalledWith(
+        'conversation.assigned',
+        expect.anything(),
+      );
+    });
+
+    it('treats a lost race with the same outcome as success, not a conflict', async () => {
+      const settled = makeConversation({ assigned_to: AGENT_B });
+      repository.findById
+        .mockResolvedValueOnce(makeConversation({ assigned_to: null }))
+        .mockResolvedValueOnce(settled);
+      tenantService.filterAssignableTeamMembers.mockResolvedValue([AGENT_B]);
+      repository.countActiveByAssignees.mockResolvedValue({ [AGENT_B]: 0 });
+      repository.assignIfHeldBy.mockResolvedValue(null);
+
+      // Both supervisors wanted AGENT_B; failing the second is a conflict
+      // about nothing.
+      const result = await service.autoAssign(BUSINESS_ID, CONVERSATION_ID, {
+        strategy: AutoAssignStrategy.LEAST_BUSY,
+        candidateAgentIds: [AGENT_B],
+      });
+
+      expect(result).toEqual(settled);
+      // The winner already announced it; a second event would double-notify.
+      expect(eventEmitter.emit).not.toHaveBeenCalledWith(
+        'conversation.assigned',
+        expect.anything(),
+      );
+    });
+
+    it('does not write or announce when the chosen agent already holds it', async () => {
+      repository.findById.mockResolvedValue(makeConversation({ assigned_to: AGENT_B }));
+      tenantService.filterAssignableTeamMembers.mockResolvedValue([AGENT_B]);
+      repository.countActiveByAssignees.mockResolvedValue({ [AGENT_B]: 3 });
+
+      await service.autoAssign(BUSINESS_ID, CONVERSATION_ID, {
+        strategy: AutoAssignStrategy.LEAST_BUSY,
+        candidateAgentIds: [AGENT_B],
+      });
+
+      // `conversation.assigned` announces a transfer. Auto-assignment can
+      // genuinely pick the incumbent, and a consumer that re-notifies or
+      // resets an SLA clock on every event must not fire on a non-change.
+      expect(repository.assignIfHeldBy).not.toHaveBeenCalled();
+      expect(eventEmitter.emit).not.toHaveBeenCalledWith(
+        'conversation.assigned',
+        expect.anything(),
+      );
     });
   });
 

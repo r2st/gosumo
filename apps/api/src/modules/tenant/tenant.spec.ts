@@ -120,6 +120,7 @@ function createMockRepository() {
     countTeamMembers: jest.fn(),
     countOwners: jest.fn(),
     findTeamMemberById: jest.fn(),
+    findAssignableTeamMembers: jest.fn(),
     findTeamMemberByEmail: jest.fn(),
     createTeamMember: jest.fn(),
     createOwnerMember: jest.fn(),
@@ -945,6 +946,111 @@ describe('TenantService', () => {
           changedFields: ['policies'],
         }),
       );
+    });
+  });
+});
+
+// ─────────────────────────────────────────────
+// Assignability
+//
+// `assertTeamMember` answers "is this one of ours?" — the tenant question.
+// Routing work asks a second one, and conflating them is how a conversation
+// gets parked with somebody who will never open it: assigned, so it leaves the
+// unassigned queue; unresolved, so it never closes; and nobody is looking.
+// ─────────────────────────────────────────────
+
+describe('TenantService assignability', () => {
+  let service: TenantService;
+  let repository: ReturnType<typeof createMockRepository>;
+
+  beforeEach(async () => {
+    repository = createMockRepository();
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        TenantService,
+        { provide: TenantRepository, useValue: repository },
+        { provide: EventEmitter2, useValue: { emit: jest.fn() } },
+      ],
+    }).compile();
+    service = module.get<TenantService>(TenantService);
+  });
+
+  describe('assertAssignableTeamMember', () => {
+    it('accepts an active member', async () => {
+      repository.findTeamMemberById.mockResolvedValue(
+        makeTeamMember({ status: TeamMemberStatus.ACTIVE }),
+      );
+
+      await expect(
+        service.assertAssignableTeamMember(BUSINESS_ID, MEMBER_ID),
+      ).resolves.toBeUndefined();
+    });
+
+    it.each([
+      ['a member who has never accepted the invite', TeamMemberStatus.INVITED],
+      ['a suspended member', TeamMemberStatus.SUSPENDED],
+    ])('refuses %s', async (_label, status) => {
+      repository.findTeamMemberById.mockResolvedValue(makeTeamMember({ status }));
+
+      await expect(
+        service.assertAssignableTeamMember(BUSINESS_ID, MEMBER_ID),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('refuses a member of another business without saying so', async () => {
+      // The lookup is tenant-scoped, so a foreign id simply does not resolve.
+      repository.findTeamMemberById.mockResolvedValue(null);
+
+      await expect(
+        service.assertAssignableTeamMember(BUSINESS_ID, MEMBER_ID),
+      ).rejects.toThrow(/does not belong to this business/i);
+      expect(repository.findTeamMemberById).toHaveBeenCalledWith(BUSINESS_ID, MEMBER_ID);
+    });
+
+    it('does not leak the reason a suspended member is unavailable as a tenant hint', async () => {
+      // "not yours" and "not real" must stay indistinguishable; "suspended"
+      // is only ever said about a member the caller already owns.
+      repository.findTeamMemberById.mockResolvedValue(null);
+
+      const err = await service
+        .assertAssignableTeamMember(BUSINESS_ID, MEMBER_ID)
+        .then(() => null)
+        .catch((e: unknown) => e as Error);
+
+      expect(err?.message).not.toMatch(/suspended|invited/i);
+    });
+  });
+
+  describe('filterAssignableTeamMembers', () => {
+    it('keeps only the ids the repository confirms, in the caller order', async () => {
+      const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+      const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+      const C = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+      // Returned out of order on purpose: round-robin's tie-break reads the
+      // candidate order, so the filter must not reorder it.
+      repository.findAssignableTeamMembers.mockResolvedValue([{ id: C }, { id: A }]);
+
+      await expect(
+        service.filterAssignableTeamMembers(BUSINESS_ID, [A, B, C]),
+      ).resolves.toEqual([A, C]);
+    });
+
+    it('resolves the whole list in one query rather than one per id', async () => {
+      const ids = Array.from(
+        { length: 50 },
+        (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+      );
+      repository.findAssignableTeamMembers.mockResolvedValue([]);
+
+      await service.filterAssignableTeamMembers(BUSINESS_ID, ids);
+
+      expect(repository.findAssignableTeamMembers).toHaveBeenCalledTimes(1);
+      expect(repository.findTeamMemberById).not.toHaveBeenCalled();
+    });
+
+    it('short-circuits an empty candidate list', async () => {
+      await expect(service.filterAssignableTeamMembers(BUSINESS_ID, [])).resolves.toEqual([]);
+      expect(repository.findAssignableTeamMembers).not.toHaveBeenCalled();
     });
   });
 });
