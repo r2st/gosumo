@@ -42,10 +42,6 @@ import { WhatsAppAdapter } from './channel-adapter/adapters/whatsapp.adapter';
  */
 const ALLOWED_BARE_FETCH: ReadonlyMap<string, string> = new Map([
   ['common/utils/http-timeout.util.ts', 'defines the wrapper'],
-  [
-    'modules/ai-engine/pipeline/llm-client.service.ts',
-    'has its own deadline, tied to a circuit breaker and retry budget nothing else shares',
-  ],
 ]);
 
 describe('every outbound HTTP call has a deadline', () => {
@@ -94,13 +90,24 @@ describe('every outbound HTTP call has a deadline', () => {
     }
   });
 
-  it('the LLM client bounds its own call rather than relying on the wrapper', () => {
-    const contents = fs.readFileSync(
-      path.join(SRC_ROOT, 'modules/ai-engine/pipeline/llm-client.service.ts'),
-      'utf8',
-    );
-    expect(contents).toContain('AbortController');
-    expect(contents).toMatch(/signal:\s*controller\.signal/);
+  /**
+   * The LLM client used to be an exception here, on the grounds that its
+   * deadline was tied to a circuit breaker and a retry budget nothing else
+   * shares. That reasoning confused *what to do about* a timeout with *how to
+   * detect one*: the breaker and the retry loop are still the client's own, but
+   * its hand-rolled detection cleared the timer in a `finally`, so the
+   * documented 8s deadline expired the moment the response headers arrived and
+   * never covered reading the body. Hand-rolling it is what let that through,
+   * so the sweep is left with no exceptions but the wrapper itself.
+   */
+  it('leaves no per-module deadline for a caller to get subtly wrong', () => {
+    const handRolled = sourceFiles(SRC_ROOT).filter((file) => {
+      const relative = path.relative(SRC_ROOT, file);
+      if (relative === 'common/utils/http-timeout.util.ts') return false;
+      return /new AbortController\(\)/.test(fs.readFileSync(file, 'utf8'));
+    });
+
+    expect(handRolled.map((f) => path.relative(SRC_ROOT, f))).toEqual([]);
   });
 });
 

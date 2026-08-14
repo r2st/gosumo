@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ExternalServiceError, type GoSumoErrorOptions } from '@gosumo/shared';
+import { fetchWithTimeout } from '../../../common/utils/http-timeout.util';
 import {
   LLM_MAX_TOKENS,
   LLM_TIMEOUT_MS,
@@ -288,15 +289,32 @@ export class LlmClientService {
   // Private helpers
   // ─────────────────────────────────────────────
 
+  /**
+   * POST the completion request under a {@link LLM_TIMEOUT_MS} deadline that
+   * spans the response body, not just the headers.
+   *
+   * The deadline has to outlive `fetch` resolving, because at that moment only
+   * the headers have arrived. A provider that returns `200 OK` and then stalls
+   * mid-body — the ordinary shape of an overloaded inference host, and the
+   * reason OpenRouter's own gateway sends keep-alive comments — leaves
+   * `response.json()` awaiting forever. That is worse than a refused
+   * connection: the turn never fails, so the retry never happens, the breaker
+   * never records a failure and never opens, and in the `ai-process` worker the
+   * job holds its concurrency slot until the pod restarts. Every tenant's AI
+   * replies stop, and nothing reports an error.
+   *
+   * {@link fetchWithTimeout} is what keeps the timer armed across the body
+   * read; the local implementation this replaced cleared it in a `finally`, so
+   * the documented 8s deadline only ever bounded the headers.
+   */
   private async fetchWithTimeout(
     apiKey: string,
     body: unknown,
   ): Promise<Response> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
     const url = this.configService.get<string>('openrouter.baseUrl', this.defaultApiUrl);
-    try {
-      return await fetch(url, {
+    return fetchWithTimeout(
+      url,
+      {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -306,13 +324,18 @@ export class LlmClientService {
           'x-title': this.configService.get<string>('openrouter.title', 'GoSumo'),
         },
         body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
+      },
+      { service: 'OpenRouter', timeoutMs: LLM_TIMEOUT_MS },
+    );
   }
 
+  /**
+   * The error body, or a placeholder if it cannot be read.
+   *
+   * Reading it is bounded by the same deadline as the request — a failing
+   * provider is exactly the one likely to stall mid-body, and this runs on the
+   * error path where a hang is least likely to be noticed.
+   */
   private async safeText(response: Response): Promise<string> {
     try {
       return await response.text();

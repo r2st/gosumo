@@ -29,8 +29,9 @@
  *    helper converts it to {@link HttpTimeoutError} — an `ExternalServiceError`
  *    carrying the provider name, HTTP 502 semantics, and `retryable: true`.
  *
- * The LLM client keeps its own `fetchWithTimeout`: its deadline is tied to a
- * circuit breaker and a retry budget that nothing else shares.
+ * Callers with their own retry or breaker policy — the LLM client, say — still
+ * route through here and simply pass a shorter `timeoutMs`; what they own is
+ * what to do about a timeout, not how to detect one.
  */
 
 import { ExternalServiceError } from '@gosumo/shared';

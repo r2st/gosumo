@@ -3,6 +3,7 @@ import { LlmClientService, LlmUnavailableError } from './llm-client.service';
 import {
   LLM_BREAKER_COOLDOWN_MS,
   LLM_BREAKER_FAILURE_THRESHOLD,
+  LLM_TIMEOUT_MS,
 } from '../ai-engine.constants';
 
 function makeClient(apiKey = 'test-key'): LlmClientService {
@@ -348,5 +349,110 @@ describe('LlmClientService — circuit breaker', () => {
 
       expect(makeClient().circuitOpen).toBe(false);
     });
+  });
+});
+
+// ─────────────────────────────────────────────
+// The deadline has to outlive the headers
+//
+// A refused connection is the timeout everyone tests. The one that actually
+// takes the product down is `200 OK` followed by silence: `fetch` resolves,
+// the deadline is considered met, and `response.json()` waits forever on a
+// body that never comes. The turn never fails, so the retry never runs, the
+// breaker records nothing and never opens, and in the `ai-process` worker the
+// job holds its concurrency slot indefinitely. Every tenant's AI replies stop
+// and no error is ever logged.
+// ─────────────────────────────────────────────
+
+describe('LlmClientService — a stalled response body', () => {
+  const realFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = realFetch;
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  /**
+   * Headers arrive; the body does not. Undici errors a pending body read when
+   * the request's signal aborts, so the fake honours the signal — a body that
+   * ignored it would be testing the mock, not the deadline.
+   */
+  function stalledBodyFetch(): jest.Mock {
+    return jest.fn(async (_url: string, init: RequestInit = {}) => {
+      const signal = init.signal;
+      const stall = <T>() =>
+        new Promise<T>((_resolve, reject) => {
+          if (!signal) return; // no deadline armed: hangs forever, the bug
+          if (signal.aborted) return reject(signal.reason ?? new Error('aborted'));
+          signal.addEventListener('abort', () => reject(signal.reason ?? new Error('aborted')), {
+            once: true,
+          });
+        });
+      return {
+        ok: true,
+        status: 200,
+        json: stall,
+        text: stall,
+      } as unknown as Response;
+    });
+  }
+
+  it('gives up on a 200 whose body never arrives, instead of waiting forever', async () => {
+    jest.useFakeTimers();
+    const fetchSpy = stalledBodyFetch();
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    const client = makeClient();
+    const call = client.complete(req);
+    const asserted = expect(call).rejects.toBeInstanceOf(LlmUnavailableError);
+
+    // Attempt 1's deadline, the 1s backoff, then attempt 2's deadline. Before
+    // the fix none of this mattered: the timer was cleared the moment `fetch`
+    // resolved, so no amount of elapsed time settled the call.
+    await jest.advanceTimersByTimeAsync(LLM_TIMEOUT_MS);
+    await jest.advanceTimersByTimeAsync(1_000);
+    await jest.advanceTimersByTimeAsync(LLM_TIMEOUT_MS);
+
+    await asserted;
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('counts a stalled body as a failure, so sustained stalling opens the breaker', async () => {
+    // The failure mode this replaces was invisible to the breaker: a call that
+    // never settles is never a failure, so an OpenRouter host stuck mid-body
+    // would keep every turn hanging rather than costing one fast failure each.
+    jest.useFakeTimers();
+    global.fetch = stalledBodyFetch() as unknown as typeof fetch;
+
+    const client = makeClient();
+    for (let i = 0; i < LLM_BREAKER_FAILURE_THRESHOLD; i++) {
+      const settled = expect(client.complete(req)).rejects.toBeInstanceOf(LlmUnavailableError);
+      // Both attempts' deadlines plus the backoff between them.
+      await jest.advanceTimersByTimeAsync(LLM_TIMEOUT_MS * 2 + 1_000);
+      await settled;
+    }
+
+    expect(client.circuitOpen).toBe(true);
+  });
+
+  it('bounds reading the error body of a failing response too', async () => {
+    // The error path is where a stall is least likely to be noticed, and a
+    // provider returning 503 is exactly the one that stalls mid-body.
+    jest.useFakeTimers();
+    global.fetch = jest.fn(async (_url: string, init: RequestInit = {}) => ({
+      ok: false,
+      status: 503,
+      text: () =>
+        new Promise<string>((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+        }),
+    })) as unknown as typeof fetch;
+
+    const client = makeClient();
+    const settled = expect(client.complete(req)).rejects.toBeInstanceOf(LlmUnavailableError);
+    await jest.advanceTimersByTimeAsync(LLM_TIMEOUT_MS * 2 + 1_000);
+
+    await settled;
   });
 });
