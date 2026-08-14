@@ -162,6 +162,49 @@ describe('CrmPushService', () => {
       );
     });
 
+    it('substitutes a placeholder when a failing adapter gives no reason', async () => {
+      // `recordSync` writes last_error, which the settings UI renders. A null
+      // there reads as "no error" beside a failed sync count.
+      repo.listConnections.mockResolvedValue([
+        makeConnection(RealtyIntegrationProvider.SELLDO),
+      ]);
+      jest.spyOn(selldo, 'push').mockResolvedValue({ ok: false });
+
+      await service.pushLead(BUSINESS_ID, LEAD_ID, 'created');
+
+      expect(repo.recordSync).toHaveBeenCalledWith(BUSINESS_ID, 'conn-SELLDO', 'push failed', 0);
+      expect(emitter.emit).toHaveBeenCalledWith(
+        'realty.crm.push_failed',
+        expect.objectContaining({ error: 'unknown' }),
+      );
+    });
+
+    it('pushes only to CRM providers, not every connected integration', async () => {
+      // The connections table also holds Sheets and EOI rows. Reaching those
+      // with a CRM payload would call an adapter that cannot accept it.
+      repo.listConnections.mockResolvedValue([
+        makeConnection(RealtyIntegrationProvider.GOOGLE_SHEETS),
+        makeConnection(RealtyIntegrationProvider.SELLDO),
+      ]);
+      jest.spyOn(selldo, 'push').mockResolvedValue({ ok: true });
+
+      const res = await service.pushLead(BUSINESS_ID, LEAD_ID, 'created');
+
+      expect(res).toHaveLength(1);
+    });
+
+    it('skips a connection that is not in CONNECTED state', async () => {
+      // A connection left in ERROR after a credential change must not keep
+      // receiving pushes that will fail.
+      repo.listConnections.mockResolvedValue([
+        makeConnection(RealtyIntegrationProvider.SELLDO, { status: 'ERROR' }),
+      ]);
+      const push = jest.spyOn(selldo, 'push');
+
+      expect(await service.pushLead(BUSINESS_ID, LEAD_ID, 'created')).toEqual([]);
+      expect(push).not.toHaveBeenCalled();
+    });
+
     it('honors onlyProvider (single-CRM manual resync)', async () => {
       repo.listConnections.mockResolvedValue([
         makeConnection(RealtyIntegrationProvider.SELLDO),
@@ -198,6 +241,16 @@ describe('CrmPushService', () => {
         service.onLeadCreated({ businessId: BUSINESS_ID, leadId: LEAD_ID } as never),
       ).resolves.toBeUndefined();
     });
+
+    it('swallows a non-Error rejection too', async () => {
+      // An adapter that rejects with a string would otherwise crash the error
+      // handler itself on `.message`, turning a swallowed failure into a
+      // thrown one — the opposite of what the wrapper exists for.
+      jest.spyOn(service, 'pushLead').mockRejectedValue('crm down');
+      await expect(
+        service.onLeadCreated({ businessId: BUSINESS_ID, leadId: LEAD_ID } as never),
+      ).resolves.toBeUndefined();
+    });
   });
 
   describe('connect', () => {
@@ -222,6 +275,141 @@ describe('CrmPushService', () => {
         service.connect(BUSINESS_ID, RealtyIntegrationProvider.SELLDO, {}),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(repo.upsertConnection).not.toHaveBeenCalled();
+    });
+
+    it('falls back to a generic message when verify fails without one', async () => {
+      jest.spyOn(selldo, 'verify').mockResolvedValue({ ok: false });
+
+      await expect(
+        service.connect(BUSINESS_ID, RealtyIntegrationProvider.SELLDO, { apiKey: 'k' }),
+      ).rejects.toThrow('Invalid CRM credentials');
+    });
+
+    it('rejects a provider with no adapter before touching the repository', async () => {
+      await expect(
+        service.connect(BUSINESS_ID, 'NOT_A_REAL_CRM' as RealtyIntegrationProvider, {}),
+      ).rejects.toThrow(/Unsupported CRM provider/);
+      expect(repo.upsertConnection).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('onLeadQualified', () => {
+    it('pushes with reason "updated"', async () => {
+      // A qualified lead is an update to a record the CRM already holds, not a
+      // new one — pushing it as "created" would duplicate the row.
+      const spy = jest.spyOn(service, 'pushLead').mockResolvedValue([]);
+      await service.onLeadQualified({ businessId: BUSINESS_ID, leadId: LEAD_ID } as never);
+      expect(spy).toHaveBeenCalledWith(BUSINESS_ID, LEAD_ID, 'updated');
+    });
+  });
+
+  describe('disconnect', () => {
+    it('soft-deletes the connection and announces it', async () => {
+      repo.findConnection.mockResolvedValue(makeConnection(RealtyIntegrationProvider.SELLDO));
+
+      await service.disconnect(BUSINESS_ID, RealtyIntegrationProvider.SELLDO);
+
+      expect(repo.softDeleteConnection).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        RealtyIntegrationProvider.SELLDO,
+      );
+      expect(emitter.emit).toHaveBeenCalledWith(
+        'realty.integration.disconnected',
+        expect.objectContaining({ provider: RealtyIntegrationProvider.SELLDO }),
+      );
+    });
+
+    it('stays quiet when there was nothing connected', async () => {
+      // Disconnecting twice is idempotent, but the second call must not
+      // announce a disconnection that did not happen — listeners treat the
+      // event as a state change.
+      repo.findConnection.mockResolvedValue(null);
+
+      await service.disconnect(BUSINESS_ID, RealtyIntegrationProvider.SELLDO);
+
+      expect(repo.softDeleteConnection).toHaveBeenCalled();
+      expect(emitter.emit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('listConnections', () => {
+    it('returns the CRM connections as status rows', async () => {
+      repo.listConnections.mockResolvedValue([
+        makeConnection(RealtyIntegrationProvider.SELLDO, { pushed_count: 7 }),
+      ]);
+
+      const [status] = await service.listConnections(BUSINESS_ID);
+
+      expect(status).toMatchObject({
+        provider: RealtyIntegrationProvider.SELLDO,
+        status: 'CONNECTED',
+        pushedCount: 7,
+      });
+    });
+
+    it('drops non-CRM integrations sharing the connections table', async () => {
+      // Sheets and EOI connections live in the same table; surfacing them from
+      // the CRM endpoint would show a provider this service cannot push to.
+      repo.listConnections.mockResolvedValue([
+        makeConnection(RealtyIntegrationProvider.SELLDO),
+        makeConnection(RealtyIntegrationProvider.GOOGLE_SHEETS),
+      ]);
+
+      const result = await service.listConnections(BUSINESS_ID);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]!.provider).toBe(RealtyIntegrationProvider.SELLDO);
+    });
+
+    it('returns empty when the business has no integrations', async () => {
+      repo.listConnections.mockResolvedValue([]);
+      expect(await service.listConnections(BUSINESS_ID)).toEqual([]);
+    });
+  });
+
+  describe('testConnection', () => {
+    it('reports "Not connected" without calling the provider', async () => {
+      repo.findConnection.mockResolvedValue(null);
+
+      const result = await service.testConnection(BUSINESS_ID, RealtyIntegrationProvider.SELLDO);
+
+      expect(result).toEqual({ ok: false, error: 'Not connected' });
+    });
+
+    it('verifies the stored credentials against the provider', async () => {
+      repo.findConnection.mockResolvedValue(
+        makeConnection(RealtyIntegrationProvider.SELLDO, { config: { apiKey: 'k' } }),
+      );
+      const verify = jest.spyOn(selldo, 'verify').mockResolvedValue({ ok: true });
+
+      const result = await service.testConnection(BUSINESS_ID, RealtyIntegrationProvider.SELLDO);
+
+      expect(verify).toHaveBeenCalledWith({ apiKey: 'k' });
+      expect(result.ok).toBe(true);
+    });
+
+    it('treats a null stored config as an empty one rather than throwing', async () => {
+      // `config` is nullable in the schema; a connection row written before the
+      // column was populated must surface as a failed verify, not a TypeError.
+      repo.findConnection.mockResolvedValue(
+        makeConnection(RealtyIntegrationProvider.SELLDO, { config: null }),
+      );
+      const verify = jest.spyOn(selldo, 'verify').mockResolvedValue({ ok: false, error: 'no key' });
+
+      const result = await service.testConnection(BUSINESS_ID, RealtyIntegrationProvider.SELLDO);
+
+      expect(verify).toHaveBeenCalledWith({});
+      expect(result.ok).toBe(false);
+    });
+
+    it('rejects a provider this service has no adapter for', async () => {
+      repo.findConnection.mockResolvedValue(
+        makeConnection(RealtyIntegrationProvider.GOOGLE_SHEETS),
+      );
+
+      await expect(
+        service.testConnection(BUSINESS_ID, RealtyIntegrationProvider.GOOGLE_SHEETS),
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 
