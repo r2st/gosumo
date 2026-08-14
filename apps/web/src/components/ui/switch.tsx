@@ -22,6 +22,10 @@ export function Switch({
       type="button"
       role="switch"
       id={id}
+      // The visible `label` is a sibling <span>, not a <label for=…>, so
+      // without this the control announces as an unnamed switch — a screen
+      // reader user hears "on"/"off" with no idea what is being toggled.
+      aria-label={label}
       aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}

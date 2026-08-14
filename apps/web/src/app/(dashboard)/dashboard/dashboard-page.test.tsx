@@ -24,7 +24,9 @@ vi.mock('recharts', () => {
   const Nothing = () => null;
   return {
     ResponsiveContainer: Pass,
-    AreaChart: Pass,
+    // <AreaChart> holds the gradient <defs>, which is only valid inside an
+    // <svg> — a <div> here makes React log an unrecognised-tag warning.
+    AreaChart: ({ children }: { children?: React.ReactNode }) => <svg>{children}</svg>,
     BarChart: Pass,
     LineChart: Pass,
     PieChart: Pass,
