@@ -17,7 +17,7 @@
 
 import { ConfigService } from '@nestjs/config';
 
-import { EmbeddingService } from './embedding.service';
+import { EmbeddingService, EMBEDDING_CACHE_MAX_ENTRIES } from './embedding.service';
 import { EMBEDDING_MODEL } from '../ai-engine.constants';
 
 const URL = 'https://embeddings.example/v1/embeddings';
@@ -192,13 +192,130 @@ describe('EmbeddingService caching', () => {
 
   it('keeps caches separate per instance', async () => {
     // The cache is instance state, so two injected copies never leak vectors
-    // to each other — relevant because the map is unbounded and per-process.
+    // to each other — relevant because it is per-process and long-lived.
     const fetchMock = stubFetch(() => okResponse([0.4]));
 
     await makeService().embed('refund policy');
     await makeService().embed('refund policy');
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * The cache is bounded, and the bound is the whole point.
+ *
+ * `RagRetrieverService` embeds the customer's message text on the hot path of
+ * every inbound message, and `KnowledgeIngestionService` embeds every chunk of
+ * every ingested document. Neither key space repeats, so an unbounded map grows
+ * with uptime rather than with working-set size — ~12 KB of unboxed doubles per
+ * 1536-dimension vector, retained forever, in a process that has no way to
+ * notice. These tests pin the ceiling and the eviction order that keeps the
+ * cache useful once it is full.
+ */
+describe('EmbeddingService cache bounds', () => {
+  const originalFetch = globalThis.fetch;
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env['EMBEDDINGS_URL'] = URL;
+    process.env['EMBEDDINGS_API_KEY'] = 'sk-test';
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    globalThis.fetch = originalFetch;
+  });
+
+  /** Reach into the private map — its size *is* the invariant under test. */
+  const sizeOf = (service: EmbeddingService): number =>
+    (service as unknown as { cache: Map<string, number[]> }).cache.size;
+
+  it('never grows past the entry cap, however many distinct texts arrive', async () => {
+    stubFetch(() => okResponse([0.1]));
+    const service = makeService();
+
+    // Stand in for a busy inbox: every message is text nothing will ask for
+    // again. Before the cap this left one vector per message resident forever.
+    for (let i = 0; i < EMBEDDING_CACHE_MAX_ENTRIES * 3; i++) {
+      await service.embed(`inbound message ${i}`);
+    }
+
+    expect(sizeOf(service)).toBe(EMBEDDING_CACHE_MAX_ENTRIES);
+  });
+
+  it('evicts the least recently used entry, not the oldest insert', async () => {
+    stubFetch(() => okResponse([0.1]));
+    const service = makeService();
+
+    await service.embed('hot query');
+    for (let i = 0; i < EMBEDDING_CACHE_MAX_ENTRIES - 1; i++) {
+      await service.embed(`filler ${i}`);
+    }
+
+    // Re-read the oldest insert. That read must count as a use.
+    await service.embed('hot query');
+
+    // One more distinct text forces exactly one eviction.
+    await service.embed('overflow');
+    expect(sizeOf(service)).toBe(EMBEDDING_CACHE_MAX_ENTRIES);
+
+    // The re-read entry survived; the filler inserted right after it did not.
+    const fetchMock = globalThis.fetch as jest.Mock;
+    const before = fetchMock.mock.calls.length;
+    await service.embed('hot query');
+    expect(fetchMock).toHaveBeenCalledTimes(before); // served from cache
+
+    await service.embed('filler 0');
+    expect(fetchMock).toHaveBeenCalledTimes(before + 1); // was evicted
+  });
+
+  it('survives an ingestion burst without dropping the query it just served', async () => {
+    // A knowledge-base import embeds thousands of chunks that are written once
+    // and never read again. Insert-order eviction would let that burst flush
+    // every live query vector; LRU keeps the one still being used.
+    stubFetch(() => okResponse([0.1]));
+    const service = makeService();
+
+    await service.embed('where is my order');
+
+    for (let i = 0; i < EMBEDDING_CACHE_MAX_ENTRIES - 1; i++) {
+      await service.embed(`kb chunk ${i}`);
+      // The retriever keeps answering the same live question mid-import.
+      await service.embed('where is my order');
+    }
+
+    const fetchMock = globalThis.fetch as jest.Mock;
+    const before = fetchMock.mock.calls.length;
+    await service.embed('where is my order');
+    expect(fetchMock).toHaveBeenCalledTimes(before);
+  });
+
+  it('does not re-insert on a cache hit and so cannot exceed the cap', async () => {
+    stubFetch(() => okResponse([0.1]));
+    const service = makeService();
+
+    for (let i = 0; i < EMBEDDING_CACHE_MAX_ENTRIES; i++) {
+      await service.embed(`text ${i}`);
+    }
+    expect(sizeOf(service)).toBe(EMBEDDING_CACHE_MAX_ENTRIES);
+
+    // Hits move keys around inside the map; they must not add to it.
+    for (let i = 0; i < EMBEDDING_CACHE_MAX_ENTRIES; i++) {
+      await service.embed(`text ${i}`);
+    }
+    expect(sizeOf(service)).toBe(EMBEDDING_CACHE_MAX_ENTRIES);
+  });
+
+  it('does not retain vectors for calls that failed', async () => {
+    stubFetch(() => ({ ok: false, status: 503, json: async () => ({}) }));
+    const service = makeService();
+
+    for (let i = 0; i < 50; i++) {
+      await service.embed(`text ${i}`);
+    }
+
+    expect(sizeOf(service)).toBe(0);
   });
 });
 
