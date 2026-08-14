@@ -107,7 +107,7 @@ export function sourceTone(lead: Pick<Lead, 'source'>): BadgeTone {
 
 // ── Budget ──────────────────────────────────────────────────────────────────
 
-/** Compact budget range from a BLTC profile, e.g. "₹80.0L–₹1.20Cr", or null if unknown. */
+/** Compact budget range from a BLTC profile, e.g. "₹80.00L–₹1.20Cr", or null if unknown. */
 export function budgetLabel(bltc: Pick<BltcProfile, 'budgetMinPaise' | 'budgetMaxPaise'>): string | null {
   const { budgetMinPaise, budgetMaxPaise } = bltc;
   if (budgetMinPaise == null && budgetMaxPaise == null) return null;
