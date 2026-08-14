@@ -772,6 +772,9 @@ model team_members {
   @@index([business_id, status])
   @@index([business_id, role])
   @@index([invite_token])
+  // Login resolves a member by email across all tenants, so the leading column
+  // of @@unique([business_id, email]) is not available to seek on.
+  @@index([email])
   @@map("team_members")
 }
 
@@ -893,6 +896,9 @@ model channel_accounts {
 
   @@unique([business_id, channel, external_id])
   @@index([business_id, channel, is_active])
+  // Every inbound webhook resolves its account by (channel, external_id) before
+  // any tenant is known — neither index above leads with `channel`.
+  @@index([channel, external_id])
   @@map("channel_accounts")
 }
 
@@ -1728,6 +1734,8 @@ model payments {
   @@index([client_id])
   @@index([gateway_payment_id])
   @@index([gateway_order_id])
+  // Payment-link webhooks look the payment up by link id, tenant unknown.
+  @@index([payment_link_id])
   @@map("payments")
 }
 
@@ -1768,6 +1776,8 @@ model refunds {
   @@index([business_id, status, created_at(sort: Desc)])
   @@index([payment_id])
   @@index([order_id])
+  // Refund webhooks arrive with only the gateway's refund id.
+  @@index([gateway_refund_id])
   @@map("refunds")
 }
 
@@ -2831,6 +2841,9 @@ model realty_cadence_enrollments {
   @@index([business_id, status, next_run_at])
   @@index([business_id, lead_id, status])
   @@index([business_id, cadence_id])
+  // findDueEnrollments takes an optional businessId; the scheduler's global
+  // tick omits it and filters on status + next_run_at alone.
+  @@index([status, next_run_at])
   @@map("realty_cadence_enrollments")
 }
 
@@ -3472,6 +3485,9 @@ model realty_eoi_requests {
   @@index([business_id, status])
   @@index([business_id, lead_id])
   @@index([business_id, payment_link_id])
+  // findAnyEoiByPaymentLink runs on the Razorpay webhook, before the tenant is
+  // known, so it cannot use the business_id-leading index above.
+  @@index([payment_link_id])
   @@map("realty_eoi_requests")
 }
 
@@ -3508,18 +3524,18 @@ model realty_parser_health_checks {
 /// other business data, a soft-deleted credential that still authenticates
 /// would defeat the point of revoking it.
 model api_keys {
-  id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  business_id String  @db.Uuid
-  name        String  @db.VarChar(255)
+  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String   @db.Uuid
+  name        String   @db.VarChar(255)
   /// Display-only leading fragment of the raw key, e.g. "gs_a1b2c3d"
-  prefix      String  @db.VarChar(20)
+  prefix      String   @db.VarChar(20)
   /// Display-only trailing fragment, rendered as prefix••••last4
-  last4       String  @default("") @db.VarChar(8)
+  last4       String   @default("") @db.VarChar(8)
   /// SHA-256 hex digest of the raw key
-  key_hash    String  @unique @db.VarChar(64)
+  key_hash    String   @unique @db.VarChar(64)
   /// Granted scopes, e.g. ["conversations:read", "orders:write"]
   scopes      String[] @default([])
-  created_by  String? @db.Uuid
+  created_by  String?  @db.Uuid
 
   created_at   DateTime  @default(now()) @db.Timestamptz
   last_used_at DateTime? @db.Timestamptz
