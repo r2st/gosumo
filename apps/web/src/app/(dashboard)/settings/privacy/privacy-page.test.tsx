@@ -420,3 +420,81 @@ describe('PrivacyPage network consent', () => {
     expect(screen.getAllByRole('switch')[1]).toBeDisabled();
   });
 });
+
+/**
+ * The guards on this page all protect the same thing: a DPDPA request must not
+ * be issued against the wrong subject, and a retention window must not be
+ * written outside the range the API accepts. Each is a branch that only runs
+ * when the operator does something slightly wrong, which is exactly when it
+ * matters.
+ */
+describe('PrivacyPage input guards', () => {
+  it('ignores a lookup submitted with a blank phone', () => {
+    renderPage();
+    fireEvent.change(screen.getByPlaceholderText('+91…'), { target: { value: '   ' } });
+    fireEvent.click(screen.getByRole('button', { name: /Look up data/ }));
+
+    // Nothing was submitted, so the hook was never asked for a subject and no
+    // result panel appeared.
+    expect(requestedPhone).toBeNull();
+    expect(screen.queryByRole('button', { name: /Erase/ })).toBeNull();
+  });
+
+  it('renders nothing in the result panel when the lookup resolved to no payload', () => {
+    // Not loading, not an error, and no body — the panel has a final `: null`
+    // arm precisely so this renders empty instead of throwing on `data.found`.
+    renderPage();
+    fireEvent.change(screen.getByPlaceholderText('+91…'), {
+      target: { value: '+919800000001' },
+    });
+    state.lookup.data = undefined;
+    fireEvent.click(screen.getByRole('button', { name: /Look up data/ }));
+
+    expect(requestedPhone).toBe('+919800000001');
+    expect(screen.queryByText('No data held for this number')).toBeNull();
+    expect(screen.queryByDisplayValue('Asha Rao')).toBeNull();
+  });
+
+  it('refuses to submit an out-of-range retention window even when the form is submitted directly', () => {
+    // The Save button disables, but a browser still submits the form on Enter
+    // in a text input. The `!validMonths` guard is what stops a 999-month
+    // window reaching the API.
+    renderPage();
+    const months = screen.getByDisplayValue('24');
+    fireEvent.change(months, { target: { value: '999' } });
+    fireEvent.submit(months.closest('form')!);
+
+    expect(mutations.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('PrivacyPage correction form on a sparse lead', () => {
+  it('starts from empty fields when the lead has no name or email on file', () => {
+    // A lead ingested from a missed call has a phone and nothing else. Both
+    // fields read through `?? ''`; without it React drops to an uncontrolled
+    // input mid-edit and the correction silently posts undefined.
+    const sparse = makeLookup();
+    state.lookup.data = {
+      ...sparse,
+      lead: { ...sparse.lead!, name: null, email: null },
+    };
+    renderPage();
+    fireEvent.change(screen.getByPlaceholderText('+91…'), {
+      target: { value: '+919800000001' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Look up data/ }));
+
+    expect(screen.queryByDisplayValue('Asha Rao')).toBeNull();
+
+    // Typing a name makes the form dirty, and the correction posts what was typed.
+    const nameInput = screen.getByLabelText(/Name/i);
+    expect(nameInput).toHaveValue('');
+    fireEvent.change(nameInput, { target: { value: 'Asha Rao' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(mutations.correction).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Asha Rao', email: '' }),
+      expect.anything(),
+    );
+  });
+});

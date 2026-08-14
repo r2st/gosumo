@@ -410,3 +410,109 @@ describe('IntelligencePage source quality', () => {
     expect(screen.queryByText('Portal')).toBeNull();
   });
 });
+
+/**
+ * The corridor grid is driven by the corridor *list*, while the cards are fed
+ * from a separate aggregates query keyed by corridor. The two can disagree — a
+ * corridor that exists but has not yet cleared its min-N threshold appears in
+ * the list with no aggregate row behind it — and every derived value on the
+ * card reads through an optional chain that has to survive that.
+ */
+describe('IntelligencePage corridor cards', () => {
+  it('renders a corridor that has no aggregate row at all', () => {
+    state.corridors = {
+      data: { corridors: ['Whitefield', 'Hebbal'] },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    };
+    // Aggregates carry Whitefield only; Hebbal is below the disclosure floor.
+    state.aggregates = {
+      data: [agg('CADENCE_CONVERSION', CADENCE, 'Whitefield')],
+      isLoading: false,
+    };
+
+    renderPage();
+
+    const hebbal = screen.getByRole('button', { name: /Hebbal/ });
+    // No cadence prior ⇒ conversion falls back to 0, and the sample size to 0.
+    expect(within(hebbal).getByText('0%')).toBeInTheDocument();
+    expect(within(hebbal).getByText(/^0 /)).toBeInTheDocument();
+  });
+
+  it('colours the demand dot by band, including the middle one', () => {
+    // 0.05 is the low band and 0.3 the high one; both were already exercised.
+    // Nothing covered 0.1 ≤ rate < 0.25, so the amber arm never ran and a
+    // regression collapsing it into either neighbour would have gone unseen.
+    state.corridors = {
+      data: { corridors: ['Whitefield', 'Sarjapur', 'Hebbal'] },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    };
+    state.aggregates = {
+      data: [
+        agg('CADENCE_CONVERSION', { ...CADENCE, conversionRate: 0.3 }, 'Whitefield'),
+        agg('CADENCE_CONVERSION', { ...CADENCE, conversionRate: 0.15 }, 'Sarjapur'),
+        agg('CADENCE_CONVERSION', { ...CADENCE, conversionRate: 0.05 }, 'Hebbal'),
+      ],
+      isLoading: false,
+    };
+
+    renderPage();
+
+    const dot = (name: RegExp) =>
+      screen
+        .getByRole('button', { name })
+        .querySelector('span[style]')
+        ?.getAttribute('style');
+
+    expect(dot(/Whitefield/)).toContain('--success');
+    expect(dot(/Sarjapur/)).toContain('--warning');
+    expect(dot(/Hebbal/)).toContain('--danger');
+  });
+});
+
+describe('IntelligencePage corridor detail edge cases', () => {
+  it('renders an empty detail panel when the priors payload is absent', () => {
+    // Not loading and not an error, but no body — a 204 or a cache miss served
+    // as undefined. Every panel reads off `data?.priors ?? []`.
+    state.priors = { data: undefined, isLoading: false, isError: false, refetch: vi.fn() };
+
+    renderPage();
+
+    expect(screen.queryByText('Same day')).toBeNull();
+    expect(screen.queryByText('Price too high')).toBeNull();
+  });
+
+  it('shows the price band when only the budget spread is known', () => {
+    // `recommendedBandPaise` is null until enough buyers disclose a budget, but
+    // the observed spread is still worth showing. The card is gated on either
+    // being present, and only the recommended-band arm had ever been taken.
+    state.priors = {
+      data: {
+        corridor: 'Whitefield',
+        priors: [agg('PRICE_ELASTICITY', { ...PRICE, recommendedBandPaise: null })],
+        promptContext: null,
+      } as CorridorPriorsResponse,
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    };
+    // Drop the corridor-card price so the only "Price band" on screen is the
+    // detail card's — the card renders its own, gated on the recommended band.
+    state.aggregates = {
+      data: [agg('CADENCE_CONVERSION', CADENCE, 'Whitefield')],
+      isLoading: false,
+    };
+
+    renderPage();
+
+    // The card is there — its subtitle counts the buyers who disclosed one —
+    // and it shows the quantile spread with no recommended-band block.
+    expect(screen.getByText(/88/)).toBeInTheDocument();
+    expect(screen.getByText('P25')).toBeInTheDocument();
+    expect(screen.getByText('P75')).toBeInTheDocument();
+    expect(screen.queryByText('Recommended band')).toBeNull();
+  });
+});
