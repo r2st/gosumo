@@ -40,6 +40,7 @@ describe('HitlRepository', () => {
       count: jest.Mock;
       groupBy: jest.Mock;
     };
+    $queryRaw: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -52,6 +53,7 @@ describe('HitlRepository', () => {
         count: jest.fn().mockResolvedValue(0),
         groupBy: jest.fn().mockResolvedValue([]),
       },
+      $queryRaw: jest.fn().mockResolvedValue([{ avg_ms: null }]),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -437,38 +439,63 @@ describe('HitlRepository', () => {
   // ── getAvgResolutionTime ───────────────────
 
   describe('getAvgResolutionTime', () => {
+    /** The interpolated values, in order, of the last $queryRaw call. */
+    function lastRawParams(): unknown[] {
+      const call = prisma.$queryRaw.mock.calls[prisma.$queryRaw.mock.calls.length - 1]!;
+      return call.slice(1);
+    }
+
+    /** The SQL text of the last $queryRaw call, with the gaps rejoined. */
+    function lastRawSql(): string {
+      const strings = prisma.$queryRaw.mock.calls[
+        prisma.$queryRaw.mock.calls.length - 1
+      ]![0] as string[];
+      return strings.join('?').replace(/\s+/g, ' ').trim();
+    }
+
     it('returns 0 when nothing has been resolved yet', async () => {
+      // AVG over no rows is NULL, not 0 — the caller renders this straight
+      // onto a dashboard tile, so a null would surface as "NaNms".
+      prisma.$queryRaw.mockResolvedValue([{ avg_ms: null }]);
       expect(await repository.getAvgResolutionTime(BUSINESS_ID)).toBe(0);
     });
 
-    it('averages resolved_at − created_at across resolved tasks', async () => {
-      prisma.tasks.findMany.mockResolvedValue([
-        {
-          created_at: new Date('2026-08-10T10:00:00Z'),
-          resolved_at: new Date('2026-08-10T10:10:00Z'), // 10 min
-        },
-        {
-          created_at: new Date('2026-08-10T11:00:00Z'),
-          resolved_at: new Date('2026-08-10T11:30:00Z'), // 30 min
-        },
-      ]);
-
-      expect(await repository.getAvgResolutionTime(BUSINESS_ID)).toBe(20 * 60 * 1000);
-      expect(lastWhere(prisma.tasks.findMany)).toEqual({
-        business_id: BUSINESS_ID,
-        status: TaskStatus.RESOLVED,
-        resolved_at: { not: null },
-      });
+    it('returns 0 when the aggregate came back with no row at all', async () => {
+      prisma.$queryRaw.mockResolvedValue([]);
+      expect(await repository.getAvgResolutionTime(BUSINESS_ID)).toBe(0);
     });
 
-    it('rounds a fractional average to whole milliseconds', async () => {
-      prisma.tasks.findMany.mockResolvedValue([
-        { created_at: new Date(0), resolved_at: new Date(1) },
-        { created_at: new Date(0), resolved_at: new Date(2) },
-        { created_at: new Date(0), resolved_at: new Date(2) },
-      ]);
+    it('returns the average Postgres computed, rounded to whole milliseconds', async () => {
+      prisma.$queryRaw.mockResolvedValue([{ avg_ms: 1_666.6666 }]);
+      expect(await repository.getAvgResolutionTime(BUSINESS_ID)).toBe(1_667);
+    });
 
-      expect(await repository.getAvgResolutionTime(BUSINESS_ID)).toBe(2);
+    it('aggregates in the database rather than reading every resolved task', async () => {
+      // The point of the query: one row back regardless of how many tasks the
+      // business has resolved. Reading them into Node to average two
+      // timestamps grows without bound for a single dashboard number.
+      prisma.$queryRaw.mockResolvedValue([{ avg_ms: 1000 }]);
+      await repository.getAvgResolutionTime(BUSINESS_ID);
+
+      expect(prisma.tasks.findMany).not.toHaveBeenCalled();
+      expect(lastRawSql()).toContain('AVG(');
+    });
+
+    it('scopes the aggregate to the business and to resolved tasks', async () => {
+      prisma.$queryRaw.mockResolvedValue([{ avg_ms: 1000 }]);
+      await repository.getAvgResolutionTime(BUSINESS_ID);
+
+      expect(lastRawParams()).toEqual([BUSINESS_ID, TaskStatus.RESOLVED]);
+      expect(lastRawSql()).toContain('business_id = ?::uuid');
+      expect(lastRawSql()).toContain('resolved_at IS NOT NULL');
+    });
+
+    it('casts the status parameter to the enum type Postgres declares', () => {
+      // `status` is a Postgres enum. Comparing it against a bare text
+      // parameter is an error rather than an implicit coercion, so dropping
+      // this cast fails at runtime and never in a type check.
+      void repository.getAvgResolutionTime(BUSINESS_ID);
+      expect(lastRawSql()).toContain('::"TaskStatus"');
     });
   });
 });

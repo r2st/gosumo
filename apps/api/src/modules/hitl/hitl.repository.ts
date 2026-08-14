@@ -324,34 +324,36 @@ export class HitlRepository {
   }
 
   /**
-   * Compute the average resolution time (in milliseconds) for resolved tasks.
-   * Calculates the difference between resolved_at and created_at for each
-   * resolved task and returns the average.
-   * Returns 0 if no resolved tasks exist.
+   * Average resolution time, in milliseconds, across this business's resolved
+   * tasks. Returns 0 when nothing has been resolved yet.
+   *
+   * The average is computed in Postgres rather than in Node. Doing it here
+   * meant selecting every resolved task the business has ever had — two
+   * timestamps per row, for a table that only grows — and reducing them to a
+   * single number that the caller then reads once, on a dashboard stats
+   * endpoint. A desk with a hundred thousand resolved tasks paid a hundred
+   * thousand rows over the wire for eight bytes of answer, and the cost rose
+   * every day the product was used.
+   *
+   * `AVG` over an interval is exactly the shape SQL is for, and the existing
+   * (business_id, status, priority, created_at) index already leads with the
+   * two columns this predicate filters on.
+   *
+   * `status` is a Postgres enum, so the bound parameter needs an explicit cast
+   * — comparing the enum column against a bare text parameter is an error, not
+   * an implicit coercion.
    */
   async getAvgResolutionTime(businessId: string): Promise<number> {
-    const resolvedTasks = await this.prisma.tasks.findMany({
-      where: {
-        business_id: businessId,
-        status: TaskStatus.RESOLVED,
-        resolved_at: { not: null },
-      },
-      select: {
-        created_at: true,
-        resolved_at: true,
-      },
-    });
+    const rows = await this.prisma.$queryRaw<{ avg_ms: number | null }[]>`
+      SELECT AVG(EXTRACT(EPOCH FROM (resolved_at - created_at)) * 1000)::float8 AS avg_ms
+      FROM tasks
+      WHERE business_id = ${businessId}::uuid
+        AND status = ${TaskStatus.RESOLVED}::"TaskStatus"
+        AND resolved_at IS NOT NULL
+    `;
 
-    if (resolvedTasks.length === 0) {
-      return 0;
-    }
-
-    let totalMs = 0;
-    for (const task of resolvedTasks) {
-      const resolvedAt = task.resolved_at as Date;
-      totalMs += resolvedAt.getTime() - task.created_at.getTime();
-    }
-
-    return Math.round(totalMs / resolvedTasks.length);
+    // No matching rows makes AVG return NULL, not zero.
+    const avgMs = rows[0]?.avg_ms;
+    return avgMs == null ? 0 : Math.round(avgMs);
   }
 }
