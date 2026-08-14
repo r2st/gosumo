@@ -41,6 +41,7 @@ function prismaMock() {
     businesses: {
       findUnique: jest.fn().mockResolvedValue({ name: 'Acme Realty' }),
     },
+    $queryRaw: jest.fn().mockResolvedValue([]),
   };
 }
 
@@ -334,16 +335,29 @@ describe('ComplianceRepository', () => {
 
   describe('listBusinessIdsWithLeads', () => {
     it('returns the distinct business ids that have leads', async () => {
-      prisma.realty_leads.findMany.mockResolvedValueOnce([
-        { business_id: BIZ },
-        { business_id: 'biz-2' },
-      ]);
+      prisma.$queryRaw.mockResolvedValueOnce([{ business_id: BIZ }, { business_id: 'biz-2' }]);
       const ids = await repo.listBusinessIdsWithLeads();
       expect(ids).toEqual([BIZ, 'biz-2']);
-      expect(prisma.realty_leads.findMany.mock.calls[0][0]).toMatchObject({
-        distinct: ['business_id'],
-        select: { business_id: true },
-      });
+    });
+
+    /**
+     * The point of the raw query: Prisma's `distinct` de-duplicates in Node
+     * after reading every lead row on the platform. This asserts the work
+     * happens in Postgres, so the read stays proportional to the number of
+     * tenants rather than the number of leads ever captured.
+     */
+    it('de-duplicates in Postgres rather than in Node', async () => {
+      prisma.$queryRaw.mockResolvedValueOnce([]);
+      await repo.listBusinessIdsWithLeads();
+
+      expect(prisma.realty_leads.findMany).not.toHaveBeenCalled();
+      const sql = prisma.$queryRaw.mock.calls[0][0].join('?').replace(/\s+/g, ' ');
+      expect(sql).toContain('SELECT DISTINCT business_id');
+    });
+
+    it('returns an empty list when no tenant has leads', async () => {
+      prisma.$queryRaw.mockResolvedValueOnce([]);
+      expect(await repo.listBusinessIdsWithLeads()).toEqual([]);
     });
   });
 });

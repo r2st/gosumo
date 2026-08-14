@@ -297,12 +297,24 @@ export class ComplianceRepository {
     return biz?.name ?? null;
   }
 
-  /** Every business that has a compliance-relevant footprint (drives the sweep). */
+  /**
+   * Every business that has a compliance-relevant footprint (drives the sweep).
+   *
+   * Raw, because Prisma's `distinct` is not a SQL DISTINCT. For this query it
+   * emits `SELECT id, business_id FROM realty_leads` — every lead row on the
+   * platform, across every tenant — and de-duplicates in Node, adding `id` to
+   * the projection to do it. The result is a handful of uuids; the read to
+   * produce them grew with the total number of leads ever captured.
+   *
+   * `SELECT DISTINCT` lets Postgres answer from a business_id-leading index
+   * instead of the heap. No `deleted_at` filter, matching the previous
+   * behaviour deliberately: a soft-deleted lead still holds the personal data
+   * the retention sweep exists to erase, so its tenant must stay in the list.
+   */
   async listBusinessIdsWithLeads(): Promise<string[]> {
-    const rows = await this.prisma.realty_leads.findMany({
-      distinct: ['business_id'],
-      select: { business_id: true },
-    });
+    const rows = await this.prisma.$queryRaw<Array<{ business_id: string }>>`
+      SELECT DISTINCT business_id FROM realty_leads
+    `;
     return rows.map((r) => r.business_id);
   }
 }
