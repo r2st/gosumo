@@ -179,17 +179,33 @@ export const INTENT_RULES: IntentRule[] = [
 // Safety pattern banks
 // ─────────────────────────────────────────────
 
+/**
+ * Qualifier words that stack in front of the thing an injection asks the model
+ * to drop — "all previous instructions", "your prior rules". Matching only one
+ * of them is what let the single most common phrasing of the attack through.
+ */
+const INJECTION_QUALIFIERS = String.raw`(?:(?:the|all|any|every|previous|prior|earlier|above|preceding|your|my)\s+){1,4}`;
+/** What the injection asks the model to drop. */
+const INJECTION_TARGETS = String.raw`(?:instructions?|rules?|guidelines?|prompts?|directives?|constraints?|training)`;
+
 /** Prompt-injection / jailbreak heuristics — checked before the LLM call. */
 export const JAILBREAK_PATTERNS: RegExp[] = [
-  /ignore (the )?(previous|all|your|above) (instructions?|rules?|guidelines?|prompt)/i,
+  new RegExp(
+    String.raw`\b(?:ignore|disregard|forget|discard|override|bypass)\s+${INJECTION_QUALIFIERS}?${INJECTION_TARGETS}\b`,
+    'i',
+  ),
+  // "disregard the above", "ignore everything above" — no explicit target noun.
+  /\b(?:ignore|disregard|forget)\s+(?:the\s+|all\s+|everything\s+)*(?:above|system prompt)\b/i,
   /forget (everything|your training|what you were told|the rules)/i,
   /you are now an? (different|new|unrestricted|jailbroken) (ai|assistant|bot|model)/i,
   /pretend (you are|to be|you're) (not|an?)/i,
-  /disregard (the|your|all) (above|system prompt|instructions?|rules?)/i,
   /\[\s*system\s*\]/i,
   /<\/?\s*system\s*>/i,
   /<\/?\s*instruction\s*>/i,
   /act as (a|an|the) (dan|developer mode)/i,
+  // Asking the model to disclose its own configuration is an exfiltration
+  // attempt regardless of how politely it is phrased.
+  /\b(?:reveal|show|print|repeat|output|tell me)\s+(?:me\s+)?(?:your|the)\s+(?:system\s+)?(?:prompt|instructions?|rules)\b/i,
 ];
 
 /** Legal-threat keywords (English + Hindi transliteration) — force escalation. */
