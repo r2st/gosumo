@@ -133,4 +133,82 @@ describe('buildLeadTimeline', () => {
     const lead = makeLead({ extractedFacts: [{ text: 'bad', at: 'not-a-date' }] });
     expect(buildLeadTimeline(lead).some((e) => e.kind === 'fact')).toBe(false);
   });
+
+  it('drops an objection or promise whose timestamp is unusable', () => {
+    const lead = makeLead({
+      objections: [{ text: 'no date', at: 'nonsense' }],
+      promises: [{ text: 'no date either', at: '' }],
+    });
+    const events = buildLeadTimeline(lead);
+    expect(events.some((e) => e.kind === 'objection')).toBe(false);
+    expect(events.some((e) => e.kind === 'promise')).toBe(false);
+  });
+
+  it('omits the capture event when the lead carries no usable createdAt', () => {
+    // A lead reconstructed from a partial API payload should still render a
+    // timeline rather than an entry stamped "Invalid Date".
+    const events = buildLeadTimeline(makeLead({ createdAt: '' }));
+    expect(events.some((e) => e.kind === 'captured')).toBe(false);
+  });
+
+  it('does not emit a first-contact event when contact happened at capture', () => {
+    // Portal leads arrive already "contacted", so both stamps are identical —
+    // showing both would read as two separate events for one moment.
+    const lead = makeLead({ firstTouchAt: '2026-06-01T09:00:00.000Z' });
+    expect(lead.firstTouchAt).toBe(lead.createdAt);
+    expect(buildLeadTimeline(lead).some((e) => e.kind === 'contact')).toBe(false);
+  });
+
+  it('ignores a first-contact stamp that is not a real date', () => {
+    const events = buildLeadTimeline(makeLead({ firstTouchAt: 'whenever' }));
+    expect(events.some((e) => e.kind === 'contact')).toBe(false);
+  });
+
+  it('skips a site visit with no usable scheduled time', () => {
+    const events = buildLeadTimeline(makeLead(), [makeVisit({ scheduledAt: 'tbd' })]);
+    expect(events.some((e) => e.kind === 'visit')).toBe(false);
+  });
+
+  it('reports the outcome on a visit that has already been settled', () => {
+    const events = buildLeadTimeline(makeLead(), [
+      makeVisit({ status: 'COMPLETED', outcome: 'INTERESTED' }),
+    ]);
+    const visit = events.find((e) => e.kind === 'visit');
+    expect(visit?.detail).toContain('Outcome:');
+  });
+
+  it('leaves the detail blank while a visit outcome is still pending', () => {
+    const events = buildLeadTimeline(makeLead(), [makeVisit({ outcome: 'PENDING' })]);
+    expect(events.find((e) => e.kind === 'visit')?.detail).toBeUndefined();
+  });
+
+  it('emits a last-activity event only when it is a moment of its own', () => {
+    const lead = makeLead({
+      updatedAt: '2026-06-04T09:00:00.000Z',
+      lastActivityAt: '2026-06-07T09:00:00.000Z',
+    });
+    expect(buildLeadTimeline(lead).some((e) => e.kind === 'activity')).toBe(true);
+  });
+
+  it('suppresses last activity that merely repeats capture or the last update', () => {
+    // These two stamps are equal on any lead that has not been touched since
+    // it was written, so echoing them would pad every timeline with a
+    // duplicate row that tells the agent nothing.
+    const atCreate = makeLead({ lastActivityAt: '2026-06-01T09:00:00.000Z' });
+    expect(buildLeadTimeline(atCreate).some((e) => e.kind === 'activity')).toBe(false);
+
+    const atUpdate = makeLead({
+      updatedAt: '2026-06-04T09:00:00.000Z',
+      lastActivityAt: '2026-06-04T09:00:00.000Z',
+    });
+    expect(buildLeadTimeline(atUpdate).some((e) => e.kind === 'activity')).toBe(false);
+  });
+
+  it('ignores an unusable last-activity or follow-up stamp', () => {
+    const events = buildLeadTimeline(
+      makeLead({ lastActivityAt: 'never', nextFollowupAt: 'someday' }),
+    );
+    expect(events.some((e) => e.kind === 'activity')).toBe(false);
+    expect(events.some((e) => e.kind === 'followup')).toBe(false);
+  });
 });

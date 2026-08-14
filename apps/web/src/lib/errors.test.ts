@@ -178,4 +178,45 @@ describe('friendlyError — non-Error inputs', () => {
       'Your plan does not include WhatsApp.',
     );
   });
+
+  it('falls back to generic copy for an abort with nothing better to say', () => {
+    const abort = new Error('The operation was aborted.');
+    abort.name = 'AbortError';
+    expect(friendlyError(abort)).toBe(GENERIC);
+  });
+
+  it('does not show a developer-facing string just because it arrived bare', () => {
+    // A raw string is the least structured input the mapper takes; it still has
+    // to be filtered, or transport noise reaches the reader unmapped.
+    expect(friendlyError('Request failed with status 500')).toBe(GENERIC);
+    expect(friendlyError('Internal Server Error', 'Could not load payments.')).toBe(
+      'Could not load payments.',
+    );
+  });
+});
+
+describe('friendlyError — statuses with no mapping of their own', () => {
+  it('shows the server’s reason for an unmapped 4xx, since only it knows why', () => {
+    // 402 has no hand-written copy. The API is the only thing that can explain
+    // a payment-required refusal, so its text is preferred over generic copy.
+    expect(friendlyError(new ApiError(402, 'PAYMENT_REQUIRED', 'Your subscription lapsed.'))).toBe(
+      'Your subscription lapsed.',
+    );
+  });
+
+  it('falls back to generic copy for an unmapped 4xx that explained nothing', () => {
+    expect(friendlyError(new ApiError(418, 'TEAPOT', 'Request failed with status 418'))).toBe(
+      GENERIC,
+    );
+  });
+
+  it('treats an empty server message the same as no message at all', () => {
+    expect(friendlyError(new ApiError(400, 'BAD_REQUEST', ''))).toMatch(/weren’t accepted/);
+  });
+
+  it('uses the caller’s fallback for an unmapped status, not the server’s noise', () => {
+    expect(friendlyError(new ApiError(418, 'TEAPOT', ''), 'Could not load bookings.')).toBe(
+      'Could not load bookings.',
+    );
+  });
 });
