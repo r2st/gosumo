@@ -28,6 +28,8 @@ import { CreateBusinessDto } from './dto/create-business.dto';
 import { ChangePlanDto } from './dto/change-plan.dto';
 import { SuspendBusinessDto } from './dto/suspend-business.dto';
 import { OnboardingStep } from './tenant.constants';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { TeamMemberRole } from '@gosumo/database';
 
 /**
  * TenantController — REST endpoints for tenant/business management.
@@ -204,9 +206,14 @@ export class TenantController {
   }
 
   @Post('members/invite')
+  @Roles(TeamMemberRole.MANAGER)
   @ApiOperation({ summary: 'Invite a new team member' })
   @ApiResponse({ status: 201, description: 'Member invited' })
   @ApiResponse({ status: 400, description: 'Plan limit exceeded or duplicate email' })
+  @ApiResponse({
+    status: 403,
+    description: 'Caller is not OWNER/MANAGER, or the invited role outranks the caller',
+  })
   async inviteMember(
     @TenantId() businessId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -216,17 +223,22 @@ export class TenantController {
   }
 
   @Delete('members/:userId')
+  @Roles(TeamMemberRole.MANAGER)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Remove a team member' })
   @ApiParam({ name: 'userId', description: 'Team member UUID' })
   @ApiResponse({ status: 204, description: 'Member removed' })
-  @ApiResponse({ status: 403, description: 'Cannot remove business owner' })
+  @ApiResponse({
+    status: 403,
+    description: 'Cannot remove business owner, caller is not OWNER/MANAGER, or the target outranks the caller',
+  })
   @ApiResponse({ status: 404, description: 'Member not found' })
   async removeMember(
     @TenantId() businessId: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Param('userId', UuidValidationPipe) userId: string,
   ) {
-    await this.tenantService.removeMember(businessId, userId);
+    await this.tenantService.removeMember(businessId, userId, user.sub);
   }
 
   // ─────────────────────────────────────────────

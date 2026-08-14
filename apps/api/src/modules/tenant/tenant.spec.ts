@@ -118,6 +118,7 @@ function createMockRepository() {
     softDeleteChannelAccount: jest.fn(),
     findTeamMembers: jest.fn(),
     countTeamMembers: jest.fn(),
+    countOwners: jest.fn(),
     findTeamMemberById: jest.fn(),
     findTeamMemberByEmail: jest.fn(),
     createTeamMember: jest.fn(),
@@ -548,12 +549,18 @@ describe('TenantService', () => {
   // ─── Team Members ────────────────────────────
 
   describe('inviteMember', () => {
+    /** Rank the acting user, as `assertActorOutranks` will read them. */
+    function actingAs(role: TeamMemberRole) {
+      repository.findTeamMemberById.mockResolvedValue(makeTeamMember({ id: OWNER_ID, role }));
+    }
+
     it('should create invited member with token', async () => {
       const newMember = makeTeamMember({ status: TeamMemberStatus.INVITED });
       repository.findBusinessById.mockResolvedValue(makeBusiness({ plan: 'starter' }));
       repository.countTeamMembers.mockResolvedValue(1);
       repository.findTeamMemberByEmail.mockResolvedValue(null);
       repository.createTeamMember.mockResolvedValue(newMember);
+      actingAs(TeamMemberRole.OWNER);
 
       const dto: InviteMemberDto = {
         email: 'new@example.com',
@@ -605,9 +612,129 @@ describe('TenantService', () => {
         BadRequestException,
       );
     });
+
+    // ─── Invited role vs. caller's own role ─────
+    //
+    // The role to grant arrives in the request body. `@Roles(MANAGER)` decides
+    // whether the caller may touch the team at all; it cannot decide *which*
+    // role they may hand out. Without the cap below, a manager invites a
+    // second account of their own as OWNER and escalates through it.
+
+    function invite(role: TeamRole): InviteMemberDto {
+      return { email: 'new@example.com', name: 'New', role };
+    }
+
+    function allowInvite() {
+      repository.findBusinessById.mockResolvedValue(makeBusiness({ plan: 'scale' }));
+      repository.countTeamMembers.mockResolvedValue(1);
+      repository.findTeamMemberByEmail.mockResolvedValue(null);
+      repository.createTeamMember.mockResolvedValue(makeTeamMember());
+    }
+
+    it('refuses a manager inviting an owner', async () => {
+      allowInvite();
+      actingAs(TeamMemberRole.MANAGER);
+
+      await expect(
+        service.inviteMember(BUSINESS_ID, invite(TeamRole.OWNER), OWNER_ID),
+      ).rejects.toThrow(ForbiddenException);
+      expect(repository.createTeamMember).not.toHaveBeenCalled();
+    });
+
+    it('refuses a staff member inviting a manager', async () => {
+      allowInvite();
+      actingAs(TeamMemberRole.STAFF);
+
+      await expect(
+        service.inviteMember(BUSINESS_ID, invite(TeamRole.MANAGER), OWNER_ID),
+      ).rejects.toThrow(ForbiddenException);
+      expect(repository.createTeamMember).not.toHaveBeenCalled();
+    });
+
+    it('refuses a viewer inviting anyone at all', async () => {
+      // The originally reported escalation: a VIEWER posting {role: 'OWNER'}.
+      // VIEWER outranks nothing, so even a STAFF invite is refused.
+      allowInvite();
+      actingAs(TeamMemberRole.VIEWER);
+
+      await expect(
+        service.inviteMember(BUSINESS_ID, invite(TeamRole.OWNER), OWNER_ID),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.inviteMember(BUSINESS_ID, invite(TeamRole.STAFF), OWNER_ID),
+      ).rejects.toThrow(ForbiddenException);
+      expect(repository.createTeamMember).not.toHaveBeenCalled();
+    });
+
+    it('allows a manager inviting a manager — equal rank is not escalation', async () => {
+      allowInvite();
+      actingAs(TeamMemberRole.MANAGER);
+
+      await service.inviteMember(BUSINESS_ID, invite(TeamRole.MANAGER), OWNER_ID);
+
+      expect(repository.createTeamMember).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        expect.objectContaining({ role: TeamMemberRole.MANAGER }),
+      );
+    });
+
+    it('allows an owner inviting an owner', async () => {
+      allowInvite();
+      actingAs(TeamMemberRole.OWNER);
+
+      await service.inviteMember(BUSINESS_ID, invite(TeamRole.OWNER), OWNER_ID);
+
+      expect(repository.createTeamMember).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        expect.objectContaining({ role: TeamMemberRole.OWNER }),
+      );
+    });
+
+    it('refuses when the acting user is no longer a member of the business', async () => {
+      allowInvite();
+      repository.findTeamMemberById.mockResolvedValue(null);
+
+      await expect(
+        service.inviteMember(BUSINESS_ID, invite(TeamRole.STAFF), OWNER_ID),
+      ).rejects.toThrow(/not a member of this business/i);
+      expect(repository.createTeamMember).not.toHaveBeenCalled();
+    });
+
+    it('scopes the actor lookup to the calling business', async () => {
+      // An owner of business A must not be ranked as an owner of business B.
+      allowInvite();
+      actingAs(TeamMemberRole.OWNER);
+
+      await service.inviteMember(BUSINESS_ID, invite(TeamRole.STAFF), OWNER_ID);
+
+      expect(repository.findTeamMemberById).toHaveBeenCalledWith(BUSINESS_ID, OWNER_ID);
+    });
+
+    it('skips the rank check for system-initiated invites with no actor', async () => {
+      // Business creation seeds its founding OWNER with no acting member; that
+      // path is not reachable from an HTTP request.
+      allowInvite();
+
+      await service.inviteMember(BUSINESS_ID, invite(TeamRole.STAFF));
+
+      expect(repository.findTeamMemberById).not.toHaveBeenCalled();
+      expect(repository.createTeamMember).toHaveBeenCalled();
+    });
   });
 
   describe('removeMember', () => {
+    /**
+     * `removeMember` reads the target first, then (when an actor is given) the
+     * actor. Queue both in that order.
+     */
+    function withLookups(targetRole: TeamMemberRole, actorRole?: TeamMemberRole) {
+      repository.findTeamMemberById
+        .mockResolvedValueOnce(makeTeamMember({ role: targetRole }))
+        .mockResolvedValueOnce(
+          actorRole === undefined ? null : makeTeamMember({ id: OWNER_ID, role: actorRole }),
+        );
+    }
+
     it('should soft-delete a non-owner member', async () => {
       const member = makeTeamMember({ role: TeamMemberRole.STAFF });
       repository.findTeamMemberById.mockResolvedValue(member);
@@ -627,6 +754,7 @@ describe('TenantService', () => {
     it('should throw ForbiddenException when trying to remove OWNER', async () => {
       const owner = makeTeamMember({ role: TeamMemberRole.OWNER });
       repository.findTeamMemberById.mockResolvedValue(owner);
+      repository.countOwners.mockResolvedValue(3);
 
       await expect(service.removeMember(BUSINESS_ID, MEMBER_ID)).rejects.toThrow(
         ForbiddenException,
@@ -639,6 +767,113 @@ describe('TenantService', () => {
       await expect(service.removeMember(BUSINESS_ID, MEMBER_ID)).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    // ─── Last-owner guard ───────────────────────
+
+    it('names the last-owner case specifically when one owner is left', async () => {
+      // A business with zero owners has nobody who can grant roles, invite
+      // members, or manage billing, and no in-product way back.
+      repository.findTeamMemberById.mockResolvedValue(
+        makeTeamMember({ role: TeamMemberRole.OWNER }),
+      );
+      repository.countOwners.mockResolvedValue(1);
+
+      await expect(service.removeMember(BUSINESS_ID, MEMBER_ID)).rejects.toThrow(
+        /last owner/i,
+      );
+      expect(repository.softDeleteTeamMember).not.toHaveBeenCalled();
+    });
+
+    it('refuses even the sole owner removing themselves', async () => {
+      // Self-service account closure is the most likely way a real business
+      // strands itself.
+      repository.findTeamMemberById
+        .mockResolvedValueOnce(makeTeamMember({ id: OWNER_ID, role: TeamMemberRole.OWNER }))
+        .mockResolvedValueOnce(makeTeamMember({ id: OWNER_ID, role: TeamMemberRole.OWNER }));
+      repository.countOwners.mockResolvedValue(1);
+
+      await expect(
+        service.removeMember(BUSINESS_ID, OWNER_ID, OWNER_ID),
+      ).rejects.toThrow(/last owner/i);
+      expect(repository.softDeleteTeamMember).not.toHaveBeenCalled();
+    });
+
+    it('still refuses an owner removal when other owners remain', async () => {
+      // Ownership changes hands through the role endpoint, not by deletion —
+      // so this stays a 403, just with a different reason than the last-owner
+      // case above.
+      repository.findTeamMemberById.mockResolvedValue(
+        makeTeamMember({ role: TeamMemberRole.OWNER }),
+      );
+      repository.countOwners.mockResolvedValue(2);
+
+      await expect(service.removeMember(BUSINESS_ID, MEMBER_ID)).rejects.toThrow(
+        /transfer ownership/i,
+      );
+      expect(repository.softDeleteTeamMember).not.toHaveBeenCalled();
+    });
+
+    it('does not count owners when the target is not an owner', async () => {
+      repository.findTeamMemberById.mockResolvedValue(
+        makeTeamMember({ role: TeamMemberRole.STAFF }),
+      );
+      repository.softDeleteTeamMember.mockResolvedValue(makeTeamMember());
+
+      await service.removeMember(BUSINESS_ID, MEMBER_ID);
+
+      expect(repository.countOwners).not.toHaveBeenCalled();
+    });
+
+    // ─── Caller rank ────────────────────────────
+
+    it('refuses a manager removing an owner', async () => {
+      withLookups(TeamMemberRole.OWNER, TeamMemberRole.MANAGER);
+
+      await expect(
+        service.removeMember(BUSINESS_ID, MEMBER_ID, OWNER_ID),
+      ).rejects.toThrow(ForbiddenException);
+      expect(repository.softDeleteTeamMember).not.toHaveBeenCalled();
+      // Rejected on rank before the owner-count query is worth spending.
+      expect(repository.countOwners).not.toHaveBeenCalled();
+    });
+
+    it('refuses a staff member removing a manager', async () => {
+      withLookups(TeamMemberRole.MANAGER, TeamMemberRole.STAFF);
+
+      await expect(
+        service.removeMember(BUSINESS_ID, MEMBER_ID, OWNER_ID),
+      ).rejects.toThrow(ForbiddenException);
+      expect(repository.softDeleteTeamMember).not.toHaveBeenCalled();
+    });
+
+    it('allows a manager removing another manager', async () => {
+      withLookups(TeamMemberRole.MANAGER, TeamMemberRole.MANAGER);
+      repository.softDeleteTeamMember.mockResolvedValue(makeTeamMember());
+
+      await service.removeMember(BUSINESS_ID, MEMBER_ID, OWNER_ID);
+
+      expect(repository.softDeleteTeamMember).toHaveBeenCalledWith(BUSINESS_ID, MEMBER_ID);
+    });
+
+    it('refuses when the acting user is no longer a member of the business', async () => {
+      // Their access token outlives their membership by up to 15 minutes.
+      withLookups(TeamMemberRole.STAFF, undefined);
+
+      await expect(
+        service.removeMember(BUSINESS_ID, MEMBER_ID, OWNER_ID),
+      ).rejects.toThrow(/not a member of this business/i);
+      expect(repository.softDeleteTeamMember).not.toHaveBeenCalled();
+    });
+
+    it('scopes the actor lookup to the calling business', async () => {
+      // An owner of business A must not be ranked as an owner of business B.
+      withLookups(TeamMemberRole.STAFF, TeamMemberRole.MANAGER);
+      repository.softDeleteTeamMember.mockResolvedValue(makeTeamMember());
+
+      await service.removeMember(BUSINESS_ID, MEMBER_ID, OWNER_ID);
+
+      expect(repository.findTeamMemberById).toHaveBeenCalledWith(BUSINESS_ID, OWNER_ID);
     });
   });
 

@@ -11,9 +11,10 @@ import { AuthRepository, TeamMemberWithBusiness } from './auth.repository';
 import { SessionService } from './session.service';
 import { REDIS_CLIENT } from './redis.provider';
 import { RolesGuard } from './guards/roles.guard';
+import { roleRank } from './role-hierarchy';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { Reflector } from '@nestjs/core';
-import { ExecutionContext } from '@nestjs/common';
+import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 
 // ─────────────────────────────────────────────
 // Mocks
@@ -395,6 +396,58 @@ describe('RolesGuard', () => {
     jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['STAFF']);
     expect(guard.canActivate(createMockContext('MANAGER'))).toBe(true);
   });
+
+  it('should allow access when the roles list is empty', () => {
+    // `@Roles()` with no arguments constrains nothing; treating it as "deny
+    // all" would break routes that merely declare the decorator.
+    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue([]);
+    expect(guard.canActivate(createMockContext('VIEWER'))).toBe(true);
+  });
+
+  it('should deny a request that carries no authenticated user', () => {
+    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['STAFF']);
+    const ctx = {
+      getHandler: () => jest.fn(),
+      getClass: () => jest.fn(),
+      switchToHttp: () => ({ getRequest: () => ({}) }),
+    } as unknown as ExecutionContext;
+
+    expect(() => guard.canActivate(ctx)).toThrow(ForbiddenException);
+  });
+
+  it('should deny a role outside the hierarchy', () => {
+    // GoSumo has no ADMIN role. A token claiming one is forged or from a
+    // different system; it must not rank as anything.
+    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['STAFF']);
+    expect(() => guard.canActivate(createMockContext('ADMIN'))).toThrow(ForbiddenException);
+  });
+
+  it('should deny everyone when the required role itself is unrecognised', () => {
+    // A typo in `@Roles('MANGER')` must fail closed. Ranking both sides as -1
+    // would otherwise let *any* caller through the comparison.
+    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['MANGER']);
+    expect(() => guard.canActivate(createMockContext('OWNER'))).toThrow(ForbiddenException);
+  });
+
+  it('should admit a caller who satisfies any one of several required roles', () => {
+    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['OWNER', 'STAFF']);
+    expect(guard.canActivate(createMockContext('STAFF'))).toBe(true);
+  });
+});
+
+describe('role hierarchy', () => {
+  it('ranks the four roles in ascending authority', () => {
+    expect(roleRank('VIEWER')).toBeLessThan(roleRank('STAFF'));
+    expect(roleRank('STAFF')).toBeLessThan(roleRank('MANAGER'));
+    expect(roleRank('MANAGER')).toBeLessThan(roleRank('OWNER'));
+  });
+
+  it.each([['ADMIN'], ['SUPERUSER'], ['owner'], [''], [null], [undefined]])(
+    'ranks %p below every real role',
+    (role) => {
+      expect(roleRank(role as string | null | undefined)).toBeLessThan(roleRank('VIEWER'));
+    },
+  );
 });
 
 describe('JwtStrategy', () => {

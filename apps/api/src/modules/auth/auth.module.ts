@@ -40,6 +40,17 @@ import { PrismaService } from '../../common/services/prisma.service';
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
     },
+    // Registered *after* JwtAuthGuard so `request.user` is populated by the
+    // time it runs. Global APP_GUARDs execute in declaration order, and
+    // RolesGuard needs the authenticated user to read a role off.
+    //
+    // Without a @Roles() decorator on the handler or its controller the guard
+    // returns true immediately, so making it global cannot change the outcome
+    // of any route that does not opt in.
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
+    },
     redisProvider,
     PrismaService,
   ],

@@ -206,8 +206,22 @@ describe('TeamController', () => {
   describe('removeMember', () => {
     it('should delegate to tenantService.removeMember', async () => {
       tenantService.removeMember.mockResolvedValue(undefined);
-      await controller.removeMember(TENANT_ID, MEMBER_ID);
-      expect(tenantService.removeMember).toHaveBeenCalledWith(TENANT_ID, MEMBER_ID);
+      const user: AuthenticatedUser = { sub: 'manager-id-1', businessId: TENANT_ID, role: 'MANAGER' };
+
+      await controller.removeMember(TENANT_ID, user, MEMBER_ID);
+
+      expect(tenantService.removeMember).toHaveBeenCalledWith(TENANT_ID, MEMBER_ID, 'manager-id-1');
+    });
+
+    it('passes the acting user through so the service can rank them', async () => {
+      // Dropping the third argument would silently disable the rank check in
+      // the service — it treats a missing actor as a system call and skips it.
+      tenantService.removeMember.mockResolvedValue(undefined);
+      const user: AuthenticatedUser = { sub: 'manager-id-1', businessId: TENANT_ID, role: 'MANAGER' };
+
+      await controller.removeMember(TENANT_ID, user, MEMBER_ID);
+
+      expect(tenantService.removeMember.mock.calls[0]![2]).toBe('manager-id-1');
     });
   });
 });

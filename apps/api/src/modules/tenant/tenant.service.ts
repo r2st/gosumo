@@ -18,6 +18,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { generateId } from '@gosumo/shared';
 import { TenantRepository } from './tenant.repository';
+import { roleRank } from '../auth/role-hierarchy';
 import { UpdateBusinessDto } from './dto/update-business.dto';
 import { UpdateAIConfigDto, AIConfigResponse } from './dto/ai-config.dto';
 import { ConnectChannelDto } from './dto/connect-channel.dto';
@@ -530,6 +531,51 @@ export class TenantService {
   }
 
   /**
+   * Refuse the operation when `role` outranks the acting member's own role.
+   *
+   * Covers both directions of team management: a member may not *grant* an
+   * authority they do not hold, and may not *remove* someone who holds more
+   * than they do. Equal ranks are permitted — two managers can each remove the
+   * other, which is ordinary team churn rather than escalation.
+   *
+   * `actorId` is optional because system-initiated calls (business creation
+   * seeding its founding OWNER, fixtures, background jobs) have no acting
+   * member. Those paths are not reachable from an HTTP request — every
+   * controller passes the authenticated user's id — so skipping the check
+   * there does not leave a hole a client can drive.
+   *
+   * The stored role is read fresh rather than taken from the caller's JWT: an
+   * access token lives 15 minutes, so a member demoted moments ago still
+   * presents a token asserting the old role.
+   *
+   * @throws ForbiddenException when the actor is no longer a live member of
+   *   the business, or when `role` outranks them.
+   */
+  private async assertActorOutranks(
+    businessId: string,
+    actorId: string | undefined,
+    role: string,
+    action: string,
+  ): Promise<void> {
+    if (!actorId) return;
+
+    const actor = await this.repository.findTeamMemberById(businessId, actorId);
+
+    if (!actor) {
+      throw new ForbiddenException(
+        'Acting user is not a member of this business',
+      );
+    }
+
+    if (roleRank(role) > roleRank(actor.role)) {
+      throw new ForbiddenException(
+        `Role '${actor.role}' cannot ${action} a member with the role '${role}'. ` +
+          'You may only act on your own role or lower.',
+      );
+    }
+  }
+
+  /**
    * Invite a new team member. Creates with INVITED status and generates
    * a unique invite token (UUID).
    *
@@ -541,6 +587,14 @@ export class TenantService {
     invitedBy?: string,
   ): Promise<team_members> {
     const business = await this.getBusinessById(businessId);
+
+    // The invited role comes from the request body. `@Roles(MANAGER)` on the
+    // endpoints decides whether the caller may manage the team at all; it says
+    // nothing about *which* role they may hand out. Without this cap a MANAGER
+    // could invite a second account of their own as OWNER and escalate through
+    // it. Enforced here rather than in a controller so both invite routes
+    // (`/auth/team/invite` and `/tenant/members/invite`) are covered.
+    await this.assertActorOutranks(businessId, invitedBy, dto.role, 'invite');
 
     // Check plan limits for staff count
     const limits = this.getPlanLimits(business.plan);
@@ -590,11 +644,23 @@ export class TenantService {
   }
 
   /**
-   * Remove a team member (soft-delete). Cannot remove the OWNER.
+   * Remove a team member (soft-delete).
+   *
+   * Owners cannot be removed through this path at all — ownership is handed
+   * over with `PATCH /auth/team/:id/role`, not by deletion. The last-owner
+   * case is called out separately because it is the one that is *permanently*
+   * unrecoverable: with zero owners nobody can grant roles, invite members, or
+   * manage billing, and no in-product path restores one.
+   *
+   * Coarse authorization of the *caller* happens at the controller
+   * (`@Roles(MANAGER)`); passing `actorId` additionally stops a manager
+   * removing someone who outranks them. The owner invariants below hold
+   * regardless of who is asking.
    */
   async removeMember(
     businessId: string,
     memberId: string,
+    actorId?: string,
   ): Promise<void> {
     const member = await this.repository.findTeamMemberById(businessId, memberId);
 
@@ -602,7 +668,19 @@ export class TenantService {
       throw new NotFoundException(`Team member not found: ${memberId}`);
     }
 
+    // Removing an equal is allowed — two managers can each remove the other —
+    // but removing someone above you is a takeover, not team management.
+    await this.assertActorOutranks(businessId, actorId, member.role, 'remove');
+
     if (member.role === TeamMemberRole.OWNER) {
+      const owners = await this.repository.countOwners(businessId);
+
+      if (owners <= 1) {
+        throw new ForbiddenException(
+          'Cannot remove the last owner of a business. Promote another member to owner first.',
+        );
+      }
+
       throw new ForbiddenException(
         'Cannot remove the business owner. Transfer ownership first.',
       );

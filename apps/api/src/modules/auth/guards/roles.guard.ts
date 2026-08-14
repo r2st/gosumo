@@ -2,18 +2,13 @@ import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { AuthenticatedUser } from '../../../common/decorators/current-user.decorator';
+import { roleRank } from '../role-hierarchy';
 
 /**
- * Role hierarchy — higher index = higher authority.
- * A user with a higher role implicitly has access to lower roles.
+ * Registered globally as an APP_GUARD in {@link AuthModule}, immediately after
+ * JwtAuthGuard. Handlers with no @Roles() decorator are unaffected — the guard
+ * short-circuits to `true` before it looks at the request.
  */
-const ROLE_HIERARCHY: Record<string, number> = {
-  VIEWER: 0,
-  STAFF: 1,
-  MANAGER: 2,
-  OWNER: 3,
-};
-
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
@@ -36,12 +31,22 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException('No authenticated user found');
     }
 
-    const userRoleLevel = ROLE_HIERARCHY[user.role] ?? -1;
+    const userRoleLevel = roleRank(user.role);
 
-    // User has access if their role level >= the minimum required role level
+    // User has access if their role level >= the minimum required role level.
+    // An unknown role on either side ranks -1, so an unrecognised *required*
+    // role is not a backdoor: the caller still needs a rank of at least -1,
+    // which only an equally unrecognised role has. Guard against that by
+    // rejecting an unranked caller outright.
+    if (userRoleLevel < 0) {
+      throw new ForbiddenException(
+        `Role '${user.role}' is not a recognised role. Required: ${requiredRoles.join(' or ')}`,
+      );
+    }
+
     const hasRole = requiredRoles.some((role) => {
-      const requiredLevel = ROLE_HIERARCHY[role] ?? -1;
-      return userRoleLevel >= requiredLevel;
+      const requiredLevel = roleRank(role);
+      return requiredLevel >= 0 && userRoleLevel >= requiredLevel;
     });
 
     if (!hasRole) {

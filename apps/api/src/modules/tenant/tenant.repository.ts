@@ -242,6 +242,25 @@ export class TenantRepository {
   }
 
   /**
+   * Count the business's owners.
+   *
+   * INVITED owners count: an invite that has been sent but not yet accepted
+   * still represents a recoverable path back into the business, and treating
+   * it as absent would let the *accepted* owner be removed on the strength of
+   * an invite that may never be taken up.
+   */
+  async countOwners(businessId: string): Promise<number> {
+    return this.prisma.team_members.count({
+      where: {
+        business_id: businessId,
+        role: TeamMemberRole.OWNER,
+        deleted_at: null,
+        status: { in: [TeamMemberStatus.ACTIVE, TeamMemberStatus.INVITED] },
+      },
+    });
+  }
+
+  /**
    * Find a team member by their user ID within a business scope.
    */
   async findTeamMemberById(
