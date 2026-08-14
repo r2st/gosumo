@@ -11,6 +11,7 @@ import { AuthRepository, TeamMemberWithBusiness } from './auth.repository';
 import { SessionService } from './session.service';
 import { REDIS_CLIENT } from './redis.provider';
 import { RolesGuard } from './guards/roles.guard';
+import { ROLES_KEY } from './decorators/roles.decorator';
 import { roleRank } from './role-hierarchy';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { Reflector } from '@nestjs/core';
@@ -363,50 +364,63 @@ describe('RolesGuard', () => {
     guard = new RolesGuard(reflector);
   });
 
-  const createMockContext = (role: string): ExecutionContext =>
+  const createMockContext = (role: string, method = 'GET'): ExecutionContext =>
     ({
+      getType: () => 'http',
       getHandler: () => jest.fn(),
       getClass: () => jest.fn(),
       switchToHttp: () => ({
-        getRequest: () => ({ user: { role } }),
+        getRequest: () => ({ user: { role }, method }),
       }),
     }) as unknown as ExecutionContext;
 
+  /**
+   * Answer only ROLES_KEY. A blanket `mockReturnValue` would also answer
+   * IS_PUBLIC_KEY with the same truthy array, which makes the guard treat every
+   * route as `@Public()` and pass tests that prove nothing.
+   */
+  const mockRoles = (roles: string[] | undefined): void => {
+    jest
+      .spyOn(reflector, 'getAllAndOverride')
+      .mockImplementation((key: unknown) => (key === ROLES_KEY ? roles : undefined) as never);
+  };
+
   it('should allow access when no roles required', () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(undefined);
+    mockRoles(undefined);
     expect(guard.canActivate(createMockContext('VIEWER'))).toBe(true);
   });
 
   it('should allow OWNER to access MANAGER-required routes', () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['MANAGER']);
+    mockRoles(['MANAGER']);
     expect(guard.canActivate(createMockContext('OWNER'))).toBe(true);
   });
 
   it('should deny VIEWER access to MANAGER-required routes', () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['MANAGER']);
+    mockRoles(['MANAGER']);
     expect(() => guard.canActivate(createMockContext('VIEWER'))).toThrow();
   });
 
   it('should deny STAFF access to OWNER-required routes', () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['OWNER']);
+    mockRoles(['OWNER']);
     expect(() => guard.canActivate(createMockContext('STAFF'))).toThrow();
   });
 
   it('should allow MANAGER access to STAFF-required routes', () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['STAFF']);
+    mockRoles(['STAFF']);
     expect(guard.canActivate(createMockContext('MANAGER'))).toBe(true);
   });
 
   it('should allow access when the roles list is empty', () => {
     // `@Roles()` with no arguments constrains nothing; treating it as "deny
     // all" would break routes that merely declare the decorator.
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue([]);
+    mockRoles([]);
     expect(guard.canActivate(createMockContext('VIEWER'))).toBe(true);
   });
 
   it('should deny a request that carries no authenticated user', () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['STAFF']);
+    mockRoles(['STAFF']);
     const ctx = {
+      getType: () => 'http',
       getHandler: () => jest.fn(),
       getClass: () => jest.fn(),
       switchToHttp: () => ({ getRequest: () => ({}) }),
@@ -418,19 +432,19 @@ describe('RolesGuard', () => {
   it('should deny a role outside the hierarchy', () => {
     // GoSumo has no ADMIN role. A token claiming one is forged or from a
     // different system; it must not rank as anything.
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['STAFF']);
+    mockRoles(['STAFF']);
     expect(() => guard.canActivate(createMockContext('ADMIN'))).toThrow(ForbiddenException);
   });
 
   it('should deny everyone when the required role itself is unrecognised', () => {
     // A typo in `@Roles('MANGER')` must fail closed. Ranking both sides as -1
     // would otherwise let *any* caller through the comparison.
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['MANGER']);
+    mockRoles(['MANGER']);
     expect(() => guard.canActivate(createMockContext('OWNER'))).toThrow(ForbiddenException);
   });
 
   it('should admit a caller who satisfies any one of several required roles', () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['OWNER', 'STAFF']);
+    mockRoles(['OWNER', 'STAFF']);
     expect(guard.canActivate(createMockContext('STAFF'))).toBe(true);
   });
 });

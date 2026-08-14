@@ -1,15 +1,21 @@
 /**
  * Role contract for the privilege-sensitive routes.
  *
- * `RolesGuard` is global, so a route is protected exactly when it carries a
- * `@Roles()` decorator. A missing decorator is silent — the route keeps
- * working, for everyone, which is how the team-management escalation went
- * unnoticed. This file pins down which routes are gated and at what level, so
- * dropping one is a test failure rather than an open endpoint.
+ * `RolesGuard` is global and enforces two tiers:
  *
- * A route belongs here when calling it can escalate privilege, move money, or
- * destroy data irreversibly. Read-only routes deliberately stay open: the
- * settings pages have to render for whoever opens them.
+ *  - An explicit `@Roles()` names the minimum rank for that route. This file
+ *    pins down which routes carry one and at what level, so dropping a
+ *    decorator is a test failure rather than a silently open endpoint — that
+ *    is how the team-management escalation went unnoticed.
+ *
+ *  - Every other write (POST/PUT/PATCH/DELETE) requires STAFF or above by
+ *    default, so VIEWER is read-only across the API without needing a
+ *    decorator on all ~200 of them.
+ *
+ * A route belongs in GATED when calling it can escalate privilege, move money,
+ * reconfigure the business, or destroy data irreversibly. Read-only routes
+ * deliberately stay open: the settings pages have to render for whoever opens
+ * them.
  */
 import { Reflector, APP_GUARD } from '@nestjs/core';
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
@@ -20,6 +26,13 @@ import { TenantController } from './tenant/tenant.controller';
 import { BillingController } from './billing/billing.controller';
 import { ApiKeysController } from './integrations/api-keys.controller';
 import { ComplianceController } from './compliance/compliance.controller';
+import { BusinessController } from './tenant/business.controller';
+import { AiEngineController } from './ai-engine/ai-engine.controller';
+import { ChannelsController } from './channels/channels.controller';
+import { IntegrationsController } from './integrations/integrations.controller';
+import { SlaController } from './sla/sla.controller';
+import { RealtyCrmController } from './realty-integrations/crm/realty-crm.controller';
+import { RealtySheetsController } from './realty-integrations/sheets/realty-sheets.controller';
 
 /** [description, controller, handler name, required role] */
 const GATED: Array<[string, NewableFunction, string, string]> = [
@@ -38,14 +51,60 @@ const GATED: Array<[string, NewableFunction, string, string]> = [
   ['POST /compliance/erasure', ComplianceController, 'erasure', 'MANAGER'],
   ['PUT /compliance/settings', ComplianceController, 'updateSettings', 'OWNER'],
   ['POST /compliance/retention/run', ComplianceController, 'runRetention', 'OWNER'],
+  // Reconfigures how the business runs, or suspends it outright.
+  ['PATCH /tenant/profile', TenantController, 'updateProfile', 'MANAGER'],
+  ['PATCH /tenant/policies', TenantController, 'updatePolicies', 'MANAGER'],
+  ['POST /tenant/suspend', TenantController, 'suspend', 'OWNER'],
+  ['POST /tenant/activate', TenantController, 'activate', 'OWNER'],
+  ['PATCH /business/me', BusinessController, 'updateMe', 'MANAGER'],
+  ['PATCH /business/settings', BusinessController, 'updateSettings', 'MANAGER'],
+  // AI behaviour — the confidence thresholds are a safety control, and the
+  // knowledge base is what the AI answers customers from.
+  ['PATCH /tenant/ai-config', TenantController, 'updateAIConfig', 'MANAGER'],
+  ['PATCH /ai/confidence/thresholds', AiEngineController, 'updateThresholds', 'MANAGER'],
+  ['POST /ai/knowledge', AiEngineController, 'ingestKnowledge', 'MANAGER'],
+  ['DELETE /ai/knowledge/:entryId', AiEngineController, 'deleteKnowledge', 'MANAGER'],
+  // Channel and integration wiring — holds third-party credentials.
+  ['POST /tenant/channels', TenantController, 'connectChannel', 'MANAGER'],
+  ['PATCH /tenant/channels/:id', TenantController, 'updateChannel', 'MANAGER'],
+  ['DELETE /tenant/channels/:id', TenantController, 'disconnectChannel', 'MANAGER'],
+  ['POST /channels/:channelType/connect', ChannelsController, 'connectChannel', 'MANAGER'],
+  ['DELETE /channels/:channelId', ChannelsController, 'disconnectChannel', 'MANAGER'],
+  ['POST /channels/:channelId/test', ChannelsController, 'testConnection', 'MANAGER'],
+  ['PUT /integrations/credentials/:provider', IntegrationsController, 'saveCredentials', 'MANAGER'],
+  [
+    'POST /integrations/credentials/:provider/test',
+    IntegrationsController,
+    'testCredentials',
+    'MANAGER',
+  ],
+  ['POST /integrations/google-calendar/connect', IntegrationsController, 'connectCalendar', 'MANAGER'],
+  ['DELETE /integrations/google-calendar', IntegrationsController, 'disconnectCalendar', 'MANAGER'],
+  ['POST /realty/integrations/crm/connect', RealtyCrmController, 'connect', 'MANAGER'],
+  ['DELETE /realty/integrations/crm/:provider', RealtyCrmController, 'disconnect', 'MANAGER'],
+  ['DELETE /realty/integrations/sheets', RealtySheetsController, 'disconnect', 'MANAGER'],
+  // Changes the bill.
+  ['POST /tenant/subscription/change', TenantController, 'changePlan', 'OWNER'],
+  // Response-time commitments the business is measured against.
+  ['POST /sla/policies', SlaController, 'createPolicy', 'MANAGER'],
+  ['PATCH /sla/policies/:id', SlaController, 'updatePolicy', 'MANAGER'],
+  ['DELETE /sla/policies/:id', SlaController, 'deletePolicy', 'MANAGER'],
 ];
 
-/** Routes that must stay reachable by every authenticated member. */
-const OPEN: Array<[string, NewableFunction, string]> = [
+/** Reads that must stay reachable by every authenticated member, VIEWER included. */
+const OPEN_READS: Array<[string, NewableFunction, string]> = [
   ['GET /auth/team', TeamController, 'listTeam'],
   ['GET /api-keys', ApiKeysController, 'list'],
   ['GET /billing/subscription', BillingController, 'subscription'],
   ['GET /compliance/data-request/:phone', ComplianceController, 'dataRequest'],
+];
+
+/**
+ * Writes that carry no `@Roles()` and rely on the guard's STAFF-or-above
+ * default. They are open to the operators who run the business day to day, but
+ * closed to VIEWER — which is the point of the default.
+ */
+const DEFAULTED_WRITES: Array<[string, NewableFunction, string]> = [
   ['POST /compliance/correction', ComplianceController, 'correction'],
 ];
 
@@ -57,15 +116,22 @@ function rolesOn(controller: NewableFunction, method: string): string[] | undefi
   return Reflect.getMetadata(ROLES_KEY, handler(controller, method)) as string[] | undefined;
 }
 
+/** The HTTP verb is the first word of the route description. */
+function verbOf(route: string): string {
+  return route.split(' ')[0] as string;
+}
+
 function contextFor(
   controller: NewableFunction,
   method: string,
   role: string,
+  verb = 'POST',
 ): ExecutionContext {
   return {
+    getType: () => 'http',
     getHandler: () => handler(controller, method),
     getClass: () => controller,
-    switchToHttp: () => ({ getRequest: () => ({ user: { role } }) }),
+    switchToHttp: () => ({ getRequest: () => ({ user: { role }, method: verb }) }),
   } as unknown as ExecutionContext;
 }
 
@@ -87,26 +153,28 @@ describe('privileged route contract', () => {
     expect(globals).toContain('RolesGuard');
   });
 
-  describe.each(GATED)('%s', (_route, controller, method, required) => {
+  describe.each(GATED)('%s', (route, controller, method, required) => {
+    const verb = verbOf(route);
+
     it(`declares @Roles(${required})`, () => {
       expect(rolesOn(controller, method)).toEqual([required]);
     });
 
     it('rejects VIEWER and STAFF', () => {
-      expect(() => guard.canActivate(contextFor(controller, method, 'VIEWER'))).toThrow(
+      expect(() => guard.canActivate(contextFor(controller, method, 'VIEWER', verb))).toThrow(
         ForbiddenException,
       );
-      expect(() => guard.canActivate(contextFor(controller, method, 'STAFF'))).toThrow(
+      expect(() => guard.canActivate(contextFor(controller, method, 'STAFF', verb))).toThrow(
         ForbiddenException,
       );
     });
 
     it('admits OWNER', () => {
-      expect(guard.canActivate(contextFor(controller, method, 'OWNER'))).toBe(true);
+      expect(guard.canActivate(contextFor(controller, method, 'OWNER', verb))).toBe(true);
     });
 
     it(`${required === 'OWNER' ? 'rejects' : 'admits'} MANAGER`, () => {
-      const ctx = contextFor(controller, method, 'MANAGER');
+      const ctx = contextFor(controller, method, 'MANAGER', verb);
       if (required === 'OWNER') {
         expect(() => guard.canActivate(ctx)).toThrow(ForbiddenException);
       } else {
@@ -115,13 +183,36 @@ describe('privileged route contract', () => {
     });
   });
 
-  describe.each(OPEN)('%s stays open', (_route, controller, method) => {
+  describe.each(OPEN_READS)('%s stays open', (route, controller, method) => {
+    const verb = verbOf(route);
+
     it('carries no @Roles() decorator', () => {
       expect(rolesOn(controller, method)).toBeUndefined();
     });
 
     it('admits a VIEWER', () => {
-      expect(guard.canActivate(contextFor(controller, method, 'VIEWER'))).toBe(true);
+      expect(guard.canActivate(contextFor(controller, method, 'VIEWER', verb))).toBe(true);
     });
   });
+
+  describe.each(DEFAULTED_WRITES)(
+    '%s falls back to the write default',
+    (route, controller, method) => {
+      const verb = verbOf(route);
+
+      it('carries no @Roles() decorator', () => {
+        expect(rolesOn(controller, method)).toBeUndefined();
+      });
+
+      it('rejects a VIEWER anyway — writes are STAFF and above', () => {
+        expect(() => guard.canActivate(contextFor(controller, method, 'VIEWER', verb))).toThrow(
+          ForbiddenException,
+        );
+      });
+
+      it.each(['STAFF', 'MANAGER', 'OWNER'])('admits %s', (role) => {
+        expect(guard.canActivate(contextFor(controller, method, role, verb))).toBe(true);
+      });
+    },
+  );
 });

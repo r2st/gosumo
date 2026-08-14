@@ -9,6 +9,8 @@ import {
   ListBreachesQueryDto,
   ComplianceQueryDto,
 } from './dto';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { TeamMemberRole } from '@gosumo/database';
 
 @ApiTags('sla')
 @Controller('sla')
@@ -20,6 +22,7 @@ export class SlaController {
   // ─────────────────────────────────────────────
 
   @Post('policies')
+  @Roles(TeamMemberRole.MANAGER)
   @ApiOperation({ summary: 'Create an SLA policy' })
   @ApiResponse({ status: 201, description: 'Policy created' })
   @ApiResponse({ status: 400, description: 'resolutionTargetMinutes must be >= firstResponseTargetMinutes' })
@@ -44,6 +47,7 @@ export class SlaController {
   }
 
   @Patch('policies/:id')
+  @Roles(TeamMemberRole.MANAGER)
   @ApiOperation({ summary: 'Update an SLA policy' })
   @ApiResponse({ status: 200, description: 'The updated policy' })
   @ApiParam({ name: 'id', description: 'Policy UUID' })
@@ -57,6 +61,7 @@ export class SlaController {
   }
 
   @Delete('policies/:id')
+  @Roles(TeamMemberRole.MANAGER)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Soft-delete an SLA policy' })
   @ApiParam({ name: 'id', description: 'Policy UUID' })

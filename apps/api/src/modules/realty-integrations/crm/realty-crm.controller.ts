@@ -15,6 +15,8 @@ import { TenantId } from '../../../common/decorators/tenant-id.decorator';
 import { UuidValidationPipe } from '../../../common/pipes/uuid-validation.pipe';
 import { PlanLimit } from '../../billing/plan.decorator';
 import { ConnectCrmDto } from '../dto';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { TeamMemberRole } from '@gosumo/database';
 
 /**
  * RealtyCrmController — the settings-UI surface for CRM sync. Every route is
@@ -35,6 +37,7 @@ export class RealtyCrmController {
   }
 
   @Post('connect')
+  @Roles(TeamMemberRole.MANAGER)
   @ApiOperation({ summary: 'Connect an Indian CRM (Sell.Do / LeadSquared / Privyr)' })
   @ApiResponse({ status: 201, description: 'CRM connected' })
   @ApiResponse({ status: 400, description: 'Invalid credentials' })
@@ -69,6 +72,7 @@ export class RealtyCrmController {
   }
 
   @Delete(':provider')
+  @Roles(TeamMemberRole.MANAGER)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Disconnect a CRM' })
   @ApiResponse({ status: 204, description: 'Deleted; no content returned' })

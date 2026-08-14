@@ -28,6 +28,8 @@ import {
   KnowledgeEntryDto,
   UpdateConfidenceThresholdsDto,
 } from './dto';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { TeamMemberRole } from '@gosumo/database';
 
 /**
  * AiEngineController -- REST surface for the AI engine.
@@ -132,6 +134,7 @@ export class AiEngineController {
   }
 
   @Patch('confidence/thresholds')
+  @Roles(TeamMemberRole.MANAGER)
   @ApiOperation({ summary: 'Update AI confidence thresholds' })
   @ApiResponse({ status: 200, description: 'The updated confidence thresholds' })
   async updateThresholds(
@@ -146,6 +149,7 @@ export class AiEngineController {
   // ───────────────────────────────────────────────────────────────────
 
   @Post('knowledge')
+  @Roles(TeamMemberRole.MANAGER)
   @ApiOperation({ summary: 'Ingest a document into the knowledge base' })
   @ApiResponse({ status: 201, description: 'Document indexed', type: IngestResultDto })
   async ingestKnowledge(
@@ -166,6 +170,7 @@ export class AiEngineController {
   }
 
   @Delete('knowledge/:entryId')
+  @Roles(TeamMemberRole.MANAGER)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a knowledge base entry' })
   @ApiParam({ name: 'entryId', description: 'Knowledge entry UUID' })

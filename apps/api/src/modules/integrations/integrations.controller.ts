@@ -5,6 +5,8 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { PrismaService } from '../../common/services/prisma.service';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { TeamMemberRole } from '@gosumo/database';
 
 @ApiTags('integrations')
 @Controller('integrations')
@@ -28,6 +30,7 @@ export class IntegrationsController {
   }
 
   @Post('google-calendar/connect')
+  @Roles(TeamMemberRole.MANAGER)
   @ApiOperation({ summary: 'Start Google Calendar OAuth flow' })
   @ApiResponse({ status: 201, description: 'Result of the connect action' })
   async connectCalendar(@TenantId() _tenantId: string) {
@@ -36,6 +39,7 @@ export class IntegrationsController {
   }
 
   @Delete('google-calendar')
+  @Roles(TeamMemberRole.MANAGER)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Disconnect Google Calendar' })
   @ApiResponse({ status: 204, description: 'Deleted; no content returned' })
@@ -54,6 +58,7 @@ export class IntegrationsController {
   }
 
   @Put('credentials/:provider')
+  @Roles(TeamMemberRole.MANAGER)
   @ApiOperation({ summary: 'Save credentials for a provider' })
   @ApiResponse({ status: 200, description: 'The updated credential' })
   @ApiParam({ name: 'provider', description: 'Provider' })
@@ -71,6 +76,7 @@ export class IntegrationsController {
   }
 
   @Post('credentials/:provider/test')
+  @Roles(TeamMemberRole.MANAGER)
   @ApiOperation({ summary: 'Test connection for a provider' })
   @ApiResponse({ status: 201, description: 'Result of the test action' })
   @ApiParam({ name: 'provider', description: 'Provider' })

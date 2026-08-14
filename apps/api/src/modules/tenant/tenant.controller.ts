@@ -81,6 +81,7 @@ export class TenantController {
   }
 
   @Post('suspend')
+  @Roles(TeamMemberRole.OWNER)
   @ApiOperation({ summary: 'Suspend the current business' })
   @ApiResponse({ status: 201, description: 'Business suspended' })
   @ApiResponse({ status: 404, description: 'Business not found' })
@@ -92,6 +93,7 @@ export class TenantController {
   }
 
   @Post('activate')
+  @Roles(TeamMemberRole.OWNER)
   @ApiOperation({ summary: 'Activate the current business' })
   @ApiResponse({ status: 201, description: 'Business activated' })
   @ApiResponse({ status: 400, description: 'No connected channel' })
@@ -113,6 +115,7 @@ export class TenantController {
   }
 
   @Patch('profile')
+  @Roles(TeamMemberRole.MANAGER)
   @ApiOperation({ summary: 'Update business profile' })
   @ApiResponse({ status: 200, description: 'Business profile updated' })
   @ApiResponse({ status: 400, description: 'Validation error or duplicate email' })
@@ -136,6 +139,7 @@ export class TenantController {
   }
 
   @Patch('ai-config')
+  @Roles(TeamMemberRole.MANAGER)
   @ApiOperation({ summary: 'Update AI configuration' })
   @ApiResponse({ status: 200, description: 'AI config updated' })
   @ApiResponse({ status: 400, description: 'Validation error' })
@@ -158,6 +162,7 @@ export class TenantController {
   }
 
   @Post('channels')
+  @Roles(TeamMemberRole.MANAGER)
   @ApiOperation({ summary: 'Connect a new channel' })
   @ApiResponse({ status: 201, description: 'Channel connected' })
   @ApiResponse({ status: 400, description: 'Plan limit exceeded or validation error' })
@@ -169,6 +174,7 @@ export class TenantController {
   }
 
   @Patch('channels/:id')
+  @Roles(TeamMemberRole.MANAGER)
   @ApiOperation({ summary: 'Update a channel status (activate/pause)' })
   @ApiParam({ name: 'id', description: 'Channel account UUID' })
   @ApiResponse({ status: 200, description: 'Channel status updated' })
@@ -182,6 +188,7 @@ export class TenantController {
   }
 
   @Delete('channels/:id')
+  @Roles(TeamMemberRole.MANAGER)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Disconnect a channel' })
   @ApiParam({ name: 'id', description: 'Channel account UUID' })
@@ -253,6 +260,7 @@ export class TenantController {
   }
 
   @Patch('policies')
+  @Roles(TeamMemberRole.MANAGER)
   @ApiOperation({ summary: 'Update business policies' })
   @ApiResponse({ status: 200, description: 'Policies updated' })
   @ApiResponse({ status: 400, description: 'Validation error' })
@@ -282,6 +290,7 @@ export class TenantController {
   }
 
   @Post('subscription/change')
+  @Roles(TeamMemberRole.OWNER)
   @ApiOperation({ summary: 'Change subscription tier (upgrade/downgrade)' })
   @ApiResponse({ status: 201, description: 'The subscription after the tier change' })
   @ApiResponse({ status: 200, description: 'Plan changed' })

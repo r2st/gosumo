@@ -37,12 +37,14 @@ function contextFor(
   controller: NewableFunction,
   method: string,
   user: Partial<AuthenticatedUser> | undefined,
+  verb = 'POST',
 ): ExecutionContext {
   const handler = (controller.prototype as Record<string, unknown>)[method];
   return {
+    getType: () => 'http',
     getHandler: () => handler,
     getClass: () => controller,
-    switchToHttp: () => ({ getRequest: () => ({ user }) }),
+    switchToHttp: () => ({ getRequest: () => ({ user, method: verb }) }),
   } as unknown as ExecutionContext;
 }
 
@@ -136,9 +138,11 @@ describe('team management authorization', () => {
     });
 
     it('leaves the unguarded listing endpoint alone', () => {
-      expect(guard.canActivate(contextFor(TeamController, 'listTeam', { role: 'VIEWER' }))).toBe(
-        true,
-      );
+      // A GET with no @Roles(): open to every authenticated role, VIEWER
+      // included. The guard's write default does not reach reads.
+      expect(
+        guard.canActivate(contextFor(TeamController, 'listTeam', { role: 'VIEWER' }, 'GET')),
+      ).toBe(true);
     });
 
     it('rejects a request with no authenticated user', () => {

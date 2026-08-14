@@ -27,6 +27,7 @@ import { SessionDto } from './dto/session.dto';
 import { SessionMeta } from './session.service';
 import { GoogleProfile } from './strategies/google.strategy';
 import { Public } from '../../common/decorators/public.decorator';
+import { SelfService } from './decorators/self-service.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('auth')
@@ -166,6 +167,7 @@ export class AuthController {
   // Session management (authenticated)
   // ─────────────────────────────────────────────
 
+  @SelfService()
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('access-token')
@@ -176,6 +178,7 @@ export class AuthController {
     return { message: 'Logged out successfully' };
   }
 
+  @SelfService()
   @Post('logout-all')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('access-token')
@@ -194,6 +197,7 @@ export class AuthController {
     return this.authService.getActiveSessions(user.sub, user.sessionId);
   }
 
+  @SelfService()
   @Delete('sessions/:sessionId')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('access-token')
@@ -222,6 +226,7 @@ export class AuthController {
     return this.authService.getProfile(user.businessId, user.sub);
   }
 
+  @SelfService()
   @Post('change-password')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('access-token')

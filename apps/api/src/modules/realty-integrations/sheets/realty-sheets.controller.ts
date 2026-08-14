@@ -15,6 +15,8 @@ import { ConfigService } from '@nestjs/config';
 import { SheetsExportService } from './sheets-export.service';
 import { TenantId } from '../../../common/decorators/tenant-id.decorator';
 import { Public } from '../../../common/decorators/public.decorator';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { TeamMemberRole } from '@gosumo/database';
 
 /**
  * RealtySheetsController — the settings-UI surface for the Google Sheets export
@@ -83,6 +85,7 @@ export class RealtySheetsController {
   }
 
   @Delete()
+  @Roles(TeamMemberRole.MANAGER)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Disconnect Google Sheets' })
   @ApiResponse({ status: 204, description: 'Deleted; no content returned' })

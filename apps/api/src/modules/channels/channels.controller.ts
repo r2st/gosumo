@@ -23,6 +23,8 @@ interface ChannelListResponse {
   cursor: string | null;
 }
 import { ConnectChannelDto } from "./dto";
+import { Roles } from '../auth/decorators/roles.decorator';
+import { TeamMemberRole } from '@gosumo/database';
 
 /**
  * ChannelsController — connect, inspect and disconnect a business's messaging
@@ -53,6 +55,7 @@ export class ChannelsController {
   }
 
   @Post(":channelType/connect")
+  @Roles(TeamMemberRole.MANAGER)
   @ApiOperation({ summary: "Connect a channel, or re-connect an existing one" })
   @ApiParam({
     name: "channelType",
@@ -79,6 +82,7 @@ export class ChannelsController {
   }
 
   @Delete(":channelId")
+  @Roles(TeamMemberRole.MANAGER)
   @ApiOperation({
     summary: "Disconnect a channel",
     description: "Soft delete — the channel row is retained with `deleted_at` set.",
@@ -94,6 +98,7 @@ export class ChannelsController {
   }
 
   @Post(":channelId/test")
+  @Roles(TeamMemberRole.MANAGER)
   @ApiOperation({
     summary: "Probe a connected channel's stored credentials",
     description:

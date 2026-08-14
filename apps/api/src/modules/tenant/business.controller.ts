@@ -7,6 +7,8 @@ import { PrismaService } from '../../common/services/prisma.service';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { UpdateBusinessDto } from './dto/update-business.dto';
 import { UpdateBusinessSettingsDto } from './dto/update-business-settings.dto';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { TeamMemberRole } from '@gosumo/database';
 
 @ApiTags('business')
 @Controller('business')
@@ -27,6 +29,7 @@ export class BusinessController {
   }
 
   @Patch('me')
+  @Roles(TeamMemberRole.MANAGER)
   @ApiOperation({ summary: 'Update current business profile' })
   @ApiResponse({ status: 200, description: 'The updated business profile' })
   async updateMe(@TenantId() businessId: string, @Body() dto: UpdateBusinessDto) {
@@ -53,6 +56,7 @@ export class BusinessController {
   }
 
   @Patch('settings')
+  @Roles(TeamMemberRole.MANAGER)
   @ApiOperation({ summary: 'Update combined business settings' })
   @ApiResponse({ status: 200, description: 'The updated business settings' })
   async updateSettings(@TenantId() businessId: string, @Body() dto: UpdateBusinessSettingsDto) {
