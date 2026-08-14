@@ -65,19 +65,29 @@ const asMutation = (mutate: ReturnType<typeof vi.fn>) => ({
   isError: false,
 });
 
+/**
+ * The three lookups the page reads are separate requests that resolve at their
+ * own pace, so each has to be nullable here — the page has to survive rendering
+ * before any one of them has landed.
+ */
+type LookupLead = { id: string; name: string | null; whatsappPhone: string };
+/** Set when the visits request has resolved to nothing at all. */
+let visitsMissing = false;
+let projectsPayload: { id: string; name: string; locality: string }[] | undefined;
+let leadsPayload: { data: LookupLead[] } | undefined;
+let bookFailed = false;
+
 vi.mock('@/hooks/use-realty', () => ({
   useSiteVisits: () => ({
-    data: { data: visits },
+    data: visitsMissing ? undefined : { data: visits },
     isLoading: visitsState.isLoading,
     isError: visitsState.isError,
     error: visitsState.isError ? new Error('boom') : undefined,
     refetch,
   }),
-  useProjects: () => ({ data: [{ id: 'p1', name: 'Prestige Lakeside', locality: 'Whitefield' }] }),
-  useLeads: () => ({
-    data: { data: [{ id: 'lead-abcdef12', name: 'Asha Rao', whatsappPhone: '+919800000001' }] },
-  }),
-  useBookVisit: () => asMutation(mutations.book),
+  useProjects: () => ({ data: projectsPayload }),
+  useLeads: () => ({ data: leadsPayload }),
+  useBookVisit: () => ({ ...asMutation(mutations.book), isError: bookFailed }),
   useConfirmVisit: () => asMutation(mutations.confirm),
   useCancelVisit: () => asMutation(mutations.cancel),
   useCompleteVisit: () => asMutation(mutations.complete),
@@ -99,6 +109,10 @@ import SiteVisitsPage from './page';
 
 beforeEach(() => {
   visits = [makeVisit()];
+  visitsMissing = false;
+  projectsPayload = [{ id: 'p1', name: 'Prestige Lakeside', locality: 'Whitefield' }];
+  leadsPayload = { data: [{ id: 'lead-abcdef12', name: 'Asha Rao', whatsappPhone: '+919800000001' }] };
+  bookFailed = false;
   visitsState = { isLoading: false, isError: false };
   role = 'STAFF';
   vi.clearAllMocks();
@@ -333,6 +347,62 @@ describe('SiteVisitsPage book modal', () => {
     expect(Array.from(projectSelect.options).map((o) => o.textContent)).toContain(
       'Prestige Lakeside · Whitefield',
     );
+  });
+
+  it('labels a lead with no name by its phone rather than a blank option', () => {
+    // Portal leads arrive with a phone and nothing else; an unlabelled option
+    // is unpickable, which quietly makes those leads unbookable.
+    leadsPayload = { data: [{ id: 'lead-noname', name: null, whatsappPhone: '+919812345678' }] };
+    const dialog = openBooking();
+    const [leadSelect] = Array.from(dialog.querySelectorAll('select'));
+    expect(Array.from(leadSelect.options).map((o) => o.textContent)).toContain(
+      'Unknown · +919812345678',
+    );
+  });
+
+  it('opens with empty pickers while the lead and project lists are still loading', () => {
+    leadsPayload = undefined;
+    projectsPayload = undefined;
+    const dialog = openBooking();
+    const [leadSelect, projectSelect] = Array.from(dialog.querySelectorAll('select'));
+
+    // Only the placeholder option in each.
+    expect(leadSelect.options).toHaveLength(1);
+    expect(projectSelect.options).toHaveLength(1);
+    expect(within(dialog).getByRole('button', { name: 'Book visit' })).toBeDisabled();
+  });
+
+  it('omits an empty duration and empty notes instead of sending blanks', () => {
+    const dialog = openBooking();
+    const [leadSelect, projectSelect] = Array.from(dialog.querySelectorAll('select'));
+    fireEvent.change(leadSelect, { target: { value: 'lead-abcdef12' } });
+    fireEvent.change(projectSelect, { target: { value: 'p1' } });
+    fireEvent.change(dialog.querySelector('input[type="datetime-local"]') as HTMLInputElement, {
+      target: { value: '2026-09-01T11:00' },
+    });
+    fireEvent.change(dialog.querySelector('input[type="number"]') as HTMLInputElement, {
+      target: { value: '' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Book visit' }));
+
+    expect(mutations.book).toHaveBeenCalledWith(
+      expect.objectContaining({ durationMinutes: undefined, notes: undefined }),
+      expect.anything(),
+    );
+  });
+
+  it('says the booking failed rather than closing as though it worked', () => {
+    bookFailed = true;
+    const dialog = openBooking();
+    expect(within(dialog).getByText(/Could not book the visit/)).toBeInTheDocument();
+  });
+});
+
+describe('SiteVisitsPage partial payloads', () => {
+  it('shows the empty state when the visits request resolved to nothing', () => {
+    visitsMissing = true;
+    render(<SiteVisitsPage />);
+    expect(screen.getByText('No site visits yet')).toBeInTheDocument();
   });
 });
 
