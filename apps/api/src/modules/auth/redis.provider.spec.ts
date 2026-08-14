@@ -13,6 +13,7 @@ import {
   RedisClient,
   RedisLifecycle,
   REDIS_CLIENT,
+  REDIS_MAX_RETRIES_PER_REQUEST,
   REDIS_QUIT_TIMEOUT_MS,
 } from './redis.provider';
 
@@ -66,6 +67,36 @@ describe('redisProvider', () => {
     // Passing `password: undefined` makes ioredis send an empty AUTH, which a
     // server with no password configured rejects outright.
     expect('password' in opts).toBe(false);
+  });
+
+  describe('behaviour when Redis is unreachable', () => {
+    const optsFor = (values: Record<string, unknown> = {}) => {
+      const factory = (redisProvider as unknown as { useFactory: Factory }).useFactory;
+      factory(configWith(values));
+      return mockRedisCtor.mock.calls[0]![0] as Record<string, unknown>;
+    };
+
+    it('bounds the per-command retries so an outage fails instead of hanging', () => {
+      // `null` here means retry forever. With Redis down, every session lookup
+      // and every login rate-limit check sat in the offline queue and never
+      // settled: no error to catch, no timeout to trip, and the request hung
+      // holding its connection. A bounded count turns the outage into an error
+      // the callers can act on.
+      expect(optsFor().maxRetriesPerRequest).toBe(REDIS_MAX_RETRIES_PER_REQUEST);
+    });
+
+    it('does not disable the retry limit', () => {
+      const value = optsFor().maxRetriesPerRequest;
+      expect(value).not.toBeNull();
+      expect(typeof value).toBe('number');
+      expect(value as number).toBeGreaterThan(0);
+    });
+
+    it('keeps the limit small enough to fail inside a request', () => {
+      // ioredis backs off between retries; a large ceiling would leave the
+      // caller waiting long enough that the hang is back in all but name.
+      expect(REDIS_MAX_RETRIES_PER_REQUEST).toBeLessThanOrEqual(5);
+    });
   });
 });
 

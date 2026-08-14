@@ -1,6 +1,7 @@
 import { Logger, Provider } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
+import { REDIS_MAX_RETRIES_PER_REQUEST } from '../auth/redis.provider';
 
 /**
  * Injection token for the analytics cache store. The dashboard summary is
@@ -45,7 +46,11 @@ export const analyticsCacheProvider: Provider = {
       ...(password && { password }),
       host,
       port,
-      maxRetriesPerRequest: null,
+      // Bounded rather than `null` (retry forever). A cache is the one
+      // dependency that must fail rather than block: AnalyticsService wraps
+      // every call here in a fail-open catch that falls back to the live query,
+      // and that catch is unreachable if the command never settles.
+      maxRetriesPerRequest: REDIS_MAX_RETRIES_PER_REQUEST,
       lazyConnect: false,
       // Namespaced so analytics cache keys never collide with other modules.
       keyPrefix: '',

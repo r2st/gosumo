@@ -32,6 +32,29 @@ export interface RedisClient {
   disconnect?(): void;
 }
 
+/**
+ * How many times ioredis may retry a single command while the connection is
+ * down before failing it.
+ *
+ * This was `null`, which reads like "no special handling" but means *retry
+ * forever*: with Redis unreachable, every command sat in the offline queue
+ * indefinitely and the awaiting request never resolved — no error, no timeout,
+ * no response. A Redis outage stopped being a degraded API and became a hung
+ * one, with connections held open until the client gave up.
+ *
+ * Bounding it turns an outage back into something the callers can act on. The
+ * analytics cache already wraps every call in a fail-open catch that falls back
+ * to the live query; that catch could never fire against a promise that never
+ * settled. Auth fails closed on the error instead, which is the correct
+ * direction for a session lookup and a login rate limiter — a 500 is the right
+ * answer, and killing Redis must not be a way to bypass a lockout.
+ *
+ * BullMQ genuinely does require `null` for its blocking connections, but that
+ * is a separate client built by `BullModule` from its own config; nothing here
+ * issues a blocking command.
+ */
+export const REDIS_MAX_RETRIES_PER_REQUEST = 3;
+
 export const redisProvider: Provider = {
   provide: REDIS_CLIENT,
   inject: [ConfigService],
@@ -45,9 +68,8 @@ export const redisProvider: Provider = {
       ...(password && { password }),
       host,
       port,
-      // Required by ioredis when used with BullMQ-style blocking commands;
-      // also avoids unbounded retries hanging requests in this module.
-      maxRetriesPerRequest: null,
+      // Bounded, so a Redis outage fails requests instead of hanging them.
+      maxRetriesPerRequest: REDIS_MAX_RETRIES_PER_REQUEST,
       lazyConnect: false,
     });
 
@@ -64,8 +86,8 @@ export const redisProvider: Provider = {
  *
  * `quit()` waits for the command queue to drain and for the server to answer.
  * If Redis is the reason the process is being restarted, that answer never
- * arrives and — with `maxRetriesPerRequest: null` set above — ioredis will
- * keep retrying rather than failing, so an unbounded await here would hang
+ * arrives — `quit()` is not a normal command and is not covered by
+ * {@link REDIS_MAX_RETRIES_PER_REQUEST} — so an unbounded await here would hang
  * shutdown until the supervisor's kill timer fires.
  */
 export const REDIS_QUIT_TIMEOUT_MS = 5_000;

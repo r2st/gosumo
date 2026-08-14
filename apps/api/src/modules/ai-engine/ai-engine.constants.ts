@@ -77,6 +77,31 @@ export const RAG_SCORE_THRESHOLD = 0.65;
 export const LLM_MAX_TOKENS = 1024;
 /** LLM call timeout (ms) before falling back to escalation. */
 export const LLM_TIMEOUT_MS = 8_000;
+
+/**
+ * Consecutive OpenRouter outages that trip the circuit breaker in
+ * `LlmClientService`.
+ *
+ * Retry-and-timeout alone is the right shape for a blip and the wrong shape for
+ * an outage: with OpenRouter down, every single turn still pays two full
+ * {@link LLM_TIMEOUT_MS} waits plus the backoff before it can escalate, and it
+ * pays that in a BullMQ worker slot. The queue backs up behind a dependency
+ * that is already known to be unreachable, so the outage costs the tenant every
+ * other AI-handled conversation as well.
+ *
+ * Once this many calls in a row have failed, further calls fail immediately.
+ * The pipeline's escalation path is unchanged — it just runs at once rather
+ * than seventeen seconds later.
+ */
+export const LLM_BREAKER_FAILURE_THRESHOLD = 5;
+
+/**
+ * How long the breaker stays open before letting a single probe through.
+ *
+ * Short enough that a recovered provider is picked up on the next turn or two,
+ * long enough that a sustained outage is not re-probed by every message.
+ */
+export const LLM_BREAKER_COOLDOWN_MS = 30_000;
 /** Number of inbound exchanges with an unchanged intent that triggers a loop. */
 export const LOOP_DETECTION_THRESHOLD = 3;
 

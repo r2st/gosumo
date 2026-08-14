@@ -6,6 +6,7 @@ import {
   AnalyticsCache,
   analyticsCacheProvider,
 } from './analytics.cache';
+import { REDIS_MAX_RETRIES_PER_REQUEST } from '../auth/redis.provider';
 
 jest.mock('ioredis');
 
@@ -101,10 +102,32 @@ describe('analyticsCacheProvider', () => {
       expect(RedisMock.mock.calls[0][0]).not.toHaveProperty('password');
     });
 
-    it('disables the per-request retry cap so a slow Redis cannot wedge the dashboard', () => {
+    it('caps the per-request retries so an unreachable Redis cannot wedge the dashboard', () => {
+      // This asserted `null` — no cap, retry forever — on the reasoning that a
+      // cap would make a slow Redis fail. It has the trade backwards for a
+      // cache: uncapped, a command issued while Redis is down never settles,
+      // and AnalyticsService's fail-open catch has no error to catch. The
+      // dashboard hung instead of falling back to the live query.
       build();
       expect(RedisMock).toHaveBeenCalledWith(
-        expect.objectContaining({ maxRetriesPerRequest: null, lazyConnect: false }),
+        expect.objectContaining({
+          maxRetriesPerRequest: REDIS_MAX_RETRIES_PER_REQUEST,
+          lazyConnect: false,
+        }),
+      );
+    });
+
+    it('never reverts to an unbounded retry count', () => {
+      build();
+      expect(RedisMock.mock.calls[0][0].maxRetriesPerRequest).not.toBeNull();
+    });
+
+    it('shares the auth bound rather than keeping its own', () => {
+      // Two Redis clients drifting apart on this is how one surface degrades
+      // and the other hangs during the same outage.
+      build();
+      expect(RedisMock.mock.calls[0][0].maxRetriesPerRequest).toBe(
+        REDIS_MAX_RETRIES_PER_REQUEST,
       );
     });
   });
