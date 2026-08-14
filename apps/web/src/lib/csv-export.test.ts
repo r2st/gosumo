@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { toCsv, leadsToCsv, LEAD_CSV_COLUMNS } from './csv-export';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { downloadCsv, toCsv, leadsToCsv, LEAD_CSV_COLUMNS } from './csv-export';
 import type { Lead } from './realty-types';
 
 const BOM = '﻿';
@@ -100,5 +100,79 @@ describe('leadsToCsv', () => {
     ]);
     // Budget cell is empty when both bounds are absent.
     expect(none.slice(BOM.length).split('\r\n')[1]).toContain('Asha Rao');
+  });
+});
+
+describe('downloadCsv', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('clicks a temporary anchor carrying the filename, then cleans it up', () => {
+    // The whole export button rides on this: an anchor is created, clicked and
+    // removed within one tick, so nothing observable is left in the document.
+    const createObjectURL = vi.fn(() => 'blob:mock-url');
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL });
+
+    const click = vi.fn();
+    const realCreate = document.createElement.bind(document);
+    const anchor = realCreate('a');
+    anchor.click = click;
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) =>
+      tag === 'a' ? anchor : realCreate(tag),
+    );
+
+    downloadCsv('leads.csv', 'A,B\r\n1,2');
+
+    expect(click).toHaveBeenCalledOnce();
+    expect(anchor.download).toBe('leads.csv');
+    expect(anchor.href).toContain('blob:mock-url');
+    expect(createObjectURL).toHaveBeenCalledOnce();
+    // The object URL has to be revoked or every export leaks the blob for the
+    // lifetime of the tab.
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock-url');
+    expect(document.body.contains(anchor)).toBe(false);
+
+    vi.unstubAllGlobals();
+  });
+
+  it('builds a UTF-8 text/csv blob so Excel reads ₹ and Devanagari correctly', () => {
+    let seen: BlobPropertyBag | undefined;
+    const createObjectURL = vi.fn(() => 'blob:mock-url');
+    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
+    // Stub the click too: letting jsdom follow a real anchor logs a
+    // "Not implemented: navigation" warning on every run.
+    const realCreate = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      const el = realCreate(tag);
+      if (tag === 'a') el.click = vi.fn();
+      return el;
+    });
+    const RealBlob = globalThis.Blob;
+    vi.stubGlobal(
+      'Blob',
+      class extends RealBlob {
+        constructor(parts: BlobPart[], options?: BlobPropertyBag) {
+          super(parts, options);
+          seen = options;
+        }
+      },
+    );
+
+    downloadCsv('leads.csv', 'A\r\n₹1');
+
+    expect(seen?.type).toBe('text/csv;charset=utf-8;');
+    vi.unstubAllGlobals();
+  });
+
+  it('is a no-op on the server, where there is no document', () => {
+    // Next.js may evaluate this module during SSR; touching `document` there
+    // would crash the render rather than just skipping the download.
+    const doc = globalThis.document;
+    // @ts-expect-error — deliberately simulating the server environment.
+    delete globalThis.document;
+    expect(() => downloadCsv('leads.csv', 'A,B')).not.toThrow();
+    globalThis.document = doc;
   });
 });
