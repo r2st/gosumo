@@ -1,9 +1,9 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/api-client';
+import { apiPaginated, apiRequest } from '@/lib/api-client';
 import { toQuery } from '@/lib/utils';
-import type { Order, PaginatedResponse } from '@/lib/types';
+import type { Order } from '@/lib/types';
 import type { OrderDetail, OrderListQuery, OrderStats } from '@/lib/commerce-types';
 
 const ORDERS_KEY = ['orders'];
@@ -11,7 +11,7 @@ const ORDERS_KEY = ['orders'];
 export function useOrders(filters: OrderListQuery = {}) {
   return useQuery({
     queryKey: [...ORDERS_KEY, filters],
-    queryFn: ({ signal }) => apiRequest<PaginatedResponse<Order>>(`/orders${toQuery({ ...filters })}`, { signal }),
+    queryFn: ({ signal }) => apiPaginated<Order>(`/orders${toQuery({ ...filters })}`, { signal }),
   });
 }
 

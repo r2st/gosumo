@@ -1,9 +1,8 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/api-client';
+import { apiPaginated, apiRequest } from '@/lib/api-client';
 import { toQuery } from '@/lib/utils';
-import type { PaginatedResponse } from '@/lib/types';
 import type {
   ApiKey,
   CreatedApiKey,
@@ -55,7 +54,7 @@ export function useTestIntegration() {
 export function useApiKeys() {
   return useQuery({
     queryKey: API_KEYS_KEY,
-    queryFn: () => apiRequest<PaginatedResponse<ApiKey>>(`/api-keys${toQuery({ limit: 100 })}`),
+    queryFn: () => apiPaginated<ApiKey>(`/api-keys${toQuery({ limit: 100 })}`),
   });
 }
 

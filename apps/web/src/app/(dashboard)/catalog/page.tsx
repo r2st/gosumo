@@ -205,8 +205,7 @@ export default function CatalogPage() {
 
         {data && data.data.length > 0 && (
           <p className="text-xs text-muted-foreground">
-            Showing {data.data.length} of {data.pagination?.total ?? (data as any).total ?? '?'}{' '}
-            items
+            Showing {data.data.length} of {data.pagination.total} items
           </p>
         )}
       </div>

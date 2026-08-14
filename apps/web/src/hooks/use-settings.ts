@@ -1,9 +1,9 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/api-client';
+import { apiPaginated, apiRequest } from '@/lib/api-client';
 import { toQuery } from '@/lib/utils';
-import type { BusinessProfile, PaginatedResponse } from '@/lib/types';
+import type { BusinessProfile } from '@/lib/types';
 import type {
   BusinessSettings,
   CalendarIntegration,
@@ -56,7 +56,7 @@ export function useUpdateBusinessSettings() {
 export function useTeam() {
   return useQuery({
     queryKey: ['team'],
-    queryFn: () => apiRequest<PaginatedResponse<TeamMember>>(`/auth/team${toQuery({ limit: 100 })}`),
+    queryFn: () => apiPaginated<TeamMember>(`/auth/team${toQuery({ limit: 100 })}`),
   });
 }
 
@@ -89,7 +89,7 @@ export function useRemoveMember() {
 export function useChannels() {
   return useQuery({
     queryKey: ['channels'],
-    queryFn: () => apiRequest<PaginatedResponse<Channel>>(`/channels${toQuery({ limit: 100 })}`),
+    queryFn: () => apiPaginated<Channel>(`/channels${toQuery({ limit: 100 })}`),
   });
 }
 

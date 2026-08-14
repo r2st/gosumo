@@ -3,7 +3,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/api-client';
 import { toQuery } from '@/lib/utils';
-import type { PaginatedResponse } from '@/lib/types';
 import type { AppNotification } from '@/lib/feature-types';
 
 const KEY = ['notifications'];
@@ -17,7 +16,11 @@ export function useNotifications() {
   return useQuery({
     queryKey: KEY,
     queryFn: async (): Promise<NotificationFeed> => {
-      const res = await apiRequest<PaginatedResponse<AppNotification> & { unreadCount?: number }>(
+      // Deliberately not `apiPaginated`: this endpoint carries an extra
+      // `unreadCount` alongside the page, and only `data` is read here — so
+      // the flat backend shape is described as-is rather than claimed to be
+      // a `PaginatedResponse` whose `pagination` would not exist at runtime.
+      const res = await apiRequest<{ data: AppNotification[]; unreadCount?: number }>(
         `/notifications${toQuery({ limit: 20 })}`,
       );
       const unreadCount = res.unreadCount ?? res.data.filter((n) => !n.read).length;

@@ -1,9 +1,9 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/api-client';
+import { apiPaginated, apiRequest } from '@/lib/api-client';
 import { toQuery } from '@/lib/utils';
-import type { CatalogItem, PaginatedResponse } from '@/lib/types';
+import type { CatalogItem } from '@/lib/types';
 import type {
   CatalogItemListQuery,
   CategoriesResponse,
@@ -21,7 +21,7 @@ export function useCatalogItems(filters: CatalogItemListQuery = {}) {
   return useQuery({
     queryKey: [...ITEMS_KEY, filters],
     queryFn: ({ signal }) =>
-      apiRequest<PaginatedResponse<CatalogItem>>(`/catalog/items${toQuery({ ...filters })}`, { signal }),
+      apiPaginated<CatalogItem>(`/catalog/items${toQuery({ ...filters })}`, { signal }),
   });
 }
 

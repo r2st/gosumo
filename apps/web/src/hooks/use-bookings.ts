@@ -1,9 +1,9 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/api-client';
+import { apiPaginated, apiRequest } from '@/lib/api-client';
 import { toQuery } from '@/lib/utils';
-import type { Booking, PaginatedResponse } from '@/lib/types';
+import type { Booking } from '@/lib/types';
 import type { BusinessSettings } from '@/lib/feature-types';
 import type {
   BookingListQuery,
@@ -21,7 +21,7 @@ const SETTINGS_KEY = ['business', 'settings'];
 export function useBookings(filters: BookingListQuery = {}) {
   return useQuery({
     queryKey: [...BOOKINGS_KEY, filters],
-    queryFn: ({ signal }) => apiRequest<PaginatedResponse<Booking>>(`/bookings${toQuery({ ...filters })}`, { signal }),
+    queryFn: ({ signal }) => apiPaginated<Booking>(`/bookings${toQuery({ ...filters })}`, { signal }),
   });
 }
 

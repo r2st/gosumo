@@ -159,13 +159,32 @@ function safeJson(text: string): unknown {
 }
 
 /**
+ * Fetch a list endpoint and return it in the frontend's `{ data, pagination }`
+ * shape.
+ *
+ * Always use this instead of `apiRequest<PaginatedResponse<T>>` for a list
+ * route. `apiRequest` casts, it does not convert — so asking it for a
+ * `PaginatedResponse<T>` from a backend that answers with flat fields hands
+ * back an object whose `pagination` is `undefined` while the type says
+ * otherwise. Anything that then reads `data.pagination.total` throws at
+ * runtime, and no test catches it because the mock supplies the shape the type
+ * promised.
+ */
+export async function apiPaginated<T>(
+  path: string,
+  options?: RequestOptions,
+): Promise<PaginatedResponse<T>> {
+  return normalizePaginated<T>(await request<unknown>(path, options));
+}
+
+/**
  * Normalize a paginated API response. The backend returns flat pagination
  * fields ({ data, total, page, limit, totalPages }) but the frontend types
  * expect a nested { data, pagination } envelope. This function bridges the gap.
  */
 function normalizePaginated<T>(raw: unknown): PaginatedResponse<T> {
   const obj = raw as Record<string, unknown>;
-  if (obj.pagination) return obj as PaginatedResponse<T>;
+  if (obj.pagination) return obj as unknown as PaginatedResponse<T>;
   return {
     data: (obj.data ?? []) as T[],
     pagination: {

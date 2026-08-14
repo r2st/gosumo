@@ -20,7 +20,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createQueryHarness, type MutationLike, type QueryHarness } from '@/__tests__/query-harness';
 import * as hooks from './use-orders';
 
-vi.mock('@/lib/api-client', () => ({ apiRequest: vi.fn() }));
+// One spy behind both entry points: these tests assert *which URL* a hook
+// requests, and that is the same question whether it goes through
+// `apiRequest` or the paginated wrapper. Which of the two a list hook must
+// use is asserted separately, in src/hooks/paginated-hooks.test.ts.
+vi.mock('@/lib/api-client', () => {
+  const spy = vi.fn();
+  return { apiRequest: spy, apiPaginated: spy };
+});
 
 const { apiRequest } = (await import('@/lib/api-client')) as unknown as {
   apiRequest: ReturnType<typeof vi.fn>;

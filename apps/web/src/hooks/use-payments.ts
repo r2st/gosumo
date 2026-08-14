@@ -1,9 +1,9 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/api-client';
+import { apiPaginated, apiRequest } from '@/lib/api-client';
 import { toQuery } from '@/lib/utils';
-import type { PaginatedResponse, Payment, PaymentRefund } from '@/lib/types';
+import type { Payment, PaymentRefund } from '@/lib/types';
 import type {
   CreatePaymentLinkRequest,
   PaymentLinkResponse,
@@ -17,7 +17,7 @@ const PAYMENTS_KEY = ['payments'];
 export function usePayments(filters: PaymentListQuery = {}) {
   return useQuery({
     queryKey: [...PAYMENTS_KEY, filters],
-    queryFn: ({ signal }) => apiRequest<PaginatedResponse<Payment>>(`/payments${toQuery({ ...filters })}`, { signal }),
+    queryFn: ({ signal }) => apiPaginated<Payment>(`/payments${toQuery({ ...filters })}`, { signal }),
   });
 }
 
