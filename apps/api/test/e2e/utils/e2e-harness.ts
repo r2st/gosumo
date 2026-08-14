@@ -30,6 +30,7 @@ import { SmsAdapter } from '../../../src/modules/channel-adapter/adapters/sms.ad
 import { EmailAdapter } from '../../../src/modules/channel-adapter/adapters/email.adapter';
 import { WebChatAdapter } from '../../../src/modules/channel-adapter/adapters/webchat.adapter';
 import { WebChatGateway } from '../../../src/modules/channel-adapter/gateways/webchat.gateway';
+import { WebChatThrottle } from '../../../src/modules/channel-adapter/gateways/webchat-throttle';
 import { PrismaService } from '../../../src/common/services/prisma.service';
 
 // ─────────────────────────────────────────────
@@ -155,6 +156,7 @@ export async function createHarness(options: CreateHarnessOptions = {}): Promise
       EmailAdapter,
       WebChatAdapter,
       WebChatGateway,
+      WebChatThrottle,
       { provide: ConfigService, useValue: configMock },
       { provide: EventEmitter2, useValue: emitter },
       { provide: PrismaService, useValue: prisma },

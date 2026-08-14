@@ -9,6 +9,7 @@ import { SmsAdapter } from './adapters/sms.adapter';
 import { WebChatAdapter } from './adapters/webchat.adapter';
 import { EmailAdapter } from './adapters/email.adapter';
 import { WebChatGateway } from './gateways/webchat.gateway';
+import { WebChatThrottle } from './gateways/webchat-throttle';
 import { PrismaService } from '../../common/services/prisma.service';
 import { ChannelsModule } from '../channels/channels.module';
 
@@ -42,6 +43,7 @@ import { ChannelsModule } from '../channels/channels.module';
     WebChatAdapter,
     EmailAdapter,
     WebChatGateway,
+    WebChatThrottle,
     PrismaService,
   ],
   exports: [ChannelAdapterService],

@@ -10,6 +10,7 @@ import {
   signWebChatSession,
   verifyWebChatSession,
 } from '../../../common/utils/webchat-session.util';
+import { WebChatThrottle, WEBCHAT_THROTTLE_RULES } from './webchat-throttle';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
 const WIDGET_ID = '00000000-0000-4000-a000-000000000002';
@@ -56,6 +57,19 @@ function makeSocket(id = 'socket-1', query: Record<string, unknown> = {}): Socke
   } as unknown as Socket;
 }
 
+/**
+ * A socket whose handshake reveals a caller address. `makeSocket` deliberately
+ * does not — an unidentifiable caller is not chargeable — so the throttle tests
+ * are the only ones that need this.
+ */
+function makeSocketFrom(id: string, address: string): Socket {
+  return {
+    id,
+    handshake: { query: {}, address, headers: {} },
+    emit: jest.fn(),
+  } as unknown as Socket;
+}
+
 function makeConfig(secret: string = SECRET): ConfigService {
   return {
     get: jest.fn((key: string, fallback?: unknown) =>
@@ -68,15 +82,18 @@ describe('WebChatGateway', () => {
   let gateway: WebChatGateway;
   let prisma: PrismaMock;
   let eventEmitter: { emit: jest.Mock };
+  let throttle: WebChatThrottle;
 
   beforeEach(() => {
     prisma = makePrisma();
     eventEmitter = { emit: jest.fn() };
+    throttle = new WebChatThrottle();
     gateway = new WebChatGateway(
       prisma as unknown as PrismaService,
       eventEmitter as unknown as EventEmitter2,
       {} as unknown as ChannelAdapterService,
       makeConfig(),
+      throttle,
     );
     webchatResponseMap.clear();
   });
@@ -542,6 +559,7 @@ describe('WebChatGateway', () => {
           eventEmitter as unknown as EventEmitter2,
           {} as unknown as ChannelAdapterService,
           makeConfig(''),
+          new WebChatThrottle(),
         );
         const errorSpy = jest.spyOn(unsigned['logger'], 'error').mockImplementation();
 
@@ -615,6 +633,149 @@ describe('WebChatGateway', () => {
         expect(result.received).toBe(false);
         expect(prisma.messages.create).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  // ─────────────────────────────────────────────
+  // Abuse ceilings
+  // ─────────────────────────────────────────────
+
+  /**
+   * The gateway is a Socket.IO namespace, so neither `JwtAuthGuard` nor
+   * `AuthThrottleGuard` (which returns early on a non-HTTP context) reaches it.
+   * It is the one surface designed to be hit by anonymous visitors from
+   * arbitrary websites, and both of its events do unbounded work.
+   */
+  describe('rate limiting', () => {
+    beforeEach(() => {
+      jest.spyOn(gateway['logger'], 'warn').mockImplementation();
+      prisma.channel_accounts.findFirst.mockResolvedValue({
+        id: WIDGET_ID,
+        business_id: BUSINESS_ID,
+        metadata: {},
+      });
+      prisma.channel_contacts.findFirst.mockResolvedValue(null);
+      prisma.clients.create.mockImplementation(({ data }) => ({ ...data }));
+      prisma.channel_contacts.create.mockResolvedValue({});
+      prisma.conversations.findFirst.mockResolvedValue(null);
+      prisma.conversations.create.mockImplementation(({ data }) => ({ ...data }));
+    });
+
+    it('stops one host minting unbounded clients and conversations', async () => {
+      const { limit } = WEBCHAT_THROTTLE_RULES.session;
+
+      for (let i = 0; i < limit; i += 1) {
+        const ok = await gateway.handleInit(makeSocketFrom(`s-${i}`, '9.9.9.9'), {
+          widgetId: WIDGET_ID,
+        });
+        expect(ok.sessionId).toBeTruthy();
+      }
+      const blocked = await gateway.handleInit(makeSocketFrom('s-over', '9.9.9.9'), {
+        widgetId: WIDGET_ID,
+      });
+
+      expect(blocked).toEqual({
+        sessionId: '',
+        greeting: 'Too many chat sessions. Please try again shortly.',
+      });
+      // The ceiling has to bind before the inserts, not after them.
+      expect(prisma.clients.create).toHaveBeenCalledTimes(limit);
+      expect(prisma.conversations.create).toHaveBeenCalledTimes(limit);
+    });
+
+    it('rations per caller, so one abuser does not close the widget for everyone', async () => {
+      const { limit } = WEBCHAT_THROTTLE_RULES.session;
+      for (let i = 0; i < limit + 1; i += 1) {
+        await gateway.handleInit(makeSocketFrom(`s-${i}`, '9.9.9.9'), { widgetId: WIDGET_ID });
+      }
+
+      const other = await gateway.handleInit(makeSocketFrom('other', '10.0.0.1'), {
+        widgetId: WIDGET_ID,
+      });
+
+      expect(other.sessionId).toBeTruthy();
+    });
+
+    it('never charges a visitor for resuming, however often their connection drops', async () => {
+      // Reconnect replay is the case the signed token exists to serve; charging
+      // it would punish exactly the visitor the feature is for.
+      const first = await gateway.handleInit(makeSocketFrom('s-0', '9.9.9.9'), {
+        widgetId: WIDGET_ID,
+      });
+      prisma.channel_contacts.findFirst.mockResolvedValue({ client: { id: CLIENT_ID } });
+      prisma.conversations.findFirst.mockResolvedValue({ id: CONVERSATION_ID });
+
+      for (let i = 0; i < WEBCHAT_THROTTLE_RULES.session.limit * 2; i += 1) {
+        const again = await gateway.handleInit(makeSocketFrom(`r-${i}`, '9.9.9.9'), {
+          widgetId: WIDGET_ID,
+          sessionId: first.sessionId,
+        });
+        expect(rawSessionId(again.sessionId)).toBe(rawSessionId(first.sessionId));
+      }
+    });
+
+    it('charges a rejected token as a new session, so forging is not a way around the ceiling', async () => {
+      const { limit } = WEBCHAT_THROTTLE_RULES.session;
+
+      for (let i = 0; i < limit; i += 1) {
+        await gateway.handleInit(makeSocketFrom(`s-${i}`, '9.9.9.9'), {
+          widgetId: WIDGET_ID,
+          sessionId: 'unsigned-' + i,
+        });
+      }
+      const blocked = await gateway.handleInit(makeSocketFrom('s-over', '9.9.9.9'), {
+        widgetId: WIDGET_ID,
+        sessionId: 'unsigned-over',
+      });
+
+      expect(blocked.sessionId).toBe('');
+    });
+
+    it('caps the messages a single session can push into the AI pipeline', async () => {
+      const client = await initSession(gateway, prisma, 'socket-flood', 'flood-session');
+      prisma.messages.create.mockResolvedValue({});
+      prisma.conversations.update.mockResolvedValue({});
+      const { limit } = WEBCHAT_THROTTLE_RULES.message;
+
+      for (let i = 0; i < limit; i += 1) {
+        const ok = await gateway.handleMessage(client, { text: 'msg ' + i });
+        expect(ok.received).toBe(true);
+      }
+      const blocked = await gateway.handleMessage(client, { text: 'one too many' });
+
+      expect(blocked.received).toBe(false);
+      expect(prisma.messages.create).toHaveBeenCalledTimes(limit);
+      // A throttled message must not reach the pipeline either.
+      expect(
+        eventEmitter.emit.mock.calls.filter(([name]) => name === 'message.received'),
+      ).toHaveLength(limit);
+    });
+
+    it('caps a host across sessions, not just within one', async () => {
+      prisma.messages.create.mockResolvedValue({});
+      prisma.conversations.update.mockResolvedValue({});
+      prisma.channel_contacts.findFirst.mockResolvedValue({ client: { id: CLIENT_ID } });
+      prisma.conversations.findFirst.mockResolvedValue({ id: CONVERSATION_ID });
+
+      const { limit: perSession } = WEBCHAT_THROTTLE_RULES.message;
+      const { limit: perIp } = WEBCHAT_THROTTLE_RULES.messageIp;
+      const sessionsNeeded = Math.ceil(perIp / perSession) + 1;
+
+      let sent = 0;
+      let refused = 0;
+      for (let s = 0; s < sessionsNeeded; s += 1) {
+        const sock = makeSocketFrom(`sock-${s}`, '9.9.9.9');
+        await gateway.handleInit(sock, { widgetId: WIDGET_ID, sessionId: token(`sess-${s}`) });
+        for (let i = 0; i < perSession; i += 1) {
+          const r = await gateway.handleMessage(sock, { text: 'x' });
+          if (r.received) sent += 1;
+          else refused += 1;
+        }
+      }
+
+      // Spreading across fresh sessions cannot buy more than the host ceiling.
+      expect(sent).toBe(perIp);
+      expect(refused).toBeGreaterThan(0);
     });
   });
 

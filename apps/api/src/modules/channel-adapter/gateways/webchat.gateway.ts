@@ -24,6 +24,8 @@ import {
   signWebChatSession,
   verifyWebChatSession,
 } from "../../../common/utils/webchat-session.util";
+import { clientIp } from "../../../common/utils/client-ip.util";
+import { WebChatThrottle } from "./webchat-throttle";
 
 interface SessionContext {
   businessId: string;
@@ -56,7 +58,21 @@ export class WebChatGateway implements OnGatewayConnection, OnGatewayDisconnect 
     private readonly eventEmitter: EventEmitter2,
     private readonly channelAdapterService: ChannelAdapterService,
     private readonly configService: ConfigService,
+    private readonly throttle: WebChatThrottle,
   ) {}
+
+  /**
+   * The visitor's address, for rationing. Socket.IO's handshake carries the
+   * same headers an Express request would, so the reverse-proxy rules in
+   * {@link clientIp} apply unchanged. Best-effort grouping key only — nothing
+   * authenticates on it.
+   */
+  private callerIp(client: Socket): string | null {
+    return clientIp({
+      headers: client.handshake?.headers,
+      ip: client.handshake?.address,
+    });
+  }
 
   /**
    * Key the session-token HMAC is signed with.
@@ -139,12 +155,15 @@ export class WebChatGateway implements OnGatewayConnection, OnGatewayDisconnect 
     // minted for *this* widget — before letting it name a session; anything
     // that fails simply starts a fresh one.
     let sessionId: string;
+    let isNewSession: boolean;
     if (data.sessionId) {
       const verified = verifyWebChatSession(data.sessionId, secret, widgetId);
       if (verified) {
         sessionId = verified.sessionId;
+        isNewSession = false;
       } else {
         sessionId = generateId();
+        isNewSession = true;
         this.logger.warn(
           "Rejected WebChat session token for widget " + widgetId +
           " (forged, expired, or minted for another widget) — issuing a new session",
@@ -152,6 +171,19 @@ export class WebChatGateway implements OnGatewayConnection, OnGatewayDisconnect 
       }
     } else {
       sessionId = generateId();
+      isNewSession = true;
+    }
+
+    // Only *new* sessions are charged. A fresh one inserts a client, a contact
+    // and a conversation, then fans `conversation.created` out across the
+    // platform; a resume does none of that. Charging resumes too would punish
+    // a visitor whose connection keeps dropping, which is the case the token
+    // replay exists to serve.
+    if (isNewSession && !this.throttle.consume("session", this.callerIp(client))) {
+      this.logger.warn(
+        "WebChat session rate limit reached for widget " + widgetId + " — refusing to open a new session",
+      );
+      return { sessionId: "", greeting: "Too many chat sessions. Please try again shortly." };
     }
 
     // Only the signed form leaves the server. Everything below — the maps, the
@@ -234,6 +266,19 @@ export class WebChatGateway implements OnGatewayConnection, OnGatewayDisconnect 
     const ctx = this.sessionContext.get(sessionId);
     if (!ctx) {
       this.logger.warn("No session context for " + sessionId);
+      return { received: false, messageId };
+    }
+
+    // Every accepted message reaches the AI pipeline, which is an outbound LLM
+    // call — so this ceiling bounds spend, not just rows. Both dimensions are
+    // charged: the per-session one is the per-visitor ceiling, and the per-IP
+    // one stops a host spending its whole session quota's worth of messages.
+    const ip = this.callerIp(client);
+    if (
+      !this.throttle.consume("message", sessionId) ||
+      !this.throttle.consume("messageIp", ip)
+    ) {
+      this.logger.warn("WebChat message rate limit reached for session " + sessionId);
       return { received: false, messageId };
     }
 
