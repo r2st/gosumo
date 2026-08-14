@@ -386,6 +386,171 @@ describe('ProductFormModal variants', () => {
   });
 });
 
+/**
+ * Loading an existing item back into the form is the path that has to survive
+ * every nullable column in `catalog_items`. A missing `unit` or `taxRate` that
+ * comes back as the string "null" — or a variant list that loses its SKUs on
+ * the way in — is only visible on the next save, when the operator overwrites
+ * good data with the form's misreading of it.
+ */
+describe('ProductFormModal — loading an existing item', () => {
+  it('seeds every field from the item, including its variants', () => {
+    renderForm(
+      makeItem({
+        variants: [
+          {
+            name: 'Large',
+            sku: 'CB-01-L',
+            price: 30_000,
+            discountPrice: 27_000,
+            stockQuantity: 4,
+            isActive: true,
+            attributes: { size: 'L' },
+            imageUrl: 'https://cdn.example/l.jpg',
+          },
+        ],
+      } as Partial<CatalogItem>),
+    );
+
+    expect(nameInput()).toHaveValue('Cold Brew');
+    expect(screen.getByPlaceholderText('One-line summary')).toHaveValue('Iced coffee');
+    expect(screen.getByPlaceholderText('Full details shown to customers')).toHaveValue('House blend');
+    expect(screen.getByPlaceholderText('SKU-001')).toHaveValue('CB-01');
+    expect(screen.getByPlaceholderText('piece, kg, hour')).toHaveValue('cup');
+    expect(screen.getByPlaceholderText('bestseller, vegan')).toHaveValue('bestseller, vegan');
+    expect(screen.getByDisplayValue('Large')).toBeInTheDocument();
+    // Price comes back as rupees; stock as a plain count.
+    expect(screen.getByDisplayValue('300')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('4')).toBeInTheDocument();
+  });
+
+  it('edits a loaded variant’s stock, and clears it back to unset', () => {
+    renderForm(
+      makeItem({
+        variants: [
+          { name: 'Large', sku: 'CB-01-L', price: 30_000, stockQuantity: 4, isActive: true, attributes: {} },
+        ],
+      } as Partial<CatalogItem>),
+    );
+
+    const stock = screen.getByDisplayValue('4');
+    fireEvent.change(stock, { target: { value: '9' } });
+    fireEvent.submit(document.querySelector('#product-form') as HTMLFormElement);
+    expect(mutations.update.mock.calls[0][0].body.variants[0].stockQuantity).toBe(9);
+
+    // Emptying the box means "not tracked", not zero.
+    fireEvent.change(screen.getByDisplayValue('9'), { target: { value: '' } });
+    fireEvent.submit(document.querySelector('#product-form') as HTMLFormElement);
+    expect(mutations.update.mock.calls[1][0].body.variants[0].stockQuantity).toBeUndefined();
+  });
+
+  it('round-trips a loaded variant back to the API unchanged', () => {
+    const variant = {
+      name: 'Large',
+      sku: 'CB-01-L',
+      price: 30_000,
+      discountPrice: 27_000,
+      stockQuantity: 4,
+      isActive: true,
+      attributes: { size: 'L' },
+      imageUrl: 'https://cdn.example/l.jpg',
+    };
+    renderForm(makeItem({ variants: [variant] } as Partial<CatalogItem>));
+
+    fireEvent.submit(document.querySelector('#product-form') as HTMLFormElement);
+
+    const [{ body }] = mutations.update.mock.calls[0];
+    expect(body.variants).toEqual([variant]);
+  });
+
+  it('renders a nullable column as an empty field rather than the text "null"', () => {
+    renderForm(
+      makeItem({
+        categoryId: null,
+        description: null,
+        shortDescription: null,
+        sku: null,
+        unit: null,
+        taxRate: null,
+        discountPrice: null,
+        imageUrls: undefined,
+        stockQuantity: null,
+        lowStockThreshold: null,
+        tags: [],
+      } as unknown as Partial<CatalogItem>),
+    );
+
+    expect(screen.getByPlaceholderText('One-line summary')).toHaveValue('');
+    expect(screen.getByPlaceholderText('Full details shown to customers')).toHaveValue('');
+    expect(screen.getByPlaceholderText('SKU-001')).toHaveValue('');
+    expect(screen.getByPlaceholderText('piece, kg, hour')).toHaveValue('');
+    expect(screen.getByPlaceholderText('bestseller, vegan')).toHaveValue('');
+    expect(screen.queryByText(/null/)).toBeNull();
+  });
+
+  it('omits every field the loaded item left blank when it is saved back', () => {
+    renderForm(
+      makeItem({
+        categoryId: null,
+        description: null,
+        shortDescription: null,
+        sku: null,
+        unit: null,
+        taxRate: null,
+        discountPrice: null,
+        stockQuantity: null,
+        lowStockThreshold: null,
+        tags: [],
+      } as unknown as Partial<CatalogItem>),
+    );
+
+    fireEvent.submit(document.querySelector('#product-form') as HTMLFormElement);
+
+    const [{ body }] = mutations.update.mock.calls[0];
+    for (const key of ['categoryId', 'shortDescription', 'description', 'sku', 'unit', 'taxRate', 'discountPrice']) {
+      expect(body[key], key).toBeUndefined();
+    }
+    expect(body.tags).toEqual([]);
+  });
+});
+
+describe('ProductFormModal — the descriptive fields', () => {
+  it('carries the type, category and every free-text field into the payload', () => {
+    renderForm();
+
+    fireEvent.change(nameInput(), { target: { value: 'Masala Chai' } });
+    fireEvent.change(priceInput(), { target: { value: '40' } });
+    fireEvent.change(screen.getByPlaceholderText('One-line summary'), {
+      target: { value: 'Spiced tea' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('Full details shown to customers'), {
+      target: { value: 'Brewed with cardamom and ginger.' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('SKU-001'), { target: { value: 'MC-01' } });
+    fireEvent.change(screen.getByPlaceholderText('piece, kg, hour'), { target: { value: 'cup' } });
+
+    const selects = document.querySelectorAll('#product-form select');
+    fireEvent.change(selects[0], { target: { value: 'SERVICE' } });
+    fireEvent.change(selects[1], { target: { value: 'c2' } });
+
+    // Price, discount, tax rate, unit — the tax field is the third number box.
+    fireEvent.change(screen.getAllByRole('spinbutton')[2], { target: { value: '12' } });
+
+    fireEvent.click(saveButton());
+
+    expect(mutations.create.mock.calls[0][0]).toMatchObject({
+      type: 'SERVICE',
+      name: 'Masala Chai',
+      categoryId: 'c2',
+      shortDescription: 'Spiced tea',
+      description: 'Brewed with cardamom and ginger.',
+      sku: 'MC-01',
+      unit: 'cup',
+      taxRate: 12,
+    });
+  });
+});
+
 describe('CategoryManager', () => {
   function open() {
     const onClose = vi.fn();

@@ -481,6 +481,91 @@ describe('BookingDetailDrawer', () => {
     );
   });
 
+  it('shuts the reschedule modal once the update lands', () => {
+    mutations.update = vi.fn((_args, opts) => opts?.onSuccess?.());
+    open();
+    fireEvent.click(screen.getByRole('button', { name: /Reschedule/ }));
+    expect(screen.getByText('Reschedule booking')).toBeInTheDocument();
+
+    fireEvent.submit(document.querySelector('form#reschedule-form') as HTMLFormElement);
+
+    expect(screen.queryByText('Reschedule booking')).toBeNull();
+  });
+
+  it('shuts the cancel modal once the cancellation lands', () => {
+    mutations.cancel = vi.fn((_args, opts) => opts?.onSuccess?.());
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByText('Cancel booking', { selector: 'h2, h3' })).toBeInTheDocument();
+
+    fireEvent.submit(document.querySelector('form#cancel-booking-form') as HTMLFormElement);
+
+    expect(screen.queryByText('Cancel booking', { selector: 'h2, h3' })).toBeNull();
+  });
+
+  it('backs out of the reschedule modal without touching the booking', () => {
+    open();
+    fireEvent.click(screen.getByRole('button', { name: /Reschedule/ }));
+
+    // Two "Cancel" buttons exist once the modal is up — the action rail's and
+    // the modal footer's. The modal's is the one inside the dialog.
+    const dialog = screen.getByText('Reschedule booking').closest('[role="dialog"]') as HTMLElement;
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByText('Reschedule booking')).toBeNull();
+    expect(mutations.update).not.toHaveBeenCalled();
+  });
+
+  it('keeps the booking when the cancel modal is dismissed', () => {
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep booking' }));
+
+    expect(screen.queryByRole('button', { name: 'Keep booking' })).toBeNull();
+    expect(mutations.cancel).not.toHaveBeenCalled();
+  });
+
+  it('refuses to reschedule to an empty time', () => {
+    open();
+    fireEvent.click(screen.getByRole('button', { name: /Reschedule/ }));
+    const input = document.querySelector(
+      'form#reschedule-form input[type="datetime-local"]',
+    ) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '' } });
+
+    fireEvent.submit(document.querySelector('form#reschedule-form') as HTMLFormElement);
+
+    expect(mutations.update).not.toHaveBeenCalled();
+    // The submit button in the modal footer, not the action rail's opener.
+    expect(document.querySelector('button[form="reschedule-form"]')).toBeDisabled();
+  });
+
+  // A refetch that 404s — the booking was deleted in another tab — empties the
+  // query while a modal is still mounted. Both submits must no-op rather than
+  // fire a mutation against `undefined.id`.
+  it('cancels nothing if the booking disappears while the cancel modal is open', () => {
+    const { rerender } = open();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    state.booking.data = undefined;
+    rerender(<BookingDetailDrawer bookingId="bk-1" onClose={vi.fn()} />);
+    fireEvent.submit(document.querySelector('form#cancel-booking-form') as HTMLFormElement);
+
+    expect(mutations.cancel).not.toHaveBeenCalled();
+  });
+
+  it('reschedules nothing if the booking disappears while the reschedule modal is open', () => {
+    const { rerender } = open();
+    fireEvent.click(screen.getByRole('button', { name: /Reschedule/ }));
+
+    state.booking.data = undefined;
+    rerender(<BookingDetailDrawer bookingId="bk-1" onClose={vi.fn()} />);
+    fireEvent.submit(document.querySelector('form#reschedule-form') as HTMLFormElement);
+
+    expect(mutations.update).not.toHaveBeenCalled();
+  });
+
   it('offers a refund toggle only on a booking that was paid', () => {
     const { unmount } = open({ paymentStatus: 'UNPAID' });
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
