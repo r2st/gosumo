@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   NotFoundException,
   BadRequestException,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { PaymentService } from './payment.service';
@@ -1922,4 +1923,198 @@ describe('PaymentService', () => {
     });
   });
 
+  // ─────────────────────────────────────────────
+  // Failure logging + partial gateway payloads
+  //
+  // Money paths log the reason and then either rethrow or swallow. Each of the
+  // logs below reads `.message` off an Error and stringifies anything else; the
+  // Error arm is what production hits (Prisma and fetch both throw Errors), so
+  // it is the one worth pinning — a log that silently printed the empty string
+  // would leave a failed payment with no explanation anywhere.
+  // ─────────────────────────────────────────────
+
+  describe('failure logging', () => {
+    let logged: jest.SpyInstance;
+
+    beforeEach(() => {
+      logged = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      logged.mockRestore();
+    });
+
+    const rzpPayload = (event: string, payload: Record<string, unknown>) =>
+      JSON.stringify({ entity: 'event', account_id: 'acc', event, payload });
+
+    it('logs the message of an Error thrown while handling a Razorpay webhook, then rethrows', async () => {
+      razorpay.verifyWebhookSignature.mockReturnValue(true);
+      repository.recordWebhookEvent.mockResolvedValue({ id: 'wh_1' } as never);
+      repository.findPaymentByLinkId.mockRejectedValue(new Error('connection reset'));
+
+      await expect(
+        service.handleRazorpayWebhook(
+          rzpPayload('payment_link.paid', { payment_link: { entity: { id: 'plink_x' } } }),
+          'sig',
+        ),
+      ).rejects.toThrow('connection reset');
+
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining('connection reset'));
+      // Not marked processed — the webhook must be redelivered, not swallowed.
+      expect(repository.markWebhookProcessed).not.toHaveBeenCalled();
+    });
+
+    it('logs the message of an Error thrown while handling a Stripe webhook, then rethrows', async () => {
+      stripe.verifyWebhookSignature.mockReturnValue(true);
+      repository.recordWebhookEvent.mockResolvedValue({ id: 'wh_2' } as never);
+      repository.findPaymentByLinkId.mockRejectedValue(new Error('deadlock detected'));
+
+      await expect(
+        service.handleStripeWebhook(
+          JSON.stringify({
+            id: 'evt_1',
+            type: 'checkout.session.completed',
+            data: { object: { id: 'cs_1' } },
+          }),
+          'sig',
+        ),
+      ).rejects.toThrow('deadlock detected');
+
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining('deadlock detected'));
+    });
+
+    it('logs and swallows an Error raised while reconciling, reporting no status change', async () => {
+      repository.getPayment.mockResolvedValue(
+        createMockPayment({
+          status: 'PENDING',
+          gateway: 'RAZORPAY',
+          payment_link_id: 'plink_r',
+        }) as never,
+      );
+      razorpay.fetchPaymentLinkStatus.mockRejectedValue(new Error('gateway timeout'));
+
+      const result = await service.reconcilePayment(BUSINESS_ID, PAYMENT_ID);
+
+      // Reconciliation is a sweep over many payments; one unreachable gateway
+      // must leave the record untouched rather than abort the run.
+      expect(result.changed).toBe(false);
+      expect(result.currentStatus).toBe(PaymentStatus.PENDING);
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining('gateway timeout'));
+    });
+
+    it('logs the message of an Error from the gateway refund call before rejecting', async () => {
+      repository.getPayment.mockResolvedValue(
+        createMockPayment({
+          status: 'SUCCESS',
+          gateway: 'RAZORPAY',
+          gateway_payment_id: 'pay_1',
+        }) as never,
+      );
+      repository.sumCompletedRefundsForPayment.mockResolvedValue(0);
+      razorpay.createRefund.mockRejectedValue(new Error('refund window closed'));
+
+      await expect(
+        service.initiateRefund(BUSINESS_ID, {
+          transactionId: PAYMENT_ID,
+          amountPaise: 10000,
+          reason: 'Customer request',
+        } as InitiateRefundDto),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining('refund window closed'));
+      // The gateway reason is logged, not leaked to the caller.
+      expect(repository.createRefund).not.toHaveBeenCalled();
+    });
+
+    it('stringifies a non-Error raised while auto-creating an order payment link', async () => {
+      repository.createPayment.mockImplementation(() => {
+        throw 'link service offline';
+      });
+      razorpay.createPaymentLink.mockResolvedValue({
+        id: 'plink_1',
+        short_url: 'https://rzp.io/i/x',
+      } as never);
+
+      await expect(
+        service.handleOrderCreated({
+          id: 'evt',
+          type: 'order.created',
+          timestamp: new Date().toISOString(),
+          businessId: BUSINESS_ID,
+          correlationId: 'corr',
+          orderId: ORDER_ID,
+          orderNumber: 'ORD-1',
+          clientId: CLIENT_ID,
+          totalPaise: 50000,
+        } as OrderCreatedEvent),
+      ).resolves.toBeUndefined();
+
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining('link service offline'));
+    });
+  });
+
+  describe('partial gateway payloads', () => {
+    it('reconciles a paid Stripe session that carries no payment intent id', async () => {
+      repository.getPayment.mockResolvedValue(
+        createMockPayment({
+          status: 'PENDING',
+          gateway: 'STRIPE',
+          payment_link_id: 'cs_1',
+        }) as never,
+      );
+      // Stripe omits payment_intent on sessions settled without one; the
+      // reconciliation must still record SUCCESS rather than blow up on it.
+      stripe.fetchSessionStatus.mockResolvedValue({
+        status: 'complete',
+        paymentStatus: 'paid',
+      } as never);
+      repository.updatePaymentStatus.mockResolvedValue(
+        createMockPayment({ status: 'SUCCESS' }) as never,
+      );
+
+      const result = await service.reconcilePayment(BUSINESS_ID, PAYMENT_ID);
+
+      expect(result.currentStatus).toBe(PaymentStatus.SUCCESS);
+      expect(result.changed).toBe(true);
+      expect(repository.updatePaymentStatus).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        PAYMENT_ID,
+        expect.objectContaining({ status: PaymentStatus.SUCCESS, gatewayPaymentId: null }),
+      );
+    });
+
+    it('emits refund.completed with blank optionals when the refund carries none', async () => {
+      const payload = JSON.stringify({
+        entity: 'event',
+        account_id: 'acc',
+        event: 'refund.processed',
+        payload: { refund: { entity: { id: 'rfnd_bare', status: 'processed' } } },
+      });
+      razorpay.verifyWebhookSignature.mockReturnValue(true);
+      repository.recordWebhookEvent.mockResolvedValue({ id: 'wh_9' } as never);
+      repository.findRefundByGatewayId.mockResolvedValue(
+        createMockRefund({ order_id: null, reason: null }) as never,
+      );
+      repository.updateRefundStatus.mockResolvedValue(
+        createMockRefund({ order_id: null, reason: null, status: 'COMPLETED' }) as never,
+      );
+      // A refund whose payment row has since been purged: the event still has
+      // to go out, with clientId blank rather than the field missing.
+      repository.getPayment.mockResolvedValue(null as never);
+
+      await service.handleRazorpayWebhook(payload, 'sig');
+
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'payment.refund.completed',
+        expect.objectContaining({
+          refundId: REFUND_ID,
+          orderId: undefined,
+          reason: undefined,
+          clientId: '',
+        }),
+      );
+      // No payment row means nothing to re-status.
+      expect(repository.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+  });
 });
