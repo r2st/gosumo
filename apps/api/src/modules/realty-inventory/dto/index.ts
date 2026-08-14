@@ -8,6 +8,7 @@ import {
   IsArray,
   IsNotEmpty,
   Min,
+  Max,
   MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -18,6 +19,7 @@ import {
   NetworkVisibility,
   RealtyAssetType,
 } from '@gosumo/shared';
+import { MAX_PAGE_SIZE } from '../../../common/validators/pagination.constants';
 import { IsCalendarDateString } from '../../../common/validators/is-calendar-date.validator';
 
 // ─────────────────────────────────────────────
@@ -330,6 +332,7 @@ export class MatchQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(MAX_PAGE_SIZE)
   limit?: number;
 }
 
@@ -341,7 +344,28 @@ export class MatchForLeadDto {
 
   @ApiPropertyOptional({ default: 3 })
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(MAX_PAGE_SIZE)
   limit?: number;
+}
+
+/**
+ * Query for `POST /realty/inventory/leads/:leadId/match`.
+ *
+ * The lead id is a path parameter; only the match count comes from the query
+ * string. It was read as a bare `@Query()` string and parsed with `parseInt`,
+ * so `?limit=abc` handed the matcher NaN — and because this route also *writes*
+ * the result via `setMatchedUnits`, a NaN limit did not just return nothing, it
+ * overwrote the lead's stored matches with an empty set.
+ */
+export class MatchForLeadQueryDto {
+  @ApiPropertyOptional({ description: 'Max matches to return', default: 3 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_PAGE_SIZE)
+  limit?: number = 3;
 }

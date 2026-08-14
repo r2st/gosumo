@@ -45,7 +45,7 @@ describe('TeamController', () => {
   describe('listTeam', () => {
     it('should return members in paginated wrapper', async () => {
       tenantService.getMembers.mockResolvedValue([makeMember(), makeMember({ id: '33333333-3333-3333-3333-333333333333', name: 'Admin', role: 'ADMIN' })]);
-      const result = await controller.listTeam(TENANT_ID);
+      const result = await controller.listTeam(TENANT_ID, {});
       expect(result.data).toHaveLength(2);
       expect(result.data[0]!.name).toBe('Staff Person');
       expect(result.data[0]!.role).toBe('STAFF');
@@ -54,20 +54,20 @@ describe('TeamController', () => {
 
     it('should return empty data when no members', async () => {
       tenantService.getMembers.mockResolvedValue([]);
-      const result = await controller.listTeam(TENANT_ID);
+      const result = await controller.listTeam(TENANT_ID, {});
       expect(result.data).toEqual([]);
       expect(result.pagination.total).toBe(0);
     });
 
     it('should handle null members gracefully', async () => {
       tenantService.getMembers.mockResolvedValue(null);
-      const result = await controller.listTeam(TENANT_ID);
+      const result = await controller.listTeam(TENANT_ID, {});
       expect(result.data).toEqual([]);
     });
 
     it('should derive name from email when name is null', async () => {
       tenantService.getMembers.mockResolvedValue([makeMember({ name: null, email: 'john@acme.com' })]);
-      const result = await controller.listTeam(TENANT_ID);
+      const result = await controller.listTeam(TENANT_ID, {});
       expect(result.data[0]!.name).toBe('john');
     });
   });

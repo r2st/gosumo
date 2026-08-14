@@ -25,6 +25,7 @@ import {
   InitiateRefundDto,
   ConfirmCODDto,
   ListPaymentsQueryDto,
+  ListRefundsQueryDto,
   CreateInvoiceDto,
   ListInvoicesQueryDto,
 } from './dto';
@@ -151,18 +152,12 @@ export class PaymentController {
   @Get('payments/refunds')
   @ApiOperation({ summary: 'List refunds with optional filters' })
   @ApiResponse({ status: 200, description: 'Paginated list of refunds' })
-  async listRefunds(
-    @TenantId() tenantId: string,
-    @Query('paymentId') paymentId?: string,
-    @Query('orderId') orderId?: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
-  ) {
+  async listRefunds(@TenantId() tenantId: string, @Query() query: ListRefundsQueryDto) {
     return this.paymentService.listRefunds(tenantId, {
-      paymentId,
-      orderId,
-      page: page ? parseInt(page, 10) : undefined,
-      limit: limit ? parseInt(limit, 10) : undefined,
+      paymentId: query.paymentId,
+      orderId: query.orderId,
+      page: query.page,
+      limit: query.limit,
     });
   }
 

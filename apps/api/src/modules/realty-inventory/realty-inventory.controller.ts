@@ -22,6 +22,7 @@ import {
   SetAvailabilityDto,
   CreateAssetDto,
   MatchQueryDto,
+  MatchForLeadQueryDto,
 } from './dto';
 
 /**
@@ -195,8 +196,8 @@ export class RealtyInventoryController {
   async matchForLead(
     @TenantId() tenantId: string,
     @Param('leadId', UuidValidationPipe) leadId: string,
-    @Query('limit') limit?: string,
+    @Query() query: MatchForLeadQueryDto,
   ) {
-    return this.inventory.matchForLead(tenantId, leadId, limit ? parseInt(limit, 10) : 3);
+    return this.inventory.matchForLead(tenantId, leadId, query.limit);
   }
 }

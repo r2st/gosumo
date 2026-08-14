@@ -63,9 +63,19 @@ describe('PaymentController', () => {
     return { body } as unknown as RawBodyRequest<Request>;
   }
 
-  describe('listRefunds query coercion', () => {
+  describe('listRefunds query handling', () => {
+    // These tests used to pin the controller's own string→number parsing, back
+    // when page/limit arrived as bare `@Query()` strings. That parsing now
+    // belongs to the global ValidationPipe via ListRefundsQueryDto — along with
+    // the bounds it never had, which is what made `?limit=abc` a 500 and
+    // `?page=0` a negative skip. What is left for the controller to get right
+    // is forwarding the validated values and inventing nothing; the bounds
+    // themselves are covered in pagination-bound-contract.spec.ts.
+    const PAYMENT_ID = '00000000-0000-4000-b000-000000000001';
+    const ORDER_ID = '00000000-0000-4000-c000-000000000001';
+
     it('leaves page and limit undefined when the caller omits them', async () => {
-      await controller.listRefunds(BIZ);
+      await controller.listRefunds(BIZ, {});
 
       expect(paymentService.listRefunds).toHaveBeenCalledWith(BIZ, {
         paymentId: undefined,
@@ -75,44 +85,38 @@ describe('PaymentController', () => {
       });
     });
 
-    it('parses page and limit into numbers when supplied', async () => {
-      await controller.listRefunds(BIZ, 'pay-1', 'ord-1', '3', '50');
+    it('forwards every supplied filter unchanged', async () => {
+      await controller.listRefunds(BIZ, {
+        paymentId: PAYMENT_ID,
+        orderId: ORDER_ID,
+        page: 3,
+        limit: 50,
+      });
 
       expect(paymentService.listRefunds).toHaveBeenCalledWith(BIZ, {
-        paymentId: 'pay-1',
-        orderId: 'ord-1',
+        paymentId: PAYMENT_ID,
+        orderId: ORDER_ID,
         page: 3,
         limit: 50,
       });
     });
 
-    it('coerces each of page and limit independently', async () => {
-      await controller.listRefunds(BIZ, undefined, undefined, '2');
+    it('forwards page and limit independently', async () => {
+      await controller.listRefunds(BIZ, { page: 2 });
       expect(paymentService.listRefunds).toHaveBeenCalledWith(
         BIZ,
         expect.objectContaining({ page: 2, limit: undefined }),
       );
 
-      await controller.listRefunds(BIZ, undefined, undefined, undefined, '10');
+      await controller.listRefunds(BIZ, { limit: 10 });
       expect(paymentService.listRefunds).toHaveBeenCalledWith(
         BIZ,
         expect.objectContaining({ page: undefined, limit: 10 }),
       );
     });
 
-    it('treats an empty-string page as absent rather than NaN', async () => {
-      // `?page=` produces '', which is falsy — parseInt('') would be NaN and
-      // would reach the repository as a broken skip.
-      await controller.listRefunds(BIZ, undefined, undefined, '', '');
-
-      expect(paymentService.listRefunds).toHaveBeenCalledWith(
-        BIZ,
-        expect.objectContaining({ page: undefined, limit: undefined }),
-      );
-    });
-
     it('scopes the listing to the tenant from the token', async () => {
-      await controller.listRefunds(BIZ);
+      await controller.listRefunds(BIZ, {});
 
       expect(paymentService.listRefunds.mock.calls[0][0]).toBe(BIZ);
     });

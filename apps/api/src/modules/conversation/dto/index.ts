@@ -15,6 +15,7 @@ import {
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { MAX_PAGE_NUMBER } from '../../../common/validators/pagination.constants';
 import { ChannelType, ConversationStatus } from '@gosumo/shared';
 import { AutoAssignStrategy } from '../conversation.constants';
 import { IsCalendarDateString } from '../../../common/validators/is-calendar-date.validator';
@@ -102,6 +103,7 @@ export class ListConversationsQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(MAX_PAGE_NUMBER)
   page?: number = 1;
 
   @ApiPropertyOptional({ description: 'Items per page', default: 20 })

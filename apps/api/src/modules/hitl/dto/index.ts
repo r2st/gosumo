@@ -14,6 +14,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { MAX_PAGE_NUMBER } from '../../../common/validators/pagination.constants';
 import { TaskStatus, TaskType, TaskPriority } from '@gosumo/shared';
 
 // ─────────────────────────────────────────────
@@ -205,6 +206,7 @@ export class ListTasksQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(MAX_PAGE_NUMBER)
   page?: number = 1;
 
   @ApiPropertyOptional({ description: 'Items per page', default: 20 })

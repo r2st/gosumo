@@ -6,10 +6,12 @@ import {
   IsOptional,
   IsString,
   Min,
+  Max,
   MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { MAX_PAGE_SIZE } from '../../../common/validators/pagination.constants';
 import { DeadLetterStatus } from '@prisma/client';
 
 /** Query filters for listing dead letters. */
@@ -36,6 +38,7 @@ export class ListDeadLettersQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(MAX_PAGE_SIZE)
   limit?: number;
 }
 

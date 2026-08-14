@@ -11,23 +11,10 @@ import { randomBytes, createHash } from 'crypto';
 import { TeamMemberRole } from '@gosumo/database';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CreateApiKeyDto } from './dto/create-api-key.dto';
-
-/** Bounds on `?limit=`; anything unparseable falls back to the default. */
-const DEFAULT_LIMIT = 100;
-const MAX_LIMIT = 200;
-
-/**
- * Clamp a client-supplied `limit` into range.
- *
- * `parseInt` yields NaN for absent or non-numeric input and silently truncates
- * a trailing suffix ("50abc" → 50); both are treated as the default rather than
- * reaching Prisma, where NaN would surface as an opaque query error.
- */
-function parseLimit(raw: string | undefined): number {
-  const n = Number(raw);
-  if (!Number.isInteger(n) || n < 1) return DEFAULT_LIMIT;
-  return Math.min(n, MAX_LIMIT);
-}
+import {
+  ListApiKeysQueryDto,
+  DEFAULT_API_KEY_PAGE_SIZE,
+} from './dto/list-api-keys-query.dto';
 
 @ApiTags('api-keys')
 @Controller('api-keys')
@@ -38,8 +25,8 @@ export class ApiKeysController {
   @Get()
   @ApiOperation({ summary: 'List API keys' })
   @ApiResponse({ status: 200, description: 'Paginated api key list for this business' })
-  async list(@TenantId() tenantId: string, @Query('limit') limit?: string) {
-    const take = parseLimit(limit);
+  async list(@TenantId() tenantId: string, @Query() query: ListApiKeysQueryDto) {
+    const take = query.limit ?? DEFAULT_API_KEY_PAGE_SIZE;
 
     const [keys, total] = await Promise.all([
       this.prisma.api_keys.findMany({

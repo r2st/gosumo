@@ -18,6 +18,7 @@ import { ApiKeysController } from './api-keys.controller';
 import { PrismaService } from '../../common/services/prisma.service';
 import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+import { DEFAULT_API_KEY_PAGE_SIZE } from './dto/list-api-keys-query.dto';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
 const OTHER_BUSINESS_ID = '00000000-0000-4000-a000-0000000000ff';
@@ -79,7 +80,7 @@ describe('ApiKeysController', () => {
       apiKeys.findMany.mockResolvedValue([row()]);
       apiKeys.count.mockResolvedValue(1);
 
-      const result = await controller.list(BUSINESS_ID);
+      const result = await controller.list(BUSINESS_ID, {});
 
       expect(apiKeys.findMany).toHaveBeenCalledWith({
         where: { business_id: BUSINESS_ID },
@@ -105,7 +106,7 @@ describe('ApiKeysController', () => {
       apiKeys.findMany.mockResolvedValue([row()]);
       apiKeys.count.mockResolvedValue(1);
 
-      const result = await controller.list(BUSINESS_ID);
+      const result = await controller.list(BUSINESS_ID, {});
 
       expect(JSON.stringify(result)).not.toContain('a'.repeat(64));
       expect(result.data[0]).not.toHaveProperty('key_hash');
@@ -115,29 +116,31 @@ describe('ApiKeysController', () => {
       apiKeys.findMany.mockResolvedValue([row(), row({ id: 'x' })]);
       apiKeys.count.mockResolvedValue(7);
 
-      const result = await controller.list(BUSINESS_ID, '2');
+      const result = await controller.list(BUSINESS_ID, { limit: 2 });
 
       expect(result.pagination).toEqual({ total: 7, limit: 2, page: 1, totalPages: 4 });
     });
 
     it('keeps totalPages at 1 when the table is empty', async () => {
-      const result = await controller.list(BUSINESS_ID);
+      const result = await controller.list(BUSINESS_ID, {});
 
       expect(result.data).toEqual([]);
       expect(result.pagination).toEqual({ total: 0, limit: 100, page: 1, totalPages: 1 });
     });
 
+    // This block used to enumerate the local `parseLimit` helper's clamping:
+    // 'abc', '50abc', '0', '-5' and '5000' all silently became a working page
+    // size. Clamping was safe but silent — a caller with a broken paging loop
+    // got a 200 and no signal, where every other list endpoint answers 400.
+    // The rejection is now the ValidationPipe's job through
+    // ListApiKeysQueryDto, and is asserted in pagination-bound-contract.spec.ts.
+    // What is left here is the controller's own half: the default, and that a
+    // validated limit reaches Prisma as `take`.
     it.each([
-      ['undefined', undefined, 100],
-      ['non-numeric', 'abc', 100],
-      ['a numeric suffix parseInt would truncate', '50abc', 100],
-      ['zero', '0', 100],
-      ['negative', '-5', 100],
-      ['fractional', '2.5', 100],
-      ['in range', '25', 25],
-      ['above the ceiling', '5000', 200],
-    ])('clamps a %s limit', async (_label, raw, expected) => {
-      await controller.list(BUSINESS_ID, raw as string | undefined);
+      ['a supplied limit', { limit: 25 }, 25],
+      ['an omitted limit', {}, DEFAULT_API_KEY_PAGE_SIZE],
+    ])('passes %s to the query as take', async (_label, query, expected) => {
+      await controller.list(BUSINESS_ID, query);
 
       expect(apiKeys.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ take: expected }),
@@ -147,7 +150,7 @@ describe('ApiKeysController', () => {
     it('propagates a database failure instead of reporting an empty list', async () => {
       apiKeys.findMany.mockRejectedValue(new Error('connection reset'));
 
-      await expect(controller.list(BUSINESS_ID)).rejects.toThrow('connection reset');
+      await expect(controller.list(BUSINESS_ID, {})).rejects.toThrow('connection reset');
     });
   });
 

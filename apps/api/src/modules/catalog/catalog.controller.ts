@@ -21,6 +21,7 @@ import {
   CreateItemDto,
   UpdateItemDto,
   ItemQueryDto,
+  SearchItemsQueryDto,
   CreateVariantDto,
   UpdateVariantDto,
   StockUpdateDto,
@@ -145,13 +146,8 @@ export class CatalogController {
   @ApiQuery({ name: 'q', required: true, description: 'Search query' })
   @ApiQuery({ name: 'limit', required: false, description: 'Max results', type: Number })
   @ApiResponse({ status: 200, description: 'Matching items' })
-  async searchItems(
-    @TenantId() tenantId: string,
-    @Query('q') q: string,
-    @Query('limit') limit?: string,
-  ) {
-    const parsedLimit = limit ? parseInt(limit, 10) : 10;
-    return this.catalogService.searchCatalog(tenantId, q, parsedLimit);
+  async searchItems(@TenantId() tenantId: string, @Query() query: SearchItemsQueryDto) {
+    return this.catalogService.searchCatalog(tenantId, query.q, query.limit);
   }
 
   @Get('items/:id')

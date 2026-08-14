@@ -13,6 +13,7 @@ import {
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { MAX_PAGE_NUMBER } from '../../../common/validators/pagination.constants';
 import { ChannelType } from '@gosumo/shared';
 
 export class SlaConditionsDto {
@@ -151,6 +152,7 @@ export class ListBreachesQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(MAX_PAGE_NUMBER)
   page?: number;
 
   @ApiPropertyOptional({ minimum: 1, maximum: 100, default: 20 })

@@ -16,6 +16,10 @@ import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CatalogItemType } from '@gosumo/shared';
 import { SEARCH_TERM_MAX_LENGTH } from '../../../common/validators/search-term.constants';
+import {
+  MAX_PAGE_NUMBER,
+  MAX_PAGE_SIZE,
+} from '../../../common/validators/pagination.constants';
 
 // ─────────────────────────────────────────────
 // CATEGORY DTOs
@@ -419,6 +423,7 @@ export class ItemQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(MAX_PAGE_NUMBER)
   page?: number = 1;
 
   @ApiPropertyOptional({ description: 'Items per page', default: 20 })
@@ -674,4 +679,31 @@ export class PaginatedItemsResponseDto {
   @ApiProperty() page!: number;
   @ApiProperty() limit!: number;
   @ApiProperty() totalPages!: number;
+}
+
+/**
+ * Query for `GET /catalog/items/search`.
+ *
+ * This endpoint read `q` and `limit` as bare `@Query()` strings, which put it
+ * outside every rule the other list endpoints follow: `q` had no length cap
+ * (the one R49 added lives on `ItemQueryDto`, which this route does not use),
+ * and `limit` went through `parseInt` straight into a Prisma `take` — so
+ * `?limit=abc` reached the driver as NaN and came back a 500, while
+ * `?limit=1000000` returned the tenant's whole catalog with every variant and
+ * category joined in.
+ */
+export class SearchItemsQueryDto {
+  @ApiProperty({ description: 'Search query', maxLength: SEARCH_TERM_MAX_LENGTH })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(SEARCH_TERM_MAX_LENGTH)
+  q!: string;
+
+  @ApiPropertyOptional({ description: 'Max results', default: 10 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_PAGE_SIZE)
+  limit?: number = 10;
 }

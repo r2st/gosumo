@@ -18,6 +18,10 @@ import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaymentStatus, PaymentGateway, InvoiceStatus } from '@gosumo/shared';
 import { IsCalendarDateString } from '../../../common/validators/is-calendar-date.validator';
+import {
+  MAX_PAGE_NUMBER,
+  MAX_PAGE_SIZE,
+} from '../../../common/validators/pagination.constants';
 
 // ─────────────────────────────────────────────
 // Command DTOs
@@ -222,6 +226,7 @@ export class ListPaymentsQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(MAX_PAGE_NUMBER)
   page?: number = 1;
 
   @ApiPropertyOptional({ description: 'Items per page', default: 20 })
@@ -370,6 +375,7 @@ export class ListInvoicesQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(MAX_PAGE_NUMBER)
   page?: number = 1;
 
   @ApiPropertyOptional({ description: 'Items per page', default: 20 })
@@ -403,4 +409,42 @@ export class ReconciliationSummaryDto {
   @ApiProperty({ description: 'Number of payments checked' }) checked!: number;
   @ApiProperty({ description: 'Number of payments updated' }) updated!: number;
   @ApiProperty({ type: [ReconcileResultDto] }) results!: ReconcileResultDto[];
+}
+
+/**
+ * Query for `GET /payments/refunds`.
+ *
+ * `paymentId`, `orderId`, `page` and `limit` were read as bare `@Query()`
+ * strings and pushed through `parseInt` into the repository, which skipped
+ * every rule its sibling `ListPaymentsQueryDto` follows. Three ways that
+ * surfaced as a 500 rather than a 400: `?limit=abc` reached Prisma as NaN,
+ * `?page=0` computed `skip: -20`, and a non-UUID `?paymentId=` was compared
+ * against a uuid column. `?limit=1000000` was accepted outright.
+ */
+export class ListRefundsQueryDto {
+  @ApiPropertyOptional({ description: 'Filter by payment UUID' })
+  @IsOptional()
+  @IsUUID()
+  paymentId?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by order UUID' })
+  @IsOptional()
+  @IsUUID()
+  orderId?: string;
+
+  @ApiPropertyOptional({ description: 'Page number (1-based)', default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_PAGE_NUMBER)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ description: 'Items per page', default: 20 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_PAGE_SIZE)
+  limit?: number = 20;
 }

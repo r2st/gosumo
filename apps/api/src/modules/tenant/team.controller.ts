@@ -9,6 +9,7 @@ import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-
 import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
+import { ListTeamQueryDto, DEFAULT_TEAM_PAGE_SIZE } from './dto/list-team-query.dto';
 import { TeamMemberRole } from '@gosumo/database';
 import { PrismaService } from '../../common/services/prisma.service';
 import { PlanLimit } from '../billing/plan.decorator';
@@ -48,7 +49,7 @@ export class TeamController {
   @Get()
   @ApiOperation({ summary: 'List team members' })
   @ApiResponse({ status: 200, description: 'Paginated team list for this business' })
-  async listTeam(@TenantId() tenantId: string, @Query('limit') limit?: string) {
+  async listTeam(@TenantId() tenantId: string, @Query() query: ListTeamQueryDto) {
     const members = await this.tenantService.getMembers(tenantId);
     const mapped = (members ?? []).map((m) => ({
       id: m.id,
@@ -61,7 +62,24 @@ export class TeamController {
       lastActiveAt: m.last_login_at ?? null,
       createdAt: m.created_at,
     }));
-    return { data: mapped, pagination: { total: mapped.length, limit: parseInt(limit ?? '100', 10), page: 1, totalPages: 1 } };
+
+    // `limit` used to be echoed into the metadata without ever being applied,
+    // so the response claimed a page size it had not honoured — and
+    // `?limit=abc` reported `null`, because parseInt's NaN serialises that way.
+    // Team size is plan-capped, so one page is the normal outcome; the slice is
+    // here to make the numbers below it true rather than to page a long list.
+    const limit = query.limit ?? DEFAULT_TEAM_PAGE_SIZE;
+    const page = mapped.slice(0, limit);
+
+    return {
+      data: page,
+      pagination: {
+        total: mapped.length,
+        limit,
+        page: 1,
+        totalPages: Math.max(1, Math.ceil(mapped.length / limit)),
+      },
+    };
   }
 
   @Post('invite')
