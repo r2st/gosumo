@@ -94,6 +94,13 @@ export function usePullToRefresh<T extends HTMLElement = HTMLDivElement>(
       setPull(THRESHOLD); // hold the spinner at the threshold while loading
       try {
         await onRefreshRef.current();
+      } catch {
+        // `finish` is an async listener, so nothing awaits what it returns: a
+        // rejected refresh escapes as an unhandled rejection. The gesture has
+        // no error surface of its own and the caller keeps one — React Query
+        // holds the failure in query state and the list below renders it — so
+        // the rejection is absorbed here and the `finally` still resets the
+        // pull.
       } finally {
         refreshingRef.current = false;
         setIsRefreshing(false);
