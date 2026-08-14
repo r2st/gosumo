@@ -4,6 +4,7 @@ import { ConversationStatus, ChannelType, ResourceNotFoundError } from '@gosumo/
 import { Prisma } from '@prisma/client';
 import type { conversations } from '@prisma/client';
 import { escapeLikeTerm } from '../../common/utils/search-pattern.util';
+import { MESSAGE_ORDER_NEWEST_FIRST } from '../../common/utils/message-order';
 import { SNOOZE_WAKE_BATCH_SIZE } from './conversation.constants';
 
 // ─────────────────────────────────────────────
@@ -81,7 +82,11 @@ const CONVERSATION_LIST_INCLUDE = {
   client: true,
   channel_account: true,
   messages: {
-    orderBy: { created_at: 'desc' },
+    // `take: 1` is the tightest LIMIT there is, so an untied sort decides the
+    // inbox preview by coin flip when the last two messages are simultaneous —
+    // and can show a different one on the next poll. See
+    // MESSAGE_ORDER_NEWEST_FIRST.
+    orderBy: MESSAGE_ORDER_NEWEST_FIRST,
     take: 1,
   },
 } as const;

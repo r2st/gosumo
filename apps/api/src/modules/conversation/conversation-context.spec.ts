@@ -24,6 +24,7 @@ import {
 import { ConversationService } from './conversation.service';
 import { ConversationRepository } from './conversation.repository';
 import { PrismaService } from '../../common/services/prisma.service';
+import { MESSAGE_ORDER_NEWEST_FIRST } from '../../common/utils/message-order';
 import { TenantService } from '../tenant/tenant.service';
 import { CONVERSATION_QUEUE } from './conversation.constants';
 
@@ -178,7 +179,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
       expect(prisma.messages.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { conversation_id: CONVERSATION_ID, business_id: BUSINESS_ID },
-          orderBy: { created_at: 'desc' },
+          orderBy: MESSAGE_ORDER_NEWEST_FIRST,
         }),
       );
     });

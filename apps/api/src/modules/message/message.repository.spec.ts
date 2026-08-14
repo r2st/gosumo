@@ -25,6 +25,10 @@ import { MessageDirection, MessageStatus } from '@gosumo/shared';
 
 import { MessageRepository } from './message.repository';
 import { PrismaService } from '../../common/services/prisma.service';
+import {
+  MESSAGE_ORDER_NEWEST_FIRST,
+  MESSAGE_ORDER_OLDEST_FIRST,
+} from '../../common/utils/message-order';
 import { MAX_SEARCH_RESULTS } from './message.constants';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
@@ -87,7 +91,7 @@ describe('MessageRepository', () => {
         business_id: BUSINESS_ID,
         conversation_id: CONVERSATION_ID,
       });
-      expect(args.orderBy).toEqual([{ created_at: 'desc' }, { id: 'desc' }]);
+      expect(args.orderBy).toEqual(MESSAGE_ORDER_NEWEST_FIRST);
       // limit + 1 so the caller can detect a further page without a count query.
       expect(args.take).toBe(21);
     });
@@ -119,7 +123,7 @@ describe('MessageRepository', () => {
         business_id: BUSINESS_ID,
         conversation_id: CONVERSATION_ID,
       });
-      expect(args.orderBy).toEqual({ created_at: 'desc' });
+      expect(args.orderBy).toEqual(MESSAGE_ORDER_NEWEST_FIRST);
       expect(args.take).toBe(20);
     });
   });
@@ -200,7 +204,7 @@ describe('MessageRepository', () => {
         type: { in: [MessageType.TEXT] },
         text_content: { contains: 'invoice', mode: 'insensitive' },
       });
-      expect(args.orderBy).toEqual({ created_at: 'desc' });
+      expect(args.orderBy).toEqual(MESSAGE_ORDER_NEWEST_FIRST);
       expect(args.take).toBe(MAX_SEARCH_RESULTS);
     });
 
@@ -376,5 +380,105 @@ describe('MessageRepository', () => {
         byStatus: {},
       });
     });
+  });
+});
+
+// ─────────────────────────────────────────────
+// Total ordering
+//
+// `ORDER BY created_at DESC` is not a total order. `created_at` defaults to
+// Postgres `now()` — the transaction start timestamp — so two messages whose
+// transactions begin in the same microsecond compare equal, and the database
+// may then return them in either order, differently on each execution. This
+// platform manufactures exactly that: inbound messages from WhatsApp,
+// Instagram, SMS and web chat are ingested by BullMQ workers running
+// concurrently against one conversation.
+//
+// Under a `LIMIT` the consequence is not cosmetic. The AI context window is
+// `ORDER BY created_at DESC LIMIT 20`; when a tie straddles the twentieth row,
+// which of the tied messages the AI is shown is arbitrary, and the window is
+// full either way, so nothing anywhere reports a missing message.
+//
+// This sweep exists because the tie-break was originally present on exactly
+// one of these queries — the dashboard's paginated list — and absent from the
+// AI's. A human reviewing an escalation and the AI that produced it could
+// order the same conversation differently.
+// ─────────────────────────────────────────────
+
+describe('MessageRepository — every message read is totally ordered', () => {
+  let repository: MessageRepository;
+  let findMany: jest.Mock;
+
+  beforeEach(async () => {
+    findMany = jest.fn().mockResolvedValue([]);
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        MessageRepository,
+        {
+          provide: PrismaService,
+          useValue: { messages: { findMany }, file_uploads: { findMany: jest.fn() } },
+        },
+      ],
+    }).compile();
+    repository = module.get<MessageRepository>(MessageRepository);
+  });
+
+  /** Every read path that returns more than one message, and how to invoke it. */
+  const READS: Array<[string, (r: MessageRepository) => Promise<unknown>]> = [
+    ['findByConversation', (r) => r.findByConversation(BUSINESS_ID, CONVERSATION_ID, { limit: 20 })],
+    ['getLastN', (r) => r.getLastN(BUSINESS_ID, CONVERSATION_ID, 20)],
+    ['search', (r) => r.search(BUSINESS_ID, 'invoice', {})],
+    ['findReplies', (r) => r.findReplies(BUSINESS_ID, MESSAGE_ID)],
+  ];
+
+  it.each(READS)('%s breaks ties on id rather than leaving the order open', async (_name, run) => {
+    await run(repository);
+
+    const orderBy = findMany.mock.calls[0]?.[0]?.orderBy as unknown;
+    // A bare object (rather than an array) is the shape of a single sort key,
+    // which is the bug: `orderBy: { created_at: 'desc' }`.
+    expect(Array.isArray(orderBy)).toBe(true);
+    expect(orderBy).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: expect.stringMatching(/^(asc|desc)$/) }),
+      ]),
+    );
+  });
+
+  it.each(READS)('%s sorts by id in the same direction as created_at', async (_name, run) => {
+    // A tie-break that runs counter to the primary key inverts tied pairs
+    // relative to every other reader — consistency is the entire point, so a
+    // mixed pair would be worse than none at all.
+    await run(repository);
+
+    const orderBy = findMany.mock.calls[0]?.[0]?.orderBy as Array<Record<string, string>>;
+    const createdAtDir = orderBy.find((k) => 'created_at' in k)?.['created_at'];
+    const idDir = orderBy.find((k) => 'id' in k)?.['id'];
+
+    expect(idDir).toBe(createdAtDir);
+  });
+
+  it('reads newest-first everywhere except the reply thread, which reads forwards', async () => {
+    // The direction is not arbitrary: `getLastN` and `search` want the *latest*
+    // N, which only a DESC sort under a LIMIT gives; a thread renders forwards.
+    for (const [name, run] of READS) {
+      findMany.mockClear();
+      await run(repository);
+      const orderBy = findMany.mock.calls[0]?.[0]?.orderBy as unknown;
+      expect(orderBy).toEqual(
+        name === 'findReplies' ? MESSAGE_ORDER_OLDEST_FIRST : MESSAGE_ORDER_NEWEST_FIRST,
+      );
+    }
+  });
+
+  it('never orders by a channel-supplied timestamp', async () => {
+    // `sent_at` is whatever the provider or the customer's handset claimed.
+    // Sorting on it would let a skewed clock insert a message into the middle
+    // of a conversation, or ahead of its first line. Ingest time is ours.
+    for (const [, run] of READS) {
+      findMany.mockClear();
+      await run(repository);
+      expect(JSON.stringify(findMany.mock.calls[0]?.[0]?.orderBy)).not.toContain('sent_at');
+    }
   });
 });

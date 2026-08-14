@@ -4,6 +4,10 @@ import { MessageDirection, MessageStatus } from '@gosumo/shared';
 import type { messages, file_uploads } from '@prisma/client';
 import { Prisma, MessageType, FileUploadType } from '@prisma/client';
 import { escapeLikeTerm } from '../../common/utils/search-pattern.util';
+import {
+  MESSAGE_ORDER_NEWEST_FIRST,
+  MESSAGE_ORDER_OLDEST_FIRST,
+} from '../../common/utils/message-order';
 import { MAX_SEARCH_RESULTS, SEARCHABLE_MESSAGE_TYPES } from './message.constants';
 
 // ─────────────────────────────────────────────
@@ -161,10 +165,7 @@ export class MessageRepository {
 
     return this.prisma.messages.findMany({
       where,
-      orderBy: [
-        { created_at: 'desc' },
-        { id: 'desc' },
-      ],
+      orderBy: MESSAGE_ORDER_NEWEST_FIRST,
       take: limit + 1,
     });
   }
@@ -186,7 +187,12 @@ export class MessageRepository {
   }
 
   /**
-   * Get the last N messages in a conversation, ordered by created_at DESC.
+   * Get the last N messages in a conversation, newest first.
+   *
+   * This feeds the AI context window, so the `LIMIT` is the part that matters:
+   * an untied `created_at` sort lets a tie straddling the Nth row decide
+   * arbitrarily which of the tied messages the AI gets to see. See
+   * {@link MESSAGE_ORDER_NEWEST_FIRST}.
    */
   async getLastN(
     businessId: string,
@@ -198,7 +204,7 @@ export class MessageRepository {
         business_id: businessId,
         conversation_id: conversationId,
       },
-      orderBy: { created_at: 'desc' },
+      orderBy: MESSAGE_ORDER_NEWEST_FIRST,
       take: n,
     });
   }
@@ -269,7 +275,10 @@ export class MessageRepository {
 
     return this.prisma.messages.findMany({
       where,
-      orderBy: { created_at: 'desc' },
+      // Also `LIMIT`-ed, so the same tie-break argument applies: which of two
+      // simultaneous matches makes the cut should not vary between runs of the
+      // same search.
+      orderBy: MESSAGE_ORDER_NEWEST_FIRST,
       take: MAX_SEARCH_RESULTS,
     });
   }
@@ -374,7 +383,9 @@ export class MessageRepository {
           equals: messageId,
         },
       },
-      orderBy: { created_at: 'asc' },
+      // Unbounded, so no reply can be dropped by a tie — but two simultaneous
+      // replies would still swap places between two loads of the same thread.
+      orderBy: MESSAGE_ORDER_OLDEST_FIRST,
     });
   }
 

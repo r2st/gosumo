@@ -25,6 +25,7 @@ import {
   AIResponseApprovedEvent,
 } from '@gosumo/shared';
 import { PrismaService } from '../../common/services/prisma.service';
+import { MESSAGE_ORDER_NEWEST_FIRST } from '../../common/utils/message-order';
 import { TenantService } from '../tenant/tenant.service';
 import {
   ConversationRepository,
@@ -879,7 +880,12 @@ export class ConversationService {
 
     const messages = await this.prisma.messages.findMany({
       where: { conversation_id: id, business_id: businessId },
-      orderBy: { created_at: 'desc' },
+      // Newest-first-then-reverse, so the `LIMIT` selects the *latest*
+      // CONTEXT_WINDOW_SIZE. The tie-break is what makes that selection
+      // deterministic: without it, a tie straddling the twentieth row lets the
+      // database choose which of two simultaneous messages the AI is shown, and
+      // it can choose differently on the retry. See MESSAGE_ORDER_NEWEST_FIRST.
+      orderBy: MESSAGE_ORDER_NEWEST_FIRST,
       take: CONTEXT_WINDOW_SIZE,
       select: {
         id: true,
