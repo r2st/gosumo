@@ -82,10 +82,13 @@ afterEach(() => {
 });
 
 describe('ClientsPage — load states', () => {
-  it('shows a loading state while clients resolve', () => {
+  it('shows a table-shaped skeleton while clients resolve', () => {
     state.clients.isLoading = true;
     render(<ClientsPage />);
-    expect(screen.getByText('Loading…')).toBeInTheDocument();
+
+    expect(screen.getByRole('status')).toHaveAccessibleName('Loading clients…');
+    // The headers stay put so the columns do not resize when rows land.
+    expect(screen.getByText('Total spent')).toBeInTheDocument();
   });
 
   it('shows the error message and retries on demand', () => {

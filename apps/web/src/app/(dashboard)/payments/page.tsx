@@ -11,7 +11,8 @@ import { Avatar } from '@/components/ui/avatar';
 import { SegmentedTabs } from '@/components/ui/tabs';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { StatusBadge } from '@/components/status-badge';
-import { LoadingState, EmptyState, ErrorState } from '@/components/ui/states';
+import { EmptyState, ErrorState } from '@/components/ui/states';
+import { TableSkeleton } from '@/components/ui/skeletons';
 import { RevenueSummary } from '@/components/payments/revenue-summary';
 import { CreatePaymentLinkModal } from '@/components/payments/create-payment-link-modal';
 import { PaymentDetailDrawer } from '@/components/payments/payment-detail-drawer';
@@ -115,7 +116,14 @@ export default function PaymentsPage() {
 
         <Card>
           {isLoading ? (
-            <LoadingState />
+            <TableSkeleton
+              headers={
+                isInvoices
+                  ? ['Invoice', 'Client', 'Amount', 'Status', 'Date']
+                  : ['Payment ID', 'Client', 'Amount', 'Method', 'Status', 'Created', 'Link']
+              }
+              label={isInvoices ? 'Loading invoices…' : 'Loading payments…'}
+            />
           ) : isError ? (
             <ErrorState error={error} onRetry={() => refetch()} />
           ) : isInvoices ? (

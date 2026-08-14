@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/status-badge';
 import { ChannelIcon, channelLabel } from '@/components/channel-icon';
 import { LoadingState, ErrorState } from '@/components/ui/states';
+import { ThreadSkeleton } from '@/components/ui/skeletons';
 import { MessageBubble, DayDivider } from './message-bubble';
 import { AiDraftPanel } from './ai-draft-panel';
 import {
@@ -159,7 +160,7 @@ export function ConversationThread({ conversationId }: { conversationId: string 
         className="flex-1 space-y-2 overflow-y-auto bg-muted/20 p-4 scrollbar-thin"
       >
         {messagesQ.isLoading ? (
-          <LoadingState label="Loading messages…" />
+          <ThreadSkeleton label="Loading messages…" />
         ) : messages.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
             No messages in this conversation yet.

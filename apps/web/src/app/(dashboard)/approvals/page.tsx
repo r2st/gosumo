@@ -8,7 +8,8 @@ import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
-import { LoadingState, EmptyState, ErrorState } from '@/components/ui/states';
+import { EmptyState, ErrorState } from '@/components/ui/states';
+import { CardsSkeleton } from '@/components/ui/skeletons';
 import { timeAgo } from '@/lib/format';
 import { useApprovals, useResolveApproval } from '@/hooks/use-realty';
 import type { Approval } from '@/lib/realty-types';
@@ -30,7 +31,7 @@ export default function ApprovalsPage() {
       />
       <div className="flex-1 overflow-auto p-4 lg:p-6">
         {isLoading ? (
-          <LoadingState label="Loading approval queue…" />
+          <CardsSkeleton label="Loading approval queue…" />
         ) : isError ? (
           <ErrorState message="Could not load approvals." error={error} onRetry={() => refetch()} />
         ) : !data || data.length === 0 ? (

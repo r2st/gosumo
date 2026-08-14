@@ -101,10 +101,10 @@ afterEach(() => {
 });
 
 describe('ConversationList — load states', () => {
-  it('shows a loading state while the inbox resolves', () => {
+  it('shows a list-shaped skeleton while the inbox resolves', () => {
     state.conversations.isLoading = true;
     renderList();
-    expect(screen.getByText('Loading…')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveAccessibleName('Loading conversations…');
   });
 
   it('shows the error message and retries on demand', () => {

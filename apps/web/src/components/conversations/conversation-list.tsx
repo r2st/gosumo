@@ -6,7 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { ChannelIcon } from '@/components/channel-icon';
 import { StatusBadge } from '@/components/status-badge';
-import { LoadingState, EmptyState, ErrorState } from '@/components/ui/states';
+import { EmptyState, ErrorState } from '@/components/ui/states';
+import { ListRowsSkeleton } from '@/components/ui/skeletons';
 import { useConversations } from '@/hooks/use-queries';
 import { usePullToRefresh, PullToRefreshIndicator } from '@/hooks/use-pull-to-refresh';
 import { timeAgo } from '@/lib/format';
@@ -94,7 +95,7 @@ export function ConversationList({
       <div ref={containerRef} className="relative flex-1 overflow-y-auto scrollbar-thin">
         <PullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshing} />
         {isLoading ? (
-          <LoadingState label="Loading…" />
+          <ListRowsSkeleton label="Loading conversations…" />
         ) : isError ? (
           <ErrorState error={error} onRetry={() => refetch()} />
         ) : !data || data.data.length === 0 ? (

@@ -9,6 +9,7 @@ import {
 } from '@/components/conversations/conversation-list';
 import { ConversationThread } from '@/components/conversations/conversation-thread';
 import { EmptyState } from '@/components/ui/states';
+import { ListRowsSkeleton, ThreadSkeleton } from '@/components/ui/skeletons';
 import { cn } from '@/lib/utils';
 
 function ConversationsInbox() {
@@ -78,9 +79,28 @@ function ConversationsInbox() {
   );
 }
 
+/**
+ * The inbox layout, filled with placeholders. `useSearchParams()` forces this
+ * page behind a Suspense boundary, and the fallback used to be `null` — so the
+ * whole inbox was a blank screen until the client render landed, then appeared
+ * all at once. Reserving the two panels keeps that transition from being a jump.
+ */
+function InboxSkeleton() {
+  return (
+    <div className="flex h-[calc(100vh-4rem)]">
+      <div className="flex w-full flex-col border-r border-border bg-card md:w-80 lg:w-96">
+        <ListRowsSkeleton label="Loading inbox…" />
+      </div>
+      <div className="hidden min-w-0 flex-1 md:flex md:flex-col">
+        <ThreadSkeleton label="Loading conversation…" />
+      </div>
+    </div>
+  );
+}
+
 export default function ConversationsPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<InboxSkeleton />}>
       <ConversationsInbox />
     </Suspense>
   );

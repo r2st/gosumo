@@ -9,7 +9,8 @@ import { Select } from '@/components/ui/select';
 import { Avatar } from '@/components/ui/avatar';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { StatusBadge } from '@/components/status-badge';
-import { LoadingState, EmptyState, ErrorState } from '@/components/ui/states';
+import { EmptyState, ErrorState } from '@/components/ui/states';
+import { TableSkeleton } from '@/components/ui/skeletons';
 import { OrderDetailDrawer } from '@/components/orders/order-detail-drawer';
 import { useOrders } from '@/hooks/use-orders';
 import { formatDateIST, humanizeEnum, paiseToRupees } from '@/lib/format';
@@ -61,7 +62,10 @@ export default function OrdersPage() {
 
         <Card>
           {isLoading ? (
-            <LoadingState />
+            <TableSkeleton
+              headers={['Order', 'Customer', 'Items', 'Fulfilment', 'Status', 'Total', 'Date']}
+              label="Loading orders…"
+            />
           ) : isError ? (
             <ErrorState error={error} onRetry={() => refetch()} />
           ) : !data || data.data.length === 0 ? (

@@ -9,7 +9,8 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { LoadingState, EmptyState, ErrorState } from '@/components/ui/states';
+import { EmptyState, ErrorState } from '@/components/ui/states';
+import { GridSkeleton } from '@/components/ui/skeletons';
 import { StockBadge } from '@/components/catalog/stock-badge';
 import { ProductFormModal } from '@/components/catalog/product-form-modal';
 import { CategoryManager } from '@/components/catalog/category-manager';
@@ -122,7 +123,7 @@ export default function CatalogPage() {
         </div>
 
         {isLoading ? (
-          <LoadingState />
+          <GridSkeleton label="Loading catalog…" />
         ) : isError ? (
           <ErrorState error={error} onRetry={() => refetch()} />
         ) : !data || data.data.length === 0 ? (

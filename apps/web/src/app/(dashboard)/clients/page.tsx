@@ -8,7 +8,8 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Avatar } from '@/components/ui/avatar';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
-import { LoadingState, EmptyState, ErrorState } from '@/components/ui/states';
+import { EmptyState, ErrorState } from '@/components/ui/states';
+import { TableSkeleton } from '@/components/ui/skeletons';
 import { useClients } from '@/hooks/use-queries';
 import { formatDateIST, paiseToRupees } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -69,7 +70,7 @@ export default function ClientsPage() {
 
         <Card>
           {isLoading ? (
-            <LoadingState />
+            <TableSkeleton headers={['Client', 'Orders', 'Total spent', 'Last active']} label="Loading clients…" />
           ) : isError ? (
             <ErrorState error={error} onRetry={() => refetch()} />
           ) : !data || data.data.length === 0 ? (
