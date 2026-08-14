@@ -149,14 +149,12 @@ function MetricTile({
   value,
   tone,
   badge,
-  capitalize,
 }: {
   icon: typeof Wallet;
   label: string;
   value: string;
   tone: string;
   badge?: string;
-  capitalize?: boolean;
 }) {
   return (
     <Card className="p-4">
@@ -164,7 +162,7 @@ function MetricTile({
         <Icon className="h-4 w-4" />
       </div>
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={`text-lg font-bold ${capitalize ? 'capitalize' : ''}`}>{value}</p>
+      <p className="text-lg font-bold">{value}</p>
       {badge && <StatusBadge value={badge} className="mt-1" />}
     </Card>
   );

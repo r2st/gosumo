@@ -255,4 +255,61 @@ describe('ClientDetailPage — activity timeline', () => {
       '/clients',
     );
   });
+
+  it('drops the status from the summary when the event carries none', () => {
+    state.timeline.data = {
+      clientId: 'cl1',
+      events: [makeEvent({ title: 'Order #1042', status: undefined })],
+      total: 1,
+    };
+    render(<ClientDetailPage />);
+    expect(screen.getByText('Order #1042 · ₹2,500.00')).toBeInTheDocument();
+  });
+
+  it('falls back to a neutral icon for an event type the dashboard does not know', () => {
+    // The API can add timeline types ahead of the dashboard; an unmapped type
+    // must still render its row rather than crash on an undefined component.
+    state.timeline.data = {
+      clientId: 'cl1',
+      events: [makeEvent({ type: 'REFUND' as TimelineEvent['type'], title: 'Refund issued' })],
+      total: 1,
+    };
+    render(<ClientDetailPage />);
+    expect(screen.getByText(/Refund issued/)).toBeInTheDocument();
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+  });
+
+  it('shows an empty state when the payload arrives without an events array', () => {
+    state.timeline.data = { clientId: 'cl1', total: 0 } as unknown as ClientTimeline;
+    render(<ClientDetailPage />);
+    expect(screen.getByText('No activity yet')).toBeInTheDocument();
+  });
+});
+
+describe('ClientDetailPage — incomplete client records', () => {
+  it('names an unidentified client rather than rendering a blank heading', () => {
+    state.client.data = makeClient({ name: null });
+    render(<ClientDetailPage />);
+    expect(screen.getByRole('heading', { name: 'Unknown' })).toBeInTheDocument();
+  });
+
+  it('shows the photo when the client has one, and initials when they do not', () => {
+    state.client.data = makeClient({ avatarUrl: 'https://cdn.example.in/priya.jpg' });
+    const withPhoto = render(<ClientDetailPage />);
+    expect(screen.getByRole('img', { name: 'Priya Sharma' })).toHaveAttribute(
+      'src',
+      'https://cdn.example.in/priya.jpg',
+    );
+    withPhoto.unmount();
+
+    state.client.data = makeClient({ avatarUrl: null });
+    render(<ClientDetailPage />);
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  });
+
+  it('shows zero orders rather than an empty tile when the count is missing', () => {
+    state.client.data = makeClient({ totalOrders: null });
+    render(<ClientDetailPage />);
+    expect(screen.getByText('0')).toBeInTheDocument();
+  });
 });

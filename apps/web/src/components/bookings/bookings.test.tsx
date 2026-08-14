@@ -71,9 +71,15 @@ const state = {
     isError: false,
     refetch: vi.fn(),
   },
-  clients: { data: { data: [{ id: 'c1', name: 'Asha Rao', phone: '+919800000001' }] } },
-  services: { data: { data: [{ id: 'i1', name: 'Deep Tissue Massage' }] } },
-  staff: { data: { staff: [{ id: 's1', name: 'Meera' }] } },
+  clients: { data: { data: [{ id: 'c1', name: 'Asha Rao', phone: '+919800000001' }] } } as {
+    data?: { data: Array<{ id: string; name: string; phone?: string | null; email?: string | null }> };
+  },
+  services: { data: { data: [{ id: 'i1', name: 'Deep Tissue Massage' }] } } as {
+    data?: { data: Array<{ id: string; name: string }> };
+  },
+  staff: { data: { staff: [{ id: 's1', name: 'Meera' }] } } as {
+    data?: { staff: Array<{ id: string; name: string }> };
+  },
 };
 
 const mutations = {
@@ -152,6 +158,11 @@ beforeEach(() => {
   };
   state.calendar = { data: { events: [] }, isLoading: false, isError: false, refetch: vi.fn() };
   state.slots = { data: { slots: [] }, isLoading: false };
+  // Restored here rather than inside the tests that narrow them: a test that
+  // fails partway through would otherwise leak its lookup lists into the next.
+  state.clients = { data: { data: [{ id: 'c1', name: 'Asha Rao', phone: '+919800000001' }] } };
+  state.services = { data: { data: [{ id: 'i1', name: 'Deep Tissue Massage' }] } };
+  state.staff = { data: { staff: [{ id: 's1', name: 'Meera' }] } };
   state.settings = {
     data: { bookingEnabled: true, defaultSlotDurationMinutes: 30, officeHours: {} },
     isLoading: false,
@@ -288,7 +299,6 @@ describe('CreateBookingModal', () => {
     open();
     fireEvent.change(screen.getByPlaceholderText(/Search client/), { target: { value: 'zzz' } });
     expect(screen.getByText('No matching clients.')).toBeInTheDocument();
-    state.clients = { data: { data: [{ id: 'c1', name: 'Asha Rao', phone: '+919800000001' }] } };
   });
 
   it('lets the operator swap the chosen client back out', () => {
@@ -387,6 +397,67 @@ describe('CreateBookingModal', () => {
     flags.createError = true;
     open();
     expect(screen.getByText(/slot may no longer be available/)).toBeInTheDocument();
+  });
+
+  it('still renders every picker before any lookup list has arrived', () => {
+    // The modal opens immediately while clients/services/staff/slots are all
+    // still in flight; an unguarded read of any of them blanks the whole form.
+    state.clients = { data: undefined };
+    state.services = { data: undefined };
+    state.staff = { data: undefined };
+    state.slots = { data: undefined, isLoading: true };
+    open();
+
+    fireEvent.change(screen.getByPlaceholderText(/Search client/), { target: { value: 'As' } });
+    expect(screen.getByText('No matching clients.')).toBeInTheDocument();
+
+    const [service, staff] = screen.getAllByRole('combobox');
+    expect(within(service).getAllByRole('option')).toHaveLength(1);
+    expect(within(staff).getAllByRole('option')).toHaveLength(1);
+  });
+
+  it('says it is still looking while availability loads, not that there is none', () => {
+    state.slots = { data: undefined, isLoading: true };
+    open();
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'i1' } });
+
+    expect(screen.getByText('Finding availability…')).toBeInTheDocument();
+    expect(screen.getByText('Loading…')).toBeInTheDocument();
+    expect(screen.queryByText(/No open slots in the next 14 days/)).not.toBeInTheDocument();
+  });
+
+  it('falls back to the email when a client record carries no phone', () => {
+    state.clients = {
+      data: { data: [{ id: 'c9', name: 'Vikram Nair', phone: null, email: 'vikram@example.in' }] },
+    };
+    open();
+    fireEvent.change(screen.getByPlaceholderText(/Search client/), { target: { value: 'Vik' } });
+    expect(screen.getByText('vikram@example.in')).toBeInTheDocument();
+  });
+
+  it('refuses a submit that is missing any one of the three required fields', () => {
+    // The button is disabled, but a form still submits on Enter — the guard in
+    // submit() is the thing that actually stops a half-filled booking.
+    open();
+    const form = document.querySelector('form') as HTMLFormElement;
+
+    fireEvent.submit(form);
+    expect(mutations.create).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByPlaceholderText(/Search client/), { target: { value: 'Asha' } });
+    fireEvent.click(screen.getByText('Asha Rao'));
+    fireEvent.submit(form);
+    expect(mutations.create).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'i1' } });
+    fireEvent.submit(form);
+    expect(mutations.create).not.toHaveBeenCalled();
+
+    fireEvent.change(document.querySelector('input[type="datetime-local"]') as HTMLInputElement, {
+      target: { value: '2026-08-20T10:00' },
+    });
+    fireEvent.submit(form);
+    expect(mutations.create).toHaveBeenCalledTimes(1);
   });
 });
 
