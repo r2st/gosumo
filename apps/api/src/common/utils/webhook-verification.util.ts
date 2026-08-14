@@ -130,3 +130,32 @@ export function verifySharedSecretSignature(options: {
   }
   return isValid;
 }
+
+/**
+ * Constant-time equality for a shared secret presented by a caller — the
+ * Meta `hub.verify_token`, the portal ingest token, and anything else compared
+ * against a configured string rather than a computed digest.
+ *
+ * Two properties that a plain `===` does not give:
+ *
+ *  1. **Fail closed on an unconfigured secret.** When `expected` is empty,
+ *     `provided === expected` is *true* for a caller who simply sends nothing,
+ *     so a missing env var turns the check into a rubber stamp rather than a
+ *     locked door. An unset secret can never match here.
+ *  2. **No early exit.** `===` on a string stops at the first differing byte,
+ *     which leaks the length of the matching prefix — the same reason the HMAC
+ *     path above uses `timingSafeEqual`. A shared secret deserves it more than
+ *     a digest does, since the secret is long-lived and the digest is not.
+ *
+ * Lengths are compared first because `timingSafeEqual` throws on a mismatch;
+ * that comparison leaks only the length, never the contents.
+ */
+export function secretsMatch(provided: string | undefined | null, expected: string): boolean {
+  if (!expected || !provided) return false;
+
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+
+  return crypto.timingSafeEqual(a, b);
+}

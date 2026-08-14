@@ -23,6 +23,7 @@ import { Public } from '../../common/decorators/public.decorator';
 import {
   allowUnverifiedWebhook,
   isProductionEnv,
+  secretsMatch,
 } from '../../common/utils/webhook-verification.util';
 import { CsvImportDto, PortalEmailDto, CtwaContextDto } from './dto';
 
@@ -155,7 +156,7 @@ export class RealtyIngestionController {
   ): Promise<{ status: string }> {
     const expected = this.configService.get<string>('realty.portalIngestToken', '');
     if (expected) {
-      if (token !== expected) {
+      if (!secretsMatch(token, expected)) {
         throw new UnauthorizedException('Invalid portal ingest token');
       }
     } else if (

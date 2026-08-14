@@ -28,6 +28,7 @@ import { WhatsAppAdapter, isStatusUpdateOnly } from './adapters/whatsapp.adapter
 import { InstagramAdapter, isNonMessageEventOnly } from './adapters/instagram.adapter';
 import { WhatsAppVerifyQueryDto } from './dto/webhook.dto';
 import { Public } from '../../common/decorators/public.decorator';
+import { secretsMatch } from '../../common/utils/webhook-verification.util';
 
 /**
  * Webhook endpoints for all channel adapters.
@@ -89,15 +90,19 @@ export class ChannelAdapterController {
 
     const expectedToken = this.configService.get<string>('whatsapp.verifyToken', '');
 
-    if (mode === 'subscribe' && verifyToken === expectedToken) {
+    // secretsMatch, not `===`: with the token unconfigured, `expectedToken` is
+    // '' and a caller who simply omits hub.verify_token compares equal, passing
+    // Meta's ownership challenge against an endpoint they do not own.
+    const tokenMatch = secretsMatch(verifyToken, expectedToken);
+
+    if (mode === 'subscribe' && tokenMatch) {
       this.logger.log('WhatsApp webhook verification successful');
       res.status(HttpStatus.OK).send(challenge);
       return;
     }
 
     this.logger.warn(
-      `WhatsApp webhook verification failed: mode=${mode}, ` +
-        `tokenMatch=${verifyToken === expectedToken}`,
+      `WhatsApp webhook verification failed: mode=${mode}, tokenMatch=${tokenMatch}`,
     );
     res.status(HttpStatus.FORBIDDEN).json({ message: 'Webhook verification failed' });
   }

@@ -7,6 +7,7 @@ import { RealtyLeadsService } from '../realty-leads/realty-leads.service';
 import {
   allowUnverifiedWebhook,
   isProductionEnv,
+  secretsMatch,
 } from '../../common/utils/webhook-verification.util';
 import { parseMetaLeadgen } from './meta-leadgen.parser';
 import { parsePortalEmail } from './portal-email.parser';
@@ -78,7 +79,7 @@ export class RealtyIngestionService {
     const expected =
       this.configService.get<string>('realty.metaLeadgenVerifyToken', '') ||
       this.configService.get<string>('whatsapp.verifyToken', '');
-    if (mode === 'subscribe' && verifyToken && verifyToken === expected) {
+    if (mode === 'subscribe' && secretsMatch(verifyToken, expected)) {
       return challenge ?? '';
     }
     return null;

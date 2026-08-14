@@ -25,6 +25,8 @@ import { WebChatAdapter } from '../../modules/channel-adapter/adapters/webchat.a
 import { RealtyIngestionService } from '../../modules/realty-ingestion/realty-ingestion.service';
 import { RealtyIvrService } from '../../modules/realty-ingestion/realty-ivr.service';
 import { RealtyIngestionController } from '../../modules/realty-ingestion/realty-ingestion.controller';
+import { ChannelAdapterController } from '../../modules/channel-adapter/channel-adapter.controller';
+import type { Response } from 'express';
 import type { PortalEmailDto } from '../../modules/realty-ingestion/dto';
 import type { RealtyLeadsService } from '../../modules/realty-leads/realty-leads.service';
 import type { ChannelAdapterService } from '../../modules/channel-adapter/channel-adapter.service';
@@ -32,6 +34,7 @@ import type { PrismaService } from '../services/prisma.service';
 import {
   allowUnverifiedWebhook,
   isProductionEnv,
+  secretsMatch,
   verifySharedSecretSignature,
 } from './webhook-verification.util';
 
@@ -517,5 +520,132 @@ describe('WebChatAdapter.validateWebhook — reachable via POST /webhooks/web_ch
 
   it('stays permissive in development', () => {
     expect(adapter('development').validateWebhook(UNSIGNED_REQUEST)).toBe(true);
+  });
+});
+
+/**
+ * Shared-secret comparison. These are the tokens a caller *presents* (Meta's
+ * hub.verify_token, the portal ingest token) rather than a digest we compute,
+ * and they were compared with `===` — which fails open on an unset secret and
+ * exits early on a mismatch.
+ */
+describe('secretsMatch', () => {
+  it('accepts the correct secret', () => {
+    expect(secretsMatch('s3cret-token', 's3cret-token')).toBe(true);
+  });
+
+  it('rejects a wrong secret of the same length', () => {
+    expect(secretsMatch('s3cret-tokeN', 's3cret-token')).toBe(false);
+  });
+
+  it('rejects a secret of a different length', () => {
+    expect(secretsMatch('s3cret', 's3cret-token')).toBe(false);
+    expect(secretsMatch('s3cret-token-plus', 's3cret-token')).toBe(false);
+  });
+
+  /**
+   * The bypass this replaces: with the token unconfigured, `expected` is '' and
+   * `provided === expected` is true for a caller who simply sends nothing — so
+   * a missing env var made the check a rubber stamp instead of a locked door.
+   */
+  describe('fails closed on an unconfigured secret', () => {
+    it.each([
+      ['empty provided', '', ''],
+      ['undefined provided', undefined, ''],
+      ['null provided', null, ''],
+      ['a guess against no secret', 'anything', ''],
+    ])('rejects %s', (_label, provided, expected) => {
+      expect(secretsMatch(provided as string | undefined | null, expected)).toBe(false);
+    });
+  });
+
+  it('rejects an absent token even when a secret IS configured', () => {
+    expect(secretsMatch(undefined, 's3cret-token')).toBe(false);
+    expect(secretsMatch('', 's3cret-token')).toBe(false);
+  });
+
+  it('compares bytes, not normalised strings', () => {
+    // Same visible text, different bytes — must not match.
+    expect(secretsMatch('ｔoken', 'token')).toBe(false);
+  });
+});
+
+/**
+ * Meta's GET ownership challenge. Passing it is how a Meta app proves it
+ * controls this endpoint, so it must not be passable by someone who does not.
+ */
+describe('WhatsApp webhook verification challenge', () => {
+  function makeController(verifyToken: string) {
+    const config = {
+      get: (key: string, fallback?: string) =>
+        key === 'whatsapp.verifyToken' ? verifyToken : (fallback ?? ''),
+    } as unknown as ConfigService;
+
+    return new ChannelAdapterController(
+      {} as unknown as ChannelAdapterService,
+      {} as unknown as WhatsAppAdapter,
+      {} as unknown as InstagramAdapter,
+      config,
+    );
+  }
+
+  function res() {
+    const r = { status: jest.fn().mockReturnThis(), send: jest.fn(), json: jest.fn() };
+    return r as unknown as Response & typeof r;
+  }
+
+  it('echoes the challenge for the configured token', () => {
+    const r = res();
+    makeController('good-token').handleWhatsAppVerification(
+      { 'hub.mode': 'subscribe', 'hub.verify_token': 'good-token', 'hub.challenge': 'c123' } as never,
+      r,
+    );
+
+    expect(r.status).toHaveBeenCalledWith(200);
+    expect(r.send).toHaveBeenCalledWith('c123');
+  });
+
+  it('403s a wrong token', () => {
+    const r = res();
+    makeController('good-token').handleWhatsAppVerification(
+      { 'hub.mode': 'subscribe', 'hub.verify_token': 'guess', 'hub.challenge': 'c123' } as never,
+      r,
+    );
+
+    expect(r.status).toHaveBeenCalledWith(403);
+    expect(r.send).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Regression: the check was `verifyToken === expectedToken`. With
+   * WHATSAPP_VERIFY_TOKEN unset the expected value is '', so an empty (or
+   * omitted) hub.verify_token compared equal and the challenge was echoed to
+   * anyone who asked.
+   */
+  describe('an unconfigured verify token passes nobody', () => {
+    it.each([
+      ['an empty token', ''],
+      ['an omitted token', undefined],
+      ['a guessed token', 'anything'],
+    ])('403s %s', (_label, token) => {
+      const r = res();
+      makeController('').handleWhatsAppVerification(
+        { 'hub.mode': 'subscribe', 'hub.verify_token': token, 'hub.challenge': 'c123' } as never,
+        r,
+      );
+
+      expect(r.status).toHaveBeenCalledWith(403);
+      expect(r.send).not.toHaveBeenCalled();
+    });
+  });
+
+  it('403s a correct token presented with the wrong mode', () => {
+    const r = res();
+    makeController('good-token').handleWhatsAppVerification(
+      { 'hub.mode': 'unsubscribe', 'hub.verify_token': 'good-token', 'hub.challenge': 'c' } as never,
+      r,
+    );
+
+    expect(r.status).toHaveBeenCalledWith(403);
   });
 });
