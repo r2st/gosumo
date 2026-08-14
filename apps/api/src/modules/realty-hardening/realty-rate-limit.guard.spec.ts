@@ -87,4 +87,46 @@ describe('RealtyRateLimitGuard', () => {
     for (let i = 0; i < limit; i += 1) limiter.tryConsume(BIZ, bucket);
     expect(() => g.canActivate(makeContext(req, res))).toThrow(HttpException);
   });
+
+  it('passes through non-HTTP contexts (WebSocket / queue) without touching the limiter', () => {
+    const consume = jest.spyOn(limiter, 'tryConsume');
+    const ctx = {
+      getType: () => 'ws',
+      getHandler: () => handlerFn,
+      getClass: () => DummyController,
+      switchToHttp: () => {
+        throw new Error('switchToHttp must not be reached for a ws context');
+      },
+    } as never;
+
+    expect(guard.canActivate(ctx)).toBe(true);
+    expect(consume).not.toHaveBeenCalled();
+  });
+
+  it('defaults a method-less request to GET, which is never throttled', () => {
+    const ctx = makeContext({ path: '/v1/realty/leads', tenantId: BIZ }, res);
+    expect(guard.canActivate(ctx)).toBe(true);
+    expect(res.setHeader).not.toHaveBeenCalled();
+  });
+
+  it('falls back to req.url when Express has not populated req.path', () => {
+    const ctx = makeContext({ method: 'POST', url: '/v1/realty/leads?page=1', tenantId: BIZ }, res);
+    expect(guard.canActivate(ctx)).toBe(true);
+    expect(res.setHeader).toHaveBeenCalledWith('X-RateLimit-Limit', expect.any(Number));
+  });
+
+  it('treats a request with neither path nor url as non-realty and lets it through', () => {
+    const ctx = makeContext({ method: 'POST', tenantId: BIZ }, res);
+    expect(guard.canActivate(ctx)).toBe(true);
+    expect(res.setHeader).not.toHaveBeenCalled();
+  });
+
+  it('reads the tenant from the JWT user when the interceptor has not set tenantId', () => {
+    const ctx = makeContext(
+      { method: 'POST', path: '/v1/realty/leads', user: { businessId: BIZ } },
+      res,
+    );
+    expect(guard.canActivate(ctx)).toBe(true);
+    expect(res.setHeader).toHaveBeenCalledWith('X-RateLimit-Limit', expect.any(Number));
+  });
 });

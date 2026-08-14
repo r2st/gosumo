@@ -160,6 +160,63 @@ describe('Channel senders', () => {
       const r = await sender.send(outbound({ recipient: 'd'.repeat(40), subject: 'Ping' }));
       expect(r.success).toBe(true);
     });
+
+    it('fails permanently (non-retryable) for a too-short device token', async () => {
+      const r = await sender.send(outbound({ recipient: 'short' }));
+      expect(r).toEqual({
+        success: false,
+        error: expect.stringMatching(/Invalid device token/),
+        retryable: false,
+      });
+    });
+
+    it('no-ops without an FCM server key, logging a blank title for a subjectless push', async () => {
+      const debug = jest
+        .spyOn((sender as unknown as { logger: { debug: (m: string) => void } }).logger, 'debug')
+        .mockImplementation(() => undefined);
+
+      const r = await sender.send(outbound({ recipient: 'd'.repeat(40), subject: null }));
+
+      expect(r.success).toBe(true);
+      expect(r.providerMessageId).toContain('push_noop_');
+      expect(debug).toHaveBeenCalledWith(expect.stringContaining('""'));
+      debug.mockRestore();
+    });
+
+    it('reports a retryable failure when the provider call throws', async () => {
+      const configured = new PushSender({
+        get: () => 'fcm-server-key',
+      } as unknown as ConfigService);
+      jest
+        .spyOn((configured as unknown as { logger: { log: () => void } }).logger, 'log')
+        .mockImplementation(() => {
+          throw new Error('FCM unreachable');
+        });
+
+      const r = await configured.send(outbound({ recipient: 'd'.repeat(40) }));
+
+      expect(r).toEqual({ success: false, error: 'FCM unreachable', retryable: true });
+    });
+
+    it('stringifies a non-Error thrown by the provider call', async () => {
+      const configured = new PushSender({
+        get: () => 'fcm-server-key',
+      } as unknown as ConfigService);
+      jest
+        .spyOn((configured as unknown as { logger: { log: () => void } }).logger, 'log')
+        .mockImplementation(() => {
+          // eslint-disable-next-line @typescript-eslint/no-throw-literal
+          throw 'socket hang up';
+        });
+      const errorSpy = jest
+        .spyOn((configured as unknown as { logger: { error: () => void } }).logger, 'error')
+        .mockImplementation(() => undefined);
+
+      const r = await configured.send(outbound({ recipient: 'd'.repeat(40) }));
+
+      expect(r).toEqual({ success: false, error: 'socket hang up', retryable: true });
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('socket hang up'));
+    });
   });
 
   describe('SenderRegistry', () => {

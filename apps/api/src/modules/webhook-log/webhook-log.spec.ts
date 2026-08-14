@@ -72,6 +72,48 @@ describe('WebhookLogService', () => {
       expect(result.data[0]).not.toHaveProperty('payload');
       expect(result.data[0]).not.toHaveProperty('headers');
     });
+
+    it('parses the from/to ISO bounds into Dates for the repository', async () => {
+      repo.findMany.mockResolvedValue({ data: [], total: 0, page: 1, limit: 20, totalPages: 0 });
+
+      await service.list(BUSINESS_ID, {
+        from: '2026-06-01T00:00:00.000Z',
+        to: '2026-06-08T00:00:00.000Z',
+      });
+
+      expect(repo.findMany).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        expect.objectContaining({
+          from: new Date('2026-06-01T00:00:00.000Z'),
+          to: new Date('2026-06-08T00:00:00.000Z'),
+        }),
+      );
+    });
+
+    it('leaves the range undefined when neither bound is supplied', async () => {
+      repo.findMany.mockResolvedValue({ data: [], total: 0, page: 1, limit: 20, totalPages: 0 });
+
+      await service.list(BUSINESS_ID, {});
+
+      const filters = repo.findMany.mock.calls[0]?.[1];
+      expect(filters?.from).toBeUndefined();
+      expect(filters?.to).toBeUndefined();
+    });
+
+    it('serializes a never-processed event with a null processedAt', async () => {
+      repo.findMany.mockResolvedValue({
+        data: [makeEvent({ processed: false, processed_at: null, error: 'timeout' })],
+        total: 1,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+      });
+
+      const result = await service.list(BUSINESS_ID, {});
+
+      expect(result.data[0]?.processedAt).toBeNull();
+      expect(result.data[0]?.error).toBe('timeout');
+    });
   });
 
   describe('get', () => {
@@ -104,6 +146,45 @@ describe('WebhookLogService', () => {
       const spanMs = new Date(result.to).getTime() - new Date(result.from).getTime();
       expect(spanMs).toBeCloseTo(7 * 24 * 60 * 60 * 1000, -3);
       expect(result.unprocessed).toBe(3);
+    });
+
+    it('honours an explicit from/to range instead of the trailing default', async () => {
+      repo.getStats.mockResolvedValue({
+        total: 2,
+        processed: 2,
+        unprocessed: 0,
+        invalidSignature: 0,
+        bySource: [],
+      });
+
+      const result = await service.getStats(
+        BUSINESS_ID,
+        '2026-01-01T00:00:00.000Z',
+        '2026-01-02T00:00:00.000Z',
+      );
+
+      expect(repo.getStats).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        new Date('2026-01-01T00:00:00.000Z'),
+        new Date('2026-01-02T00:00:00.000Z'),
+      );
+      expect(result.from).toBe('2026-01-01T00:00:00.000Z');
+      expect(result.to).toBe('2026-01-02T00:00:00.000Z');
+    });
+
+    it('anchors the default 7-day window to an explicit `to` when only `to` is given', async () => {
+      repo.getStats.mockResolvedValue({
+        total: 0,
+        processed: 0,
+        unprocessed: 0,
+        invalidSignature: 0,
+        bySource: [],
+      });
+
+      const result = await service.getStats(BUSINESS_ID, undefined, '2026-01-08T00:00:00.000Z');
+
+      expect(result.to).toBe('2026-01-08T00:00:00.000Z');
+      expect(result.from).toBe('2026-01-01T00:00:00.000Z');
     });
   });
 });
