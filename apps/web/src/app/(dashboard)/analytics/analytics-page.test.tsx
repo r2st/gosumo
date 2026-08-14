@@ -9,7 +9,7 @@
  * VIEWER must not be offered. The sections are covered through the numbers they
  * derive — approval rate, churn rate, leaderboard order — rather than markup.
  */
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AutonomyReport, ClientReport, Role } from '@/lib/feature-types';
 import type { ConversationReport, DashboardMetrics, RevenueReport } from '@/lib/types';
@@ -259,6 +259,32 @@ describe('AnalyticsPage exports', () => {
       expect.objectContaining({ reportType: 'AI_AUTONOMY' }),
       expect.anything(),
     );
+  });
+
+  /**
+   * The button flips to a "Queued" confirmation and flips back on a timer. The
+   * revert is the part that can silently rot: nothing else clears the flag, so
+   * a broken timer leaves the control reading "Queued" forever, and an operator
+   * who wants a second export has no way to tell whether the first one landed.
+   */
+  it('confirms the queue, then returns the button to its normal label', () => {
+    vi.useFakeTimers();
+    try {
+      render(<AnalyticsPage />);
+      fireEvent.click(screen.getByRole('button', { name: /PDF/ }));
+
+      // The page only shows the confirmation once the mutation reports success.
+      act(() => {
+        exportReport.mock.calls[0]![1].onSuccess();
+      });
+      expect(screen.getByRole('button', { name: /Queued/ })).toBeInTheDocument();
+
+      act(() => vi.advanceTimersByTime(2500));
+      expect(screen.queryByRole('button', { name: /Queued/ })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /PDF/ })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('exports the Leads tab as a client report', () => {

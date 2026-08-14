@@ -69,17 +69,45 @@ vi.mock('@/hooks/use-permissions', () => ({
 vi.mock('@/components/payments/revenue-summary', () => ({
   RevenueSummary: () => <div data-testid="revenue-summary" />,
 }));
+// Each stub carries its own close control, so the page's `onClose` handlers —
+// which are what actually reset the page's selection state — are reachable.
 vi.mock('@/components/payments/create-payment-link-modal', () => ({
-  CreatePaymentLinkModal: ({ open }: { open: boolean }) =>
-    open ? <div data-testid="link-modal" /> : null,
+  CreatePaymentLinkModal: ({ open, onClose }: { open: boolean; onClose: () => void }) =>
+    open ? (
+      <div data-testid="link-modal">
+        <button onClick={onClose}>close link</button>
+      </div>
+    ) : null,
 }));
 vi.mock('@/components/payments/payment-detail-drawer', () => ({
-  PaymentDetailDrawer: ({ paymentId }: { paymentId: string | null }) =>
-    paymentId ? <div data-testid="detail-drawer">{paymentId}</div> : null,
+  PaymentDetailDrawer: ({
+    paymentId,
+    onClose,
+  }: {
+    paymentId: string | null;
+    onClose: () => void;
+  }) =>
+    paymentId ? (
+      <div data-testid="detail-drawer">
+        {paymentId}
+        <button onClick={onClose}>close payment</button>
+      </div>
+    ) : null,
 }));
 vi.mock('@/components/payments/invoice-detail-drawer', () => ({
-  InvoiceDetailDrawer: ({ payment }: { payment: Payment | null }) =>
-    payment ? <div data-testid="invoice-drawer">{payment.id}</div> : null,
+  InvoiceDetailDrawer: ({
+    payment,
+    onClose,
+  }: {
+    payment: Payment | null;
+    onClose: () => void;
+  }) =>
+    payment ? (
+      <div data-testid="invoice-drawer">
+        {payment.id}
+        <button onClick={onClose}>close invoice</button>
+      </div>
+    ) : null,
 }));
 
 import PaymentsPage from './page';
@@ -198,6 +226,18 @@ describe('PaymentsPage', () => {
     expect(screen.getByTestId('detail-drawer')).toHaveTextContent('aaaaaaaa-bbbb-cccc');
   });
 
+  it('clears the selection when the drawer closes, so the same row reopens', () => {
+    // Leaving `detailId` set makes a second click on the same row a no-op:
+    // the state never changes, so nothing re-renders.
+    render(<PaymentsPage />);
+    fireEvent.click(screen.getByText('Asha Rao'));
+    fireEvent.click(screen.getByText('close payment'));
+    expect(screen.queryByTestId('detail-drawer')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Asha Rao'));
+    expect(screen.getByTestId('detail-drawer')).toBeInTheDocument();
+  });
+
   it('does not open the drawer when the link in the row is clicked', () => {
     state.payments = {
       ...state.payments,
@@ -219,6 +259,18 @@ describe('PaymentsPage', () => {
       role = 'VIEWER';
       render(<PaymentsPage />);
       expect(screen.queryByRole('button', { name: /payment link/i })).not.toBeInTheDocument();
+    });
+
+    it('closes, and can be opened again', () => {
+      // A close handler that does not reset the flag leaves the modal stuck
+      // open; the second open is what proves the state actually went back.
+      render(<PaymentsPage />);
+      fireEvent.click(screen.getByRole('button', { name: /payment link/i }));
+      fireEvent.click(screen.getByText('close link'));
+      expect(screen.queryByTestId('link-modal')).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: /payment link/i }));
+      expect(screen.getByTestId('link-modal')).toBeInTheDocument();
     });
   });
 
@@ -311,6 +363,17 @@ describe('PaymentsPage', () => {
         expect(screen.getByText('INV-2026-AAAAAAAA')).toBeInTheDocument();
       },
     );
+
+    it('clears the invoice when its drawer closes', () => {
+      render(<PaymentsPage />);
+      fireEvent.click(invoicesTab());
+      fireEvent.click(screen.getByText('INV-2026-AAAAAAAA'));
+      fireEvent.click(screen.getByText('close invoice'));
+      expect(screen.queryByTestId('invoice-drawer')).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByText('INV-2026-AAAAAAAA'));
+      expect(screen.getByTestId('invoice-drawer')).toBeInTheDocument();
+    });
 
     it('goes back to the payments list', () => {
       render(<PaymentsPage />);

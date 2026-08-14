@@ -53,17 +53,38 @@ vi.mock('@/components/bookings/booking-calendar', () => ({
   },
 }));
 
+// Each stub exposes its own close control, so the page's `onClose` handlers —
+// the things that actually reset the page's state — are reachable from a test.
 vi.mock('@/components/bookings/create-booking-modal', () => ({
-  CreateBookingModal: ({ open }: { open: boolean }) =>
-    open ? <div data-testid="create-modal" /> : null,
+  CreateBookingModal: ({ open, onClose }: { open: boolean; onClose: () => void }) =>
+    open ? (
+      <div data-testid="create-modal">
+        <button onClick={onClose}>close create</button>
+      </div>
+    ) : null,
 }));
 vi.mock('@/components/bookings/availability-settings', () => ({
-  AvailabilitySettings: ({ open }: { open: boolean }) =>
-    open ? <div data-testid="availability" /> : null,
+  AvailabilitySettings: ({ open, onClose }: { open: boolean; onClose: () => void }) =>
+    open ? (
+      <div data-testid="availability">
+        <button onClick={onClose}>close availability</button>
+      </div>
+    ) : null,
 }));
 vi.mock('@/components/bookings/booking-detail-drawer', () => ({
-  BookingDetailDrawer: ({ bookingId }: { bookingId: string | null }) =>
-    bookingId ? <div data-testid="detail-drawer">{bookingId}</div> : null,
+  BookingDetailDrawer: ({
+    bookingId,
+    onClose,
+  }: {
+    bookingId: string | null;
+    onClose: () => void;
+  }) =>
+    bookingId ? (
+      <div data-testid="detail-drawer">
+        {bookingId}
+        <button onClick={onClose}>close drawer</button>
+      </div>
+    ) : null,
 }));
 
 import BookingsPage from './page';
@@ -178,6 +199,21 @@ describe('BookingsPage list', () => {
     expect(screen.getByTestId('detail-drawer')).toHaveTextContent('bk-2');
   });
 
+  it('clears the selected booking on close, so the same row reopens', () => {
+    // If closing left `detailId` set, clicking the same row again would be a
+    // no-op — the state never changes, so nothing re-renders.
+    bookings = [makeBooking()];
+    render(<BookingsPage />);
+    showList();
+
+    fireEvent.click(screen.getByText('Asha Rao').closest('tr')!);
+    fireEvent.click(screen.getByText('close drawer'));
+    expect(screen.queryByTestId('detail-drawer')).toBeNull();
+
+    fireEvent.click(screen.getByText('Asha Rao').closest('tr')!);
+    expect(screen.getByTestId('detail-drawer')).toBeInTheDocument();
+  });
+
   it('opens the drawer from a calendar selection too', () => {
     render(<BookingsPage />);
 
@@ -220,6 +256,26 @@ describe('BookingsPage write gating', () => {
     expect(screen.getByTestId('availability')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /New booking/ }));
+    expect(screen.getByTestId('create-modal')).toBeInTheDocument();
+  });
+
+  it('closes each dialog and can reopen it', () => {
+    // A close handler that fails to reset the flag leaves the dialog stuck
+    // open; one that resets the wrong flag makes the second open a no-op.
+    // Both look identical until you actually close and reopen.
+    render(<BookingsPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /New booking/ }));
+    fireEvent.click(screen.getByText('close create'));
+    expect(screen.queryByTestId('create-modal')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /New booking/ }));
+    expect(screen.getByTestId('create-modal')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Availability/ }));
+    fireEvent.click(screen.getByText('close availability'));
+    expect(screen.queryByTestId('availability')).toBeNull();
+    // Closing availability must not have closed the create modal with it.
     expect(screen.getByTestId('create-modal')).toBeInTheDocument();
   });
 
