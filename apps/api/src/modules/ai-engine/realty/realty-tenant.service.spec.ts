@@ -80,6 +80,35 @@ describe('RealtyTenantService', () => {
     await expect(service.isRealtyTenant('ghost')).resolves.toBe(false);
   });
 
+  it('treats a business with no profile at all as unclassified, not as a crash', async () => {
+    // `profile` is nullable, and the classifier indexes into it. Without the
+    // `?? {}` this throws — and the throw lands in the catch below, which
+    // degrades every message from that tenant to the generic pipeline
+    // permanently rather than falling through to the footprint check.
+    businesses.findFirst.mockResolvedValue({ profile: null });
+    leads.findFirst.mockResolvedValue({ id: 'lead-1' });
+
+    await expect(service.isRealtyTenant('biz-1')).resolves.toBe(true);
+  });
+
+  it('falls back to the generic pipeline when the lookup rejects with a non-Error', async () => {
+    // A driver rejection can be a bare string. The warn path stringifies
+    // instead of reading `.message`, which would throw inside the catch and
+    // propagate into message processing — the thing this guard exists to stop.
+    businesses.findFirst.mockRejectedValueOnce('connection terminated');
+    await expect(service.isRealtyTenant('biz-1')).resolves.toBe(false);
+  });
+
+  it('does not cache a transient failure', async () => {
+    // Caching a hiccup would strand a real realty tenant on the generic
+    // pipeline for the whole TTL.
+    businesses.findFirst.mockRejectedValueOnce(new Error('timeout'));
+    await expect(service.isRealtyTenant('biz-1')).resolves.toBe(false);
+
+    businesses.findFirst.mockResolvedValue({ profile: { vertical: 'realty' } });
+    await expect(service.isRealtyTenant('biz-1')).resolves.toBe(true);
+  });
+
   it('returns false for an empty businessId without querying', async () => {
     await expect(service.isRealtyTenant('')).resolves.toBe(false);
     expect(businesses.findFirst).not.toHaveBeenCalled();

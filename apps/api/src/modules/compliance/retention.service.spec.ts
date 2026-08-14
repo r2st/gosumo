@@ -64,6 +64,18 @@ describe('RetentionService', () => {
       expect(repo.findInactiveLeads).toHaveBeenCalledWith(BIZ_A, retentionCutoff(24, NOW));
     });
 
+    it('falls back to the default when settings exist but name no window', async () => {
+      // A settings row created for the data-processor agreement alone leaves
+      // retention_months null. Reading that as the window would make the
+      // cutoff NaN and quietly anonymize nothing — or everything.
+      repo.findSettings.mockResolvedValueOnce({ retention_months: null });
+
+      const res = await service.runForBusiness(BIZ_A, NOW);
+
+      expect(res.retentionMonths).toBe(DEFAULT_RETENTION_MONTHS);
+      expect(res.cutoff).toEqual(retentionCutoff(DEFAULT_RETENTION_MONTHS, NOW));
+    });
+
     it('honors a per-business retention window from settings', async () => {
       repo.findSettings.mockResolvedValueOnce({ retention_months: 12 });
       const res = await service.runForBusiness(BIZ_A, NOW);
@@ -148,6 +160,22 @@ describe('RetentionService', () => {
       repo.findInactiveLeads
         .mockRejectedValueOnce(new Error('biz A blew up')) // BIZ_A fails
         .mockResolvedValueOnce([]); // BIZ_B succeeds
+
+      const results = await service.runAll(NOW);
+
+      expect(results).toHaveLength(1);
+      expect(results[0]?.businessId).toBe(BIZ_B);
+    });
+
+    it('survives a business that rejects with something that is not an Error', async () => {
+      // A driver-level rejection can be a plain string or object. The handler
+      // stringifies rather than reading `.message` off it — reading it blind
+      // would throw *inside the catch*, which aborts the whole sweep and so
+      // skips every remaining tenant's purge.
+      repo.listBusinessIdsWithLeads.mockResolvedValueOnce([BIZ_A, BIZ_B]);
+      repo.findInactiveLeads
+        .mockRejectedValueOnce('connection terminated')
+        .mockResolvedValueOnce([]);
 
       const results = await service.runAll(NOW);
 

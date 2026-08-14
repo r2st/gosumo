@@ -34,4 +34,15 @@ describe('NotificationEventListener', () => {
       listener.handleTriggerEvent({ type: 'order.confirmed' } as never),
     ).resolves.toBeUndefined();
   });
+
+  it('swallows a rejection that is not an Error too', async () => {
+    // The handler stringifies the rejection rather than reading `.message`
+    // off it. Reading it blind would throw inside the catch, which is the one
+    // place a throw is not caught — and would take the emitting flow down
+    // with it, which is exactly what this listener exists to prevent.
+    service.handleEventTrigger.mockRejectedValueOnce('socket hang up');
+    await expect(
+      listener.handleTriggerEvent({ type: 'order.confirmed' } as never),
+    ).resolves.toBeUndefined();
+  });
 });
