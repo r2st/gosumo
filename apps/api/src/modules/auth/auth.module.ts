@@ -13,7 +13,7 @@ import { GoogleStrategy } from './strategies/google.strategy';
 import { RolesGuard } from './guards/roles.guard';
 import { AuthThrottleGuard } from './auth-throttle.guard';
 import { AuthThrottleLimiter } from './auth-throttle.limiter';
-import { redisProvider, REDIS_CLIENT } from './redis.provider';
+import { redisProvider, REDIS_CLIENT, RedisLifecycle } from './redis.provider';
 import { PrismaService } from '../../common/services/prisma.service';
 
 @Module({
@@ -63,6 +63,10 @@ import { PrismaService } from '../../common/services/prisma.service';
       useClass: AuthThrottleGuard,
     },
     redisProvider,
+    // The provider above is a useFactory, and the ioredis instance it returns
+    // has no lifecycle hook of its own — this is what closes the socket when
+    // Nest tears the app down.
+    RedisLifecycle,
     PrismaService,
   ],
   exports: [

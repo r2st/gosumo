@@ -1,4 +1,4 @@
-import { Logger, Provider } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleDestroy, Provider } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 
@@ -28,6 +28,8 @@ export interface RedisClient {
   /** Liveness probe for the readiness check. */
   ping(): Promise<string>;
   quit(): Promise<'OK'>;
+  /** Hard socket teardown, used when a graceful `quit()` will not come back. */
+  disconnect?(): void;
 }
 
 export const redisProvider: Provider = {
@@ -56,3 +58,63 @@ export const redisProvider: Provider = {
     return client as unknown as RedisClient;
   },
 };
+
+/**
+ * How long to wait for a graceful `QUIT` before pulling the socket down.
+ *
+ * `quit()` waits for the command queue to drain and for the server to answer.
+ * If Redis is the reason the process is being restarted, that answer never
+ * arrives and — with `maxRetriesPerRequest: null` set above — ioredis will
+ * keep retrying rather than failing, so an unbounded await here would hang
+ * shutdown until the supervisor's kill timer fires.
+ */
+export const REDIS_QUIT_TIMEOUT_MS = 5_000;
+
+/**
+ * RedisLifecycle — closes the shared ioredis connection when Nest tears the
+ * application down.
+ *
+ * `redisProvider` is a `useFactory`, and the value it returns is an ioredis
+ * instance with no lifecycle hook of its own, so nothing was ever closing this
+ * socket: on every `systemd` restart the old process exited with its Redis
+ * connection still established, leaving the server to reap it on its own
+ * timeout. This class is the hook — `main.ts` already calls
+ * `enableShutdownHooks()`, so `onModuleDestroy` runs on SIGTERM.
+ *
+ * Shutdown is best-effort by design. A failure to close a connection cannot be
+ * allowed to abort the shutdown of everything registered after it, so every
+ * path here logs and returns rather than throwing.
+ */
+@Injectable()
+export class RedisLifecycle implements OnModuleDestroy {
+  private readonly logger = new Logger(RedisLifecycle.name);
+
+  constructor(@Inject(REDIS_CLIENT) private readonly client: RedisClient) {}
+
+  async onModuleDestroy(): Promise<void> {
+    try {
+      await Promise.race([
+        this.client.quit(),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error(`QUIT did not complete in ${REDIS_QUIT_TIMEOUT_MS}ms`)),
+            REDIS_QUIT_TIMEOUT_MS,
+          ).unref?.(),
+        ),
+      ]);
+      this.logger.log('Redis connection closed');
+    } catch (err) {
+      // Already-closed and never-connected both land here, as does the
+      // timeout. None of them are worth failing a shutdown over — but the
+      // socket still has to go, or the process will not exit on its own.
+      this.logger.warn(
+        `Graceful Redis shutdown failed (${(err as Error).message}); forcing disconnect`,
+      );
+      try {
+        this.client.disconnect?.();
+      } catch {
+        // Nothing left to try, and nothing left that could care.
+      }
+    }
+  }
+}
