@@ -8,6 +8,7 @@ import {
   MessageBody,
 } from "@nestjs/websockets";
 import { Logger } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { Server, Socket } from "socket.io";
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import {
@@ -19,6 +20,10 @@ import { generateId, generateCorrelationId } from "@gosumo/shared";
 import { PrismaService } from "../../../common/services/prisma.service";
 import { ChannelAdapterService } from "../channel-adapter.service";
 import { webchatResponseMap } from "../adapters/webchat.adapter";
+import {
+  signWebChatSession,
+  verifyWebChatSession,
+} from "../../../common/utils/webchat-session.util";
 
 interface SessionContext {
   businessId: string;
@@ -50,7 +55,18 @@ export class WebChatGateway implements OnGatewayConnection, OnGatewayDisconnect 
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
     private readonly channelAdapterService: ChannelAdapterService,
+    private readonly configService: ConfigService,
   ) {}
+
+  /**
+   * Key the session-token HMAC is signed with.
+   *
+   * `JWT_SECRET` is already a required env var, so this adds no new deployment
+   * surface — and it is the same key the OAuth state tokens use.
+   */
+  private sessionSecret(): string {
+    return this.configService.get<string>("jwt.secret", "");
+  }
 
   handleConnection(client: Socket): void {
     const widgetId = client.handshake.query.widgetId as string;
@@ -108,7 +124,39 @@ export class WebChatGateway implements OnGatewayConnection, OnGatewayDisconnect 
       return { sessionId: "", greeting: "Widget not found" };
     }
 
-    const sessionId = data.sessionId || generateId();
+    const secret = this.sessionSecret();
+    if (!secret) {
+      // Without a signing key every session token would be forgeable, so refuse
+      // to open the channel rather than fall back to the unauthenticated form.
+      this.logger.error(
+        "Cannot start a WebChat session: jwt.secret is not configured",
+      );
+      return { sessionId: "", greeting: "Chat is unavailable right now" };
+    }
+
+    // The visitor's token is the only claim to an existing thread, and it
+    // arrives from a browser we do not control. Verify it — and verify it was
+    // minted for *this* widget — before letting it name a session; anything
+    // that fails simply starts a fresh one.
+    let sessionId: string;
+    if (data.sessionId) {
+      const verified = verifyWebChatSession(data.sessionId, secret, widgetId);
+      if (verified) {
+        sessionId = verified.sessionId;
+      } else {
+        sessionId = generateId();
+        this.logger.warn(
+          "Rejected WebChat session token for widget " + widgetId +
+          " (forged, expired, or minted for another widget) — issuing a new session",
+        );
+      }
+    } else {
+      sessionId = generateId();
+    }
+
+    // Only the signed form leaves the server. Everything below — the maps, the
+    // `channel_contacts.external_id`, the emitted events — keys on the raw id.
+    const sessionToken = signWebChatSession(widgetId, secret, sessionId);
 
     // Find or create a client for this webchat visitor
     const clientRecord = await this.findOrCreateWebChatClient(
@@ -153,20 +201,36 @@ export class WebChatGateway implements OnGatewayConnection, OnGatewayDisconnect 
       " conversation " + conversation.id,
     );
 
-    return { sessionId, greeting };
+    return { sessionId: sessionToken, greeting };
   }
 
   @SubscribeMessage("chat:message")
   async handleMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { sessionId: string; text: string },
+    @MessageBody() data: { sessionId?: string; text: string },
   ): Promise<{ received: boolean; messageId: string }> {
-    const sessionId = data.sessionId;
     const text = data.text;
     const messageId = generateId();
     const correlationId = generateCorrelationId();
 
-    // Get session context
+    // The session comes from the socket, never from the body.
+    //
+    // `sessionContext` is a process-wide map spanning every tenant, so honouring
+    // `data.sessionId` let any connected socket post into any *other* live
+    // visitor's conversation — under that conversation's businessId — just by
+    // naming its session. No forged init and no database read were needed; the
+    // handler simply looked up whatever key it was handed. Resolving through
+    // `socketToSession` binds a message to the session this socket actually
+    // completed `chat:init` for. The body field is still accepted for wire
+    // compatibility with older widgets, and still ignored.
+    const sessionId = this.socketToSession.get(client.id);
+    if (!sessionId) {
+      this.logger.warn(
+        "Rejected chat:message from socket " + client.id + " with no initialized session",
+      );
+      return { received: false, messageId };
+    }
+
     const ctx = this.sessionContext.get(sessionId);
     if (!ctx) {
       this.logger.warn("No session context for " + sessionId);

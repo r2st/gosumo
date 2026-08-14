@@ -37,6 +37,9 @@ import { PrismaService } from '../../../src/common/services/prisma.service';
 // ─────────────────────────────────────────────
 
 export const TEST_CONFIG = {
+  // Signing key for WebChat session tokens. Production reuses JWT_SECRET; the
+  // gateway fails closed without it, so the harness must supply one.
+  'jwt.secret': 'e2e-jwt-secret-32-chars-cccccccccc',
   // Instagram
   'instagram.appSecret': 'ig-app-secret-32-chars-aaaaaaaaaa',
   'instagram.accessToken': 'ig-access-token',
