@@ -16,6 +16,7 @@
  */
 
 import { Test, TestingModule } from '@nestjs/testing';
+import { Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { RealtyPlan } from '@prisma/client';
 import type { business_subscriptions } from '@prisma/client';
@@ -448,6 +449,20 @@ describe('BillingService', () => {
       jest.spyOn(service, 'recordLeadUsage').mockRejectedValue(new Error('db down'));
       await expect(service.onLeadCreated(event)).resolves.toBeUndefined();
     });
+
+    it('logs a non-Error rejection by stringifying it, rather than logging undefined', async () => {
+      // A driver that rejects with a bare string or object has no `.message`;
+      // reading it blindly would put "undefined" in the log for every such fault.
+      const logged = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+      jest.spyOn(service, 'recordLeadUsage').mockRejectedValue('ECONNRESET');
+
+      await expect(service.onLeadCreated(event)).resolves.toBeUndefined();
+
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining('ECONNRESET'));
+      logged.mockRestore();
+    });
   });
 
   // ── Usage summary ──
@@ -532,6 +547,180 @@ describe('BillingService', () => {
       expect(repository.update).not.toHaveBeenCalled();
       expect(eventEmitter.emit).not.toHaveBeenCalledWith('realty.plan.changed', expect.anything());
       expect(audit.record).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── CRM sync gating ──
+  describe('checkPlanLimits — crm_sync', () => {
+    it.each([
+      [RealtyPlan.SOLO, PLAN_DEFINITIONS[RealtyPlan.SOLO].crmSyncEnabled],
+      [RealtyPlan.TEAM, PLAN_DEFINITIONS[RealtyPlan.TEAM].crmSyncEnabled],
+      [RealtyPlan.DEVELOPER, PLAN_DEFINITIONS[RealtyPlan.DEVELOPER].crmSyncEnabled],
+    ])('gates CRM sync on %s by the plan definition', async (plan, enabled) => {
+      repository.findByBusiness.mockResolvedValue(makeSub({ plan }));
+
+      const check = await service.checkPlanLimits(BUSINESS_ID, 'crm_sync', CYCLE_START);
+
+      expect(check.allowed).toBe(enabled);
+      // A feature flag is not metered: no limit, no usage, never "over".
+      expect(check).toMatchObject({
+        resource: 'crm_sync',
+        limit: null,
+        used: 0,
+        remaining: null,
+        overLimit: false,
+        autoBillOverage: false,
+        plan,
+      });
+    });
+
+    it('checks CRM sync separately from exchange, not as one "paid feature" flag', async () => {
+      // Both are cond-expr arms of the same check; a plan that has one but not
+      // the other is what stops them collapsing into a single boolean.
+      const differing = Object.values(RealtyPlan).filter(
+        (p) => PLAN_DEFINITIONS[p].exchangeEnabled !== PLAN_DEFINITIONS[p].crmSyncEnabled,
+      );
+      for (const plan of differing) {
+        repository.findByBusiness.mockResolvedValue(makeSub({ plan }));
+        const exchange = await service.checkPlanLimits(BUSINESS_ID, 'exchange', CYCLE_START);
+        const crm = await service.checkPlanLimits(BUSINESS_ID, 'crm_sync', CYCLE_START);
+        expect(exchange.allowed).not.toBe(crm.allowed);
+      }
+    });
+  });
+
+  describe('canUseCrmSync', () => {
+    it('is a thin wrapper over the crm_sync limit check', async () => {
+      // No `now` param, so getSubscription rolls over against the wall clock —
+      // start the cycle now so nothing has elapsed and `update` is never needed.
+      repository.findByBusiness.mockResolvedValueOnce(
+        makeSub({ plan: RealtyPlan.DEVELOPER, billing_cycle_start: new Date() }),
+      );
+      expect(await service.canUseCrmSync(BUSINESS_ID)).toBe(
+        PLAN_DEFINITIONS[RealtyPlan.DEVELOPER].crmSyncEnabled,
+      );
+
+      repository.findByBusiness.mockResolvedValueOnce(
+        makeSub({ plan: RealtyPlan.SOLO, billing_cycle_start: new Date() }),
+      );
+      expect(await service.canUseCrmSync(BUSINESS_ID)).toBe(
+        PLAN_DEFINITIONS[RealtyPlan.SOLO].crmSyncEnabled,
+      );
+    });
+  });
+
+  // ── Hard-cap metadata ──
+  describe('autoBillEnabled', () => {
+    it('auto-bills overage when the subscription has no metadata at all', async () => {
+      // metadata is nullable in the schema; a row written before the hard-cap
+      // flag existed has NULL there and must still auto-bill, not hard-block.
+      repository.findByBusiness.mockResolvedValue(
+        makeSub({
+          monthly_lead_limit: 300,
+          leads_used_this_cycle: 300,
+          metadata: null as never,
+        }),
+      );
+
+      const check = await service.checkPlanLimits(BUSINESS_ID, 'leads', CYCLE_START);
+
+      expect(check.overLimit).toBe(true);
+      expect(check.autoBillOverage).toBe(true);
+      expect(check.allowed).toBe(true);
+    });
+
+    it('still hard-caps when metadata carries an unrelated key', async () => {
+      repository.findByBusiness.mockResolvedValue(
+        makeSub({
+          monthly_lead_limit: 300,
+          leads_used_this_cycle: 300,
+          metadata: { hardCap: 'yes' } as never,
+        }),
+      );
+
+      // Only the boolean `true` opts into a hard cap — a truthy string does not.
+      const check = await service.checkPlanLimits(BUSINESS_ID, 'leads', CYCLE_START);
+
+      expect(check.autoBillOverage).toBe(true);
+    });
+  });
+
+  // ── Wall-clock defaults ──
+  //
+  // Every dated method takes `now` so tests can pin it, and production calls
+  // them without it. These pin the default arm: a cycle that started "now" has
+  // not elapsed, so the result must match the explicit-date behaviour exactly.
+  describe('defaults `now` to the wall clock', () => {
+    it('getSubscription reads the current cycle without rolling it over', async () => {
+      const sub = makeSub({ billing_cycle_start: new Date() });
+      repository.findByBusiness.mockResolvedValue(sub);
+
+      expect(await service.getSubscription(BUSINESS_ID)).toBe(sub);
+      expect(repository.update).not.toHaveBeenCalled();
+    });
+
+    it('getSubscription still creates the default SOLO row, stamped with the wall clock', async () => {
+      repository.findByBusiness.mockResolvedValue(null);
+      repository.create.mockResolvedValue(makeSub({ billing_cycle_start: new Date() }));
+
+      const before = Date.now();
+      await service.getSubscription(BUSINESS_ID);
+
+      const arg = repository.create.mock.calls[0]![0] as { billingCycleStart: Date };
+      expect(arg.billingCycleStart.getTime()).toBeGreaterThanOrEqual(before);
+      expect(arg.billingCycleStart.getTime()).toBeLessThanOrEqual(Date.now());
+    });
+
+    it('recordLeadUsage meters against the current cycle', async () => {
+      repository.findByBusiness.mockResolvedValue(
+        makeSub({
+          billing_cycle_start: new Date(),
+          monthly_lead_limit: 300,
+          leads_used_this_cycle: 10,
+        }),
+      );
+      repository.incrementUsage.mockResolvedValue(
+        makeSub({ monthly_lead_limit: 300, leads_used_this_cycle: 11 }),
+      );
+
+      await service.recordLeadUsage(BUSINESS_ID);
+
+      expect(repository.incrementUsage).toHaveBeenCalledWith(BUSINESS_ID, 1, 0);
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'realty.lead_usage.recorded',
+        expect.objectContaining({ leadsUsed: 11, overage: false }),
+      );
+    });
+
+    it('getUsageSummary reports the current cycle window', async () => {
+      const cycleStart = new Date();
+      repository.findByBusiness.mockResolvedValue(
+        makeSub({ billing_cycle_start: cycleStart }),
+      );
+      repository.countSeats.mockResolvedValue(2);
+
+      const summary = await service.getUsageSummary(BUSINESS_ID);
+
+      expect(summary.billingCycleStart).toEqual(cycleStart);
+      expect(summary.billingCycleEnd.getTime()).toBeGreaterThan(cycleStart.getTime());
+      expect(summary.seatsUsed).toBe(2);
+    });
+
+    it('upgradePlan switches the plan without an explicit date', async () => {
+      const cycleStart = new Date();
+      repository.findByBusiness
+        .mockResolvedValueOnce(makeSub({ plan: RealtyPlan.SOLO, billing_cycle_start: cycleStart }))
+        .mockResolvedValueOnce(makeSub({ plan: RealtyPlan.TEAM, billing_cycle_start: cycleStart }));
+      repository.update.mockResolvedValue(makeSub({ plan: RealtyPlan.TEAM }));
+      repository.countSeats.mockResolvedValue(1);
+
+      const summary = await service.upgradePlan(BUSINESS_ID, RealtyPlan.TEAM);
+
+      expect(summary.plan).toBe(RealtyPlan.TEAM);
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'realty.plan.changed',
+        expect.objectContaining({ fromPlan: RealtyPlan.SOLO, toPlan: RealtyPlan.TEAM }),
+      );
     });
   });
 });

@@ -8,7 +8,7 @@
  * asserted throughout: no repository call may cross a business boundary.
  */
 
-import { NotFoundException } from '@nestjs/common';
+import { Logger, NotFoundException } from '@nestjs/common';
 import { ConsentType } from '@prisma/client';
 import type { realty_leads, messages } from '@prisma/client';
 import { ComplianceService } from './compliance.service';
@@ -181,6 +181,63 @@ describe('ComplianceService', () => {
       expect(repo.updateLead).not.toHaveBeenCalled();
       expect(audit.record).not.toHaveBeenCalled();
     });
+
+    it('corrects the alternate phone when that is the field being fixed', async () => {
+      const before = lead();
+      repo.findLeadByPhone.mockResolvedValueOnce(before);
+      repo.updateLead.mockResolvedValueOnce(lead({ alt_phone: '+919812345678' }));
+
+      await service.correction(BIZ_A, { phone: RAW_PHONE, altPhone: '+919812345678' });
+
+      const [, , data] = repo.updateLead.mock.calls[0];
+      expect(data.alt_phone).toBe('+919812345678');
+      // Untouched fields stay absent so the write does not blank them out.
+      expect(data.name).toBeUndefined();
+      expect(data.email).toBeUndefined();
+    });
+
+  });
+
+  // ── Un-normalizable phones ───────────────────────────────────────────────────
+  //
+  // normalizeIndianPhone only recognises 10-digit Indian mobiles; an NRI buyer's
+  // overseas number comes back null. Every rights request falls back to the raw
+  // string so those records stay reachable instead of being looked up as "null".
+
+  describe('phones that are not Indian mobiles', () => {
+    const OVERSEAS = '+1-415-555-0199';
+
+    it('dataRequest looks the lead up by the raw number', async () => {
+      repo.findLeadByPhone.mockResolvedValueOnce(lead({ whatsapp_phone: OVERSEAS }));
+
+      const res = await service.dataRequest(BIZ_A, OVERSEAS);
+
+      expect(repo.findLeadByPhone).toHaveBeenCalledWith(BIZ_A, OVERSEAS);
+      expect(repo.listConsents).toHaveBeenCalledWith(BIZ_A, OVERSEAS);
+      expect(res.phone).toBe(OVERSEAS);
+    });
+
+    it('correction looks the lead up by the raw number', async () => {
+      repo.findLeadByPhone.mockResolvedValueOnce(lead({ whatsapp_phone: OVERSEAS }));
+      repo.updateLead.mockResolvedValueOnce(lead({ name: 'Ravi K.' }));
+
+      await service.correction(BIZ_A, { phone: OVERSEAS, name: 'Ravi K.' });
+
+      expect(repo.findLeadByPhone).toHaveBeenCalledWith(BIZ_A, OVERSEAS);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ description: expect.stringContaining(OVERSEAS) }),
+      );
+    });
+
+    it('erasure erases by the raw number rather than silently finding nothing', async () => {
+      repo.findLeadByPhone.mockResolvedValueOnce(lead({ whatsapp_phone: OVERSEAS }));
+
+      const res = await service.erasure(BIZ_A, OVERSEAS, 'REQUEST', NOW);
+
+      expect(repo.findLeadByPhone).toHaveBeenCalledWith(BIZ_A, OVERSEAS);
+      expect(consent.revokeConsent).toHaveBeenCalledWith(BIZ_A, OVERSEAS);
+      expect(res.erased).toBe(true);
+    });
   });
 
   // ── Right to erasure ─────────────────────────────────────────────────────────
@@ -251,6 +308,33 @@ describe('ComplianceService', () => {
         expect.anything(),
         'REQUEST',
         expect.any(Date),
+      );
+    });
+  });
+
+  describe('eraseLead (shared path, called directly by retention)', () => {
+    it('reports zero consents revoked when the caller revoked none itself', async () => {
+      // The retention sweep passes a lead it already found and does not touch
+      // the consent ledger, so the count it gets back must be 0 — not carried
+      // over from whatever the last request-driven erasure revoked.
+      repo.anonymizeConversationMessages.mockResolvedValueOnce(3);
+
+      const res = await service.eraseLead(BIZ_A, lead(), 'RETENTION', NOW);
+
+      expect(res).toEqual({
+        erased: true,
+        leadId: LEAD_ID,
+        messagesAnonymized: 3,
+        consentsRevoked: 0,
+      });
+      expect(consent.revokeConsent).not.toHaveBeenCalled();
+      expect(repo.findLeadByPhone).not.toHaveBeenCalled();
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'DELETE', actorType: 'SYSTEM' }),
+      );
+      expect(emit).toHaveBeenCalledWith(
+        'realty.lead.erased',
+        expect.objectContaining({ leadId: LEAD_ID, reason: 'RETENTION' }),
       );
     });
   });
@@ -352,6 +436,20 @@ describe('ComplianceService', () => {
         service.onLeadCreated({ businessId: BIZ_A, leadId: LEAD_ID, whatsappPhone: NORM_PHONE } as never),
       ).resolves.toBeUndefined();
     });
+
+    it('logs a non-Error rejection by stringifying it', async () => {
+      // Rejections that are not Errors have no `.message`; a consent write that
+      // failed would otherwise be logged as "undefined" and be untraceable.
+      const logged = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      consent.recordConsent.mockRejectedValueOnce('ETIMEDOUT');
+
+      await expect(
+        service.onLeadCreated({ businessId: BIZ_A, leadId: LEAD_ID, whatsappPhone: NORM_PHONE } as never),
+      ).resolves.toBeUndefined();
+
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining('ETIMEDOUT'));
+      logged.mockRestore();
+    });
   });
 
   describe('onLeadOptedOut', () => {
@@ -369,6 +467,18 @@ describe('ComplianceService', () => {
       await expect(
         service.onLeadOptedOut({ businessId: BIZ_A, leadId: LEAD_ID, whatsappPhone: NORM_PHONE } as never),
       ).resolves.toBeUndefined();
+    });
+
+    it('logs a non-Error rejection by stringifying it', async () => {
+      const logged = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      consent.revokeConsent.mockRejectedValueOnce({ code: 'P2024' });
+
+      await expect(
+        service.onLeadOptedOut({ businessId: BIZ_A, leadId: LEAD_ID, whatsappPhone: NORM_PHONE } as never),
+      ).resolves.toBeUndefined();
+
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining('[object Object]'));
+      logged.mockRestore();
     });
   });
 
