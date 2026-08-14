@@ -11,6 +11,7 @@
  * directly: generation/validation failures, self-escalation, the emergency
  * fallback, and the `message.received` guards.
  */
+import { Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ChannelType, IntentType } from '@gosumo/shared';
 import type { MessageReceivedEvent } from '@gosumo/shared';
@@ -565,6 +566,63 @@ describe('AiEngineService — emergency escalation', () => {
 
     await expect(h.service.processMessage('b1', dto)).resolves.toMatchObject({
       outcome: 'AUTO_EXECUTED',
+    });
+  });
+
+  /**
+   * Both of these degrade on purpose — the pipeline must always give the
+   * customer a response path. The risk is that they degrade *invisibly*: a
+   * guardrail that has stopped firing and a guardrail with nothing to fire on
+   * look identical from the outside, and so do "answered with no knowledge
+   * base" and "the knowledge base had no answer".
+   */
+  describe('silent-degradation logging', () => {
+    let warn: jest.SpyInstance;
+
+    beforeEach(() => {
+      warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    });
+    afterEach(() => warn.mockRestore());
+
+    it('says so when loop detection is disabled by a failed intent lookup', async () => {
+      const h = makeHarness();
+      h.getRecentIntents.mockRejectedValue(new Error('redis timeout'));
+
+      await h.service.processMessage('b1', dto);
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('loop detection is disabled'),
+      );
+      // The underlying cause has to survive into the log line.
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('redis timeout'));
+    });
+
+    it('says so when the turn proceeds ungrounded after a RAG failure', async () => {
+      const h = makeHarness();
+      h.retrieve.mockRejectedValue(new Error('qdrant unreachable'));
+
+      await expect(h.service.processMessage('b1', dto)).resolves.toBeDefined();
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('continuing ungrounded'));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('qdrant unreachable'));
+    });
+
+    it('reports a non-Error rejection rather than "[object Object]"', async () => {
+      const h = makeHarness();
+      h.retrieve.mockRejectedValue('connection reset');
+
+      await h.service.processMessage('b1', dto);
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('connection reset'));
+    });
+
+    it('stays quiet when both reads succeed', async () => {
+      const h = makeHarness();
+
+      await h.service.processMessage('b1', dto);
+
+      expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('continuing ungrounded'));
+      expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('loop detection is disabled'));
     });
   });
 });

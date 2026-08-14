@@ -63,6 +63,11 @@ import {
   DEFAULT_DRAFT_REVIEW_THRESHOLD,
 } from './ai-engine.constants';
 
+/** Message text for anything thrown, including non-Error values. */
+function errMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 /**
  * AiEngineService — the cognitive core orchestrator.
  *
@@ -139,9 +144,18 @@ export class AiEngineService {
     const context = await this.contextLoader.load(businessId, dto.conversationId, dto.messageId);
     const text = context.messageText;
 
+    // Degrades to "no history", which disables loop detection for this turn —
+    // the pipeline must not stall on it, but it must not be invisible either:
+    // silently, the guardrail simply stops firing and nothing says so.
     const recentIntents = await this.repository
       .getRecentIntents(businessId, dto.conversationId, LOOP_DETECTION_THRESHOLD * 2)
-      .catch(() => [] as string[]);
+      .catch((err: unknown) => {
+        this.logger.warn(
+          `Recent-intent lookup failed for conversation ${dto.conversationId}; ` +
+            `loop detection is disabled for this turn: ${errMessage(err)}`,
+        );
+        return [] as string[];
+      });
     const actionsExecuted = await this.hasRecentAction(context);
 
     const safety = this.guardrails.evaluate(text, { recentIntents, actionsExecuted });
@@ -154,10 +168,20 @@ export class AiEngineService {
 
     this.emitIntentClassified(businessId, dto, classification, traceId);
 
-    // RAG retrieval — skipped on jailbreak.
+    // RAG retrieval — skipped on jailbreak. A retrieval failure proceeds
+    // without context by design (Qdrant being down must not block the
+    // pipeline); confidence then drops on ragChunkCount and the turn routes to
+    // a human. Logged because "answering with no grounding at all" and
+    // "genuinely found nothing" are indistinguishable downstream.
     const chunks = safety.jailbreakDetected
       ? []
-      : await this.rag.retrieve(text, businessId, classification.intent).catch(() => []);
+      : await this.rag.retrieve(text, businessId, classification.intent).catch((err: unknown) => {
+          this.logger.warn(
+            `RAG retrieval failed for business ${businessId}; continuing ungrounded ` +
+              `(confidence will be penalised): ${errMessage(err)}`,
+          );
+          return [];
+        });
 
     // ── DECIDE ────────────────────────────────
     const scored = this.confidence.calculate({
