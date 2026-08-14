@@ -6,9 +6,12 @@ import { render, waitFor } from '@testing-library/react';
 // next/navigation
 const mockReplace = vi.fn();
 const mockSearchParams = new URLSearchParams();
+// Swappable: `useSearchParams()` is typed nullable and really is null on a
+// statically rendered pass, which is one of the branches under test.
+let searchParamsValue: URLSearchParams | null = mockSearchParams;
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: mockReplace }),
-  useSearchParams: () => mockSearchParams,
+  useSearchParams: () => searchParamsValue,
 }));
 
 // token-store
@@ -70,6 +73,7 @@ describe('AuthCallbackPage', () => {
   afterEach(() => {
     setSearchParams({});
     window.location.hash = '';
+    searchParamsValue = mockSearchParams;
   });
 
   it('stores tokens, refreshes auth state, then navigates to /dashboard', async () => {
@@ -178,6 +182,51 @@ describe('AuthCallbackPage', () => {
     await waitFor(() => {
       expect(mockReplace).toHaveBeenCalledWith('/login?error=google_auth_failed');
     });
+  });
+
+  /**
+   * `useRouter()` hands back a fresh object every render, so `router` in the
+   * effect's dependency list changes identity on every re-render and the effect
+   * re-runs. The `processed` ref is the only thing stopping a second pass — and
+   * a second pass would re-store the tokens after the fragment has already been
+   * scrubbed (so from a now-empty URL), and fire a second refreshProfile.
+   */
+  it('processes the callback once, however many times the effect re-runs', async () => {
+    setHash({ accessToken: 'access-frag', refreshToken: 'refresh-frag' });
+
+    const { rerender } = render(<AuthCallbackPage />);
+    await waitFor(() => expect(mockRefreshProfile).toHaveBeenCalledTimes(1));
+
+    rerender(<AuthCallbackPage />);
+    rerender(<AuthCallbackPage />);
+
+    expect(mockRefreshProfile).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the fragment even when useSearchParams is null', async () => {
+    // Next types the hook nullable and returns null on a statically rendered
+    // pass. Reading `.get` off it unguarded would throw here — before the
+    // fragment, which carries the real tokens, is ever looked at.
+    searchParamsValue = null;
+    setHash({ accessToken: 'access-frag', refreshToken: 'refresh-frag' });
+
+    render(<AuthCallbackPage />);
+
+    await waitFor(() => expect(mockRefreshProfile).toHaveBeenCalledTimes(1));
+    expect(tokenStoreState.accessToken).toBe('access-frag');
+    expect(tokenStoreState.refreshToken).toBe('refresh-frag');
+  });
+
+  it('fails the sign-in cleanly when searchParams is null and there is no fragment', async () => {
+    searchParamsValue = null;
+
+    render(<AuthCallbackPage />);
+
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith('/login?error=google_auth_failed'),
+    );
+    expect(tokenStoreState.accessToken).toBeNull();
   });
 
   it('falls back to window.location.replace when refreshProfile fails', async () => {
