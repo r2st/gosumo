@@ -18,6 +18,7 @@ import {
   isProductionEnv,
   verifySharedSecretSignature,
 } from "../../../common/utils/webhook-verification.util";
+import { fetchWithTimeout } from "../../../common/utils/http-timeout.util";
 
 @Injectable()
 export class EmailAdapter extends BaseChannelAdapter {
@@ -155,14 +156,18 @@ export class EmailAdapter extends BaseChannelAdapter {
         " body length=" + textContent.length,
       );
 
-      const response = await fetch("https://api.sendgrid.com/v3/mail/send", {
-        method: "POST",
-        headers: {
-          "Authorization": "Bearer " + this.apiKey,
-          "Content-Type": "application/json",
+      const response = await fetchWithTimeout(
+        "https://api.sendgrid.com/v3/mail/send",
+        {
+          method: "POST",
+          headers: {
+            "Authorization": "Bearer " + this.apiKey,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
         },
-        body: JSON.stringify(payload),
-      });
+        { service: "SendGrid" },
+      );
 
       // 4xx = non-retryable business error
       if (response.status >= 400 && response.status < 500) {

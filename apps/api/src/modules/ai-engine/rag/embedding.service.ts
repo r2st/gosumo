@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { EMBEDDING_MODEL } from '../ai-engine.constants';
+import { fetchWithTimeout } from '../../../common/utils/http-timeout.util';
 
 /**
  * EmbeddingService — converts text into vectors for RAG indexing and querying.
@@ -42,14 +43,18 @@ export class EmbeddingService {
     }
 
     try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${apiKey}`,
+      const res = await fetchWithTimeout(
+        url,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({ model: EMBEDDING_MODEL, input: trimmed }),
         },
-        body: JSON.stringify({ model: EMBEDDING_MODEL, input: trimmed }),
-      });
+        { service: 'Embeddings' },
+      );
 
       if (!res.ok) {
         this.logger.warn(`Embeddings call failed: ${res.status}`);

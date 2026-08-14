@@ -16,6 +16,7 @@ import {
 import { generateId, ExternalServiceError } from "@gosumo/shared";
 import { BaseChannelAdapter } from "./base.adapter";
 import { allowUnverifiedWebhook, isProductionEnv } from "../../../common/utils/webhook-verification.util";
+import { fetchWithTimeout } from "../../../common/utils/http-timeout.util";
 
 @Injectable()
 export class SmsAdapter extends BaseChannelAdapter {
@@ -174,14 +175,18 @@ export class SmsAdapter extends BaseChannelAdapter {
 
       const formBody = new URLSearchParams(params).toString();
 
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Authorization: "Basic " + Buffer.from(sid + ":" + token).toString("base64"),
+      const response = await fetchWithTimeout(
+        url,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            Authorization: "Basic " + Buffer.from(sid + ":" + token).toString("base64"),
+          },
+          body: formBody,
         },
-        body: formBody,
-      });
+        { service: "Twilio" },
+      );
 
       if (!response.ok) {
         // Twilio's two message shapes differ, so the flat string is built

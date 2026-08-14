@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { ExternalServiceError } from '@gosumo/shared';
 
+import { fetchWithTimeout } from '../../common/utils/http-timeout.util';
+
 // ─────────────────────────────────────────────
 // Interfaces
 // ─────────────────────────────────────────────
@@ -268,7 +270,7 @@ export class RazorpayService implements IRazorpayGateway {
 
     this.logger.debug(`Razorpay API: ${method} ${path}`);
 
-    const response = await fetch(url, fetchOptions);
+    const response = await fetchWithTimeout(url, fetchOptions, { service: 'Razorpay' });
 
     if (!response.ok) {
       const errorBody = await response.text();

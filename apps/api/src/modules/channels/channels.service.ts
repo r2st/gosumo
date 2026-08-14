@@ -9,6 +9,7 @@ import {
   decryptJson,
   maskCredentialFields,
 } from "../../common/utils/encryption.util";
+import { fetchWithTimeout } from "../../common/utils/http-timeout.util";
 import { ConnectChannelDto } from "./dto";
 
 export interface ChannelResponse {
@@ -27,6 +28,14 @@ export interface ChannelResponse {
   updatedAt: string;
   credentials: Record<string, { set: boolean; last4?: string; value?: string }>;
 }
+
+/**
+ * `testConnection` runs inside a request the operator is watching, so it gets a
+ * tighter deadline than a background send: a provider that has not answered in
+ * five seconds has already failed the thing the button is asking about, and the
+ * timeout surfaces as an ordinary `success: false` result rather than a 502.
+ */
+const CONNECTION_TEST_TIMEOUT_MS = 5_000;
 
 @Injectable()
 export class ChannelsService {
@@ -153,9 +162,10 @@ export class ChannelsService {
         case ChannelType.WHATSAPP: {
           const phoneNumberId = creds.phoneNumberId || record.external_id;
           const token = creds.accessToken as string;
-          const resp = await fetch(
+          const resp = await fetchWithTimeout(
             `https://graph.facebook.com/v19.0/${phoneNumberId}`,
             { headers: { Authorization: `Bearer ${token}` } },
+            { service: "WhatsApp", timeoutMs: CONNECTION_TEST_TIMEOUT_MS },
           );
           if (!resp.ok) {
             const errBody = await resp.text();
@@ -171,9 +181,10 @@ export class ChannelsService {
         case ChannelType.INSTAGRAM: {
           const pageId = creds.pageId || record.external_id;
           const token = creds.accessToken as string;
-          const resp = await fetch(
+          const resp = await fetchWithTimeout(
             `https://graph.facebook.com/v19.0/${pageId}?fields=instagram_business_account`,
             { headers: { Authorization: `Bearer ${token}` } },
+            { service: "Instagram", timeoutMs: CONNECTION_TEST_TIMEOUT_MS },
           );
           if (!resp.ok) {
             const errBody = await resp.text();
@@ -189,13 +200,14 @@ export class ChannelsService {
         case ChannelType.SMS: {
           const sid = creds.accountSid as string;
           const authTkn = creds.authToken as string;
-          const resp = await fetch(
+          const resp = await fetchWithTimeout(
             `https://api.twilio.com/2010-04-01/Accounts/${sid}.json`,
             {
               headers: {
                 Authorization: "Basic " + Buffer.from(`${sid}:${authTkn}`).toString("base64"),
               },
             },
+            { service: "Twilio", timeoutMs: CONNECTION_TEST_TIMEOUT_MS },
           );
           if (!resp.ok) {
             const errBody = await resp.text();

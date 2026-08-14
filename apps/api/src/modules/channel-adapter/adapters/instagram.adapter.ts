@@ -16,6 +16,7 @@ import {
 import { generateId } from '@gosumo/shared';
 import { BaseChannelAdapter } from './base.adapter';
 import { allowUnverifiedWebhook, isProductionEnv } from '../../../common/utils/webhook-verification.util';
+import { MEDIA_HTTP_TIMEOUT_MS, fetchWithTimeout } from '../../../common/utils/http-timeout.util';
 import { ExternalServiceError, PayloadParseError, UnsupportedOperationError } from '@gosumo/shared';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -402,9 +403,11 @@ export class InstagramAdapter extends BaseChannelAdapter {
    * should re-upload to GoSumo storage immediately.
    */
   async downloadMedia(mediaId: string): Promise<Buffer> {
-    const resp = await fetch(mediaId, {
-      headers: { Authorization: `Bearer ${this.accessToken}` },
-    });
+    const resp = await fetchWithTimeout(
+      mediaId,
+      { headers: { Authorization: `Bearer ${this.accessToken}` } },
+      { service: 'Instagram Media', timeoutMs: MEDIA_HTTP_TIMEOUT_MS },
+    );
 
     if (!resp.ok) {
       throw new ExternalServiceError('Instagram Media', 'download failed', {
@@ -674,14 +677,18 @@ export class InstagramAdapter extends BaseChannelAdapter {
   private async callMetaApi(body: IgSendMessageRequest): Promise<SendResult> {
     const url = `${this.metaBaseUrl}/${this.pageId}/messages`;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.accessToken}`,
+    const response = await fetchWithTimeout(
+      url,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.accessToken}`,
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-    });
+      { service: 'Instagram' },
+    );
 
     if (!response.ok) {
       // `detail` deliberately omits the provider name — ExternalServiceError

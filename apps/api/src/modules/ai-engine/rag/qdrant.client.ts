@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EMBEDDING_DIMENSIONS } from '../ai-engine.constants';
+import { fetchWithTimeout } from '../../../common/utils/http-timeout.util';
 
 export interface QdrantPoint {
   id: string;
@@ -101,11 +102,15 @@ export class QdrantClient {
   }
 
   private request(method: string, path: string, body?: unknown): Promise<Response> {
-    return fetch(`${this.baseUrl}${path}`, {
-      method,
-      headers: { 'content-type': 'application/json' },
-      ...(body !== undefined && { body: JSON.stringify(body) }),
-    });
+    return fetchWithTimeout(
+      `${this.baseUrl}${path}`,
+      {
+        method,
+        headers: { 'content-type': 'application/json' },
+        ...(body !== undefined && { body: JSON.stringify(body) }),
+      },
+      { service: 'Qdrant' },
+    );
   }
 
   private msg(err: unknown): string {

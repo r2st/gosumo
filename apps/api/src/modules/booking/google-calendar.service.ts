@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ExternalServiceError } from '@gosumo/shared';
 
+import { fetchWithTimeout } from '../../common/utils/http-timeout.util';
+
 // ─────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────
@@ -210,11 +212,15 @@ export class GoogleCalendarService implements IGoogleCalendarGateway {
   }
 
   private async requestToken(body: URLSearchParams): Promise<GoogleTokenSet> {
-    const response = await fetch(GOOGLE_TOKEN_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
-    });
+    const response = await fetchWithTimeout(
+      GOOGLE_TOKEN_URL,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+      },
+      { service: 'Google OAuth' },
+    );
 
     if (!response.ok) {
       const errorBody = await response.text();
@@ -248,14 +254,18 @@ export class GoogleCalendarService implements IGoogleCalendarGateway {
     path: string,
     body?: Record<string, unknown>,
   ): Promise<T> {
-    const response = await fetch(`${GOOGLE_CALENDAR_API}${path}`, {
-      method,
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
+    const response = await fetchWithTimeout(
+      `${GOOGLE_CALENDAR_API}${path}`,
+      {
+        method,
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
       },
-      ...(body ? { body: JSON.stringify(body) } : {}),
-    });
+      { service: 'Google Calendar' },
+    );
 
     if (!response.ok) {
       const errorBody = await response.text();

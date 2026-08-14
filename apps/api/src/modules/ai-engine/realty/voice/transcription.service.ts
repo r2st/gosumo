@@ -6,6 +6,10 @@ import {
   type GoSumoErrorOptions,
 } from '@gosumo/shared';
 import { ChannelAdapterService } from '../../../channel-adapter/channel-adapter.service';
+import {
+  MEDIA_HTTP_TIMEOUT_MS,
+  fetchWithTimeout,
+} from '../../../../common/utils/http-timeout.util';
 
 /**
  * Thrown when audio cannot be transcribed (no key, download/STT failure).
@@ -65,11 +69,15 @@ export class TranscriptionService {
 
     let response: Response;
     try {
-      response = await fetch(url, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${apiKey}` },
-        body: form,
-      });
+      response = await fetchWithTimeout(
+        url,
+        {
+          method: 'POST',
+          headers: { authorization: `Bearer ${apiKey}` },
+          body: form,
+        },
+        { service: 'Transcription', timeoutMs: MEDIA_HTTP_TIMEOUT_MS },
+      );
     } catch (err) {
       throw new TranscriptionUnavailableError(
         `Transcription request failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -100,7 +108,11 @@ export class TranscriptionService {
     }
     let resp: Response;
     try {
-      resp = await fetch(mediaUrl);
+      resp = await fetchWithTimeout(
+        mediaUrl,
+        {},
+        { service: 'Audio download', timeoutMs: MEDIA_HTTP_TIMEOUT_MS },
+      );
     } catch (err) {
       throw new TranscriptionUnavailableError(
         `Audio download failed: ${err instanceof Error ? err.message : String(err)}`,

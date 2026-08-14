@@ -16,6 +16,7 @@ import {
 import { generateId } from '@gosumo/shared';
 import { BaseChannelAdapter } from './base.adapter';
 import { allowUnverifiedWebhook, isProductionEnv } from '../../../common/utils/webhook-verification.util';
+import { MEDIA_HTTP_TIMEOUT_MS, fetchWithTimeout } from '../../../common/utils/http-timeout.util';
 import { ExternalServiceError, PayloadParseError, UnsupportedOperationError } from '@gosumo/shared';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -481,9 +482,10 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
    */
   async downloadMedia(mediaId: string): Promise<Buffer> {
     // Step 1: Get the download URL
-    const metaUrlResp = await fetch(
+    const metaUrlResp = await fetchWithTimeout(
       `${this.metaBaseUrl}/${mediaId}`,
       { headers: { Authorization: `Bearer ${this.accessToken}` } },
+      { service: 'WhatsApp Media' },
     );
 
     if (!metaUrlResp.ok) {
@@ -497,9 +499,11 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
     const downloadUrl = metaUrlJson.url;
 
     // Step 2: Download the binary
-    const mediaResp = await fetch(downloadUrl, {
-      headers: { Authorization: `Bearer ${this.accessToken}` },
-    });
+    const mediaResp = await fetchWithTimeout(
+      downloadUrl,
+      { headers: { Authorization: `Bearer ${this.accessToken}` } },
+      { service: 'WhatsApp Media', timeoutMs: MEDIA_HTTP_TIMEOUT_MS },
+    );
 
     if (!mediaResp.ok) {
       throw new ExternalServiceError('WhatsApp Media', 'download failed', {
@@ -524,13 +528,14 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
     formData.append('type', mimeType);
     formData.append('file', new Blob([buffer], { type: mimeType }));
 
-    const resp = await fetch(
+    const resp = await fetchWithTimeout(
       `${this.metaBaseUrl}/${this.phoneNumberId}/media`,
       {
         method: 'POST',
         headers: { Authorization: `Bearer ${this.accessToken}` },
         body: formData,
       },
+      { service: 'WhatsApp Media', timeoutMs: MEDIA_HTTP_TIMEOUT_MS },
     );
 
     if (!resp.ok) {
@@ -808,14 +813,18 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
   private async callMetaApi(body: MetaSendMessageRequest): Promise<SendResult> {
     const url = `${this.metaBaseUrl}/${this.phoneNumberId}/messages`;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.accessToken}`,
+    const response = await fetchWithTimeout(
+      url,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.accessToken}`,
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-    });
+      { service: 'WhatsApp' },
+    );
 
     if (!response.ok) {
       // `detail` omits the provider name (ExternalServiceError prefixes it);
