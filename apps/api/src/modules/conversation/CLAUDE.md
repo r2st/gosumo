@@ -32,6 +32,7 @@ getConversationStats(businessId, query): Promise<ConversationStatsDto>
 - `message.received` — find or create conversation, update `last_message_at`
 - `task.resolved` — transition conversation from ESCALATED → OPEN or RESOLVED
 - `ai.response.approved` — transition from PENDING_HUMAN → OPEN
+- `team.member.removed` — release every live conversation that member held back to the unassigned queue (RESOLVED ones keep their assignee as a record of who handled it)
 
 ## Tables Owned
 

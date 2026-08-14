@@ -16,6 +16,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { getQueueToken } from '@nestjs/bull';
 import {
+  Logger,
   NotFoundException,
   BadRequestException,
   ConflictException,
@@ -24,6 +25,7 @@ import {
   ChannelType,
   ConversationStatus,
   TaskResolvedEvent,
+  TeamMemberRemovedEvent,
   AIResponseApprovedEvent,
 } from '@gosumo/shared';
 
@@ -86,6 +88,7 @@ function createMockRepository() {
     countByStatus: jest.fn(),
     getResolutionStats: jest.fn(),
     findSnoozedDue: jest.fn(),
+    releaseAssignments: jest.fn(),
   };
 }
 
@@ -762,5 +765,115 @@ describe('ConversationService — lifecycle & features', () => {
         ConversationStatus.OPEN,
       );
     });
+  });
+});
+
+// ─────────────────────────────────────────────
+// An agent who leaves mid-conversation
+//
+// Removal soft-deletes the member and sets them SUSPENDED. Nothing in the
+// database follows the assignment: `conversations.assigned_to` has no foreign
+// key, so their live conversations keep pointing at an id that no longer
+// resolves to anybody. That row is then in the one state nobody looks at —
+// assigned, so it is filtered out of the unassigned queue; unresolved, so it
+// never closes; and since assignment requires an ACTIVE member, no routine
+// path would move it again. The customer is left waiting on a conversation
+// owned by someone who no longer works there.
+// ─────────────────────────────────────────────
+
+describe('ConversationService — releasing a removed member\'s conversations', () => {
+  let service: ConversationService;
+  let repository: ReturnType<typeof createMockRepository>;
+  let eventEmitter: { emit: jest.Mock };
+  let logSpy: jest.SpyInstance;
+  let errorSpy: jest.SpyInstance;
+
+  const removed: TeamMemberRemovedEvent = {
+    type: 'team.member.removed',
+    id: 'evt-1',
+    timestamp: new Date().toISOString(),
+    businessId: BUSINESS_ID,
+    correlationId: 'corr',
+    memberId: AGENT_A,
+  };
+
+  beforeEach(async () => {
+    repository = createMockRepository();
+    eventEmitter = { emit: jest.fn() };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ConversationService,
+        { provide: ConversationRepository, useValue: repository },
+        { provide: PrismaService, useValue: createMockPrisma() },
+        { provide: EventEmitter2, useValue: eventEmitter },
+        { provide: getQueueToken(CONVERSATION_QUEUE), useValue: { add: jest.fn() } },
+        {
+          provide: TenantService,
+          useValue: {
+            assertAssignableTeamMember: jest.fn(),
+            filterAssignableTeamMembers: jest.fn(),
+          },
+        },
+      ],
+    }).compile();
+
+    service = module.get<ConversationService>(ConversationService);
+    logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+  });
+
+  afterEach(() => {
+    logSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  it('hands the departing agent\'s conversations back, scoped to their tenant', async () => {
+    repository.releaseAssignments.mockResolvedValue([CONVERSATION_ID]);
+
+    await service.handleTeamMemberRemoved(removed);
+
+    expect(repository.releaseAssignments).toHaveBeenCalledWith(BUSINESS_ID, AGENT_A);
+  });
+
+  it('records which conversations moved, so the release is not silent', async () => {
+    repository.releaseAssignments.mockResolvedValue([CONVERSATION_ID, 'c-2']);
+
+    await service.handleTeamMemberRemoved(removed);
+
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining(CONVERSATION_ID));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining(AGENT_A));
+  });
+
+  it('says nothing when the member held no live conversations', async () => {
+    // The common case — removing someone who was never assigned anything must
+    // not produce a log line suggesting work was moved.
+    repository.releaseAssignments.mockResolvedValue([]);
+
+    await service.handleTeamMemberRemoved(removed);
+
+    expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('Released'));
+  });
+
+  it('does not auto-reassign, because choosing a new owner is a routing decision', async () => {
+    // Dropping a departing agent's whole caseload onto whoever is least busy
+    // is not obviously what the business wants; `autoAssign` exists for that
+    // and is invoked deliberately.
+    repository.releaseAssignments.mockResolvedValue([CONVERSATION_ID]);
+
+    await service.handleTeamMemberRemoved(removed);
+
+    expect(repository.assign).not.toHaveBeenCalled();
+    expect(repository.assignIfHeldBy).not.toHaveBeenCalled();
+    expect(repository.countActiveByAssignees).not.toHaveBeenCalled();
+  });
+
+  it('swallows a repository failure rather than throwing into the event bus', async () => {
+    // A rejection here propagates through EventEmitter2 and takes out the other
+    // listeners on team.member.removed alongside this one.
+    repository.releaseAssignments.mockRejectedValue(new Error('connection reset'));
+
+    await expect(service.handleTeamMemberRemoved(removed)).resolves.toBeUndefined();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(AGENT_A));
   });
 });

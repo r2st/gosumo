@@ -17,7 +17,11 @@ import {
   RuleType,
 } from '@gosumo/database';
 import { Prisma } from '@prisma/client';
-import { generateId } from '@gosumo/shared';
+import {
+  generateId,
+  generateCorrelationId,
+  type TeamMemberRemovedEvent,
+} from '@gosumo/shared';
 import { TenantRepository } from './tenant.repository';
 import { roleRank } from '../auth/role-hierarchy';
 import { UpdateBusinessDto } from './dto/update-business.dto';
@@ -742,6 +746,22 @@ export class TenantService {
     }
 
     await this.repository.softDeleteTeamMember(businessId, memberId);
+
+    // Removal is the moment this member stops being able to act on anything:
+    // the row is soft-deleted and set to SUSPENDED, so `assertAssignableTeamMember`
+    // would now refuse to assign them work. Whatever they already hold has to be
+    // released by its owning module, or it sits assigned to somebody who will
+    // never open it — out of the unassigned queue and never resolved.
+    const event: TeamMemberRemovedEvent = {
+      type: 'team.member.removed',
+      id: generateId(),
+      timestamp: new Date().toISOString(),
+      businessId,
+      correlationId: generateCorrelationId(),
+      memberId,
+      actorId,
+    };
+    this.eventEmitter.emit('team.member.removed', event);
 
     this.logger.log(
       `Team member ${memberId} removed from business ${businessId}`,

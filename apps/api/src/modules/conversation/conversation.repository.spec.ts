@@ -591,3 +591,71 @@ describe('ConversationRepository', () => {
     });
   });
 });
+
+// ─────────────────────────────────────────────
+// releaseAssignments
+// ─────────────────────────────────────────────
+
+describe('ConversationRepository.releaseAssignments', () => {
+  let repository: ConversationRepository;
+  let conversations: Record<'findMany' | 'updateMany', jest.Mock>;
+
+  beforeEach(async () => {
+    conversations = {
+      findMany: jest.fn().mockResolvedValue([{ id: CONVERSATION_ID }]),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    };
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ConversationRepository,
+        { provide: PrismaService, useValue: { conversations } },
+      ],
+    }).compile();
+    repository = module.get(ConversationRepository);
+  });
+
+  it('clears the assignee on the live conversations that member held', async () => {
+    const released = await repository.releaseAssignments(BUSINESS_ID, AGENT_A);
+
+    expect(released).toEqual([CONVERSATION_ID]);
+    expect(conversations.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { assigned_to: null } }),
+    );
+  });
+
+  it('scopes the release to the tenant and to that one assignee', async () => {
+    // Without `assigned_to` in the WHERE this unassigns the entire business.
+    await repository.releaseAssignments(BUSINESS_ID, AGENT_A);
+
+    const { where } = conversations.updateMany.mock.calls[0]![0];
+    expect(where).toMatchObject({
+      business_id: BUSINESS_ID,
+      assigned_to: AGENT_A,
+      deleted_at: null,
+    });
+  });
+
+  it('leaves RESOLVED conversations assigned, because that field is now history', async () => {
+    // On a closed conversation `assigned_to` records who handled it. Clearing
+    // it would rewrite the record and skew per-agent resolution stats.
+    await repository.releaseAssignments(BUSINESS_ID, AGENT_A);
+
+    const { where } = conversations.updateMany.mock.calls[0]![0];
+    expect(where.status).toEqual({ not: ConversationStatus.RESOLVED });
+  });
+
+  it('reads and writes over the same predicate, so the log matches what moved', async () => {
+    await repository.releaseAssignments(BUSINESS_ID, AGENT_A);
+
+    expect(conversations.findMany.mock.calls[0]![0].where).toEqual(
+      conversations.updateMany.mock.calls[0]![0].where,
+    );
+  });
+
+  it('writes nothing at all when the member held no live conversations', async () => {
+    conversations.findMany.mockResolvedValue([]);
+
+    await expect(repository.releaseAssignments(BUSINESS_ID, AGENT_A)).resolves.toEqual([]);
+    expect(conversations.updateMany).not.toHaveBeenCalled();
+  });
+});

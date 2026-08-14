@@ -82,6 +82,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
     countByStatus: jest.Mock;
     getResolutionStats: jest.Mock;
     findSnoozedDue: jest.Mock;
+    releaseAssignments: jest.Mock;
   };
   let prisma: {
     messages: { findMany: jest.Mock; findFirst: jest.Mock };
@@ -109,6 +110,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
       countByStatus: jest.fn(),
       getResolutionStats: jest.fn(),
       findSnoozedDue: jest.fn(),
+      releaseAssignments: jest.fn(),
     };
     prisma = {
       messages: { findMany: jest.fn(), findFirst: jest.fn() },

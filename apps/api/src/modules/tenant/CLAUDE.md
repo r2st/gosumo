@@ -53,6 +53,7 @@ blocks any body/query/param `businessId` that disagrees with the token (403 cros
 - `business.channel.connected` — `{ businessId, channelType, channelAccountId }`
 - `business.channel.disconnected` — `{ businessId, channelType }`
 - `business.settings.updated` — `{ businessId, changedFields: string[] }`
+- `team.member.removed` — `{ businessId, memberId, actorId? }`; emitted by `removeMember` so modules holding that member's work can release it. Conversation assignment has no FK, so nothing in the database follows it.
 
 **Listens to:** none
 

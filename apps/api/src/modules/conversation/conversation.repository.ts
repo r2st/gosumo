@@ -452,6 +452,45 @@ export class ConversationRepository {
   }
 
   /**
+   * Return every live conversation held by `assigneeId` to the unassigned
+   * queue. Returns the ids released.
+   *
+   * RESOLVED conversations keep their assignee deliberately: there the field is
+   * a record of who handled it, and clearing it would rewrite history and skew
+   * per-agent resolution stats. Only work that is still open needs an owner.
+   *
+   * The ids are read first because `updateMany` reports a count and not rows,
+   * and the caller logs which conversations moved — after the write the rows no
+   * longer match. A conversation assigned to this member in the gap between the
+   * two statements is simply missed; it is released by the next sweep rather
+   * than by a transaction taken out for a bookkeeping read.
+   */
+  async releaseAssignments(
+    businessId: string,
+    assigneeId: string,
+  ): Promise<string[]> {
+    const where = {
+      business_id: businessId,
+      assigned_to: assigneeId,
+      status: { not: ConversationStatus.RESOLVED },
+      deleted_at: null,
+    };
+
+    const held = await this.prisma.conversations.findMany({
+      where,
+      select: { id: true },
+    });
+    if (held.length === 0) return [];
+
+    await this.prisma.conversations.updateMany({
+      where,
+      data: { assigned_to: null },
+    });
+
+    return held.map((c) => c.id);
+  }
+
+  /**
    * Count active (non-RESOLVED, non-deleted) conversations per assignee
    * among the given candidate agents. Returns a map of agentId → count.
    * Agents with zero active conversations are included with count 0.

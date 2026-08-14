@@ -115,6 +115,31 @@ export interface ConversationAssignedEvent extends BaseEvent {
 }
 
 // ─────────────────────────────────────────────
+// TEAM EVENTS
+// ─────────────────────────────────────────────
+
+/**
+ * Emitted after a team member is removed (soft-deleted and suspended).
+ *
+ * Consumed by any module holding work assigned to that member. Removal is the
+ * point at which an assignee stops being able to act: the row is soft-deleted
+ * and its status set to SUSPENDED, so nothing they hold will ever be opened by
+ * them again. Anything still pointing at them has to be released, or it sits in
+ * a state nobody is looking at — assigned, so it is out of the unassigned
+ * queue, and unresolved, so it never closes.
+ *
+ * An event rather than a direct call because `ConversationService` already
+ * injects `TenantService` for assignee validation; calling back the other way
+ * would close the cycle.
+ */
+export interface TeamMemberRemovedEvent extends BaseEvent {
+  readonly type: 'team.member.removed';
+  memberId: string;
+  /** The member who performed the removal, when the caller supplied one. */
+  actorId?: string;
+}
+
+// ─────────────────────────────────────────────
 // MESSAGE STORAGE EVENTS
 // ─────────────────────────────────────────────
 
@@ -1051,6 +1076,7 @@ export type DomainEvent =
   | ConversationEscalatedEvent
   | ConversationStatusChangedEvent
   | ConversationAssignedEvent
+  | TeamMemberRemovedEvent
   | AIIntentClassifiedEvent
   | AIResponseGeneratedEvent
   | AIResponseApprovedEvent

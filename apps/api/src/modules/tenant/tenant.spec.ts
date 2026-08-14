@@ -815,6 +815,51 @@ describe('TenantService', () => {
       expect(repository.softDeleteTeamMember).not.toHaveBeenCalled();
     });
 
+    // ─── Releasing what they were holding ───────
+    //
+    // Removal soft-deletes the row and sets it SUSPENDED, so this member can
+    // no longer be assigned anything — but nothing follows the assignments
+    // they already hold. `conversations.assigned_to` has no foreign key, so
+    // their live conversations keep pointing at an id that resolves to nobody:
+    // assigned, so out of the unassigned queue; unresolved, so never closed.
+    // The owning module releases them off this event.
+
+    it('announces the removal so other modules can release that member\'s work', async () => {
+      repository.findTeamMemberById.mockResolvedValue(
+        makeTeamMember({ role: TeamMemberRole.STAFF }),
+      );
+      repository.softDeleteTeamMember.mockResolvedValue(makeTeamMember());
+
+      await service.removeMember(BUSINESS_ID, MEMBER_ID, OWNER_ID);
+
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'team.member.removed',
+        expect.objectContaining({
+          type: 'team.member.removed',
+          businessId: BUSINESS_ID,
+          memberId: MEMBER_ID,
+          actorId: OWNER_ID,
+        }),
+      );
+    });
+
+    it('stays silent when the removal was refused', async () => {
+      // An event for a member who is still on the team would have their live
+      // conversations unassigned out from under them.
+      const owner = makeTeamMember({ role: TeamMemberRole.OWNER });
+      repository.findTeamMemberById.mockResolvedValue(owner);
+      repository.countOwners.mockResolvedValue(3);
+
+      await expect(service.removeMember(BUSINESS_ID, MEMBER_ID)).rejects.toThrow(
+        ForbiddenException,
+      );
+
+      expect(eventEmitter.emit).not.toHaveBeenCalledWith(
+        'team.member.removed',
+        expect.anything(),
+      );
+    });
+
     it('does not count owners when the target is not an owner', async () => {
       repository.findTeamMemberById.mockResolvedValue(
         makeTeamMember({ role: TeamMemberRole.STAFF }),

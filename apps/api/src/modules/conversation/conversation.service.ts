@@ -22,6 +22,7 @@ import {
   ConversationResolvedEvent,
   ConversationEscalatedEvent,
   TaskResolvedEvent,
+  TeamMemberRemovedEvent,
   AIResponseApprovedEvent,
 } from '@gosumo/shared';
 import { PrismaService } from '../../common/services/prisma.service';
@@ -1030,6 +1031,49 @@ export class ConversationService {
     } catch (error) {
       this.logger.debug(
         `Could not increment human_message_count for ${event.conversationId}: ${this.errMsg(error)}`,
+      );
+    }
+  }
+
+  /**
+   * team.member.removed → hand back everything that member was holding.
+   *
+   * Removing a member soft-deletes the row and sets it to SUSPENDED, but says
+   * nothing about the conversations they own — and `conversations.assigned_to`
+   * has no foreign key, so nothing in the database notices either. Their live
+   * conversations stay pointed at an id that no longer resolves to anybody:
+   * assigned, so they are filtered out of the unassigned queue nobody-owns-this
+   * work is picked up from; not resolved, so they never close; and since
+   * assignment now requires an ACTIVE member, no routine path would ever move
+   * them again. Nothing surfaces it — the customer is simply waiting on a
+   * conversation with an owner who left.
+   *
+   * Released to the unassigned queue rather than auto-reassigned. Choosing a
+   * new owner is a routing decision with a policy behind it (`autoAssign`
+   * exists precisely to make it), and silently dropping a departing agent's
+   * whole caseload on whoever happens to be least busy is not obviously what
+   * the business wants. Unassigned is the honest state: visible, and pickable
+   * by the paths that already exist.
+   */
+  @OnEvent('team.member.removed')
+  async handleTeamMemberRemoved(event: TeamMemberRemovedEvent): Promise<void> {
+    try {
+      const released = await this.repository.releaseAssignments(
+        event.businessId,
+        event.memberId,
+      );
+      if (released.length === 0) return;
+
+      this.logger.log(
+        `Released ${released.length} conversation(s) held by removed member ` +
+          `${event.memberId}: ${released.join(', ')}`,
+      );
+    } catch (error) {
+      // A throw here would propagate into the event bus and take out the other
+      // listeners on this event alongside it.
+      this.logger.error(
+        `Could not release conversations held by removed member ${event.memberId}: ` +
+          this.errMsg(error),
       );
     }
   }
