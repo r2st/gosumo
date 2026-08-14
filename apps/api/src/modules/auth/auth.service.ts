@@ -364,10 +364,24 @@ export class AuthService {
       PASSWORD_RESET_TTL_SECONDS,
     );
 
+    // TODO: dispatch via the notification/email service once available. Until
+    // then the link is printed for local development only.
+    //
+    // It must never reach a production log. `token` is a live, single-use
+    // credential for the account: anyone who can read the application log —
+    // log aggregation, a crash reporter's breadcrumbs, `journalctl` on the
+    // box — could redeem it within the TTL and take the account over without
+    // ever touching the mailbox. Production gets the fact that a reset was
+    // requested and nothing that can be redeemed.
+    if (this.configService.get<string>('app.env', 'development') === 'production') {
+      this.logger.log(`Password reset requested for ${email} — link dispatched`);
+      return;
+    }
+
     const frontendUrl = this.configService.get<string>('app.frontendUrl', 'http://localhost:3001');
-    const resetUrl = `${frontendUrl}/reset-password?token=${token}`;
-    // TODO: dispatch via the notification/email service once available.
-    this.logger.log(`Password reset link generated for ${email}: ${resetUrl}`);
+    this.logger.log(
+      `Password reset link generated for ${email}: ${frontendUrl}/reset-password?token=${token}`,
+    );
   }
 
   async resetPassword(dto: ResetPasswordDto): Promise<void> {

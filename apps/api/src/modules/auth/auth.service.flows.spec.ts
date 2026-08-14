@@ -111,6 +111,7 @@ describe('AuthService — refresh, reset, throttling, sessions', () => {
     ttl: jest.Mock;
   };
   let jwt: { signAsync: jest.Mock; verify: jest.Mock };
+  let config: { get: jest.Mock };
 
   beforeEach(async () => {
     repo = {
@@ -145,16 +146,14 @@ describe('AuthService — refresh, reset, throttling, sessions', () => {
       signAsync: jest.fn().mockResolvedValue('signed-token'),
       verify: jest.fn(),
     };
+    config = { get: jest.fn((_k: string, fallback?: string) => fallback) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
         { provide: AuthRepository, useValue: repo },
         { provide: JwtService, useValue: jwt },
-        {
-          provide: ConfigService,
-          useValue: { get: jest.fn((_k: string, fallback?: string) => fallback) },
-        },
+        { provide: ConfigService, useValue: config },
         { provide: SessionService, useValue: sessions },
         { provide: REDIS_CLIENT, useValue: redis },
       ],
@@ -534,6 +533,43 @@ describe('AuthService — refresh, reset, throttling, sessions', () => {
       expect(storedKey).toBe(
         `gosumo:pwreset:${crypto.createHash('sha256').update(rawToken).digest('hex')}`,
       );
+      log.mockRestore();
+    });
+
+    /**
+     * The reset token is a live, single-use credential for the account. A log
+     * line carrying it hands every account on the desk to anyone who can read
+     * the application log — log aggregation, a crash reporter's breadcrumbs,
+     * `journalctl` on the box — for the length of the token's TTL, without
+     * ever touching the user's mailbox. Development still needs the link
+     * printed, because no email service is wired up yet.
+     */
+    it('never writes the reset link to the log in production', async () => {
+      const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+      config.get.mockImplementation((key: string, fallback?: string) =>
+        key === 'app.env' ? 'production' : fallback,
+      );
+      repo.findTeamMemberByEmail.mockResolvedValue(buildTeamMember());
+
+      await service.requestPasswordReset('test@example.com');
+
+      // The reset still happened — only the log line is redacted.
+      expect(redis.set).toHaveBeenCalledTimes(1);
+
+      const lines = log.mock.calls.map((c) => String(c[0]));
+      expect(lines.join('\n')).not.toContain('token=');
+      expect(lines.join('\n')).not.toContain('reset-password');
+      expect(lines.some((l) => l.includes('test@example.com'))).toBe(true);
+      log.mockRestore();
+    });
+
+    it('still prints the link outside production, where no mailer is wired up', async () => {
+      const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+      repo.findTeamMemberByEmail.mockResolvedValue(buildTeamMember());
+
+      await service.requestPasswordReset('test@example.com');
+
+      expect(log.mock.calls.some((c) => String(c[0]).includes('reset-password?token='))).toBe(true);
       log.mockRestore();
     });
 
