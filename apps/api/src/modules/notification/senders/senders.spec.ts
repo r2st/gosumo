@@ -89,6 +89,63 @@ describe('Channel senders', () => {
       expect(r.success).toBe(true);
       expect(r.providerMessageId).toContain('wa');
     });
+
+    /**
+     * A bad number is the sender's own fault, not the provider's, so it must
+     * come back non-retryable — a retryable failure would have the queue redial
+     * the same invalid number until it exhausts its attempts.
+     */
+    it('rejects a non-E.164 recipient without retrying', async () => {
+      const r = await sender.send(outbound({ recipient: '9876543210' }));
+
+      expect(r).toMatchObject({ success: false, retryable: false });
+      expect(r.error).toMatch(/E\.164/);
+    });
+
+    it('sends a free-form message when no template is named', async () => {
+      const r = await sender.send(
+        outbound({ recipient: '+919876543210', externalTemplateName: null }),
+      );
+      expect(r.success).toBe(true);
+      expect(r.providerMessageId).toContain('wa');
+    });
+
+    /**
+     * With no credentials the sender must no-op *successfully*: a dev or test
+     * environment should not fill the queue with retrying failures. Each half
+     * of the credential check has to trip it on its own.
+     */
+    describe('credential gate', () => {
+      const configWith = (values: Record<string, string>) =>
+        ({ get: (k: string) => values[k] }) as unknown as ConfigService;
+
+      it('no-ops when neither credential is set', async () => {
+        const r = await sender.send(outbound({ recipient: '+919876543210' }));
+        expect(r).toMatchObject({ success: true });
+        expect(r.providerMessageId).toContain('wa_noop_');
+      });
+
+      it('no-ops when only the phone number id is set', async () => {
+        const s = new WhatsAppSender(configWith({ 'whatsapp.phoneNumberId': '123' }));
+        const r = await s.send(outbound({ recipient: '+919876543210' }));
+        expect(r.providerMessageId).toContain('wa_noop_');
+      });
+
+      it('no-ops when only the access token is set', async () => {
+        const s = new WhatsAppSender(configWith({ 'whatsapp.accessToken': 'tok' }));
+        const r = await s.send(outbound({ recipient: '+919876543210' }));
+        expect(r.providerMessageId).toContain('wa_noop_');
+      });
+
+      it('leaves no-op mode once both credentials are present', async () => {
+        const s = new WhatsAppSender(
+          configWith({ 'whatsapp.accessToken': 'tok', 'whatsapp.phoneNumberId': '123' }),
+        );
+        const r = await s.send(outbound({ recipient: '+919876543210' }));
+        expect(r.success).toBe(true);
+        expect(r.providerMessageId).toMatch(/^wamid\./);
+      });
+    });
   });
 
   describe('PushSender', () => {

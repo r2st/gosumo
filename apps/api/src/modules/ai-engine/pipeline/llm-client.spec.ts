@@ -63,10 +63,76 @@ describe('LlmClientService', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2); // maxAttempts = 2
   }, 10_000);
 
+  /**
+   * OpenRouter's free tier is served by a rotating set of providers, and a 200
+   * from one of them is not a guarantee of shape — `choices`, `message`,
+   * `usage` and `model` have all been seen missing. Every one of them must
+   * degrade to a default rather than throw, because a TypeError here surfaces
+   * to the customer as a dead conversation instead of an escalation.
+   */
+  describe('tolerating a well-formed 200 with missing fields', () => {
+    const respond = (body: unknown) =>
+      jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => body,
+      } as unknown as Response);
+
+    it('returns empty text and zeroed usage for an entirely bare body', async () => {
+      respond({});
+
+      const result = await makeClient().complete(req);
+
+      expect(result.text).toBe('');
+      expect(result.promptTokens).toBe(0);
+      expect(result.completionTokens).toBe(0);
+    });
+
+    it('falls back to the requested model when the response names none', async () => {
+      respond({ choices: [{ message: { content: 'hi' } }] });
+
+      const result = await makeClient().complete({ ...req, model: 'openai/gpt-oss-120b:free' });
+
+      expect(result.modelId).toBe('openai/gpt-oss-120b:free');
+    });
+
+    it('treats a choice with no message, and one with no content, as empty', async () => {
+      respond({ choices: [{ finish_reason: 'stop' }, { message: {} }] });
+
+      expect((await makeClient().complete(req)).text).toBe('');
+    });
+
+    it('joins the content of several choices', async () => {
+      respond({ choices: [{ message: { content: 'a' } }, { message: { content: 'b' } }] });
+
+      expect((await makeClient().complete(req)).text).toBe('ab');
+    });
+
+    it('zeroes each usage counter independently', async () => {
+      respond({ choices: [{ message: { content: 'x' } }], usage: { prompt_tokens: 7 } });
+
+      const result = await makeClient().complete(req);
+
+      expect(result.promptTokens).toBe(7);
+      expect(result.completionTokens).toBe(0);
+    });
+  });
+
+  /** A rejection that is not an Error must still reach the caller as a message. */
+  it('wraps a non-Error rejection rather than reporting "[object Object]"', async () => {
+    jest.spyOn(global, 'fetch').mockRejectedValue('socket hang up');
+
+    await expect(makeClient().complete(req)).rejects.toThrow('socket hang up');
+  }, 10_000);
+
   describe('extractJson', () => {
     it('parses a bare JSON object', () => {
       const client = makeClient();
       expect(client.extractJson('{"a":1}')).toEqual({ a: 1 });
+    });
+
+    it('returns null for empty text without attempting a parse', () => {
+      expect(makeClient().extractJson('')).toBeNull();
     });
 
     it('extracts JSON from a fenced code block', () => {
