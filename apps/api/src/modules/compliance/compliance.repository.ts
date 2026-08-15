@@ -8,6 +8,7 @@ import type {
 } from '@prisma/client';
 import { PrismaService } from '../../common/services/prisma.service';
 import { anonymizeEmail, anonymizePhone, ANONYMIZED_NAME } from './dpdpa.util';
+import { REDACTED_FILENAME } from './compliance.constants';
 
 export interface CreateConsentData {
   businessId: string;
@@ -284,6 +285,42 @@ export class ComplianceRepository {
         sender_id: { not: null },
       },
       data: { sender_id: null, text_content: null },
+    });
+    return res.count;
+  }
+
+  /**
+   * Scrub the personal data on media attachments past the retention window.
+   *
+   * `anonymizeOldMessages` clears a message's `text_content`, but an image or
+   * document message carries its content *beside* the row it anonymizes: a
+   * `file_uploads` row whose `filename` is whatever the sender's device called
+   * it — "Aadhaar-Ramesh.pdf", "salary-slip-march.jpg" — and whose `cdn_url` is
+   * a live link to the file itself. Anonymizing the message and leaving that
+   * behind erases the caption and keeps the document.
+   *
+   * `storage_key` is deliberately kept. It is the only handle to the stored
+   * object, so nulling it would strand the object permanently instead of
+   * erasing it — the same reason the knowledge-deletion path drops vectors
+   * before the metadata row that points at them. When an object-purge exists,
+   * this is the column it reads.
+   *
+   * The `OR` is what makes the sweep idempotent: an already-scrubbed row
+   * matches nothing, so a weekly run rewrites (and counts) only rows that still
+   * hold something.
+   */
+  async anonymizeOldFileUploads(businessId: string, cutoff: Date): Promise<number> {
+    const res = await this.prisma.file_uploads.updateMany({
+      where: {
+        business_id: businessId,
+        created_at: { lt: cutoff },
+        OR: [
+          { filename: { not: REDACTED_FILENAME } },
+          { cdn_url: { not: null } },
+          { thumbnail_key: { not: null } },
+        ],
+      },
+      data: { filename: REDACTED_FILENAME, cdn_url: null, thumbnail_key: null },
     });
     return res.count;
   }

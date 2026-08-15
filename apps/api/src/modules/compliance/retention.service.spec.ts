@@ -34,6 +34,7 @@ type RepoMock = {
   findSettings: jest.Mock;
   findInactiveLeads: jest.Mock;
   anonymizeOldMessages: jest.Mock;
+  anonymizeOldFileUploads: jest.Mock;
   markRetentionRun: jest.Mock;
   listBusinessIdsWithLeads: jest.Mock;
 };
@@ -49,6 +50,7 @@ describe('RetentionService', () => {
       findSettings: jest.fn().mockResolvedValue(null),
       findInactiveLeads: jest.fn().mockResolvedValue([]),
       anonymizeOldMessages: jest.fn().mockResolvedValue(0),
+      anonymizeOldFileUploads: jest.fn().mockResolvedValue(0),
       markRetentionRun: jest.fn().mockResolvedValue(undefined),
       listBusinessIdsWithLeads: jest.fn().mockResolvedValue([]),
     };
@@ -99,6 +101,53 @@ describe('RetentionService', () => {
       expect(res.leadsAnonymized).toBe(2);
       // 2 leads × 2 messages each + 3 orphan messages = 7
       expect(res.messagesAnonymized).toBe(7);
+    });
+
+    it('scrubs the media attached to messages past the window', async () => {
+      // Anonymizing a message clears its text. An image or document message
+      // carries its personal data in the `file_uploads` row beside it — the
+      // sender's own filename, and a live CDN link to the file itself.
+      repo.anonymizeOldFileUploads.mockResolvedValueOnce(6);
+
+      const res = await service.runForBusiness(BIZ_A, NOW);
+
+      expect(repo.anonymizeOldFileUploads).toHaveBeenCalledWith(
+        BIZ_A,
+        retentionCutoff(DEFAULT_RETENTION_MONTHS, NOW),
+      );
+      expect(res.attachmentsScrubbed).toBe(6);
+    });
+
+    it('scrubs attachments against the business-specific window, not the default', async () => {
+      repo.findSettings.mockResolvedValueOnce({ retention_months: 12 });
+
+      await service.runForBusiness(BIZ_A, NOW);
+
+      expect(repo.anonymizeOldFileUploads).toHaveBeenCalledWith(BIZ_A, retentionCutoff(12, NOW));
+    });
+
+    it('counts attachments separately from messages', async () => {
+      // They are different erasures: a message loses its text, an attachment
+      // loses the filename and the link. Folding them into one number would
+      // hide a sweep that scrubbed captions and left every document.
+      repo.anonymizeOldMessages.mockResolvedValueOnce(3);
+      repo.anonymizeOldFileUploads.mockResolvedValueOnce(2);
+
+      const res = await service.runForBusiness(BIZ_A, NOW);
+
+      expect(res.messagesAnonymized).toBe(3);
+      expect(res.attachmentsScrubbed).toBe(2);
+    });
+
+    it('reports the run when attachments were the only thing scrubbed', async () => {
+      // A business whose leads and message text are already clean can still be
+      // holding attachment filenames; that run is not a no-op.
+      repo.anonymizeOldFileUploads.mockResolvedValueOnce(4);
+
+      const res = await service.runForBusiness(BIZ_A, NOW);
+
+      expect(res.attachmentsScrubbed).toBe(4);
+      expect(emit).toHaveBeenCalledWith('realty.retention.run', expect.anything());
     });
 
     it('does not count a lead whose erase reported erased=false', async () => {

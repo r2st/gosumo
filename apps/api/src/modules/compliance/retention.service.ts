@@ -18,6 +18,14 @@ export interface RetentionRunResult {
   leadsAnonymized: number;
   messagesAnonymized: number;
   /**
+   * Media attachments past the window whose filename and CDN link were cleared.
+   *
+   * Counted separately from `messagesAnonymized` because they are different
+   * erasures: a message loses its text, an attachment loses the sender's own
+   * filename and the live link to the file.
+   */
+  attachmentsScrubbed: number;
+  /**
    * Leads past the retention window that this run did not get to.
    *
    * The sweep is bounded three ways (page, per-business ceiling, run deadline),
@@ -41,9 +49,10 @@ export interface RetentionSweepSummary {
 /**
  * RetentionService — the scheduled DPDPA data-minimization sweep (business plan
  * §21). Runs weekly (BullMQ repeatable job): for each business it anonymizes
- * leads inactive past the retention window (default 24 months) and scrubs sender
- * info on messages older than the window. Every anonymization is audited (via the
- * shared erasure path) and the run is recorded on the business's settings.
+ * leads inactive past the retention window (default 24 months), scrubs sender
+ * info on messages older than the window, and clears the filename and CDN link
+ * on the media attached to them. Every anonymization is audited (via the shared
+ * erasure path) and the run is recorded on the business's settings.
  */
 @Injectable()
 export class RetentionService {
@@ -159,9 +168,16 @@ export class RetentionService {
     //    conversations without a surviving lead link).
     messagesAnonymized += await this.repository.anonymizeOldMessages(businessId, cutoff);
 
+    // 3. Scrub the media attached to those messages. Step 2 clears a message's
+    //    text; for an image or document message the personal data is in the
+    //    `file_uploads` row beside it — the sender's own filename and a live
+    //    link to the file — so without this the sweep erases the caption and
+    //    leaves the document.
+    const attachmentsScrubbed = await this.repository.anonymizeOldFileUploads(businessId, cutoff);
+
     await this.repository.markRetentionRun(businessId, now);
 
-    if (leadsAnonymized > 0 || messagesAnonymized > 0) {
+    if (leadsAnonymized > 0 || messagesAnonymized > 0 || attachmentsScrubbed > 0) {
       const event: RealtyRetentionRunEvent = {
         id: generateId(),
         timestamp: new Date().toISOString(),
@@ -174,7 +190,9 @@ export class RetentionService {
       };
       this.eventEmitter.emit('realty.retention.run', event);
       this.logger.log(
-        `Retention sweep for business ${businessId}: ${leadsAnonymized} lead(s), ${messagesAnonymized} message(s) anonymized (>${retentionMonths}mo)`,
+        `Retention sweep for business ${businessId}: ${leadsAnonymized} lead(s), ` +
+          `${messagesAnonymized} message(s), ${attachmentsScrubbed} attachment(s) ` +
+          `anonymized (>${retentionMonths}mo)`,
       );
     }
 
@@ -192,6 +210,7 @@ export class RetentionService {
       cutoff,
       leadsAnonymized,
       messagesAnonymized,
+      attachmentsScrubbed,
       leadsPending,
     };
   }

@@ -12,6 +12,7 @@ import { ConsentType } from '@prisma/client';
 import type { realty_leads } from '@prisma/client';
 import { ComplianceRepository } from './compliance.repository';
 import { ANONYMIZED_NAME, anonymizeEmail, anonymizePhone } from './dpdpa.util';
+import { REDACTED_FILENAME } from './compliance.constants';
 
 const BIZ = '00000000-0000-4000-a000-00000000000a';
 const PHONE = '+919876543210';
@@ -36,6 +37,9 @@ function prismaMock() {
     },
     messages: {
       findMany: jest.fn().mockResolvedValue([]),
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
+    file_uploads: {
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     businesses: {
@@ -315,6 +319,66 @@ describe('ComplianceRepository', () => {
         sender_id: { not: null },
       });
       expect(call.data).toEqual({ sender_id: null, text_content: null });
+    });
+  });
+
+  describe('anonymizeOldFileUploads', () => {
+    it('clears the filename and CDN link on attachments older than the cutoff', async () => {
+      // A message's text is scrubbed by `anonymizeOldMessages`, but an image or
+      // document message keeps its personal data beside that row: the sender's
+      // own filename and a live link to the file.
+      const cutoff = new Date('2024-07-03T00:00:00Z');
+      prisma.file_uploads.updateMany.mockResolvedValueOnce({ count: 4 });
+
+      const n = await repo.anonymizeOldFileUploads(BIZ, cutoff);
+
+      expect(n).toBe(4);
+      const call = prisma.file_uploads.updateMany.mock.calls[0][0];
+      expect(call.where).toEqual({
+        business_id: BIZ,
+        created_at: { lt: cutoff },
+        OR: [
+          { filename: { not: REDACTED_FILENAME } },
+          { cdn_url: { not: null } },
+          { thumbnail_key: { not: null } },
+        ],
+      });
+      expect(call.data).toEqual({
+        filename: REDACTED_FILENAME,
+        cdn_url: null,
+        thumbnail_key: null,
+      });
+    });
+
+    it('keeps storage_key — it is the only handle to the stored object', async () => {
+      // Nulling it would strand the object permanently instead of erasing it.
+      prisma.file_uploads.updateMany.mockResolvedValueOnce({ count: 1 });
+
+      await repo.anonymizeOldFileUploads(BIZ, new Date('2024-07-03T00:00:00Z'));
+
+      const call = prisma.file_uploads.updateMany.mock.calls[0][0];
+      expect(call.data).not.toHaveProperty('storage_key');
+    });
+
+    it('is scoped to the tenant', async () => {
+      prisma.file_uploads.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      await repo.anonymizeOldFileUploads(BIZ, new Date('2024-07-03T00:00:00Z'));
+
+      expect(prisma.file_uploads.updateMany.mock.calls[0][0].where.business_id).toBe(BIZ);
+    });
+
+    it('skips rows already scrubbed, so a weekly run is idempotent', async () => {
+      // The OR is the guard: an already-redacted row matches nothing, so the
+      // count reports real erasures rather than rewriting history every week.
+      prisma.file_uploads.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      const n = await repo.anonymizeOldFileUploads(BIZ, new Date('2024-07-03T00:00:00Z'));
+
+      expect(n).toBe(0);
+      expect(prisma.file_uploads.updateMany.mock.calls[0][0].where.OR).toContainEqual({
+        filename: { not: REDACTED_FILENAME },
+      });
     });
   });
 

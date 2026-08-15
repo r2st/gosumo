@@ -52,3 +52,14 @@ export const RETENTION_MAX_LEADS_PER_BUSINESS = 10 * RETENTION_LEAD_BATCH_SIZE;
  * which businesses it never reached — instead of by being shot.
  */
 export const RETENTION_RUN_BUDGET_MS = 4 * 60 * 1000;
+
+/**
+ * What an attachment's `filename` becomes once it is past the retention window.
+ *
+ * `file_uploads.filename` is not nullable, so scrubbing it means replacing it
+ * rather than clearing it the way `messages.text_content` is cleared. A fixed
+ * sentinel (not a per-row string) is what makes the sweep idempotent: the
+ * update can skip rows already carrying it instead of rewriting every old row
+ * every week.
+ */
+export const REDACTED_FILENAME = '[redacted]';
