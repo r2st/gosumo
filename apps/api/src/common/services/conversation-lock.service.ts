@@ -48,6 +48,30 @@ export const CONVERSATION_LOCK_TIMEOUT_MS = 60_000;
  * today's concurrent behaviour instead of silently freezing it forever, which is
  * the failure mode nobody would notice until a buyer complained.
  *
+ * ## Where it is wired, and where it deliberately is not
+ *
+ * Held across the whole of each inbound path that reads state and writes it back:
+ *
+ *  - `ChannelAdapterService.handleInboundWebhook` — keyed per
+ *    (channel account, sender), around persist-and-announce. Two webhook POSTs
+ *    from one buyer otherwise both run find-or-create for the contact and the
+ *    conversation, producing two OPEN conversations and splitting their history.
+ *  - `AiEngineService.handleMessageReceived` — the whole generic pipeline.
+ *  - `RealtyMessageBridgeService.handleMessageReceived` — the whole realty turn,
+ *    which is where the BLTC merge race lives.
+ *
+ * The other `message.received` listeners are unlocked on purpose:
+ *
+ *  - `ClientIntelligenceService` writes only `last_interaction_at`. Two
+ *    concurrent writes of "now" converge; there is no read to invalidate.
+ *  - `CadenceEngineService.onInboundReply` stops reply-sensitive steps. Stopping
+ *    an already-stopped enrolment is a no-op, so concurrent runs converge too.
+ *  - `RealtyLeadsService.handleMessageReceived` *is* a find-or-create, but it is
+ *    made safe by `uq_realty_leads_business_phone` plus a claim/revive/P2002
+ *    retry rather than by this lock — see `client-identity.util.ts` for the same
+ *    pattern on `clients`. That is the stronger guarantee: the constraint holds
+ *    across processes, and this lock does not (below).
+ *
  * ## Scope: this process only
  *
  * The chain lives in process memory, so it serializes turns handled by *this*
