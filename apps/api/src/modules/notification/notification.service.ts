@@ -33,7 +33,7 @@ import { NotificationRepository } from './notification.repository';
 import { TemplateRenderer, TemplateContent } from './template-renderer';
 import { NotificationRateLimiter } from './notification.rate-limiter';
 import { SenderRegistry } from './senders/sender-registry';
-import { OutboundNotification } from './senders/channel-sender.interface';
+import { OutboundNotification, SendOutcome } from './senders/channel-sender.interface';
 import {
   NOTIFICATION_QUEUE,
   NOTIFICATION_JOBS,
@@ -486,12 +486,38 @@ export class NotificationService {
       return;
     }
 
-    const sender = this.senders.get(row.channel);
-    const outbound = this.toOutbound(row);
     const correlationId = generateCorrelationId();
     const startMs = Date.now();
 
-    const outcome = await sender.send(outbound);
+    // Resolving the sender and rendering the payload are as fallible as the
+    // send itself, and a throw here is unrecoverable rather than merely
+    // failed: dispatch jobs are queued with `attempts: 1` because this method
+    // owns the retry bookkeeping, so Bull will not re-run it, and nothing
+    // sweeps the table for rows left behind. An escaping exception therefore
+    // stranded the notification in QUEUED forever — never sent, never failed,
+    // never retried, and invisible to `notification.failed` consumers. That is
+    // not hypothetical: `SenderRegistry.get()` throws `NotFoundException` for
+    // any channel without a registered sender, and `toOutbound` reads a JSON
+    // column it does not control.
+    //
+    // Funnelling both into the same `SendOutcome` the senders return keeps one
+    // failure path instead of two, and lets the retry/permanent-fail logic
+    // below bound the damage: the row burns its `max_attempts` budget and
+    // lands in FAILED with a reason, which is the terminal state an operator
+    // can actually see. `ChannelSender.send` is documented never to throw —
+    // this also holds that line for a sender that breaks the contract.
+    let outcome: SendOutcome;
+    try {
+      const sender = this.senders.get(row.channel);
+      const outbound = this.toOutbound(row);
+      outcome = await sender.send(outbound);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `Notification ${row.id} dispatch threw before an outcome was produced: ${message}`,
+      );
+      outcome = { success: false, error: message, retryable: true };
+    }
 
     if (outcome.success) {
       const updated = await this.repository.updateNotification(businessId, row.id, {

@@ -369,7 +369,7 @@ function makeService(opts: { outcome?: SendOutcome; limiter?: NotificationRateLi
     emitter as never,
     queue as never,
   );
-  return { service, repo, queue, emitter, send, sender, limiter };
+  return { service, repo, queue, emitter, send, sender, senders, limiter };
 }
 
 const emitted = (emitter: { emit: jest.Mock }, type: string) =>
@@ -572,6 +572,61 @@ describe('NotificationService.processDispatch', () => {
     const row = repo.seedNotification({ attempts: 2, max_attempts: 3 });
     await service.processDispatch(BUSINESS, row.id);
     expect(repo.notifications.get(row.id)!.status).toBe(NotificationStatus.FAILED);
+  });
+
+  // Dispatch jobs are queued with `attempts: 1` because this method owns the
+  // retry bookkeeping, and nothing sweeps the table for rows left behind. So a
+  // throw that escapes `processDispatch` is not "one failed attempt" — it is a
+  // notification that will never be sent, never be failed, and never be seen
+  // again. These pin the two throwing paths onto the recorded-failure path.
+  it('records a failure when the sender registry has no sender for the channel', async () => {
+    const { service, repo, senders, queue } = makeService();
+    senders.get.mockImplementation(() => {
+      throw new NotFoundException('No sender registered for channel: WHATSAPP');
+    });
+    const row = repo.seedNotification();
+
+    await expect(service.processDispatch(BUSINESS, row.id)).resolves.toBeUndefined();
+
+    const updated = repo.notifications.get(row.id);
+    // Not left in QUEUED with nothing scheduled: the attempt is recorded and a
+    // retry is on the queue, so the row is still moving toward a terminal state.
+    expect(updated!.attempts).toBe(1);
+    expect(updated!.failure_reason).toContain('No sender registered');
+    expect(queue.add).toHaveBeenCalledTimes(1);
+  });
+
+  it('reaches FAILED rather than stranding when the send path keeps throwing', async () => {
+    const { service, repo, senders, emitter } = makeService();
+    senders.get.mockImplementation(() => {
+      throw new Error('registry exploded');
+    });
+    // One attempt short of the budget, so this dispatch is the last one.
+    const row = repo.seedNotification({ attempts: 2, max_attempts: 3 });
+
+    await service.processDispatch(BUSINESS, row.id);
+
+    const updated = repo.notifications.get(row.id);
+    expect(updated!.status).toBe(NotificationStatus.FAILED);
+    expect(updated!.failed_at).not.toBeNull();
+    expect(updated!.failure_reason).toBe('registry exploded');
+    // The terminal event is what an operator (and any downstream consumer)
+    // actually sees; a stranded row emits nothing at all.
+    expect(emitted(emitter, 'notification.failed')).toHaveLength(1);
+  });
+
+  it('records a failure when a sender throws instead of returning an outcome', async () => {
+    const { service, repo, send, queue } = makeService();
+    // `ChannelSender.send` is documented never to throw; hold that line anyway.
+    send.mockRejectedValue(new Error('provider client blew up'));
+    const row = repo.seedNotification();
+
+    await expect(service.processDispatch(BUSINESS, row.id)).resolves.toBeUndefined();
+
+    const updated = repo.notifications.get(row.id);
+    expect(updated!.attempts).toBe(1);
+    expect(updated!.failure_reason).toBe('provider client blew up');
+    expect(queue.add).toHaveBeenCalledTimes(1);
   });
 
   it('re-queues without consuming an attempt when rate limited', async () => {
