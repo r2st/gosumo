@@ -22,6 +22,7 @@ import { Reflector } from '@nestjs/core';
 import { of, lastValueFrom } from 'rxjs';
 
 import { IS_PUBLIC_KEY, TenantInterceptor } from './tenant.interceptor';
+import { getRequestContext, runWithRequestContext } from '../context/request-context';
 
 type TenantRequest = { user?: Record<string, unknown>; tenantId?: string };
 
@@ -109,5 +110,51 @@ describe('TenantInterceptor on public routes', () => {
     await lastValueFrom(makeInterceptor(true).intercept(makeContext(request), NEXT));
 
     expect(request.tenantId).toBeUndefined();
+  });
+});
+
+/**
+ * The tenant is also published to the ambient request context, so log lines
+ * written deep in a service carry it without every signature threading it.
+ *
+ * `request.tenantId` remains the source of truth that `@TenantId()` reads —
+ * these assertions are about the logging copy staying in step with it, and in
+ * particular about the two cases where it must *not* be written.
+ */
+describe('TenantInterceptor publishes the tenant to the request context', () => {
+  it('sets businessId on the context open around the request', async () => {
+    const request: TenantRequest = { user: { businessId: 'biz-1' } };
+
+    const seen = await runWithRequestContext({ correlationId: 'cid-1' }, async () => {
+      await lastValueFrom(makeInterceptor(undefined).intercept(makeContext(request), NEXT));
+      return getRequestContext()?.businessId;
+    });
+
+    expect(seen).toBe('biz-1');
+  });
+
+  it('leaves the context tenant unset when the JWT carries no businessId', async () => {
+    // Same rule as `request.tenantId` above: absent must stay distinguishable
+    // from present, never written as `undefined`-looking noise.
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const request: TenantRequest = { user: { sub: 'u-1' } };
+
+    const seen = await runWithRequestContext({ correlationId: 'cid-2' }, async () => {
+      await lastValueFrom(makeInterceptor(undefined).intercept(makeContext(request), NEXT));
+      return getRequestContext()?.businessId;
+    });
+
+    expect(seen).toBeUndefined();
+  });
+
+  it('does not throw when no request context is open', async () => {
+    // A unit test — or any non-HTTP entry point — builds this interceptor with
+    // no middleware above it. Publishing must degrade to a no-op, not a crash.
+    const request: TenantRequest = { user: { businessId: 'biz-1' } };
+
+    await expect(
+      lastValueFrom(makeInterceptor(undefined).intercept(makeContext(request), NEXT)),
+    ).resolves.toBe('handled');
+    expect(request.tenantId).toBe('biz-1');
   });
 });

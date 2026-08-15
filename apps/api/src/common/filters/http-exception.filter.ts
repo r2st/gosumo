@@ -10,6 +10,8 @@ import { Prisma } from '@prisma/client';
 import { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { GoSumoError, ErrorCode, errorCodeForStatus } from '@gosumo/shared';
+import { CORRELATION_ID_HEADER } from '../context/correlation-id.util';
+import { getCorrelationId } from '../context/request-context';
 
 /**
  * Prisma error codes that correspond to a client mistake rather than a server
@@ -60,8 +62,21 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
+    /**
+     * The same id the access log and every line in between used.
+     *
+     * Read from the async context first: the header fallback works only
+     * because `correlationId()` middleware writes the resolved id back onto
+     * the request, and a failure that happens before any middleware ran (or in
+     * a test harness that mounts the filter alone) has neither. Minting one
+     * here is the last resort — it is returned to the caller, so it must never
+     * be absent, but an id invented at the end of a request joins nothing,
+     * which is why it is third rather than first.
+     */
     const traceId =
-      (request.headers['x-correlation-id'] as string | undefined) ?? uuidv4();
+      getCorrelationId() ??
+      (request.headers?.[CORRELATION_ID_HEADER] as string | undefined) ??
+      uuidv4();
 
     let statusCode = HttpStatus.INTERNAL_SERVER_ERROR;
     /**

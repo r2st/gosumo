@@ -10,6 +10,7 @@ import {
   allowCredentials,
   resolveCorsOrigin as parseCorsOrigin,
 } from './common/utils/cors.util';
+import { correlationId } from './common/middleware/correlation-id.middleware';
 import { securityHeaders } from './common/middleware/security-headers.middleware';
 
 /** True when this process is running as production. */
@@ -272,6 +273,11 @@ async function bootstrap() {
   // HSTS only in production: TLS terminates at Caddy there, whereas sending it
   // over plain http in development pins the browser to an https port that does
   // not exist, and the fix for that is clearing browser state.
+  // First in the chain, so everything after it — including a 401 from the
+  // global guard and a 413 from the body parser, neither of which reaches a
+  // controller — is logged under an id and answers with one.
+  app.use(correlationId());
+
   app.use(securityHeaders({ hsts: isProduction() }));
   // Express's default advertisement of what is running here. Free to remove.
   app.getHttpAdapter().getInstance().disable?.('x-powered-by');

@@ -9,6 +9,7 @@ import {
 import { Observable } from 'rxjs';
 import { Request } from 'express';
 import { Reflector } from '@nestjs/core';
+import { setContextBusinessId } from '../context/request-context';
 
 export const IS_PUBLIC_KEY = 'isPublic';
 
@@ -50,6 +51,12 @@ export class TenantInterceptor implements NestInterceptor {
       this.logger.warn('JWT payload missing businessId — tenant context not set');
     } else {
       request.tenantId = businessId;
+      // Also publish it to the ambient request context, so every log line from
+      // here on carries the tenant without each call site threading it through.
+      // `request.tenantId` stays the source of truth for `@TenantId()`; this is
+      // the read-only copy for logging. No-ops when no context is open, which
+      // is the case in a unit test that builds this interceptor alone.
+      setContextBusinessId(businessId);
     }
 
     return next.handle();
