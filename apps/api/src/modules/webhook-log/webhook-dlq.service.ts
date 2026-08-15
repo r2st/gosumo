@@ -66,10 +66,35 @@ export type WebhookReplayHandler = (
   entry: webhook_dead_letters,
 ) => Promise<void>;
 
+/**
+ * Thrown by a replayer that did not attempt the replay at all.
+ *
+ * The distinction this draws is between "we tried and it failed" and "we did
+ * not try". Both look like a throw to the DLQ, and treating them the same is
+ * what makes an outage destructive: while a channel's inbound circuit breaker
+ * is open, every due entry for that source would be *refused* in microseconds,
+ * so a thirty-second outage would spend all six attempts on six refusals and
+ * discard a backlog of perfectly replayable deliveries — the exact loss the DLQ
+ * exists to prevent, arriving faster because the mitigation worked.
+ *
+ * An entry that raises this is rescheduled on its normal backoff with its
+ * attempt counter untouched.
+ */
+export class ReplayDeferredError extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = 'ReplayDeferredError';
+  }
+}
+
 /** What a retry attempt did, for the caller (processor, sweep, operator) to log. */
 export interface WebhookRetryOutcome {
   entry: webhook_dead_letters;
-  status: 'REPLAYED' | 'RESCHEDULED' | 'DISCARDED' | 'SKIPPED';
+  /**
+   * `DEFERRED` means no attempt was made and none was charged — see
+   * {@link ReplayDeferredError}.
+   */
+  status: 'REPLAYED' | 'RESCHEDULED' | 'DISCARDED' | 'SKIPPED' | 'DEFERRED';
   error?: string;
 }
 
@@ -211,6 +236,9 @@ export class WebhookDlqService {
     try {
       await handler(this.readPayload(entry), entry);
     } catch (err) {
+      if (err instanceof ReplayDeferredError) {
+        return this.recordDeferral(entry, err, now);
+      }
       return this.recordFailure(entry, err, now);
     }
 
@@ -431,6 +459,53 @@ export class WebhookDlqService {
   // ─────────────────────────────────────────────
   // Internals
   // ─────────────────────────────────────────────
+
+  /**
+   * Push the entry out without charging it an attempt.
+   *
+   * The backoff is computed from the attempts already spent, so a deferral does
+   * not reset the schedule either — an entry on its fifth attempt comes back in
+   * five attempts' worth of time, not thirty seconds. `last_attempt_at` is left
+   * alone for the same reason: nothing was attempted, and an operator reading
+   * the row should see when it was last actually tried.
+   *
+   * Logged at `debug`. A deferral is the mitigation working, and during the
+   * outage it fires once per due entry — which is exactly the volume that would
+   * bury the one line that matters (the breaker opening, logged at ERROR by the
+   * breaker itself).
+   */
+  private async recordDeferral(
+    entry: webhook_dead_letters,
+    error: ReplayDeferredError,
+    now: Date,
+  ): Promise<WebhookRetryOutcome> {
+    const backoff = webhookRetryBackoffMs(Math.max(entry.attempts, 1));
+    const nextRetryAt = new Date(now.getTime() + backoff);
+
+    const deferred = await this.repository.update(entry.business_id, entry.id, {
+      next_retry_at: nextRetryAt,
+    });
+
+    this.logger.debug(
+      `Webhook ${entry.source}/${entry.external_id} deferred (${error.message}); ` +
+        `attempt ${entry.attempts + 1}/${entry.max_attempts} not charged, retrying in ${backoff}ms`,
+    );
+
+    // A distinct job id, and this is the reason the deferral does not simply
+    // call `enqueueRetry`. That helper keys the job on `${id}:${attempts}` so a
+    // duplicate delivery of the same attempt is a no-op — but a deferral leaves
+    // `attempts` where it was, so it would re-add the id of the job that just
+    // ran and Bull would drop it. The entry would then come back only on the
+    // five-minute sweep, which works but makes recovery from a thirty-second
+    // breaker cooldown take five minutes.
+    await this.enqueueRetryJob(
+      deferred.id,
+      deferred.business_id,
+      backoff,
+      `${deferred.id}:${deferred.attempts}:deferred:${nextRetryAt.getTime()}`,
+    );
+    return { entry: deferred, status: 'DEFERRED', error: error.message };
+  }
 
   /** Bump the attempt count and either schedule the next try or give up. */
   private async recordFailure(

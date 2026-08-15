@@ -207,7 +207,13 @@ export interface WebhookDeadLetterStatsDto {
 
 /** What a manual replay did, and the entry as it now stands. */
 export interface WebhookReplayResultDto {
-  status: 'REPLAYED' | 'RESCHEDULED' | 'DISCARDED' | 'SKIPPED';
+  /**
+   * `DEFERRED` means the owning module refused to attempt the replay — its
+   * inbound circuit is open — and the entry was rescheduled without being
+   * charged an attempt. Distinct from `RESCHEDULED`, which means it was tried
+   * and failed.
+   */
+  status: 'REPLAYED' | 'RESCHEDULED' | 'DISCARDED' | 'SKIPPED' | 'DEFERRED';
   /** The failure that caused a RESCHEDULED/DISCARDED outcome; null on success. */
   error: string | null;
   entry: WebhookDeadLetterSummaryDto;
