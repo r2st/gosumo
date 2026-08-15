@@ -17,6 +17,7 @@ import {
   buildFirstContactNotice,
   isPastRetention,
   retentionCutoff,
+  subtractMonths,
   withFirstContactNotice,
 } from './dpdpa.util';
 
@@ -134,6 +135,86 @@ describe('retentionCutoff', () => {
     const now = new Date('2026-07-03T00:00:00Z');
     retentionCutoff(24, now);
     expect(now.toISOString()).toBe('2026-07-03T00:00:00.000Z');
+  });
+
+  // The cutoff decides what gets irreversibly anonymized. Plain `setUTCMonth`
+  // arithmetic overflows forward when the target month is shorter than the
+  // source day (31 Mar − 1mo asks for 31 Feb and lands on 3 Mar), producing a
+  // cutoff LATER than it should be and erasing records still inside the window.
+  describe('month-end windows', () => {
+    it('clamps to the end of a shorter target month instead of overflowing', () => {
+      // 31 Mar − 1 month is 28 Feb, not 3 Mar.
+      expect(retentionCutoff(1, new Date('2026-03-31T12:00:00Z')).toISOString()).toBe(
+        '2026-02-28T12:00:00.000Z',
+      );
+    });
+
+    it('clamps to 29 February in a leap year', () => {
+      expect(retentionCutoff(12, new Date('2025-03-31T00:00:00Z')).toISOString()).toBe(
+        '2024-03-31T00:00:00.000Z',
+      );
+      expect(retentionCutoff(13, new Date('2025-03-31T00:00:00Z')).toISOString()).toBe(
+        '2024-02-29T00:00:00.000Z',
+      );
+    });
+
+    it('never returns a cutoff at or after `now`', () => {
+      // Every month-end date against every window the settings DTO accepts.
+      for (const day of [28, 29, 30, 31]) {
+        for (const month of [1, 3, 5, 7, 8, 10, 12]) {
+          const now = new Date(
+            Date.UTC(2026, month - 1, day, 12, 0, 0),
+          );
+          if (now.getUTCDate() !== day) continue; // skip impossible dates
+          for (const months of [1, 2, 3, 6, 12, 18, 24, 36, 120]) {
+            const cutoff = retentionCutoff(months, now);
+            expect(cutoff.getTime()).toBeLessThan(now.getTime());
+          }
+        }
+      }
+    });
+
+    it('keeps a lead active yesterday inside a one-month window on the 31st', () => {
+      const now = new Date('2026-03-31T12:00:00Z');
+      const yesterday = new Date('2026-03-30T12:00:00Z');
+      // Before the fix this cutoff was 3 Mar, so a lead active on the 30th —
+      // one day old — was swept up by the retention run.
+      expect(isPastRetention(yesterday, yesterday, 1, now)).toBe(false);
+    });
+
+    it('preserves the time of day across the shift', () => {
+      expect(retentionCutoff(6, new Date('2026-08-31T09:17:43.250Z')).toISOString()).toBe(
+        '2026-02-28T09:17:43.250Z',
+      );
+    });
+
+    it('crosses the year boundary correctly', () => {
+      expect(retentionCutoff(3, new Date('2026-01-31T00:00:00Z')).toISOString()).toBe(
+        '2025-10-31T00:00:00.000Z',
+      );
+      expect(retentionCutoff(2, new Date('2026-01-31T00:00:00Z')).toISOString()).toBe(
+        '2025-11-30T00:00:00.000Z',
+      );
+    });
+  });
+});
+
+describe('subtractMonths', () => {
+  it('is a no-op for zero months', () => {
+    const d = new Date('2026-03-31T12:00:00Z');
+    expect(subtractMonths(d, 0).toISOString()).toBe('2026-03-31T12:00:00.000Z');
+  });
+
+  it('does not mutate its input', () => {
+    const d = new Date('2026-03-31T12:00:00Z');
+    subtractMonths(d, 1);
+    expect(d.toISOString()).toBe('2026-03-31T12:00:00.000Z');
+  });
+
+  it('leaves mid-month dates on the same day number', () => {
+    expect(subtractMonths(new Date('2026-08-15T00:00:00Z'), 6).toISOString()).toBe(
+      '2026-02-15T00:00:00.000Z',
+    );
   });
 });
 

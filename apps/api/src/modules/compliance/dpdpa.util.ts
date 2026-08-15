@@ -57,6 +57,32 @@ export function anonymizeEmail(email: string | null | undefined): string | null 
 }
 
 /**
+ * Subtract `months` whole months from a date (UTC-safe, clamping the day to the
+ * target month's length).
+ *
+ * `setUTCMonth` alone overflows forward when the target month is shorter than
+ * the source day: on 31 March, `setUTCMonth(month - 1)` asks for 31 February and
+ * JS answers 3 March — a cutoff *later* than the date it was measured back from.
+ * Every caller here uses the result to decide what to destroy, so an overshoot
+ * erases records still inside the retention window. Anchoring to the 1st before
+ * shifting the month keeps the arithmetic on real dates, then the day is clamped
+ * back down (31 Mar − 1mo → 28 Feb, not 3 Mar). Time-of-day is preserved.
+ */
+export function subtractMonths(from: Date, months: number): Date {
+  const day = from.getUTCDate();
+  const result = new Date(from.getTime());
+  // Anchor to the 1st so the month shift itself can never roll over.
+  result.setUTCDate(1);
+  result.setUTCMonth(result.getUTCMonth() - months);
+  // Day 0 of the following month is the last day of the target month.
+  const daysInTargetMonth = new Date(
+    Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  result.setUTCDate(Math.min(day, daysInTargetMonth));
+  return result;
+}
+
+/**
  * Whether a lead is inactive past the retention window and eligible for
  * auto-anonymization. Uses the last activity timestamp (falling back to created)
  * against `retentionMonths` before `now`.
@@ -68,14 +94,10 @@ export function isPastRetention(
   now: Date,
 ): boolean {
   const reference = lastActivityAt ?? createdAt;
-  const cutoff = new Date(now.getTime());
-  cutoff.setUTCMonth(cutoff.getUTCMonth() - retentionMonths);
-  return reference.getTime() < cutoff.getTime();
+  return reference.getTime() < retentionCutoff(retentionMonths, now).getTime();
 }
 
 /** The cutoff timestamp before which records are past the retention window. */
 export function retentionCutoff(retentionMonths: number, now: Date): Date {
-  const cutoff = new Date(now.getTime());
-  cutoff.setUTCMonth(cutoff.getUTCMonth() - retentionMonths);
-  return cutoff;
+  return subtractMonths(now, retentionMonths);
 }
