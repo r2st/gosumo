@@ -113,11 +113,29 @@ describe('bootstrap (main.ts)', () => {
     });
 
     it('drops empty entries left by a trailing comma', () => {
-      expect(resolveCorsOrigin('https://a.example,')).toEqual(['https://a.example']);
+      // A lone survivor comes back as a plain string, which is the shape the
+      // `cors` package serves as a constant header.
+      expect(resolveCorsOrigin('https://a.example,')).toBe('https://a.example');
     });
 
     it('falls back to the wildcard when the var is unset', () => {
       expect(resolveCorsOrigin('*')).toBe('*');
+    });
+
+    it('falls back to the wildcard when the var is set but empty', () => {
+      // This is the wrapper that reads `process.env`, and `CORS_ORIGIN=` is a
+      // *string* — so `?? '*'` never substitutes the default and `''` was what
+      // reached `enableCors`. The `cors` package treats any falsy origin as the
+      // wildcard while `allowCredentials` saw a named origin and turned
+      // credentials on: the forbidden pairing, and silent, because the
+      // production warning below only recognises a literal `*`.
+      expect(resolveCorsOrigin('')).toBe('*');
+    });
+
+    it('trims a single origin so it can match a real Origin header', () => {
+      expect(resolveCorsOrigin(' https://gosumo.aiknol.com ')).toBe(
+        'https://gosumo.aiknol.com',
+      );
     });
   });
 

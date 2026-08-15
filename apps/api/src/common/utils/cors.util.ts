@@ -12,9 +12,30 @@
 /**
  * Parse a comma-separated allow-list. A single value is passed through, so an
  * unset var still means `*`.
+ *
+ * Every value is trimmed and empties are dropped, including the single-value
+ * case. Two env spellings depend on it. `CORS_ORIGIN=` — set but empty, which
+ * is what a half-filled `.env` template leaves behind — is a string, so `??`
+ * never substitutes the default and the raw value reached the CORS layer as
+ * `''`; the `cors` package treats *any* falsy origin as the wildcard, so that
+ * silently became `Access-Control-Allow-Origin: *` while `allowCredentials`
+ * saw a non-wildcard string and turned credentials on: the one pairing this
+ * file exists to prevent, arrived at through the back door. It also skipped
+ * the production warning in `main.ts`, which only recognises a literal `*`.
+ * `CORS_ORIGIN=" https://app.example "` had the milder version of the same
+ * problem — an untrimmed origin never string-equals a real `Origin` header, so
+ * every cross-origin request was refused with the allow-list looking correct.
+ *
+ * Normalising to `*` here rather than throwing keeps the fallback in one
+ * place: the caller's wildcard branch already warns and drops credentials.
  */
 export function resolveCorsOrigin(raw: string): string | string[] {
-  return raw.includes(',') ? raw.split(',').map((s) => s.trim()).filter(Boolean) : raw;
+  const origins = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (origins.length === 0) return '*';
+  return origins.length === 1 ? (origins[0] as string) : origins;
 }
 
 /**
