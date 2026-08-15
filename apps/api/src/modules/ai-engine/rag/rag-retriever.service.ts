@@ -3,6 +3,7 @@ import { IntentType } from '@gosumo/shared';
 import { QdrantClient } from './qdrant.client';
 import { EmbeddingService } from './embedding.service';
 import { knowledgeCollection, MAX_RAG_CHUNKS, RAG_SCORE_THRESHOLD } from '../ai-engine.constants';
+import { neutralizePromptTags } from '../prompts/untrusted.util';
 
 export interface RetrievedChunk {
   id: string;
@@ -64,13 +65,22 @@ export class RagRetrieverService {
 
   /**
    * Format retrieved chunks into the `<rag_context>` block for the prompt.
+   *
+   * Chunk text is neutralized before interpolation. These chunks are
+   * business-authored rather than customer-authored, so this is defence in
+   * depth rather than the primary control — but a pasted-in document that
+   * happens to contain `</rag_context>` would silently restructure the system
+   * prompt, and the ingestion endpoint is reachable by any tenant user.
    */
   formatForPrompt(chunks: RetrievedChunk[]): string {
     if (chunks.length === 0) {
       return 'No specific policy or knowledge was found for this query. Use general best practices and flag for human review if uncertain.';
     }
     return chunks
-      .map((c) => `SOURCE: ${c.sourceType} | Relevance: ${c.score.toFixed(2)}\n${c.content}`)
+      .map(
+        (c) =>
+          `SOURCE: ${c.sourceType} | Relevance: ${c.score.toFixed(2)}\n${neutralizePromptTags(c.content)}`,
+      )
       .join('\n\n');
   }
 }

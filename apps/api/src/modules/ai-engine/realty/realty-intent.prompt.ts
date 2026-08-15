@@ -1,4 +1,5 @@
 import { RealtyIntentValue } from '@gosumo/shared';
+import { neutralizePromptTags } from '../prompts/untrusted.util';
 
 /**
  * System prompt for the Tier-3 LLM realty intent classifier. Used only when the
@@ -47,6 +48,6 @@ export function buildRealtyIntentUserPrompt(message: string): string {
   return `Classify this real-estate message:
 
 <customer_message>
-${message}
+${neutralizePromptTags(message)}
 </customer_message>`;
 }

@@ -71,11 +71,13 @@ pnpm --filter @gosumo/api test --testPathPattern=modules/ai-engine
 ## Key Gotchas
 
 - **Customer messages are untrusted input** — always wrap in `<customer_message>` XML tags inside the prompt and explicitly mark as untrusted
+- **A fence is only a fence if the customer cannot close it** — every untrusted value goes through `neutralizePromptTags()` (`prompts/untrusted.util.ts`) before interpolation, which escapes tag-shaped tokens *only*. That covers more than the message body: prior inbound turns in `<conversation_history>`, the channel display name in `<client_profile>`/`<lead_profile>`, BLTC localities lifted from buyer text, and retrieved chunks all land in the **system** prompt, where a surviving tag writes instructions into the block the model trusts. It is not content filtering — hostile prose passes through verbatim so `GuardrailsService`, `jailbreak_detected`, and the audit trail still see it
 - **AI cannot invent data** — all factual claims must come from RAG-retrieved business data or direct catalog/booking queries; if data is unavailable, hard override applies
 - **Every LLM call must have `max_tokens`** — prevents runaway cost; set to a per-intent-specific cap
 - **Token usage must be logged** on every `ai_decisions` row (`prompt_tokens`, `completion_tokens`, `latency_ms`) — needed for cost tracking
 - **BullMQ deduplication:** job ID includes `messageId` so the same message is never processed twice even if `message.received` is emitted twice
 - **Qdrant unavailable:** proceed without RAG context; penalize `data_availability` in confidence calculation — do not block the pipeline
+- **Deleting a knowledge entry deletes its vectors first, and by payload filter** — ingestion makes N points with N generated ids and `vector_embeddings_metadata` records only the first, so an id-based delete strands chunks 2..N. `KnowledgeIngestionService.remove()` filters on `{businessId, entryId}`. Order matters both ways: a failed vector delete aborts before the metadata row is dropped (the row is the only handle a retry has), and a failed metadata write after a successful upsert rolls the vectors back (nothing else would ever learn that entryId). Deletion is the one place the "degrade quietly when Qdrant is down" rule is inverted — a knowledge entry that is gone from Postgres but still answering queries is worse than a 503
 - **LLM timeout (>8s):** retry once; if still fails, escalate the conversation via HITL task
 - RAG max chunks: 5 (defined in `ai-engine.constants.ts`). Always pass the top-5 by similarity score, not all matches
 - `ai_decisions` is immutable — never UPDATE a decision record; create a new one for regenerated drafts

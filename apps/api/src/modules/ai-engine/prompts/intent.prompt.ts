@@ -1,4 +1,5 @@
 import { IntentType } from '@gosumo/shared';
+import { neutralizePromptTags } from './untrusted.util';
 
 /**
  * System prompt for the Tier-3 LLM intent classifier. Used only when the
@@ -49,6 +50,6 @@ export function buildIntentUserPrompt(message: string): string {
   return `Classify this customer message:
 
 <customer_message>
-${message}
+${neutralizePromptTags(message)}
 </customer_message>`;
 }

@@ -3,6 +3,7 @@ import { IntentType, MessageDirection } from '@gosumo/shared';
 import { messages, business_rules } from '@gosumo/database';
 import { EnrichedContext } from './context-loader.service';
 import { buildSystemPrompt, buildUserPrompt, SystemPromptVars } from '../prompts/system.prompt';
+import { neutralizePromptTags } from '../prompts/untrusted.util';
 import { MAX_HISTORY_MESSAGE_CHARS } from '../ai-engine.constants';
 
 /**
@@ -66,7 +67,10 @@ export class PromptAssemblerService {
     }
 
     const lines = [
-      `Name: ${client.name ?? 'Unknown'}`,
+      // The client's name is whatever their channel profile says — a WhatsApp
+      // display name is customer-controlled text that lands in the *system*
+      // prompt, so it gets the same treatment as their message body.
+      `Name: ${client.name ? neutralizePromptTags(client.name) : 'Unknown'}`,
       `Total Orders: ${client.total_orders}`,
       `Total Spent: ₹${Number(client.total_spent ?? 0).toFixed(2)}`,
     ];
@@ -79,6 +83,14 @@ export class PromptAssemblerService {
     return lines.join('\n');
   }
 
+  /**
+   * Render the recent turns. Every inbound line here is customer-authored text
+   * being interpolated into the *system* prompt, so it is neutralized: without
+   * that, a customer sends one message closing `</conversation_history>` and
+   * their next turn arrives with attacker-written sections sitting in the
+   * instruction body, upstream of the block the model was told to distrust.
+   * Neutralization runs after truncation so the char budget stays predictable.
+   */
   private buildHistorySection(history: messages[]): string {
     if (history.length === 0) return 'No prior messages in this conversation.';
 
@@ -86,7 +98,7 @@ export class PromptAssemblerService {
       .map((m) => {
         const speaker = m.direction === MessageDirection.INBOUND ? 'Customer' : 'Agent';
         const text = m.text_content ?? this.contentPreview(m);
-        return `[${speaker}] ${this.truncate(text)}`;
+        return `[${speaker}] ${neutralizePromptTags(this.truncate(text))}`;
       })
       .join('\n');
   }
