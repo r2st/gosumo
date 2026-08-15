@@ -59,6 +59,35 @@ describe('TranscriptionService', () => {
     return { ok: true, json: () => Promise.resolve({ text }) };
   }
 
+  /**
+   * A successful audio download of `size` bytes, streamed as one chunk.
+   *
+   * Modelled as a real streaming body rather than an `arrayBuffer()` shim
+   * because the service reads it against a size ceiling now — a mock that only
+   * offers `arrayBuffer()` would test a code path that no longer exists.
+   */
+  function audioOk(
+    size = 8,
+    headers: Record<string, string> = { 'content-type': 'audio/ogg' },
+  ): unknown {
+    let sent = false;
+    return {
+      ok: true,
+      headers: new Headers(headers),
+      body: {
+        getReader: () => ({
+          read: () =>
+            Promise.resolve(
+              sent
+                ? { done: true, value: undefined }
+                : ((sent = true), { done: false, value: new Uint8Array(size) }),
+            ),
+          cancel: () => Promise.resolve(),
+        }),
+      },
+    };
+  }
+
   // ─────────────────────────────────────────────
   // Configuration
   // ─────────────────────────────────────────────
@@ -87,10 +116,7 @@ describe('TranscriptionService', () => {
 
     it('posts to the configured endpoint with a bearer token', async () => {
       fetchMock
-        .mockResolvedValueOnce({
-          ok: true,
-          arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
-        })
+        .mockResolvedValueOnce(audioOk())
         .mockResolvedValueOnce(sttOk('hello'));
 
       await service.transcribe('https://cdn.test/a.ogg', 'audio/ogg');
@@ -108,10 +134,7 @@ describe('TranscriptionService', () => {
           : (DEFAULTS[key] ?? fallback),
       );
       fetchMock
-        .mockResolvedValueOnce({
-          ok: true,
-          arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
-        })
+        .mockResolvedValueOnce(audioOk())
         .mockResolvedValueOnce(sttOk('hello'));
 
       await service.transcribe('https://cdn.test/a.ogg', 'audio/ogg');
@@ -141,10 +164,7 @@ describe('TranscriptionService', () => {
 
     it('fetches an https URL directly', async () => {
       fetchMock
-        .mockResolvedValueOnce({
-          ok: true,
-          arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
-        })
+        .mockResolvedValueOnce(audioOk())
         .mockResolvedValueOnce(sttOk('hello'));
 
       await service.transcribe('https://cdn.test/a.ogg', 'audio/ogg');
@@ -175,6 +195,74 @@ describe('TranscriptionService', () => {
       await expect(
         service.transcribe('https://cdn.test/a.ogg', 'audio/ogg'),
       ).rejects.toThrow('Audio download failed: 404');
+    });
+  });
+
+  // ─────────────────────────────────────────────
+  // What the server is allowed to go and fetch
+  //
+  // `mediaUrl` arrives on a request body, so it is whatever the caller wrote
+  // there. The server is the one that dials it.
+  // ─────────────────────────────────────────────
+
+  describe('media reference safety', () => {
+    it.each([
+      'http://169.254.169.254/latest/meta-data/',
+      'http://localhost:6379/',
+      'http://10.0.0.5/internal/secrets',
+      'file:///etc/passwd',
+      'ftp://cdn.test/a.ogg',
+      'nonsense',
+    ])('refuses to fetch %s at all', async (url) => {
+      await expect(service.transcribe(url, 'audio/ogg')).rejects.toThrow(
+        TranscriptionUnavailableError,
+      );
+      // The point: no request was made, not that one failed.
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('explains what a media reference may be', async () => {
+      await expect(service.transcribe('http://cdn.test/a.ogg', 'audio/ogg')).rejects.toThrow(
+        /must be an https URL or a whatsapp-media:\/\/ id/,
+      );
+    });
+
+    it('still accepts a whatsapp-media reference, which is not a URL at all', async () => {
+      fetchMock.mockResolvedValueOnce(sttOk('hello'));
+
+      await expect(service.transcribe('whatsapp-media://m1', 'audio/ogg')).resolves.toBe('hello');
+    });
+
+    it('rejects a download that comes back as a web page, not audio', async () => {
+      // What an SSRF target, a captive portal, or an expired signed URL
+      // actually returns — and it would otherwise be posted to the STT
+      // provider labelled `audio/ogg` because the caller said so.
+      fetchMock.mockResolvedValueOnce(audioOk(8, { 'content-type': 'text/html' }));
+
+      await expect(
+        service.transcribe('https://cdn.test/a.ogg', 'audio/ogg'),
+      ).rejects.toThrow(/unexpected content-type text\/html/);
+      // Never reached the STT call.
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a download bigger than the transcription limit', async () => {
+      fetchMock.mockResolvedValueOnce(
+        audioOk(8, { 'content-type': 'audio/ogg', 'content-length': String(64 * 1024 * 1024) }),
+      );
+
+      await expect(
+        service.transcribe('https://cdn.test/a.ogg', 'audio/ogg'),
+      ).rejects.toThrow(/over the \d+-byte limit/);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('accepts a download with no content-type header', async () => {
+      fetchMock.mockResolvedValueOnce(audioOk(8, {})).mockResolvedValueOnce(sttOk('hello'));
+
+      await expect(service.transcribe('https://cdn.test/a.ogg', 'audio/ogg')).resolves.toBe(
+        'hello',
+      );
     });
   });
 

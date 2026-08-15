@@ -836,14 +836,29 @@ describe('WhatsAppAdapter', () => {
   // ── Media ────────────────────────────────────
 
   describe('downloadMedia', () => {
+    /** A CDN response whose body streams `chunks` back one at a time. */
+    function cdnBody(chunks: number[][], headers: Record<string, string> = {}): unknown {
+      let i = 0;
+      return {
+        ok: true,
+        headers: new Headers(headers),
+        body: {
+          getReader: () => ({
+            read: async () =>
+              i < chunks.length
+                ? { done: false, value: new Uint8Array(chunks[i++]!) }
+                : { done: true, value: undefined },
+            cancel: async () => undefined,
+          }),
+        },
+      };
+    }
+
     it('resolves the CDN url then streams the bytes', async () => {
       const fetchMock = jest
         .fn()
         .mockResolvedValueOnce({ ok: true, json: async () => ({ url: 'https://cdn.meta/x' }) })
-        .mockResolvedValueOnce({
-          ok: true,
-          arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
-        });
+        .mockResolvedValueOnce(cdnBody([[1, 2], [3]]));
       global.fetch = fetchMock as unknown as typeof fetch;
 
       const buffer = await configured().downloadMedia('media_1');
@@ -851,6 +866,20 @@ describe('WhatsAppAdapter', () => {
       expect(buffer).toEqual(Buffer.from([1, 2, 3]));
       expect(fetchMock.mock.calls[0]![0]).toContain('/media_1');
       expect(fetchMock.mock.calls[1]![0]).toBe('https://cdn.meta/x');
+    });
+
+    it('refuses a CDN body over the download ceiling', async () => {
+      // The address read here is whichever one Meta's metadata call named, and
+      // the whole response lands in this process's heap.
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ url: 'https://cdn.meta/huge' }) })
+        .mockResolvedValueOnce(
+          cdnBody([[1]], { 'content-length': String(512 * 1024 * 1024) }),
+        );
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      await expect(configured().downloadMedia('media_1')).rejects.toThrow(/over the .*-byte limit/);
     });
 
     it('throws when the media metadata lookup fails', async () => {

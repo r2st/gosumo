@@ -17,6 +17,7 @@ import { generateId } from '@gosumo/shared';
 import { BaseChannelAdapter } from './base.adapter';
 import { allowUnverifiedWebhook, isProductionEnv } from '../../../common/utils/webhook-verification.util';
 import { MEDIA_HTTP_TIMEOUT_MS, fetchWithTimeout } from '../../../common/utils/http-timeout.util';
+import { readBodyWithLimit } from '../../../common/utils/media-download.util';
 import { ExternalServiceError, PayloadParseError, UnsupportedOperationError } from '@gosumo/shared';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -512,8 +513,10 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
       });
     }
 
-    const arrayBuffer = await mediaResp.arrayBuffer();
-    return Buffer.from(arrayBuffer);
+    // Bounded rather than `arrayBuffer()`: the address being read here is the
+    // one Meta's metadata call named, not one this code chose, and the whole
+    // response lands in the API process's heap.
+    return readBodyWithLimit(mediaResp, { service: 'WhatsApp Media' });
   }
 
   /**

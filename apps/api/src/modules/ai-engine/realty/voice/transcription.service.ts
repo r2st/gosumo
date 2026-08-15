@@ -10,6 +10,11 @@ import {
   MEDIA_HTTP_TIMEOUT_MS,
   fetchWithTimeout,
 } from '../../../../common/utils/http-timeout.util';
+import {
+  assertContentType,
+  isFetchableMediaUrl,
+  readBodyWithLimit,
+} from '../../../../common/utils/media-download.util';
 
 /**
  * Thrown when audio cannot be transcribed (no key, download/STT failure).
@@ -100,11 +105,26 @@ export class TranscriptionService {
     return text;
   }
 
-  /** Resolve the audio bytes from a channel-media reference or an https URL. */
+  /**
+   * Resolve the audio bytes from a channel-media reference or an https URL.
+   *
+   * The URL half is the untrusted one: it arrives on a request body, so it is
+   * whatever the caller wrote there, and the server is the one that goes and
+   * fetches it. Three things are checked before the bytes are believed —
+   * the address is https (no plaintext internal targets), the response says it
+   * is audio (not a login page or a metadata document), and the body is
+   * bounded (an unbounded `arrayBuffer()` on a hostile URL is an OOM waiting
+   * to happen on a box that already shares its memory).
+   */
   private async fetchAudio(mediaUrl: string): Promise<Buffer> {
     if (mediaUrl.startsWith(WHATSAPP_MEDIA_PREFIX)) {
       const mediaId = mediaUrl.slice(WHATSAPP_MEDIA_PREFIX.length);
       return this.channelAdapter.downloadMedia(ChannelType.WHATSAPP, mediaId);
+    }
+    if (!isFetchableMediaUrl(mediaUrl)) {
+      throw new TranscriptionUnavailableError(
+        'Audio download failed: media reference must be an https URL or a whatsapp-media:// id',
+      );
     }
     let resp: Response;
     try {
@@ -121,7 +141,14 @@ export class TranscriptionService {
     if (!resp.ok) {
       throw new TranscriptionUnavailableError(`Audio download failed: ${resp.status}`);
     }
-    return Buffer.from(await resp.arrayBuffer());
+    try {
+      assertContentType('Audio download', resp.headers.get('content-type'));
+      return await readBodyWithLimit(resp, { service: 'Audio download' });
+    } catch (err) {
+      throw new TranscriptionUnavailableError(
+        `Audio download failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 }
 
