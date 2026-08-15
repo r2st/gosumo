@@ -331,6 +331,91 @@ describe('AiEngineService — processMessage pipeline', () => {
   });
 });
 
+describe('AiEngineService — human-held conversations', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  /** The same context as everywhere else, with a conversation status set. */
+  function heldContext(text: string, status: string): EnrichedContext {
+    const ctx = makeContext(text);
+    (ctx.conversation as unknown as { status: string }).status = status;
+    return ctx;
+  }
+
+  it.each(['ESCALATED', 'PENDING_HUMAN'])(
+    'does not send an auto-executable reply while the conversation is %s',
+    async (status) => {
+      const h = makeHarness();
+      // Exactly the input that AUTO-EXECUTES in the happy path above.
+      h.context.value = heldContext('kal 3 baje book karna hai', status);
+
+      const result = await h.service.processMessage('b1', dto);
+
+      // Nothing reaches the customer: the agent holding the thread is the only
+      // voice they hear until they hand it back.
+      expect(h.sendMessage).not.toHaveBeenCalled();
+      expect(h.emit).not.toHaveBeenCalledWith('ai.auto.executed', expect.any(Object));
+      expect(result.outcome).not.toBe('AUTO_EXECUTED');
+    },
+  );
+
+  it('files the withheld reply as a review task rather than dropping it', async () => {
+    const h = makeHarness();
+    h.context.value = heldContext('kal 3 baje book karna hai', 'ESCALATED');
+
+    const result = await h.service.processMessage('b1', dto);
+
+    expect(result.outcome).toBe('SENT_FOR_REVIEW');
+    expect(result.taskId).toBe('task-1');
+    expect(h.createReviewTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'DRAFT_REVIEW',
+        draftResponse: 'Aapki request confirm ho gayi hai!',
+      }),
+    );
+    // The decision is recorded honestly — not as an execution that never happened.
+    expect(h.createDecision).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'SENT_FOR_REVIEW' }),
+    );
+  });
+
+  it('suppresses the draft-review holding message too', async () => {
+    const h = makeHarness();
+    h.context.value = heldContext('facial ka price kya hai', 'ESCALATED');
+    h.ragChunks.value = makeChunks(1); // medium confidence → DRAFT band
+
+    const result = await h.service.processMessage('b1', dto);
+
+    expect(result.outcome).toBe('SENT_FOR_REVIEW');
+    expect(h.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('suppresses the escalation holding message too', async () => {
+    const h = makeHarness();
+    h.context.value = heldContext('refund chahiye, main consumer court jaunga', 'ESCALATED');
+
+    const result = await h.service.processMessage('b1', dto);
+
+    expect(result.outcome).toBe('ESCALATED');
+    expect(h.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it.each(['OPEN', 'SNOOZED', undefined])(
+    'still auto-sends when the conversation status is %s',
+    async (status) => {
+      const h = makeHarness();
+      h.context.value =
+        status === undefined
+          ? makeContext('kal 3 baje book karna hai')
+          : heldContext('kal 3 baje book karna hai', status);
+
+      const result = await h.service.processMessage('b1', dto);
+
+      expect(result.outcome).toBe('AUTO_EXECUTED');
+      expect(h.sendMessage).toHaveBeenCalledTimes(1);
+    },
+  );
+});
+
 describe('AiEngineService — message.received realty gating', () => {
   afterEach(() => jest.restoreAllMocks());
 

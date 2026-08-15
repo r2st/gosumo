@@ -12,6 +12,7 @@ import {
   IntentType,
   ConfidenceMode,
   ChannelType,
+  ConversationStatus,
   MessageContentType,
   OutboundMessage,
   SuggestedAction,
@@ -67,6 +68,28 @@ import {
 /** Message text for anything thrown, including non-Error values. */
 function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Statuses that mean a person, not the AI, owns the next thing this customer
+ * hears. `ESCALATED` is set when a conversation is handed to an agent;
+ * `PENDING_HUMAN` when a draft is sitting in someone's review queue.
+ */
+const HUMAN_HELD_STATUSES: readonly string[] = [
+  ConversationStatus.ESCALATED,
+  ConversationStatus.PENDING_HUMAN,
+];
+
+/**
+ * Whether a human currently holds this conversation.
+ *
+ * A missing conversation is treated as *not* held: the pipeline already
+ * degrades to escalation when context is unavailable, and refusing to answer
+ * anyone whose conversation row failed to load would be the worse failure.
+ */
+function isHumanHeld(context: EnrichedContext): boolean {
+  const status = context.conversation?.status;
+  return status != null && HUMAN_HELD_STATUSES.includes(status);
 }
 
 /**
@@ -290,6 +313,32 @@ export class AiEngineService {
     // a legal threat the rules missed). Honor that over the numeric route.
     if (parsed?.requiresEscalation) {
       return this.finalizeEscalation(businessId, dto, context, classification, scored, route, startMs, traceId, false, parsed);
+    }
+
+    // A conversation a human has taken over is theirs until they give it back.
+    // The AI still reasons and still files what it would have said, but an
+    // autonomous send here lands *in the customer's thread underneath the
+    // agent's own messages* — two voices answering the same person, and the
+    // agent finds out from the customer. Downgrading to a review task keeps
+    // the draft (nothing is lost) and leaves the sending to whoever is holding
+    // the conversation. This mirrors the realty loop, which already refuses an
+    // auto-send on a `human_owned` conversation via the autonomy dial.
+    if (route.action === 'AUTO_EXECUTE' && parsed && isHumanHeld(context)) {
+      this.logger.log(
+        `[${traceId}] AUTO_EXECUTE withheld — conversation ${dto.conversationId} is ` +
+          `${context.conversation?.status} (human-held); filing a draft instead`,
+      );
+      return this.finalizeReview(
+        businessId,
+        dto,
+        context,
+        classification,
+        scored,
+        { ...route, action: 'DRAFT_REVIEW' },
+        parsed,
+        startMs,
+        traceId,
+      );
     }
 
     if (route.action === 'AUTO_EXECUTE' && parsed) {
@@ -894,6 +943,18 @@ export class AiEngineService {
   ): Promise<void> {
     if (!text || !context.channel || !context.channelAccountId || !context.recipientExternalId) {
       this.logger.debug(`[${traceId}] Delivery deferred — missing channel/recipient context`);
+      return;
+    }
+    // The single rule for a human-held conversation: the AI says nothing.
+    // Enforced here rather than only at the routing gate because the holding
+    // messages ("let me check on that", "someone will be with you shortly")
+    // reach the customer down a different path than an auto-executed reply,
+    // and they are just as wrong to send while an agent is mid-conversation —
+    // arguably worse, since they arrive on *every* subsequent message.
+    if (isHumanHeld(context)) {
+      this.logger.debug(
+        `[${traceId}] Delivery suppressed — conversation is ${context.conversation?.status} (human-held)`,
+      );
       return;
     }
     const outbound: OutboundMessage = {
