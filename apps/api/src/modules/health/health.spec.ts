@@ -13,6 +13,7 @@ import { HealthService } from './health.service';
 import { HealthController } from './health.controller';
 import type { QueueTelemetryService } from '../../common/queue/queue-telemetry.service';
 import type { QdrantClient } from '../ai-engine/rag/qdrant.client';
+import { queryTimingRecorder } from '../../common/services/query-timing.middleware';
 
 function makeService(overrides: {
   query?: jest.Mock;
@@ -273,6 +274,52 @@ describe('HealthService — queue backlog', () => {
     const { service } = makeService();
 
     await expect(service.readiness()).resolves.toMatchObject({ queueBacklog: [] });
+  });
+});
+
+describe('HealthService — query timing', () => {
+  beforeEach(() => queryTimingRecorder.reset());
+  afterEach(() => queryTimingRecorder.reset());
+
+  it('reports the counters the slow-query middleware has been keeping', async () => {
+    queryTimingRecorder.record('clients', 'findMany', 20, 500);
+    queryTimingRecorder.record('orders', 'count', 900, 500);
+
+    const { service } = makeService();
+
+    await expect(service.readiness()).resolves.toMatchObject({
+      queryTiming: { total: 2, slow: 1, slowestMs: 900 },
+    });
+  });
+
+  it('publishes no model or action name on this public route', async () => {
+    queryTimingRecorder.record('clients', 'findMany', 900, 500);
+
+    const { service } = makeService();
+    const body = JSON.stringify((await service.readiness()).queryTiming);
+
+    // The names are in the log line next to the correlation id. Anyone can curl
+    // this route, and schema table names are not theirs to have.
+    expect(body).not.toContain('clients');
+    expect(body).not.toContain('findMany');
+  });
+
+  it('stays "ok" while queries are slow', async () => {
+    // Slow queries would be just as slow on whichever instance the traffic
+    // moved to, so taking this one out of rotation buys nothing.
+    queryTimingRecorder.record('orders', 'findMany', 9_000, 500);
+
+    const { service } = makeService();
+
+    await expect(service.readiness()).resolves.toMatchObject({ status: 'ok' });
+  });
+
+  it('reports nulls rather than nothing before any query has run', async () => {
+    const { service } = makeService();
+
+    await expect(service.readiness()).resolves.toMatchObject({
+      queryTiming: { total: 0, slow: 0, slowestMs: null },
+    });
   });
 });
 

@@ -8,6 +8,7 @@ import {
 import { QdrantClient } from '../ai-engine/rag/qdrant.client';
 import { CircuitBreakerRegistry } from '../../common/resilience/circuit-breaker.registry';
 import type { CircuitSnapshot } from '../../common/resilience/circuit-breaker';
+import { queryTimingRecorder } from '../../common/services/query-timing.middleware';
 
 /** How long a dependency probe may hang before it is called a failure. */
 const PROBE_TIMEOUT_MS = 2_000;
@@ -106,6 +107,29 @@ export interface ReadinessReport {
    * whole API down to report that Stripe was down.
    */
   openCircuits?: CircuitSnapshot[];
+  /**
+   * Database query timing since this process booted.
+   *
+   * The counterpart to `openCircuits` for the dependency that has no breaker.
+   * Postgres is not something this API can fail fast on — every route needs it
+   * — so the equivalent signal is "how much of what we ask it is slow", which
+   * turns "the dashboard feels sluggish" into a number without opening a log.
+   *
+   * Deliberately **counts only**, no model or action names. This route is
+   * `@Public()`; `slowest: { model: 'clients' }` would publish schema table
+   * names to anyone who curls it, which is the disclosure rule the rest of this
+   * file already follows. The names are in the slow-query log line, next to the
+   * correlation id, where the operator who needs them is already looking.
+   *
+   * Non-gating, like everything else here: a slow database is a reason to look,
+   * not a reason to take this instance out of rotation — the queries would be
+   * just as slow on the instance the traffic moved to.
+   */
+  queryTiming?: {
+    total: number;
+    slow: number;
+    slowestMs: number | null;
+  };
 }
 
 /**
@@ -275,12 +299,20 @@ export class HealthService {
       );
     }
 
+    // In-memory counters, so this costs nothing and cannot fail.
+    const timing = queryTimingRecorder.stats();
+
     return {
       status,
       timestamp: new Date().toISOString(),
       dependencies: { database, redis, vector },
       queueBacklog,
       openCircuits,
+      queryTiming: {
+        total: timing.total,
+        slow: timing.slow,
+        slowestMs: timing.slowest?.durationMs ?? null,
+      },
     };
   }
 
