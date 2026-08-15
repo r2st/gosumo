@@ -142,19 +142,31 @@ export class AuthService {
     const teamMember = await this.authRepository.findTeamMemberByEmail(email);
     if (!teamMember || !teamMember.password_hash) {
       // Same response whether the account is missing or password-less (OAuth-only),
-      // to avoid leaking which emails exist.
+      // to avoid leaking which emails exist — and the same *cost*, which the
+      // identical wording alone did not buy. See `dummyPasswordHash`.
+      await this.verifyPassword(password, await this.dummyPasswordHash());
       await this.recordFailedAttempt(email);
       throw new UnauthorizedException('Invalid email or password');
-    }
-
-    if (teamMember.status === 'SUSPENDED') {
-      throw new UnauthorizedException('Account has been suspended');
     }
 
     const isPasswordValid = await this.verifyPassword(password, teamMember.password_hash);
     if (!isPasswordValid) {
       await this.recordFailedAttempt(email);
       throw new UnauthorizedException('Invalid email or password');
+    }
+
+    // Suspension is disclosed only to someone who has just proved they own the
+    // account. Checked before the password, it was an enumeration oracle that
+    // needed no credential at all: any caller could ask "is this address a
+    // suspended GoSumo account?" and read the answer off the message, since a
+    // wrong password against a suspended account still answered "Account has
+    // been suspended" while every other address answered "Invalid email or
+    // password". It was the timing leak below in miniature — the suspended
+    // path returned without ever reaching bcrypt — and it also meant those
+    // attempts were never charged against the lockout, so that one address
+    // could be guessed at without limit.
+    if (teamMember.status === 'SUSPENDED') {
+      throw new UnauthorizedException('Account has been suspended');
     }
 
     await this.clearFailedAttempts(email);
@@ -616,6 +628,35 @@ export class AuthService {
   // ─────────────────────────────────────────────
   // Crypto / slug helpers
   // ─────────────────────────────────────────────
+
+  /**
+   * A bcrypt hash of a value nobody can present, compared against on the login
+   * path for an address that has no stored hash.
+   *
+   * Returning the same *message* for "no such account" and "wrong password" is
+   * only half of not leaking which addresses exist. The other half is the
+   * clock. A real account spends a cost-12 bcrypt verification — ~265ms of
+   * pure JS on this runtime — before it can answer; a missing or OAuth-only
+   * address reached the throw having done one indexed query. That is a two
+   * orders of magnitude gap on a `@Public()`, unauthenticated route: it needs
+   * no statistics to read, survives any amount of network jitter, and turns
+   * the login endpoint into a bulk account-existence oracle for any address
+   * list an attacker cares to bring. The lockout does not contain it either —
+   * five attempts per address is four more than reading the answer takes.
+   *
+   * Comparing against a hash instead of sleeping a fixed interval keeps the two
+   * paths the same work rather than approximately the same duration, so the
+   * cost tracks {@link resolveBcryptCost} automatically.
+   *
+   * Built once per process and memoised as the *promise*, so concurrent first
+   * logins share one derivation rather than each paying for their own.
+   */
+  private dummyHashPromise: Promise<string> | null = null;
+
+  private dummyPasswordHash(): Promise<string> {
+    this.dummyHashPromise ??= bcrypt.hash(randomUUID(), resolveBcryptCost());
+    return this.dummyHashPromise;
+  }
 
   private async hashPassword(password: string): Promise<string> {
     return bcrypt.hash(password, resolveBcryptCost());
