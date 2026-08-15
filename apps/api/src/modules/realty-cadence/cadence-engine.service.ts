@@ -167,9 +167,23 @@ export class CadenceEngineService {
     // step list only varies per cadence — share one lookup per cadence.
     const stepCache = new Map<string, Promise<StepWithTemplate[]>>();
 
+    // Every enrolment needs its lead, and `runStep` read them one at a time:
+    // `findDueEnrollments` returns up to 500 rows, so a busy tick was up to 500
+    // sequential single-row queries before the first send went out. Load them
+    // in one query per tenant instead. Prefetched here rather than memoized
+    // inside `runStep` because the ids are all known up front — a memo would
+    // still issue 500 queries, just without repeats.
+    const leadCache = await this.prefetchLeads(due);
+
     for (const enrollment of due) {
       result.processed++;
-      const outcome = await this.runStep(enrollment.business_id, enrollment, now, stepCache);
+      const outcome = await this.runStep(
+        enrollment.business_id,
+        enrollment,
+        now,
+        stepCache,
+        leadCache,
+      );
       result[outcome]++;
     }
     if (result.processed > 0) {
@@ -181,12 +195,48 @@ export class CadenceEngineService {
     return result;
   }
 
+  /**
+   * Load every due enrolment's lead, one query per tenant.
+   *
+   * Tenant-scoped on purpose even though the tick is cross-tenant: the ids are
+   * grouped by `business_id` and each group is read with its own tenant filter,
+   * so a lead id cannot resolve against another business's row. Falls back to
+   * an empty cache on failure — `runStep` reads through to `getLead` for
+   * anything the cache does not hold, so a failed prefetch costs speed, never
+   * correctness.
+   */
+  private async prefetchLeads(
+    due: realty_cadence_enrollments[],
+  ): Promise<Map<string, LeadResponseDto>> {
+    const byBusiness = new Map<string, string[]>();
+    for (const enrollment of due) {
+      const ids = byBusiness.get(enrollment.business_id);
+      if (ids) ids.push(enrollment.lead_id);
+      else byBusiness.set(enrollment.business_id, [enrollment.lead_id]);
+    }
+
+    const cache = new Map<string, LeadResponseDto>();
+    for (const [businessId, leadIds] of byBusiness) {
+      try {
+        const leads = await this.leadsService.getLeadsByIds(businessId, leadIds);
+        for (const [leadId, lead] of leads) cache.set(`${businessId}:${leadId}`, lead);
+      } catch (err) {
+        this.logger.warn(
+          `Cadence tick: could not prefetch leads for ${businessId}: ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    return cache;
+  }
+
   /** Run a single due enrolment's current step; returns the outcome bucket. */
   private async runStep(
     businessId: string,
     enrollment: realty_cadence_enrollments,
     now: Date,
     stepCache: Map<string, Promise<StepWithTemplate[]>>,
+    leadCache?: Map<string, LeadResponseDto>,
   ): Promise<'sent' | 'skipped' | 'stopped' | 'completed'> {
     const steps = await this.loadSteps(businessId, enrollment.cadence_id, stepCache);
     const step = steps[enrollment.current_step];
@@ -195,13 +245,19 @@ export class CadenceEngineService {
       return 'completed';
     }
 
-    let lead: LeadResponseDto | null = null;
-    try {
-      lead = await this.leadsService.getLead(businessId, enrollment.lead_id);
-    } catch {
-      // Lead vanished (deleted) — stop the cadence.
-      await this.finish(businessId, enrollment, 'STOPPED', 'lead_missing');
-      return 'stopped';
+    // A cache miss reads through rather than treating the lead as missing: the
+    // prefetch is an optimization, and the callers that run one enrolment at a
+    // time pass no cache at all.
+    let lead: LeadResponseDto | null =
+      leadCache?.get(`${businessId}:${enrollment.lead_id}`) ?? null;
+    if (!lead) {
+      try {
+        lead = await this.leadsService.getLead(businessId, enrollment.lead_id);
+      } catch {
+        // Lead vanished (deleted) — stop the cadence.
+        await this.finish(businessId, enrollment, 'STOPPED', 'lead_missing');
+        return 'stopped';
+      }
     }
 
     // Opt-out is absolute — halt immediately.

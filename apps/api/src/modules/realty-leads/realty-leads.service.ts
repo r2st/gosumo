@@ -294,6 +294,22 @@ export class RealtyLeadsService {
   }
 
   /**
+   * Resolve many leads of one tenant at once, keyed by id.
+   *
+   * Same result as calling {@link getLead} per id, minus the per-id round trip;
+   * ids that do not resolve inside the tenant are absent from the map rather
+   * than throwing, so a caller iterating a stale id list handles the miss
+   * itself. Used by the cadence tick, which holds up to 500 lead ids at once.
+   */
+  async getLeadsByIds(
+    businessId: string,
+    leadIds: string[],
+  ): Promise<Map<string, LeadResponseDto>> {
+    const rows = await this.repository.findManyByIds(businessId, leadIds);
+    return new Map(rows.map((row) => [row.id, this.mapResponse(row)]));
+  }
+
+  /**
    * Resolve a lead by its E.164 WhatsApp phone (the cross-source join key).
    * Returns null when unseen. Used by the cadence engine to stop follow-ups the
    * moment a buyer replies (blueprint §17 stop-on-reply).

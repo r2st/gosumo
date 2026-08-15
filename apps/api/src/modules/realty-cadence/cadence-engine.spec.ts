@@ -117,7 +117,11 @@ describe('CadenceEngineService', () => {
       findDueEnrollments: jest.fn(),
       updateEnrollment: jest.fn(),
     };
-    const mockLeads = { getLead: jest.fn(), findLeadByPhone: jest.fn() };
+    const mockLeads = {
+      getLead: jest.fn(),
+      getLeadsByIds: jest.fn(async () => new Map()),
+      findLeadByPhone: jest.fn(),
+    };
     const mockEmitter = { emit: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -398,6 +402,102 @@ describe('CadenceEngineService', () => {
 
       expect(leadsService.findLeadByPhone).not.toHaveBeenCalled();
       expect(stopSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Lead prefetch ──
+
+  /**
+   * `findDueEnrollments` returns up to 500 rows and `runStep` read each row's
+   * lead on its own, so a busy tick was up to 500 sequential single-row queries
+   * before the first follow-up went out — the classic N+1, on the one path in
+   * this module that fans out over every tenant at once.
+   */
+  describe('processDueEnrollments — lead loading', () => {
+    /** Three enrolments across two tenants, each on its own lead. */
+    function seedTwoTenants() {
+      const other = '00000000-0000-4000-a000-0000000000ff';
+      repository.findDueEnrollments.mockResolvedValue([
+        makeEnrollment({ id: 'enr-1', lead_id: 'lead-a' }),
+        makeEnrollment({ id: 'enr-2', lead_id: 'lead-b' }),
+        makeEnrollment({ id: 'enr-3', lead_id: 'lead-c', business_id: other }),
+      ] as never);
+      repository.listStepsByCadence.mockResolvedValue([makeStep({ step_order: 0 })] as never);
+      repository.updateEnrollment.mockResolvedValue(makeEnrollment() as never);
+      leadsService.getLeadsByIds.mockImplementation(
+        async (_businessId: string, ids: string[]) =>
+          new Map(ids.map((id) => [id, makeLead({ id })])) as never,
+      );
+      return { other };
+    }
+
+    it('loads every due enrolment\'s lead in one query per tenant, not one per enrolment', async () => {
+      const { other } = seedTwoTenants();
+
+      const result = await engine.processDueEnrollments(NOW);
+
+      expect(result.processed).toBe(3);
+      expect(leadsService.getLeadsByIds).toHaveBeenCalledTimes(2);
+      expect(leadsService.getLeadsByIds).toHaveBeenCalledWith(BUSINESS_ID, [
+        'lead-a',
+        'lead-b',
+      ]);
+      expect(leadsService.getLeadsByIds).toHaveBeenCalledWith(other, ['lead-c']);
+      // Nothing fell through to the per-enrolment read.
+      expect(leadsService.getLead).not.toHaveBeenCalled();
+    });
+
+    it('groups by tenant, so a lead id is never read against another business', async () => {
+      seedTwoTenants();
+
+      await engine.processDueEnrollments(NOW);
+
+      for (const [businessId, ids] of leadsService.getLeadsByIds.mock.calls) {
+        const expected = businessId === BUSINESS_ID ? ['lead-a', 'lead-b'] : ['lead-c'];
+        expect(ids).toEqual(expected);
+      }
+    });
+
+    it('reads through to the per-enrolment lookup when the prefetch fails', async () => {
+      seedTwoTenants();
+      leadsService.getLeadsByIds.mockRejectedValue(new Error('db hiccup'));
+      leadsService.getLead.mockResolvedValue(makeLead());
+
+      const result = await engine.processDueEnrollments(NOW);
+
+      // A failed prefetch costs speed, never correctness — every enrolment
+      // still ran, just the slow way.
+      expect(result.processed).toBe(3);
+      expect(leadsService.getLead).toHaveBeenCalledTimes(3);
+    });
+
+    it('stops the enrolment when a prefetched tenant simply has no such lead', async () => {
+      repository.findDueEnrollments.mockResolvedValue([
+        makeEnrollment({ lead_id: 'lead-gone' }),
+      ] as never);
+      repository.listStepsByCadence.mockResolvedValue([makeStep({ step_order: 0 })] as never);
+      repository.updateEnrollment.mockResolvedValue(makeEnrollment() as never);
+      // Deleted between the enrolment query and the lead query: absent from the
+      // prefetch, and the read-through finds nothing either.
+      leadsService.getLeadsByIds.mockResolvedValue(new Map() as never);
+      leadsService.getLead.mockRejectedValue(new Error('Lead not found'));
+
+      const result = await engine.processDueEnrollments(NOW);
+
+      expect(result.stopped).toBe(1);
+      expect(repository.updateEnrollment).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        'enr-1',
+        expect.objectContaining({ status: 'STOPPED', stopReason: 'lead_missing' }),
+      );
+    });
+
+    it('asks for nothing when no enrolment is due', async () => {
+      repository.findDueEnrollments.mockResolvedValue([]);
+
+      await engine.processDueEnrollments(NOW);
+
+      expect(leadsService.getLeadsByIds).not.toHaveBeenCalled();
     });
   });
 });

@@ -135,6 +135,21 @@ export class RealtyLeadsRepository {
     });
   }
 
+  /**
+   * Read many leads of one tenant in a single query.
+   *
+   * For callers that already hold a set of lead ids — the cadence tick holds up
+   * to 500 — and would otherwise issue one `findById` per id. Ids that do not
+   * resolve inside the tenant are simply absent from the result, which is the
+   * same answer `findById` gives for each of them.
+   */
+  async findManyByIds(businessId: string, leadIds: string[]): Promise<realty_leads[]> {
+    if (leadIds.length === 0) return [];
+    return this.prisma.realty_leads.findMany({
+      where: { id: { in: leadIds }, business_id: businessId, deleted_at: null },
+    });
+  }
+
   async findByPhone(
     businessId: string,
     whatsappPhone: string,
