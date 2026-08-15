@@ -413,6 +413,46 @@ describe('PaymentRepository', () => {
     });
   });
 
+  describe('sumCommittedRefundsForPayment', () => {
+    it('counts in-flight refunds as well as settled ones, tenant-scoped', async () => {
+      prisma.refunds.aggregate.mockResolvedValue({ _sum: { amount: decimal(300) } });
+
+      await expect(
+        repository.sumCommittedRefundsForPayment(BUSINESS_ID, PAYMENT_ID),
+      ).resolves.toBe(300);
+      expect(prisma.refunds.aggregate).toHaveBeenCalledWith({
+        where: {
+          business_id: BUSINESS_ID,
+          payment_id: PAYMENT_ID,
+          status: { in: ['INITIATED', 'PROCESSING', 'COMPLETED'] },
+        },
+        _sum: { amount: true },
+      });
+    });
+
+    it('returns 0 when the payment has never been refunded', async () => {
+      prisma.refunds.aggregate.mockResolvedValue({ _sum: { amount: null } });
+
+      await expect(
+        repository.sumCommittedRefundsForPayment(BUSINESS_ID, PAYMENT_ID),
+      ).resolves.toBe(0);
+    });
+
+    it('excludes FAILED and REJECTED refunds, which moved no money', async () => {
+      prisma.refunds.aggregate.mockResolvedValue({ _sum: { amount: decimal(0) } });
+
+      await repository.sumCommittedRefundsForPayment(BUSINESS_ID, PAYMENT_ID);
+
+      const statuses = (
+        prisma.refunds.aggregate.mock.calls[0]?.[0] as {
+          where: { status: { in: string[] } };
+        }
+      ).where.status.in;
+      expect(statuses).not.toContain('FAILED');
+      expect(statuses).not.toContain('REJECTED');
+    });
+  });
+
   describe('createRefund', () => {
     const minimal = {
       businessId: BUSINESS_ID,

@@ -114,6 +114,7 @@ describe('PaymentService', () => {
       updateRefundStatus: jest.fn(),
       findRefundByGatewayId: jest.fn(),
       sumCompletedRefundsForPayment: jest.fn(),
+      sumCommittedRefundsForPayment: jest.fn(),
       getPaymentSummaryForOrder: jest.fn(),
       recordWebhookEvent: jest.fn(),
       markWebhookProcessed: jest.fn(),
@@ -985,6 +986,154 @@ describe('PaymentService', () => {
       await expect(
         service.initiateRefund(BUSINESS_ID, dto),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ─────────────────────────────────────────────
+  // initiateRefund — refundable balance
+  //
+  // A PARTIALLY_REFUNDED payment is refundable again, so the ceiling has to be
+  // the original amount minus what is already committed. Checking only against
+  // the original amount lets the same money go out twice.
+  // ─────────────────────────────────────────────
+
+  describe('initiateRefund — refundable balance', () => {
+    /** A ₹500 captured payment, refundable through Razorpay. */
+    function refundablePayment(status = 'SUCCESS') {
+      return createMockPayment({
+        status,
+        gateway_payment_id: 'pay_gw123',
+        amount: { toNumber: () => 500, toString: () => '500.00' },
+      });
+    }
+
+    it('rejects a second refund that would take the total past the amount paid', async () => {
+      repository.getPayment.mockResolvedValue(refundablePayment('PARTIALLY_REFUNDED') as never);
+      // ₹300 of the ₹500 is already refunded — only ₹200 remains.
+      repository.sumCommittedRefundsForPayment.mockResolvedValue(300);
+
+      await expect(
+        service.initiateRefund(BUSINESS_ID, {
+          transactionId: PAYMENT_ID,
+          amountPaise: 30000,
+          reason: 'Second refund',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(razorpay.createRefund).not.toHaveBeenCalled();
+      expect(repository.createRefund).not.toHaveBeenCalled();
+    });
+
+    it('names the remaining balance in the rejection so the operator can retry', async () => {
+      repository.getPayment.mockResolvedValue(refundablePayment('PARTIALLY_REFUNDED') as never);
+      repository.sumCommittedRefundsForPayment.mockResolvedValue(300);
+
+      await expect(
+        service.initiateRefund(BUSINESS_ID, {
+          transactionId: PAYMENT_ID,
+          amountPaise: 30000,
+          reason: 'Second refund',
+        }),
+      ).rejects.toThrow(/refundable balance \(20000 paise\)/);
+    });
+
+    it('allows a second refund that exactly exhausts the remaining balance', async () => {
+      repository.getPayment.mockResolvedValue(refundablePayment('PARTIALLY_REFUNDED') as never);
+      repository.sumCommittedRefundsForPayment.mockResolvedValue(300);
+      razorpay.createRefund.mockResolvedValue({
+        id: 'rfnd_second',
+        paymentId: 'pay_gw123',
+        amountPaise: 20000,
+        status: 'processed',
+      });
+      repository.createRefund.mockResolvedValue(createMockRefund() as never);
+
+      await service.initiateRefund(BUSINESS_ID, {
+        transactionId: PAYMENT_ID,
+        amountPaise: 20000,
+        reason: 'Balance',
+      });
+
+      expect(razorpay.createRefund).toHaveBeenCalledWith('pay_gw123', 20000);
+    });
+
+    it('counts an in-flight refund against the balance, not just settled ones', async () => {
+      repository.getPayment.mockResolvedValue(refundablePayment() as never);
+      // The full ₹500 is committed but still INITIATED at the gateway.
+      repository.sumCommittedRefundsForPayment.mockResolvedValue(500);
+
+      await expect(
+        service.initiateRefund(BUSINESS_ID, {
+          transactionId: PAYMENT_ID,
+          amountPaise: 10000,
+          reason: 'Duplicate while the first is pending',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(razorpay.createRefund).not.toHaveBeenCalled();
+    });
+
+    it('scopes the committed-refund lookup to the tenant and payment', async () => {
+      repository.getPayment.mockResolvedValue(refundablePayment() as never);
+      repository.sumCommittedRefundsForPayment.mockResolvedValue(0);
+      razorpay.createRefund.mockResolvedValue({
+        id: 'rfnd_first',
+        paymentId: 'pay_gw123',
+        amountPaise: 10000,
+        status: 'processed',
+      });
+      repository.createRefund.mockResolvedValue(createMockRefund() as never);
+
+      await service.initiateRefund(BUSINESS_ID, {
+        transactionId: PAYMENT_ID,
+        amountPaise: 10000,
+        reason: 'First',
+      });
+
+      expect(repository.sumCommittedRefundsForPayment).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        PAYMENT_ID,
+      );
+    });
+
+    it('still routes an over-policy refund to HITL rather than rejecting it outright', async () => {
+      // The approval path must stay reachable: a large refund that is within the
+      // refundable balance is an approval question, not a validation failure.
+      repository.getPayment.mockResolvedValue(
+        createMockPayment({
+          status: 'SUCCESS',
+          gateway_payment_id: 'pay_gw123',
+          amount: { toNumber: () => 25000, toString: () => '25000.00' },
+        }) as never,
+      );
+      repository.sumCommittedRefundsForPayment.mockResolvedValue(0);
+      repository.createRefund.mockResolvedValue(
+        createMockRefund({ requires_approval: true }) as never,
+      );
+
+      const result = await service.initiateRefund(BUSINESS_ID, {
+        transactionId: PAYMENT_ID,
+        amountPaise: 2_000_000,
+        reason: 'Large refund',
+      });
+
+      expect(result.requiresApproval).toBe(true);
+      expect(razorpay.createRefund).not.toHaveBeenCalled();
+    });
+
+    it('treats a fully refunded payment as having no balance left', async () => {
+      repository.getPayment.mockResolvedValue(refundablePayment('PARTIALLY_REFUNDED') as never);
+      // Defensive: a rounding drift past the original must clamp to zero, not
+      // wrap into a negative ceiling that would let any amount through.
+      repository.sumCommittedRefundsForPayment.mockResolvedValue(600);
+
+      await expect(
+        service.initiateRefund(BUSINESS_ID, {
+          transactionId: PAYMENT_ID,
+          amountPaise: 1,
+          reason: 'Anything',
+        }),
+      ).rejects.toThrow(/refundable balance \(0 paise\)/);
     });
   });
 

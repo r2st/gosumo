@@ -62,7 +62,8 @@ pnpm --filter @gosumo/api test --testPathPattern=modules/payment
 
 - **Razorpay webhook signature MUST be verified** with HMAC-SHA256 using `RAZORPAY_WEBHOOK_SECRET` before processing any event — `razorpay.service.ts` owns this check
 - **Webhook idempotency:** `webhook_events` table has unique constraint on `(source, external_id)` — duplicate Razorpay webhook deliveries are silently ignored
-- **Refund policy enforcement:** refund amount cannot exceed original transaction amount AND cannot exceed `business_policies.maxRefundAmountPaise` — both checks happen before calling Razorpay
+- **Refund policy enforcement:** refund amount cannot exceed the payment's **refundable balance** AND cannot exceed `business_policies.maxRefundAmountPaise` — both checks happen before calling Razorpay
+- **Refundable balance, not original amount:** a `PARTIALLY_REFUNDED` payment is refundable again, so the ceiling is `original − sumCommittedRefundsForPayment()`. "Committed" is INITIATED + PROCESSING + COMPLETED — refunds still in flight at the gateway count, because the money is already requested; waiting for COMPLETED would let a duplicate through for as long as the gateway takes to settle. `sumCompletedRefundsForPayment()` is the *other* sum, used only to decide REFUNDED vs PARTIALLY_REFUNDED on the payment
 - **Refunds exceeding policy limits** are NOT auto-rejected; they are routed to HITL for manual approval (`requires_approval: true` on the refund record)
 - **COD payments** have no gateway ID; they are confirmed by staff via `confirmCODPayment()` and recorded as `method: COD`, `gateway: MANUAL`
 - **Payment link default expiry:** 1440 minutes (24h); configurable per business via `PAYMENT_LINK_EXPIRY_MINUTES` constant

@@ -775,11 +775,26 @@ export class PaymentService implements OnModuleInit {
       );
     }
 
-    // Rule 1: Refund amount cannot exceed original transaction amount (in paise)
+    // Rule 1: a refund cannot take the payment past what the customer actually
+    // paid. The ceiling is the original amount MINUS what is already committed —
+    // a PARTIALLY_REFUNDED payment is refundable again, so checking only against
+    // the original would let ₹500 be refunded twice on a ₹500 payment. Refunds
+    // still in flight at the gateway count against the ceiling too; they settle
+    // asynchronously, so waiting for COMPLETED would leave the same gap open for
+    // as long as the gateway takes to confirm.
     const originalAmountPaise = currencyToPaise(Number(payment.amount));
-    if (dto.amountPaise > originalAmountPaise) {
+    const committedRefundRupees =
+      (await this.repository.sumCommittedRefundsForPayment(businessId, dto.transactionId)) ?? 0;
+    const refundablePaise = Math.max(
+      0,
+      originalAmountPaise - currencyToPaise(committedRefundRupees),
+    );
+
+    if (dto.amountPaise > refundablePaise) {
       throw new BadRequestException(
-        `Refund amount (${dto.amountPaise} paise) exceeds original payment amount (${originalAmountPaise} paise)`,
+        `Refund amount (${dto.amountPaise} paise) exceeds the refundable balance ` +
+          `(${refundablePaise} paise) on payment ${dto.transactionId} — original ` +
+          `${originalAmountPaise} paise, ${currencyToPaise(committedRefundRupees)} paise already refunded`,
       );
     }
 

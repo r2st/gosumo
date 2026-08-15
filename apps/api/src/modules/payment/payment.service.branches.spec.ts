@@ -89,6 +89,7 @@ describe('PaymentService (remaining branches)', () => {
       updateRefundStatus: jest.fn(),
       findRefundByGatewayId: jest.fn().mockResolvedValue(null),
       sumCompletedRefundsForPayment: jest.fn(),
+      sumCommittedRefundsForPayment: jest.fn(),
       getPaymentSummaryForOrder: jest.fn(),
       getPaymentStats: jest.fn(),
       recordWebhookEvent: jest.fn().mockResolvedValue({ id: 'wh-1' }),

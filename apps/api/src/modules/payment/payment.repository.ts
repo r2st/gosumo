@@ -323,6 +323,33 @@ export class PaymentRepository {
     return Number(result._sum.amount ?? 0);
   }
 
+  /**
+   * Sum refund amounts (rupees) already committed against a payment — every
+   * refund that has not been abandoned (INITIATED, PROCESSING, COMPLETED).
+   *
+   * Distinct from {@link sumCompletedRefundsForPayment}, which answers "how much
+   * has settled" for the payment's status. This answers "how much is already
+   * spoken for" and so must include refunds still in flight at the gateway: the
+   * money has been requested, it just has not reached COMPLETED yet. FAILED and
+   * REJECTED refunds moved nothing and are excluded.
+   */
+  async sumCommittedRefundsForPayment(
+    businessId: string,
+    paymentId: string,
+  ): Promise<number> {
+    const result = await this.prisma.refunds.aggregate({
+      where: {
+        business_id: businessId,
+        payment_id: paymentId,
+        status: {
+          in: [RefundStatus.INITIATED, RefundStatus.PROCESSING, RefundStatus.COMPLETED],
+        },
+      },
+      _sum: { amount: true },
+    });
+    return Number(result._sum.amount ?? 0);
+  }
+
   // ─────────────────────────────────────────────
   // Refunds
   // ─────────────────────────────────────────────
