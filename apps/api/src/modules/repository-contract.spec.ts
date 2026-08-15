@@ -138,6 +138,12 @@ const GLOBAL_SWEEPS = new Set<string>([
   // Nightly Sheets export: iterates connections and calls exportForBusiness()
   // with each row's own business_id.
   'RealtyIntegrationsRepository.listConnectedByProvider',
+  // Stuck-notification recovery sweep (cron, no request tenant): returns only
+  // the notification id and its business_id, then re-enters the scoped
+  // `findById` per row before touching anything. It must span tenants — the
+  // question it asks is *which* tenants are holding notifications whose
+  // delivery job was lost.
+  'NotificationRepository.findStuckGlobal',
   // Webhook DLQ backlog gauge on GET webhook-log/dlq/stats — a count, no rows.
   'WebhookDlqRepository.countPendingGlobal',
   // Webhook retry recovery sweep (cron, no request tenant): returns only the

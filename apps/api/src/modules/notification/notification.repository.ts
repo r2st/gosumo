@@ -130,6 +130,44 @@ export class NotificationRepository {
     });
   }
 
+  /**
+   * Identify notifications stranded in a non-terminal status with no job behind
+   * them, across every tenant.
+   *
+   * Cross-tenant on purpose, and the one query in this file without a
+   * `business_id` — it is the scheduler's global tick, and the whole question
+   * it asks is *which* tenants are holding stranded rows. It follows the shape
+   * `WebhookDlqRepository.listDueGlobal` established for the same situation:
+   * it selects the id and the tenant discriminator and nothing else, so no
+   * tenant content crosses the boundary, and the sweep re-enters the scoped
+   * `findById` per row to do any actual work. The re-read is not waste — it is
+   * what makes the sweep re-check that the row is still non-terminal before
+   * acting on it.
+   *
+   * Served by `notifications(status, created_at)`, added in migration 0038;
+   * every other index on the table leads with `business_id` and so cannot seek
+   * here.
+   *
+   * `scheduled_at` is honoured: a notification scheduled for next Tuesday is a
+   * delayed Bull job doing exactly what it was told, not a stranded row.
+   */
+  async findStuckGlobal(
+    cutoff: Date,
+    limit: number,
+  ): Promise<Array<{ id: string; business_id: string }>> {
+    return this.prisma.notifications.findMany({
+      where: {
+        status: { in: [NotificationStatus.PENDING, NotificationStatus.QUEUED] },
+        created_at: { lt: cutoff },
+        deleted_at: null,
+        OR: [{ scheduled_at: null }, { scheduled_at: { lt: cutoff } }],
+      },
+      select: { id: true, business_id: true },
+      orderBy: { created_at: 'asc' },
+      take: limit,
+    });
+  }
+
   async updateNotification(
     businessId: string,
     id: string,

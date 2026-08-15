@@ -128,6 +128,26 @@ class FakeRepo {
     );
   });
 
+  /**
+   * Cross-tenant, like the real query: no business_id, PENDING/QUEUED only,
+   * created before the cutoff, a `scheduled_at` in the future excluded — and
+   * returning the id and the tenant discriminator only, never row content.
+   */
+  findStuckGlobal = jest.fn(async (cutoff: Date, limit: number) => {
+    return [...this.notifications.values()]
+      .filter(
+        (n) =>
+          (n.status === NotificationStatus.PENDING ||
+            n.status === NotificationStatus.QUEUED) &&
+          (n.created_at as Date) < cutoff &&
+          n.deleted_at == null &&
+          (n.scheduled_at == null || (n.scheduled_at as Date) < cutoff),
+      )
+      .sort((a, b) => (a.created_at as Date).getTime() - (b.created_at as Date).getTime())
+      .slice(0, limit)
+      .map((n) => ({ id: n.id, business_id: n.business_id }));
+  });
+
   updateNotification = jest.fn(async (b: string, id: string, data: FakeInput) => {
     const row = this.notifications.get(id);
     if (!row || row.business_id !== b) {
@@ -2218,5 +2238,205 @@ describe('NotificationService.handleEventTrigger — template batching', () => {
     });
 
     expect([...repo.notifications.values()]).toHaveLength(1);
+  });
+});
+
+// ─────────────────────────────────────────────
+// Stuck-notification recovery
+// ─────────────────────────────────────────────
+
+/**
+ * `recoverStuck` is the backstop for the one gap the module's retry design
+ * leaves open: the row lives in Postgres and the job lives in Redis, and every
+ * path that writes one then enqueues the other has a window between them. A row
+ * that loses its job is otherwise indistinguishable from one that is waiting —
+ * never sent, never failed, and silent to `notification.failed` consumers.
+ */
+describe('recoverStuck', () => {
+  const NOW = new Date('2026-08-15T12:00:00Z');
+  /** Comfortably past STUCK_NOTIFICATION_AFTER_MS (30m) before NOW. */
+  const LONG_AGO = new Date(NOW.getTime() - 90 * 60_000);
+
+  /** A row as `dispatchBatch` leaves one it wrote but could not enqueue. */
+  function seedStuck(
+    repo: FakeRepo,
+    overrides: Record<string, unknown> = {},
+  ): FakeRow {
+    const row: FakeRow = {
+      id: nextId(),
+      business_id: BUSINESS,
+      client_id: CLIENT,
+      channel: NotificationTemplateChannel.WHATSAPP,
+      category: NotificationCategory.TRANSACTIONAL,
+      status: NotificationStatus.PENDING,
+      recipient: '+919876543210',
+      content: { text: 'hi' },
+      data: {},
+      attempts: 0,
+      max_attempts: 3,
+      scheduled_at: null,
+      queued_at: null,
+      failure_reason: null,
+      deleted_at: null,
+      created_at: LONG_AGO,
+      updated_at: LONG_AGO,
+      ...overrides,
+    };
+    repo.notifications.set(row.id, row);
+    return row;
+  }
+
+  it('re-enqueues a row stranded past the threshold and marks it QUEUED', async () => {
+    const { service, repo, queue } = makeService();
+    const row = seedStuck(repo);
+
+    const result = await service.recoverStuck(NOW);
+
+    expect(result).toEqual({ scanned: 1, requeued: 1, failed: 0 });
+    expect(queue.add).toHaveBeenCalledWith(
+      NOTIFICATION_JOBS.DISPATCH,
+      { businessId: BUSINESS, notificationId: row.id },
+      { attempts: 1 },
+    );
+    const after = repo.notifications.get(row.id)!;
+    expect(after.status).toBe(NotificationStatus.QUEUED);
+    expect(after.queued_at).toBeInstanceOf(Date);
+  });
+
+  it('enqueues before writing the status, so a crash mid-recovery re-strands rather than loses', async () => {
+    const { service, repo, queue } = makeService();
+    seedStuck(repo);
+    const order: string[] = [];
+    queue.add.mockImplementation(async () => {
+      order.push('enqueue');
+    });
+    repo.updateNotification.mockImplementation(async () => {
+      order.push('status-write');
+      return {} as never;
+    });
+
+    await service.recoverStuck(NOW);
+
+    expect(order).toEqual(['enqueue', 'status-write']);
+  });
+
+  it('fails out a stranded row whose attempts are already exhausted, and emits notification.failed', async () => {
+    const { service, repo, queue, emitter } = makeService();
+    const row = seedStuck(repo, {
+      status: NotificationStatus.QUEUED,
+      attempts: 3,
+      max_attempts: 3,
+      failure_reason: 'provider timeout',
+    });
+
+    const result = await service.recoverStuck(NOW);
+
+    expect(result).toEqual({ scanned: 1, requeued: 0, failed: 1 });
+    expect(queue.add).not.toHaveBeenCalled();
+    const after = repo.notifications.get(row.id)!;
+    expect(after.status).toBe(NotificationStatus.FAILED);
+    expect(after.failed_at).toBeInstanceOf(Date);
+    // The reason the row already carried survives — it says more than
+    // "stranded" about why this notification never arrived.
+    expect(after.failure_reason).toBe('provider timeout');
+    expect(emitted(emitter, 'notification.failed')).toHaveLength(1);
+  });
+
+  it('leaves a row alone until it is older than the threshold', async () => {
+    const { service, repo, queue } = makeService();
+    // 10 minutes old: still inside the 15-minute retry backoff, so a job may
+    // legitimately be pending. Re-enqueueing here would double-send.
+    seedStuck(repo, { created_at: new Date(NOW.getTime() - 10 * 60_000) });
+
+    const result = await service.recoverStuck(NOW);
+
+    expect(result.scanned).toBe(0);
+    expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  it('leaves a notification scheduled for the future alone', async () => {
+    const { service, repo, queue } = makeService();
+    // Written long ago but scheduled for tomorrow — a delayed Bull job doing
+    // exactly what it was told, not a stranded row.
+    seedStuck(repo, { scheduled_at: new Date(NOW.getTime() + 24 * 3_600_000) });
+
+    const result = await service.recoverStuck(NOW);
+
+    expect(result.scanned).toBe(0);
+    expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  it('never touches a row that already reached a terminal status', async () => {
+    const { service, repo, queue } = makeService();
+    seedStuck(repo, { status: NotificationStatus.SENT });
+    seedStuck(repo, { status: NotificationStatus.DELIVERED });
+
+    const result = await service.recoverStuck(NOW);
+
+    expect(result.scanned).toBe(0);
+    expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  it('keeps sweeping after one row fails, and recovers each under its own business', async () => {
+    const { service, repo, queue } = makeService();
+    const other = '00000000-0000-4000-8000-0000000000ff';
+    const doomed = seedStuck(repo);
+    const survivor = seedStuck(repo, { business_id: other });
+    queue.add.mockImplementation(async (_name: string, data: { notificationId: string }) => {
+      if (data.notificationId === doomed.id) throw new Error('redis down');
+    });
+
+    const result = await service.recoverStuck(NOW);
+
+    expect(result).toEqual({ scanned: 2, requeued: 1, failed: 0 });
+    // The second row's businessId comes off the row, not the first one's.
+    expect(queue.add).toHaveBeenLastCalledWith(
+      NOTIFICATION_JOBS.DISPATCH,
+      { businessId: other, notificationId: survivor.id },
+      { attempts: 1 },
+    );
+    expect(repo.notifications.get(survivor.id)!.status).toBe(NotificationStatus.QUEUED);
+  });
+
+  it('re-reads each row scoped to its tenant, and skips one that sent in the meantime', async () => {
+    const { service, repo, queue } = makeService();
+    const row = seedStuck(repo);
+    // The scan sees a stranded row; by the time the sweep gets to it a
+    // late-arriving job has delivered it. The global query returns ids only,
+    // so this re-read is where the status comes from.
+    repo.findById.mockImplementation(async () => ({
+      ...row,
+      status: NotificationStatus.SENT,
+    }));
+
+    const result = await service.recoverStuck(NOW);
+
+    expect(repo.findById).toHaveBeenCalledWith(BUSINESS, row.id);
+    expect(result).toEqual({ scanned: 1, requeued: 0, failed: 0 });
+    expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  it('skips a row that vanished between the scan and the re-read', async () => {
+    const { service, repo, queue } = makeService();
+    seedStuck(repo);
+    repo.findById.mockResolvedValue(null);
+
+    await expect(service.recoverStuck(NOW)).resolves.toEqual({
+      scanned: 1,
+      requeued: 0,
+      failed: 0,
+    });
+    expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  it('is a no-op with nothing stranded', async () => {
+    const { service, queue } = makeService();
+
+    await expect(service.recoverStuck(NOW)).resolves.toEqual({
+      scanned: 0,
+      requeued: 0,
+      failed: 0,
+    });
+    expect(queue.add).not.toHaveBeenCalled();
   });
 });

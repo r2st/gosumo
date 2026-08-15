@@ -41,6 +41,8 @@ import {
   RETRY_BACKOFF_MS,
   BATCH_CHUNK_SIZE,
   DEFAULT_EVENT_TRIGGERS,
+  STUCK_NOTIFICATION_AFTER_MS,
+  STUCK_RECOVERY_BATCH_SIZE,
   DispatchJobData,
   BatchJobData,
 } from './notification.constants';
@@ -78,6 +80,16 @@ const TERMINAL_STATUSES: NotificationStatus[] = [
   NotificationStatus.CANCELLED,
   NotificationStatus.SKIPPED,
 ];
+
+/** What one {@link NotificationService.recoverStuck} tick did. */
+export interface StuckRecoveryResult {
+  /** Stranded rows this tick looked at (capped at `STUCK_RECOVERY_BATCH_SIZE`). */
+  scanned: number;
+  /** Rows given a fresh dispatch job. */
+  requeued: number;
+  /** Rows whose attempts were already exhausted, so they were failed out instead. */
+  failed: number;
+}
 
 interface ResolvedPreference {
   allowed: boolean;
@@ -581,6 +593,114 @@ export class NotificationService {
         );
       }
     }
+  }
+
+  // ════════════════════════════════════════════
+  // Stuck-notification recovery
+  // ════════════════════════════════════════════
+
+  /**
+   * Re-enqueue notifications that are waiting on a job which no longer exists.
+   *
+   * Retry bookkeeping in this module lives in Postgres and the *job* lives in
+   * Redis, and there is no transaction across the two. Every path that writes
+   * the row and then enqueues has a window between them:
+   *
+   *  - `dispatchBatch` writes every recipient's row first and enqueues in
+   *    chunks. A chunk that cannot reach Redis is counted into
+   *    `BatchResultDto.failed` and logged as "written but not enqueued" — the
+   *    rows stay PENDING, and until now the only way one ever sent again was an
+   *    operator noticing the log and calling `POST /notifications/:id/retry`.
+   *  - The retry path in `processDispatch` writes `QUEUED, attempts+1` and
+   *    *then* adds the delayed job. A crash or a Redis blip in between leaves a
+   *    row that has consumed an attempt and has nothing coming.
+   *  - A `flushall`, a Redis failover onto an empty replica, or an unpersisted
+   *    restart drops every delayed job at once — the whole backlog at the same
+   *    moment, which is the case where an operator-driven recovery is hopeless.
+   *
+   * In all three the row is indistinguishable from one that is simply waiting,
+   * which is why this is time-based: past {@link STUCK_NOTIFICATION_AFTER_MS}
+   * no legitimate job is still pending (the longest backoff is 15 minutes), so
+   * anything still non-terminal has nothing behind it.
+   *
+   * A row that has already used its attempts is failed rather than re-enqueued
+   * — `processDispatch` would fail it on arrival anyway, and doing it here
+   * emits `notification.failed`, which is what a consumer is waiting for.
+   *
+   * Bounded per tick ({@link STUCK_RECOVERY_BATCH_SIZE}); a larger backlog is
+   * drained over successive ticks rather than in one burst that would put the
+   * whole queue behind whatever else is due.
+   */
+  async recoverStuck(now: Date = new Date()): Promise<StuckRecoveryResult> {
+    const cutoff = new Date(now.getTime() - STUCK_NOTIFICATION_AFTER_MS);
+    const stranded = await this.repository.findStuckGlobal(
+      cutoff,
+      STUCK_RECOVERY_BATCH_SIZE,
+    );
+    const result: StuckRecoveryResult = { scanned: stranded.length, requeued: 0, failed: 0 };
+
+    for (const { id, business_id: businessId } of stranded) {
+      try {
+        // Re-read through the tenant-scoped path. The global query returns the
+        // id and its tenant and nothing else, so this is where the row's state
+        // comes from — and re-reading is what makes the sweep safe against a
+        // dispatch that landed between the scan and now.
+        const row = await this.repository.findById(businessId, id);
+        if (!row || TERMINAL_STATUSES.includes(row.status)) continue;
+
+        if (row.attempts >= row.max_attempts) {
+          const failed = await this.repository.updateNotification(
+            row.business_id,
+            row.id,
+            {
+              status: NotificationStatus.FAILED,
+              failed_at: new Date(),
+              failure_reason:
+                row.failure_reason ?? 'Stranded without a delivery job; attempts exhausted',
+            },
+          );
+          this.emitFailed(failed, row.attempts, generateCorrelationId());
+          result.failed++;
+          continue;
+        }
+
+        // Enqueue before the status write, not after. This is the same two-step
+        // that stranded the row in the first place, and the orders fail
+        // differently: enqueue-then-write leaves a job whose row still says
+        // PENDING, which the next tick picks up and re-enqueues (a duplicate
+        // send `processDispatch` refuses, because the row is terminal by then);
+        // write-then-enqueue leaves QUEUED with nothing coming, which is
+        // exactly the state this method exists to clean up and which the next
+        // tick would have to wait another 30 minutes to see again.
+        const data: DispatchJobData = {
+          businessId: row.business_id,
+          notificationId: row.id,
+        };
+        await this.queue.add(NOTIFICATION_JOBS.DISPATCH, data, { attempts: 1 });
+        await this.repository.updateNotification(row.business_id, row.id, {
+          status: NotificationStatus.QUEUED,
+          queued_at: new Date(),
+        });
+        result.requeued++;
+      } catch (err) {
+        // One unrecoverable row must not stop the sweep — the rest of the
+        // backlog is still deliverable, and this row is picked up next tick.
+        this.logger.error(
+          `Stuck-notification recovery failed for ${id}: ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    if (result.scanned > 0) {
+      this.logger.warn(
+        `Stuck-notification sweep: ${result.scanned} stranded past ` +
+          `${STUCK_NOTIFICATION_AFTER_MS / 60_000}m — ${result.requeued} re-enqueued, ` +
+          `${result.failed} failed out`,
+      );
+    }
+
+    return result;
   }
 
   // ════════════════════════════════════════════

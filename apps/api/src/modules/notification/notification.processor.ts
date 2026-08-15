@@ -40,4 +40,17 @@ export class NotificationProcessor {
     );
     await this.notificationService.processBatch(businessId, notificationIds);
   }
+
+  /**
+   * Repeatable sweep for notifications whose delivery job was lost.
+   *
+   * Cross-tenant, so it carries no job data — the businesses come from the
+   * stranded rows themselves. Let it reject: unlike `dispatch`, this job has no
+   * retry bookkeeping of its own, so Bull's retries and `QueueTelemetryService`
+   * are the error boundary.
+   */
+  @Process(NOTIFICATION_JOBS.RECOVER_STUCK)
+  async handleRecoverStuck(): Promise<void> {
+    await this.notificationService.recoverStuck();
+  }
 }

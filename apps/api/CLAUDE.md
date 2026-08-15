@@ -77,6 +77,17 @@ record it existed, since `removeOnFail: 50` trims the payload out of Redis.
 count is over `QUEUE_DEPTH_WARN_THRESHOLD`; a backlog does not make readiness
 degrade, since pulling the instance from rotation removes a worker draining it.
 
+**A durable row plus a Redis job is two writes with no transaction across
+them.** Any module that writes state to Postgres and then enqueues the job that
+acts on it has a window where the row survives and the job does not — a failed
+`queue.add`, a crash between the two, a Redis flush or a failover onto an empty
+replica. Bull cannot help: the job it would retry never existed. The module owes
+that state a time-based recovery sweep, since a stranded row is
+indistinguishable from a waiting one except by age. `NotificationService.recoverStuck`
+(repeatable `recover-stuck`, every 15 min) is the worked example, including the
+ordering rule — **enqueue before writing the status**, because the other order
+re-creates the stranding it is fixing.
+
 ## Event Bus
 
 `EventEmitterModule` is configured with `wildcard: true` and `.` as delimiter. Event names follow the pattern `resource.action` (e.g., `message.received`, `order.created`). All event payload types are defined in `@gosumo/shared/events`.

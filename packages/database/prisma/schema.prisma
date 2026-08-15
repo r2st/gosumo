@@ -1228,6 +1228,9 @@ model notifications {
   @@index([business_id, channel, status])
   @@index([batch_id])
   @@index([provider_message_id])
+  // The stuck-notification sweep runs before a tenant is known — it asks which
+  // tenants have stranded rows — so no business_id-leading index can serve it.
+  @@index([status, created_at])
   @@map("notifications")
 }
 

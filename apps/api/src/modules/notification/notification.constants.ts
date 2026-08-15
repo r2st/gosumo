@@ -13,7 +13,37 @@ export const NOTIFICATION_JOBS = {
   DISPATCH: 'dispatch',
   /** Expand and enqueue one chunk of a bulk/campaign batch. */
   BATCH: 'batch',
+  /** Periodic sweep that re-enqueues notifications stranded without a job. */
+  RECOVER_STUCK: 'recover-stuck',
 } as const;
+
+// ─────────────────────────────────────────────
+// Stuck-notification recovery
+// ─────────────────────────────────────────────
+
+/**
+ * How long a row may sit in PENDING/QUEUED past its due time before the sweep
+ * treats it as stranded.
+ *
+ * The longest legitimate gap between a row entering QUEUED and its job running
+ * is the last retry backoff (15 minutes) plus however long the queue is behind.
+ * 30 minutes clears that with room to spare, so the sweep never races a job
+ * that is merely waiting its turn — re-enqueueing one of those would double-send.
+ */
+export const STUCK_NOTIFICATION_AFTER_MS = 30 * 60_000;
+
+/** Rows re-enqueued per sweep tick. Bounds one tick's work and its Redis writes. */
+export const STUCK_RECOVERY_BATCH_SIZE = 200;
+
+/**
+ * Sweep cadence. Every 15 minutes: often enough that a stranded transactional
+ * notification (an OTP, a booking confirmation) is still worth delivering when
+ * it goes out, rare enough that the scan is invisible.
+ */
+export const STUCK_RECOVERY_CRON = '*/15 * * * *';
+
+/** Stable repeatable-job id, so a redeploy replaces the schedule instead of adding one. */
+export const STUCK_RECOVERY_REPEAT_JOB_ID = 'notification-recover-stuck';
 
 /** Default delivery-attempt cap before a notification is marked FAILED. */
 export const DEFAULT_MAX_ATTEMPTS = 3;

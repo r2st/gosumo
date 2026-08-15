@@ -1,0 +1,55 @@
+-- Migration: 0038_index_stuck_notification_sweep
+-- Index the notification recovery sweep, which runs before a tenant is known.
+--
+-- `NotificationService.recoverStuck` is a scheduler tick, not a tenant request:
+-- it asks *which* tenants are holding notifications whose delivery job was
+-- lost, so it cannot supply a business_id and none of the five existing indexes
+-- on the table can seek for it — every one of them leads with business_id.
+-- This is the same class as the lookups 0032 indexed, and the same fix.
+--
+-- The query, as `NotificationRepository.findStuck` spells it:
+--
+--   SELECT * FROM notifications
+--    WHERE status IN ('PENDING','QUEUED')
+--      AND created_at < $1
+--      AND deleted_at IS NULL
+--      AND (scheduled_at IS NULL OR scheduled_at < $1)
+--    ORDER BY created_at ASC
+--    LIMIT 200;
+--
+-- Leading with `status` is what makes the index small as well as fast. The
+-- table is an append-only delivery log — it is almost entirely SENT, DELIVERED
+-- and READ, and grows without bound — while PENDING and QUEUED are a transient
+-- head of at most a few minutes' traffic in a healthy system. So the two values
+-- the sweep asks about are a rounding error in the table and a seek in the
+-- index, and `created_at` as the second column gives the ORDER BY and the
+-- `LIMIT 200` for free: the scan stops after 200 matching entries instead of
+-- sorting every stranded row to return the oldest ones.
+--
+-- Without it the sweep is a sequential scan of the whole notification history
+-- of every tenant, every 15 minutes, to answer a question that is normally
+-- "none". That cost grows with total rows across all tenants and is paid on a
+-- schedule rather than in response to load, which is the shape that looks fine
+-- in staging and becomes a periodic I/O spike a year into production.
+--
+-- Deliberately not added:
+--   notifications(status, scheduled_at)
+--     `scheduled_at` is a secondary filter on rows already narrowed to a few
+--     hundred by (status, created_at); a second index earns nothing and every
+--     index on this table is paid for on every send.
+--   A partial index WHERE status IN ('PENDING','QUEUED')
+--     Smaller still, but it stops serving the moment the status list changes,
+--     and the composite above is already ~nothing: it stores one entry per row
+--     but the sweep only ever walks the PENDING/QUEUED prefix.
+--
+-- The index name matches what `prisma migrate diff` emits for the
+-- @@index([status, created_at]) entry added to schema.prisma in the same
+-- commit, so the two stay in sync.
+--
+-- Plain CREATE INDEX, matching every migration before this one. On a live
+-- database with a large notifications table, run it as CREATE INDEX
+-- CONCURRENTLY instead; that form cannot run inside a transaction, so issue it
+-- outside any wrapping BEGIN/COMMIT.
+
+CREATE INDEX IF NOT EXISTS "notifications_status_created_at_idx"
+    ON "notifications" ("status", "created_at");
