@@ -5,7 +5,12 @@ import { ChannelType, MessageContentType } from '@gosumo/shared';
 import {
   WebChatGateway,
   webChatCorsOptions,
+  readInitPayload,
+  WEBCHAT_MAX_FRAME_BYTES,
   WEBCHAT_MAX_MESSAGE_CHARS,
+  WEBCHAT_MAX_SESSION_TOKEN_CHARS,
+  WEBCHAT_MAX_SOCKETS_PER_IP,
+  WEBCHAT_MAX_WIDGET_ID_CHARS,
 } from './webchat.gateway';
 import { PrismaService } from '../../../common/services/prisma.service';
 import { ChannelAdapterService } from '../channel-adapter.service';
@@ -79,6 +84,24 @@ function makeSocketFrom(id: string, address: string): Socket {
   } as unknown as Socket;
 }
 
+/** A socket the connection ceiling can count: it reveals a caller and can be hung up on. */
+function makeCountedSocket(
+  id: string,
+  address: string | undefined,
+  forwardedFor?: string,
+): Socket & { disconnect: jest.Mock } {
+  return {
+    id,
+    handshake: {
+      query: {},
+      address,
+      headers: forwardedFor ? { 'x-forwarded-for': forwardedFor } : {},
+    },
+    emit: jest.fn(),
+    disconnect: jest.fn(),
+  } as unknown as Socket & { disconnect: jest.Mock };
+}
+
 function makeConfig(secret: string = SECRET): ConfigService {
   return {
     get: jest.fn((key: string, fallback?: unknown) =>
@@ -115,6 +138,39 @@ describe('webChatCorsOptions', () => {
       if (previous === undefined) delete process.env['WEBCHAT_ALLOWED_ORIGINS'];
       else process.env['WEBCHAT_ALLOWED_ORIGINS'] = previous;
     }
+  });
+});
+
+describe('gateway transport options', () => {
+  /** Where Nest stores the `@WebSocketGateway({...})` argument. */
+  function gatewayOptions(): Record<string, unknown> {
+    return (Reflect.getMetadata('websockets:gateway_options', WebChatGateway) ??
+      {}) as Record<string, unknown>;
+  }
+
+  it('caps the frame size at the transport, not just in the handler', () => {
+    // WEBCHAT_MAX_MESSAGE_CHARS is checked after Engine.IO has buffered the
+    // whole frame and parsed it. Engine.IO's own default is 1 MB, so every
+    // rejected message still cost a megabyte of buffering and parsing first —
+    // and `chat:init`, which has no length ceiling of its own, could be sent
+    // at that size indefinitely.
+    expect(gatewayOptions()['maxHttpBufferSize']).toBe(WEBCHAT_MAX_FRAME_BYTES);
+  });
+
+  it('leaves room for the longest legitimate message', () => {
+    // 4 bytes per character is the UTF-8 worst case (emoji), plus the event
+    // name and the JSON envelope. A cap below that would refuse a message the
+    // handler is documented to accept.
+    expect(WEBCHAT_MAX_FRAME_BYTES).toBeGreaterThan(WEBCHAT_MAX_MESSAGE_CHARS * 4);
+  });
+
+  it('still serves the widget from anywhere', () => {
+    // The frame cap is not an origin policy — the widget is embedded on
+    // customer sites and the CORS default has to stay open.
+    expect(gatewayOptions()['namespace']).toBe('/webchat');
+    expect(gatewayOptions()['cors']).toEqual(
+      expect.objectContaining({ origin: expect.anything() }),
+    );
   });
 });
 
@@ -157,6 +213,102 @@ describe('WebChatGateway', () => {
       const logSpy = jest.spyOn(gateway['logger'], 'log').mockImplementation();
       gateway.handleConnection(makeSocket('socket-b'));
       expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('widgetId=none'));
+    });
+  });
+
+  /**
+   * `WebChatThrottle` rations events. A socket that connects and then says
+   * nothing is charged by none of its buckets, yet still costs an Engine.IO
+   * session and its buffers for as long as it is held — so opening sockets in
+   * a loop was an unrationed way to exhaust the process.
+   */
+  describe('connection ceiling', () => {
+    beforeEach(() => {
+      jest.spyOn(gateway['logger'], 'log').mockImplementation();
+      jest.spyOn(gateway['logger'], 'warn').mockImplementation();
+    });
+
+    it('admits sockets up to the per-IP ceiling', () => {
+      for (let i = 0; i < WEBCHAT_MAX_SOCKETS_PER_IP; i++) {
+        const socket = makeCountedSocket(`ok-${i}`, '203.0.113.5');
+        gateway.handleConnection(socket);
+        expect(socket.disconnect).not.toHaveBeenCalled();
+      }
+      expect(gateway.liveSocketsFor('203.0.113.5')).toBe(WEBCHAT_MAX_SOCKETS_PER_IP);
+    });
+
+    it('disconnects the one past the ceiling', () => {
+      for (let i = 0; i < WEBCHAT_MAX_SOCKETS_PER_IP; i++) {
+        gateway.handleConnection(makeCountedSocket(`fill-${i}`, '203.0.113.6'));
+      }
+
+      const excess = makeCountedSocket('excess', '203.0.113.6');
+      gateway.handleConnection(excess);
+
+      expect(excess.disconnect).toHaveBeenCalledWith(true);
+      // Refused sockets are not counted, so the caller is not pushed further
+      // over the line by its own retries.
+      expect(gateway.liveSocketsFor('203.0.113.6')).toBe(WEBCHAT_MAX_SOCKETS_PER_IP);
+    });
+
+    it('frees the slot when a socket disconnects', () => {
+      const socket = makeCountedSocket('transient', '203.0.113.7');
+      gateway.handleConnection(socket);
+      expect(gateway.liveSocketsFor('203.0.113.7')).toBe(1);
+
+      gateway.handleDisconnect(socket);
+
+      expect(gateway.liveSocketsFor('203.0.113.7')).toBe(0);
+      // The key goes with the last socket — an IP key space is caller-
+      // controlled, so a counter that only grew would be the leak the
+      // ceiling exists to prevent.
+      expect(gateway['socketsPerIp'].size).toBe(0);
+      expect(gateway['socketIp'].size).toBe(0);
+    });
+
+    it('counts each caller separately', () => {
+      for (let i = 0; i < WEBCHAT_MAX_SOCKETS_PER_IP; i++) {
+        gateway.handleConnection(makeCountedSocket(`a-${i}`, '203.0.113.8'));
+      }
+
+      const other = makeCountedSocket('b-0', '198.51.100.4');
+      gateway.handleConnection(other);
+
+      expect(other.disconnect).not.toHaveBeenCalled();
+      expect(gateway.liveSocketsFor('198.51.100.4')).toBe(1);
+    });
+
+    it('reads the forwarded address, not the proxy that delivered it', () => {
+      // Every socket arrives from Caddy in production; counting on the peer
+      // address would collapse every visitor onto one bucket and lock the
+      // widget out entirely.
+      const socket = makeCountedSocket('fwd', '10.0.0.1', '203.0.113.9');
+      gateway.handleConnection(socket);
+
+      expect(gateway.liveSocketsFor('203.0.113.9')).toBe(1);
+      expect(gateway.liveSocketsFor('10.0.0.1')).toBe(0);
+    });
+
+    it('admits a socket whose caller cannot be identified', () => {
+      // An unidentifiable caller is not chargeable — grouping them all under
+      // one key would let any one of them lock out the rest.
+      const socket = makeCountedSocket('anon', undefined);
+      gateway.handleConnection(socket);
+
+      expect(socket.disconnect).not.toHaveBeenCalled();
+      expect(gateway['socketIp'].size).toBe(0);
+    });
+
+    it('does not double-free when disconnect fires twice', () => {
+      const first = makeCountedSocket('dup-1', '203.0.113.10');
+      const second = makeCountedSocket('dup-2', '203.0.113.10');
+      gateway.handleConnection(first);
+      gateway.handleConnection(second);
+
+      gateway.handleDisconnect(first);
+      gateway.handleDisconnect(first);
+
+      expect(gateway.liveSocketsFor('203.0.113.10')).toBe(1);
     });
   });
 
@@ -783,6 +935,146 @@ describe('WebChatGateway', () => {
 
       expect(result.received).toBe(false);
       expect(prisma.messages.create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['null', null],
+      ['undefined', undefined],
+      ['a bare string', 'hello'],
+      ['a number', 7],
+    ])('refuses %s as the whole frame rather than throwing on it', async (_label, frame) => {
+      // The declared parameter type is a compile-time fiction — Socket.IO
+      // hands over whatever JSON arrived. Reading `.text` off a non-object
+      // threw, which turned a malformed frame into an exception instead of a
+      // refusal the widget can act on.
+      const client = await initSession(gateway, prisma, `frame-${_label}`, `f-${_label}`);
+      prisma.messages.create.mockResolvedValue({});
+
+      const result = await gateway.handleMessage(client, frame);
+
+      expect(result.received).toBe(false);
+      expect(prisma.messages.create).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─────────────────────────────────────────────
+  // chat:init body validation
+  // ─────────────────────────────────────────────
+
+  describe('chat:init body validation', () => {
+    beforeEach(() => {
+      jest.spyOn(gateway['logger'], 'warn').mockImplementation();
+    });
+
+    /**
+     * The one that matters: `widgetId` is passed straight into
+     * `channel_accounts.findFirst({ where: { id: widgetId } })`, and Prisma is
+     * as happy with a filter object there as with a string. A visitor sending
+     * `{"not": "<some uuid>"}` therefore matched *whatever active web-chat
+     * account came first*, in any business — and the handler went on to create
+     * a `clients` row under that business's `business_id`. The widget id is the
+     * only thing between an anonymous socket and a tenant.
+     */
+    it('refuses a Prisma filter object as the widgetId, without querying', async () => {
+      const client = makeSocket('socket-injected');
+
+      const result = await gateway.handleInit(client, {
+        widgetId: { not: '00000000-0000-4000-a000-000000000009' },
+      });
+
+      expect(result.sessionId).toBe('');
+      expect(prisma.channel_accounts.findFirst).not.toHaveBeenCalled();
+      expect(prisma.clients.create).not.toHaveBeenCalled();
+      expect(gateway['sessions'].size).toBe(0);
+    });
+
+    it.each([
+      ['null', null],
+      ['undefined', undefined],
+      ['a bare string', WIDGET_ID],
+      ['a number', 1],
+      ['an array', [WIDGET_ID]],
+    ])('refuses %s as the init frame', async (_label, frame) => {
+      const result = await gateway.handleInit(makeSocket(`init-${_label}`), frame);
+
+      expect(result.sessionId).toBe('');
+      expect(prisma.channel_accounts.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('refuses a widgetId longer than the ceiling before it reaches a query', async () => {
+      const result = await gateway.handleInit(makeSocket('socket-long'), {
+        widgetId: 'x'.repeat(WEBCHAT_MAX_WIDGET_ID_CHARS + 1),
+      });
+
+      expect(result.sessionId).toBe('');
+      expect(prisma.channel_accounts.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('charges nothing against the throttle for a malformed frame', async () => {
+      // Refusing before the throttle keeps a junk frame from spending the
+      // quota of the visitors sharing that IP.
+      const consume = jest.spyOn(throttle, 'consume');
+
+      await gateway.handleInit(makeSocket('socket-junk'), { widgetId: 42 });
+
+      expect(consume).not.toHaveBeenCalled();
+    });
+
+    it('ignores a non-string sessionId and issues a fresh session', async () => {
+      // An unusable token already means "start a new session" — which is what
+      // an absent one does. Passing it on threw inside the HMAC verifier.
+      prisma.channel_accounts.findFirst.mockResolvedValue({
+        id: WIDGET_ID,
+        business_id: BUSINESS_ID,
+        metadata: {},
+      });
+      prisma.channel_contacts.findFirst.mockResolvedValue({ client: { id: CLIENT_ID } });
+      prisma.conversations.findFirst.mockResolvedValue({ id: CONVERSATION_ID });
+
+      const result = await gateway.handleInit(makeSocket('socket-badtoken'), {
+        widgetId: WIDGET_ID,
+        sessionId: { not: '' },
+      });
+
+      expect(result.sessionId).not.toBe('');
+      expect(verifyWebChatSession(result.sessionId, SECRET, WIDGET_ID)).not.toBeNull();
+    });
+  });
+
+  describe('readInitPayload', () => {
+    it('accepts a well-formed body', () => {
+      expect(readInitPayload({ widgetId: WIDGET_ID })).toEqual({ widgetId: WIDGET_ID });
+    });
+
+    it('keeps a plausible session token', () => {
+      const issued = token('session-1');
+      expect(readInitPayload({ widgetId: WIDGET_ID, sessionId: issued })).toEqual({
+        widgetId: WIDGET_ID,
+        sessionId: issued,
+      });
+    });
+
+    it.each([
+      ['a filter object', { not: '' }],
+      ['a number', 5],
+      ['an array', []],
+      ['null', null],
+      ['an empty string', ''],
+    ])('rejects %s as widgetId', (_label, widgetId) => {
+      expect(readInitPayload({ widgetId })).toBeNull();
+    });
+
+    it('drops an over-long session token but keeps the widget', () => {
+      const payload = readInitPayload({
+        widgetId: WIDGET_ID,
+        sessionId: 'x'.repeat(WEBCHAT_MAX_SESSION_TOKEN_CHARS + 1),
+      });
+      expect(payload).toEqual({ widgetId: WIDGET_ID });
+    });
+
+    it('accepts a widgetId exactly at the ceiling', () => {
+      const widgetId = 'x'.repeat(WEBCHAT_MAX_WIDGET_ID_CHARS);
+      expect(readInitPayload({ widgetId })).toEqual({ widgetId });
     });
   });
 

@@ -31,6 +31,9 @@ import { DispatchNotificationDto } from './notification/dto';
 import { AttachMediaDto } from './message/dto';
 import { CreateBookingDto } from './booking/dto';
 import { CreateApiKeyDto, API_KEY_SCOPES } from './integrations/dto/create-api-key.dto';
+import { CreateAssetDto, MAX_ASSET_URL_LENGTH } from './realty-inventory/dto';
+import { RealtyAssetType } from '@gosumo/shared';
+import { PortalEmailDto, MAX_PORTAL_EMAIL_BODY_LENGTH } from './realty-ingestion/dto';
 
 /** The exact pipe configuration from main.ts. */
 function productionPipe(): ValidationPipe {
@@ -610,5 +613,84 @@ describe('AttachMediaDto', () => {
 
   it('rejects an unknown property', async () => {
     await expectRejected(AttachMediaDto, { ...valid, is_processed: true });
+  });
+});
+
+// ─────────────────────────────────────────────
+// Uploaded-asset and inbound-email bounds
+// ─────────────────────────────────────────────
+
+describe('CreateAssetDto', () => {
+  it('accepts an ordinary brochure link', async () => {
+    const dto = await validate<CreateAssetDto>(CreateAssetDto, {
+      type: RealtyAssetType.BROCHURE,
+      url: 'https://cdn.gosumo.test/projects/lakeside/brochure-v3.pdf',
+      title: 'Lakeside brochure',
+    });
+    expect(dto.url).toBe('https://cdn.gosumo.test/projects/lakeside/brochure-v3.pdf');
+  });
+
+  it('accepts an asset with no url at all', async () => {
+    // A WhatsApp-media-id-only asset is legitimate — the url is optional.
+    const dto = await validate<CreateAssetDto>(CreateAssetDto, {
+      type: RealtyAssetType.FLOORPLAN,
+      waMediaId: '1234567890',
+    });
+    expect(dto.url).toBeUndefined();
+  });
+
+  it.each([
+    ['javascript:', 'javascript:alert(document.cookie)'],
+    ['data:', 'data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg=='],
+    ['file:', 'file:///etc/passwd'],
+    ['a bare path', '/projects/brochure.pdf'],
+  ])('rejects %s as an asset url', async (_label, url) => {
+    // The dashboard renders this as `<a href={asset.url}>Open</a>`, so a
+    // non-http scheme is script running in a colleague's session — a STAFF
+    // member reaching an OWNER through a link the product told them to trust.
+    const messages = await expectRejected(CreateAssetDto, {
+      type: RealtyAssetType.BROCHURE,
+      url,
+    });
+    expect(messages.join(' ')).toMatch(/url/);
+  });
+
+  it('rejects a url longer than the column bound', async () => {
+    await expectRejected(CreateAssetDto, {
+      type: RealtyAssetType.BROCHURE,
+      url: `https://cdn.gosumo.test/${'a'.repeat(MAX_ASSET_URL_LENGTH)}`,
+    });
+  });
+});
+
+describe('PortalEmailDto', () => {
+  it('accepts a real enquiry notification', async () => {
+    const dto = await validate<PortalEmailDto>(PortalEmailDto, {
+      from: 'noreply@99acres.com',
+      subject: 'New enquiry for Prestige Lakeside',
+      text: 'Name: Priya Sharma\nPhone: 9876543210',
+    });
+    expect(dto.text).toContain('Priya Sharma');
+  });
+
+  it.each([['text'], ['html']])(
+    'rejects an unbounded %s body on this public webhook',
+    async (field) => {
+      // `parsePortalEmail` runs a series of regex scans over whatever arrives,
+      // and the route is @Public() — gated by a shared secret, not a session.
+      // The only ceiling was the request body limit, which says nothing about
+      // what an enquiry email is.
+      await expectRejected(PortalEmailDto, {
+        from: 'noreply@99acres.com',
+        [field]: 'a'.repeat(MAX_PORTAL_EMAIL_BODY_LENGTH + 1),
+      });
+    },
+  );
+
+  it('accepts a body exactly at the ceiling', async () => {
+    const dto = await validate<PortalEmailDto>(PortalEmailDto, {
+      text: 'a'.repeat(MAX_PORTAL_EMAIL_BODY_LENGTH),
+    });
+    expect(dto.text).toHaveLength(MAX_PORTAL_EMAIL_BODY_LENGTH);
   });
 });

@@ -64,6 +64,18 @@ export class CsvImportDto {
 // PORTAL EMAIL (webhook body from an inbound-email service)
 // ─────────────────────────────────────────────
 
+/**
+ * Longest email body this webhook will parse, per field.
+ *
+ * `parsePortalEmail` runs a series of label-and-regex scans over whatever
+ * arrives, and this route is `@Public()` — gated by a shared secret, not by a
+ * session. Both fields were unbounded, so the only ceiling was the request body
+ * limit, which is not a statement about what an enquiry email is. 100 KB is far
+ * above any real 99acres/MagicBricks notification and far below what makes
+ * scanning one expensive.
+ */
+export const MAX_PORTAL_EMAIL_BODY_LENGTH = 100_000;
+
 export class PortalEmailDto {
   @ApiPropertyOptional({ description: 'Sender address (used to detect the portal)' })
   @IsOptional()
@@ -80,11 +92,13 @@ export class PortalEmailDto {
   @ApiPropertyOptional({ description: 'Plain-text body' })
   @IsOptional()
   @IsString()
+  @MaxLength(MAX_PORTAL_EMAIL_BODY_LENGTH)
   text?: string;
 
   @ApiPropertyOptional({ description: 'HTML body (stripped if no text is given)' })
   @IsOptional()
   @IsString()
+  @MaxLength(MAX_PORTAL_EMAIL_BODY_LENGTH)
   html?: string;
 }
 

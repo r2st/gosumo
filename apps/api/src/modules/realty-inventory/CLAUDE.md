@@ -37,6 +37,7 @@ Weights: config 40 · price 35 · locality 25. Exact config match, price within 
 ## Key gotchas
 
 - **Money at the boundary:** prices stored as `Decimal(14,2)` rupees; exposed/accepted as integer paise.
+- **An asset `url` is http/https only** (`CreateAssetDto`, ≤ `MAX_ASSET_URL_LENGTH`). The dashboard renders it as `<a href={asset.url}>Open</a>`, so a brochure published as `javascript:` is script running in a colleague's session — a STAFF member reaching an OWNER through a link the product told them to trust.
 - **Depends on `realty-leads`** (imports `RealtyLeadsModule`) for `matchForLead`.
 - **Soft delete only.**
 

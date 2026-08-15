@@ -34,7 +34,7 @@ vi.mock('@/hooks/use-permissions', () => ({
   }),
 }));
 
-import ImportPage from './page';
+import ImportPage, { MAX_CSV_FILE_BYTES, MAX_IMPORT_ROWS, isCsvFile } from './page';
 
 const paste = (csv: string) => {
   render(<ImportPage />);
@@ -310,5 +310,115 @@ describe('file input and sample download', () => {
     role = 'VIEWER';
     render(<ImportPage />);
     expect(screen.getByRole('button', { name: /sample csv/i })).toBeInTheDocument();
+  });
+});
+
+/**
+ * The `accept` attribute on a file input is a filter in the OS dialog and
+ * nothing more — switching it to "All files" bypasses it. What arrives is
+ * whatever the operator picked, and this page reads all of it into the tab:
+ * `file.text()`, then a row object per line, then a rendered preview.
+ */
+describe('file bounds', () => {
+  /** Hand the picker a file of `size` bytes without allocating them. */
+  function pick(name: string, type: string, size: number): HTMLInputElement {
+    const { container } = render(<ImportPage />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: [], writable: true });
+    handFile(input, name, type, size);
+    return input;
+  }
+
+  /** Put a file of `size` bytes on an already-writable input and fire change. */
+  function handFile(
+    input: HTMLInputElement,
+    name: string,
+    type: string,
+    size: number,
+  ): void {
+    const file = new File(['phone,name\n9811122233,Amit'], name, { type });
+    Object.defineProperty(file, 'size', { value: size });
+    (input as unknown as { files: File[] }).files = [file];
+    fireEvent.change(input);
+  }
+
+  it('refuses a file over the size limit, naming it', async () => {
+    pick('leads.csv', 'text/csv', MAX_CSV_FILE_BYTES + 1);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/leads\.csv/);
+    expect(alert).toHaveTextContent(/limit is 5 MB/);
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  });
+
+  it('accepts a file exactly at the limit', async () => {
+    pick('leads.csv', 'text/csv', MAX_CSV_FILE_BYTES);
+
+    expect(await screen.findByText('1 rows parsed')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('refuses a non-CSV the dialog let through', async () => {
+    pick('holiday.mp4', 'video/mp4', 1024);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/not a CSV/);
+  });
+
+  it('clears an earlier complaint once a good file is picked', async () => {
+    const input = pick('holiday.mp4', 'video/mp4', 1024);
+    await screen.findByRole('alert');
+
+    handFile(input, 'leads.csv', 'text/csv', 1024);
+
+    expect(await screen.findByText('1 rows parsed')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  describe('isCsvFile', () => {
+    it.each([
+      ['a plain csv', 'leads.csv', 'text/csv'],
+      ['an uppercase extension', 'LEADS.CSV', ''],
+      ['a csv the OS typed as plain text', 'leads.csv', 'text/plain'],
+      ['a csv the OS could not type at all', 'leads.csv', ''],
+      ['a name-less export typed as csv', 'export', 'application/csv'],
+    ])('accepts %s', (_label, name, type) => {
+      expect(isCsvFile({ name, type })).toBe(true);
+    });
+
+    it.each([
+      ['a video', 'holiday.mp4', 'video/mp4'],
+      ['a spreadsheet', 'leads.xlsx', 'application/vnd.ms-excel'],
+      ['a zip', 'archive.zip', 'application/zip'],
+    ])('rejects %s', (_label, name, type) => {
+      expect(isCsvFile({ name, type })).toBe(false);
+    });
+  });
+});
+
+/**
+ * The API accepts 5000 rows in one import (`CsvImportDto`'s `@ArrayMaxSize`).
+ * Sending more comes back as a validation error listing every offending index,
+ * which is not a thing an operator can act on.
+ */
+describe('the row ceiling', () => {
+  /** A pasted CSV with `n` data rows. */
+  function csvWithRows(n: number): string {
+    const rows = Array.from({ length: n }, (_, i) => `98111${String(i).padStart(5, '0')},Buyer`);
+    return ['phone,name', ...rows].join('\n');
+  }
+
+  it('blocks the import and says how to proceed', () => {
+    paste(csvWithRows(MAX_IMPORT_ROWS + 1));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/over the 5000-row limit/);
+    expect(screen.getByRole('button', { name: /import .* leads/i })).toBeDisabled();
+    expect(importMut.mutate).not.toHaveBeenCalled();
+  });
+
+  it('allows exactly the ceiling', () => {
+    paste(csvWithRows(MAX_IMPORT_ROWS));
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /import .* leads/i })).toBeEnabled();
   });
 });

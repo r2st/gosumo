@@ -36,6 +36,37 @@ const HEADER_ALIASES: Record<string, keyof CsvImportRow> = {
   project: 'listingRef',
 };
 
+/**
+ * Largest file this page will read into the tab.
+ *
+ * `file.text()` buffers the whole thing, `parseCsv` builds a row object per
+ * line, and React then renders a preview — three copies of whatever was picked,
+ * in the operator's browser. The `accept` attribute on the input is a filter in
+ * the file dialog and nothing more: it is trivially bypassed by switching the
+ * dialog to "All files" or by dropping a file, so a mis-picked video became a
+ * frozen or killed tab with no explanation. 5 MB is roughly ten times the
+ * largest import the API will accept.
+ */
+export const MAX_CSV_FILE_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Rows the API accepts in one import (`CsvImportDto`'s `@ArrayMaxSize`).
+ *
+ * Enforced here as well so an over-long file is reported as "too many rows"
+ * before the request, rather than coming back as a validation error listing
+ * every offending index.
+ */
+export const MAX_IMPORT_ROWS = 5000;
+
+/** Extensions/MIME types a CSV may plausibly arrive as, across browsers and OSes. */
+const CSV_MIME_TYPES = ['text/csv', 'application/csv', 'text/plain', ''];
+
+/** Whether `file` looks like a CSV — by extension first, since MIME types vary wildly. */
+export function isCsvFile(file: { name: string; type: string }): boolean {
+  if (file.name.toLowerCase().endsWith('.csv')) return true;
+  return CSV_MIME_TYPES.includes(file.type);
+}
+
 /** Minimal, quoted-field-aware CSV line splitter. */
 function splitLine(line: string): string[] {
   const out: string[] = [];
@@ -80,6 +111,7 @@ function parseCsv(text: string): CsvImportRow[] {
 
 export default function ImportPage() {
   const [text, setText] = useState('');
+  const [fileError, setFileError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const importMut = useImportCsv();
   // POST /realty/leads/import is an undecorated write — STAFF and above. The
@@ -87,10 +119,23 @@ export default function ImportPage() {
   const { canWrite } = usePermissions();
 
   const rows = useMemo(() => parseCsv(text), [text]);
+  const tooManyRows = rows.length > MAX_IMPORT_ROWS;
   const result = importMut.data;
 
   const onFile = async (file: File | undefined) => {
     if (!file) return;
+    if (!isCsvFile(file)) {
+      setFileError(`"${file.name}" is not a CSV. Export the sheet as .csv and try again.`);
+      return;
+    }
+    if (file.size > MAX_CSV_FILE_BYTES) {
+      setFileError(
+        `"${file.name}" is ${(file.size / 1024 / 1024).toFixed(1)} MB — the limit is ` +
+          `${MAX_CSV_FILE_BYTES / 1024 / 1024} MB. Split it into smaller files.`,
+      );
+      return;
+    }
+    setFileError(null);
     setText(await file.text());
   };
 
@@ -132,6 +177,12 @@ export default function ImportPage() {
             <span className="text-xs text-muted-foreground">or paste CSV below</span>
           </div>
 
+          {fileError && (
+            <p role="alert" className="text-xs text-danger">
+              {fileError}
+            </p>
+          )}
+
           <Textarea
             rows={8}
             placeholder={SAMPLE_CSV}
@@ -145,11 +196,22 @@ export default function ImportPage() {
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium">{rows.length} rows parsed</p>
                 {canWrite && (
-                  <Button loading={importMut.isPending} onClick={() => importMut.mutate(rows)}>
+                  <Button
+                    loading={importMut.isPending}
+                    disabled={tooManyRows}
+                    onClick={() => importMut.mutate(rows)}
+                  >
                     <Upload className="h-4 w-4" /> Import {rows.length} leads
                   </Button>
                 )}
               </div>
+
+              {tooManyRows && (
+                <p role="alert" className="text-xs text-danger">
+                  {rows.length} rows is over the {MAX_IMPORT_ROWS}-row limit for one import.
+                  Split the file and import it in batches.
+                </p>
+              )}
 
               <div className="overflow-x-auto rounded-lg border border-border">
                 <Table>

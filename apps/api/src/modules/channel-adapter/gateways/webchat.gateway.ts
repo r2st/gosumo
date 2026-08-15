@@ -55,6 +55,96 @@ interface SessionContext {
 export const WEBCHAT_MAX_MESSAGE_CHARS = 4096;
 
 /**
+ * Largest frame Engine.IO will accept on this namespace, in bytes.
+ *
+ * {@link WEBCHAT_MAX_MESSAGE_CHARS} is an *application* ceiling: it is checked
+ * inside `chat:message`, which is to say after the transport has buffered the
+ * whole frame and the parser has turned it into an object. Engine.IO's own
+ * default is 1 MB, so every rejected message still cost a megabyte of buffer
+ * and a megabyte of JSON parsing first — and `chat:init`, which has no length
+ * ceiling of its own, could be sent at that size indefinitely.
+ *
+ * 32 KB is the transport-level backstop: comfortably above 4096 characters
+ * even when every one of them is a 4-byte emoji, plus the event name and the
+ * JSON envelope, and small enough that a socket flooding oversized frames is
+ * refused by the transport rather than by us.
+ */
+export const WEBCHAT_MAX_FRAME_BYTES = 32 * 1024;
+
+/**
+ * Longest `widgetId` and session token the gateway will even look at.
+ *
+ * A widget id is a UUID (36 chars) and a session token is a base64url payload
+ * plus a 64-char hex digest (~200). Both bounds are slack, and both exist so a
+ * frame under {@link WEBCHAT_MAX_FRAME_BYTES} still cannot spend 32 KB inside a
+ * database query or an HMAC.
+ */
+export const WEBCHAT_MAX_WIDGET_ID_CHARS = 128;
+export const WEBCHAT_MAX_SESSION_TOKEN_CHARS = 512;
+
+/**
+ * Concurrent sockets one caller IP may hold open on this namespace.
+ *
+ * `WebChatThrottle` rations *events* — init attempts, new sessions, messages —
+ * which leaves the connection itself free. A client that connects and then says
+ * nothing is charged nothing by any of those buckets, yet each socket costs an
+ * Engine.IO session, its buffers, and an entry in Socket.IO's own maps for as
+ * long as it is held. Opening them in a loop was an unrationed way to exhaust
+ * the process without ever emitting an event.
+ *
+ * Set well above what a real caller spends — one browser tab is one socket, and
+ * even a carrier-NAT'd or office-NAT'd group of visitors to one small business's
+ * site stays far below this — and far below what makes holding sockets useful.
+ */
+export const WEBCHAT_MAX_SOCKETS_PER_IP = 50;
+
+/** A validated `chat:init` body. */
+export interface WebChatInitPayload {
+  widgetId: string;
+  sessionId?: string;
+}
+
+/**
+ * Read a `chat:init` body, or `null` when it is not one.
+ *
+ * Socket.IO hands the handler whatever JSON the client sent — the global
+ * `ValidationPipe` only sees HTTP routes — and the declared parameter type is a
+ * compile-time fiction. Two things went wrong without this:
+ *
+ *  - **A non-object body** (`null`, a number, a bare string) threw on the first
+ *    property read, so a malformed frame became an exception rather than a
+ *    refusal.
+ *  - **A non-string `widgetId` selected the tenant.** The value is passed
+ *    straight to `channel_accounts.findFirst({ where: { id: widgetId } })`,
+ *    and Prisma accepts a filter object there as readily as a string. A visitor
+ *    sending `{"not": "00000000-0000-0000-0000-000000000000"}` therefore matched
+ *    *some other business's* active web-chat account, and the handler went on to
+ *    create a client row under that business's `business_id`. The widget id is
+ *    the only thing standing between an anonymous socket and a tenant, so it has
+ *    to be a string before it reaches a query.
+ *
+ * `sessionId` is dropped rather than rejected when malformed: an unusable token
+ * already means "start a fresh session", and that is exactly what a missing one
+ * does.
+ */
+export function readInitPayload(data: unknown): WebChatInitPayload | null {
+  if (typeof data !== "object" || data === null) return null;
+
+  const { widgetId, sessionId } = data as Record<string, unknown>;
+  if (typeof widgetId !== "string") return null;
+  if (widgetId.length === 0 || widgetId.length > WEBCHAT_MAX_WIDGET_ID_CHARS) return null;
+
+  const token =
+    typeof sessionId === "string" &&
+    sessionId.length > 0 &&
+    sessionId.length <= WEBCHAT_MAX_SESSION_TOKEN_CHARS
+      ? sessionId
+      : undefined;
+
+  return token === undefined ? { widgetId } : { widgetId, sessionId: token };
+}
+
+/**
  * Where the web-chat widget may be embedded, from `WEBCHAT_ALLOWED_ORIGINS`
  * (comma-separated), defaulting to anywhere.
  *
@@ -79,6 +169,7 @@ export function webChatCorsOptions(
 @WebSocketGateway({
   namespace: "/webchat",
   cors: webChatCorsOptions(),
+  maxHttpBufferSize: WEBCHAT_MAX_FRAME_BYTES,
 })
 export class WebChatGateway
   implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy
@@ -96,6 +187,19 @@ export class WebChatGateway
 
   /** Map sessionId -> business/client/conversation context */
   private readonly sessionContext = new Map<string, SessionContext>();
+
+  /**
+   * Map socket.id -> the caller IP it was counted against.
+   *
+   * Recorded at connect rather than re-derived at disconnect: the count has to
+   * come back down under exactly the key it went up under, and a header that
+   * read differently on the way out would leak a slot per socket — turning the
+   * ceiling below into a permanent lockout for that caller.
+   */
+  private readonly socketIp = new Map<string, string>();
+
+  /** Live socket count per caller IP — the quantity {@link WEBCHAT_MAX_SOCKETS_PER_IP} bounds. */
+  private readonly socketsPerIp = new Map<string, number>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -116,6 +220,29 @@ export class WebChatGateway
       headers: client.handshake?.headers,
       ip: client.handshake?.address,
     });
+  }
+
+  /**
+   * Give a disconnecting socket's slot back to its caller.
+   *
+   * The map entry is dropped once the count reaches zero, so an IP that comes
+   * and goes leaves nothing resident — the key space is caller-controlled, and
+   * a per-IP counter that only ever grew would be the leak the ceiling exists
+   * to prevent.
+   */
+  private releaseConnectionSlot(socketId: string): void {
+    const ip = this.socketIp.get(socketId);
+    if (!ip) return;
+    this.socketIp.delete(socketId);
+
+    const live = (this.socketsPerIp.get(ip) ?? 1) - 1;
+    if (live <= 0) this.socketsPerIp.delete(ip);
+    else this.socketsPerIp.set(ip, live);
+  }
+
+  /** Sockets currently counted against `ip` — the ceiling's view, for tests. */
+  liveSocketsFor(ip: string): number {
+    return this.socketsPerIp.get(ip) ?? 0;
   }
 
   /**
@@ -195,12 +322,38 @@ export class WebChatGateway
     return delivered > 0;
   }
 
+  /**
+   * Count this socket against its caller, and refuse it once that caller is
+   * already holding {@link WEBCHAT_MAX_SOCKETS_PER_IP}.
+   *
+   * The refusal happens here, before any handler runs, because a socket that
+   * never emits an event is invisible to every bucket in `WebChatThrottle` —
+   * connecting *is* the cost being rationed.
+   */
   handleConnection(client: Socket): void {
-    const widgetId = client.handshake.query.widgetId as string;
+    const widgetId = client.handshake.query?.widgetId as string;
+    const ip = this.callerIp(client);
+
+    if (ip) {
+      const live = this.socketsPerIp.get(ip) ?? 0;
+      if (live >= WEBCHAT_MAX_SOCKETS_PER_IP) {
+        this.logger.warn(
+          "WebChat connection limit reached — refusing socket " + client.id +
+          " (caller already holds " + live + ")",
+        );
+        client.disconnect(true);
+        return;
+      }
+      this.socketsPerIp.set(ip, live + 1);
+      this.socketIp.set(client.id, ip);
+    }
+
     this.logger.log("WebChat client connected: " + client.id + " widgetId=" + (widgetId || "none"));
   }
 
   handleDisconnect(client: Socket): void {
+    this.releaseConnectionSlot(client.id);
+
     const sessionId = this.socketToSession.get(client.id);
     this.socketToSession.delete(client.id);
 
@@ -232,9 +385,20 @@ export class WebChatGateway
   @SubscribeMessage("chat:init")
   async handleInit(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { widgetId: string; sessionId?: string },
+    @MessageBody() data: unknown,
   ): Promise<{ sessionId: string; greeting: string }> {
-    const widgetId = data.widgetId;
+    // Before anything else, and before the throttle: an unusable body should
+    // cost nothing and reach nothing. `widgetId` in particular decides which
+    // tenant this socket ends up writing under, so it is a string here or the
+    // frame is refused — see `readInitPayload`.
+    const payload = readInitPayload(data);
+    if (!payload) {
+      this.logger.warn(
+        "Rejected chat:init from socket " + client.id + " with a malformed body",
+      );
+      return { sessionId: "", greeting: "Widget not found" };
+    }
+    const widgetId = payload.widgetId;
 
     // Charged before the lookup below, because the lookup is itself the cost
     // being rationed: an unknown widgetId returns early, so every other ceiling
@@ -279,8 +443,8 @@ export class WebChatGateway
     // that fails simply starts a fresh one.
     let sessionId: string;
     let isNewSession: boolean;
-    if (data.sessionId) {
-      const verified = verifyWebChatSession(data.sessionId, secret, widgetId);
+    if (payload.sessionId) {
+      const verified = verifyWebChatSession(payload.sessionId, secret, widgetId);
       if (verified) {
         sessionId = verified.sessionId;
         isNewSession = false;
@@ -388,11 +552,20 @@ export class WebChatGateway
   @SubscribeMessage("chat:message")
   async handleMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { sessionId?: string; text: string },
+    @MessageBody() data: unknown,
   ): Promise<{ received: boolean; messageId: string }> {
-    const text = data.text;
     const messageId = generateId();
     const correlationId = generateCorrelationId();
+
+    // The body is whatever JSON the client sent — including `null` or a bare
+    // string, on which the property read below throws rather than refusing.
+    if (typeof data !== "object" || data === null) {
+      this.logger.warn(
+        "Rejected chat:message from socket " + client.id + " with a non-object body",
+      );
+      return { received: false, messageId };
+    }
+    const text = (data as Record<string, unknown>).text;
 
     // `data` is parsed from a socket frame, so nothing upstream has checked
     // that `text` is even a string — the global `ValidationPipe` covers HTTP

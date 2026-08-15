@@ -7,6 +7,7 @@ import {
   IsInt,
   IsArray,
   IsNotEmpty,
+  IsUrl,
   Min,
   Max,
   MaxLength,
@@ -272,14 +273,28 @@ export class SetAvailabilityDto {
 // ASSET DTOs
 // ─────────────────────────────────────────────
 
+/** Generous for a real CDN link, bounded for a `@db.Text` column. */
+export const MAX_ASSET_URL_LENGTH = 2048;
+
 export class CreateAssetDto {
   @ApiProperty({ enum: RealtyAssetType })
   @IsEnum(RealtyAssetType)
   type!: RealtyAssetType;
 
-  @ApiPropertyOptional({ description: 'Public/CDN URL of the asset' })
+  /**
+   * The scheme check is the point, not tidiness. This value is stored verbatim
+   * and rendered by the dashboard as `<a href={asset.url}>Open</a>`, so a
+   * brochure published as `javascript:…` is script that runs in an operator's
+   * session the moment a colleague clicks it — a STAFF member reaching an OWNER
+   * through a link the product told them to trust. `data:` and `file:` are the
+   * same shape of problem. An asset is a document somewhere on the web; saying
+   * so in the DTO is what keeps it one.
+   */
+  @ApiPropertyOptional({ description: 'Public/CDN URL of the asset (http/https only)' })
   @IsOptional()
   @IsString()
+  @MaxLength(MAX_ASSET_URL_LENGTH)
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   url?: string;
 
   @ApiPropertyOptional({ description: 'WhatsApp media id for instant re-send' })

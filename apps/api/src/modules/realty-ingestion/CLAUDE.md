@@ -25,7 +25,7 @@ All merge logic lives in `RealtyLeadsService.ingestLead` (one buyer, one history
 ## Security
 
 - **Meta webhook:** `X-Hub-Signature-256` HMAC-SHA256 verified against `whatsapp.appSecret` (root rule #3). Invalid → log + discard, still 200 (no Meta retry storm).
-- **Portal webhook:** `X-Portal-Token` shared secret (`realty.portalIngestToken`); mismatch → 401.
+- **Portal webhook:** `X-Portal-Token` shared secret (`realty.portalIngestToken`); mismatch → 401. `text`/`html` are capped at `MAX_PORTAL_EMAIL_BODY_LENGTH` (100 KB each) — `parsePortalEmail` regex-scans whatever arrives on a `@Public()` route, and the request body limit is not a statement about what an enquiry email is.
 - `businessId` on webhooks comes from the `x-business-id` header set by the gateway (channel-adapter convention).
 
 ## Recovery (webhook DLQ)

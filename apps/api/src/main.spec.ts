@@ -14,6 +14,7 @@ jest.mock('@nestjs/core', () => {
     setGlobalPrefix: jest.fn(),
     enableCors: jest.fn(),
     use: jest.fn(),
+    useBodyParser: jest.fn(),
     getHttpAdapter: jest.fn().mockReturnValue({
       getInstance: jest.fn().mockReturnValue({ disable: jest.fn() }),
     }),
@@ -56,8 +57,10 @@ import { AppModule } from './app.module';
 import {
   HEADERS_TIMEOUT_MS,
   KEEP_ALIVE_TIMEOUT_MS,
+  MAX_REQUEST_BODY_BYTES,
   SHUTDOWN_SIGNALS,
   allowCredentials,
+  applyBodyLimits,
   configureHttpServerLifecycle,
   isProduction,
   resolveCorsOrigin,
@@ -98,6 +101,61 @@ describe('bootstrap (main.ts)', () => {
 
     expect(app.enableShutdownHooks).toHaveBeenCalled();
     expect(app.listen).toHaveBeenCalled();
+  });
+
+  it('bounds the request body instead of inheriting body-parser default', async () => {
+    // 100 KB was never chosen — and CsvImportDto advertises 5000 rows, which
+    // is roughly 400 KB of JSON, so the API's own documented ceiling was
+    // unreachable behind a bare 413 from the parser.
+    const app = await (NestFactory.create as jest.Mock).mock.results[0]?.value;
+
+    expect(app.useBodyParser).toHaveBeenCalledWith(
+      'json',
+      expect.objectContaining({ limit: MAX_REQUEST_BODY_BYTES }),
+    );
+    expect(app.useBodyParser).toHaveBeenCalledWith(
+      'urlencoded',
+      expect.objectContaining({ limit: MAX_REQUEST_BODY_BYTES }),
+    );
+  });
+
+  it('installs the body parsers after the security headers', async () => {
+    // A 413 from body-parser never reaches a controller or the global
+    // exception filter — Express's own final handler answers it. Registering
+    // the parsers after the header middleware is what keeps nosniff and the
+    // CSP on that response; swapping the order strips them.
+    const app = await (NestFactory.create as jest.Mock).mock.results[0]?.value;
+
+    const headersAt = (app.use as jest.Mock).mock.invocationCallOrder[0];
+    const parserAt = (app.useBodyParser as jest.Mock).mock.invocationCallOrder[0];
+    expect(headersAt).toBeLessThan(parserAt!);
+  });
+
+  describe('applyBodyLimits', () => {
+    it('passes extended: true to urlencoded, matching Nest own registration', () => {
+      // The only intended difference from the default setup is the ceiling —
+      // dropping `extended` would quietly change how nested keys parse.
+      const app = { useBodyParser: jest.fn() };
+      applyBodyLimits(app);
+
+      expect(app.useBodyParser).toHaveBeenCalledWith('urlencoded', {
+        limit: MAX_REQUEST_BODY_BYTES,
+        extended: true,
+      });
+    });
+
+    it('honours an explicit limit', () => {
+      const app = { useBodyParser: jest.fn() };
+      applyBodyLimits(app, 4096);
+
+      expect(app.useBodyParser).toHaveBeenCalledWith('json', { limit: 4096 });
+    });
+
+    it('sets a ceiling above the largest body any DTO permits', () => {
+      // CsvImportDto: 5000 rows × ~80 bytes. The bound on *work* stays with
+      // the DTOs; this is the bound on bytes, charged before they run.
+      expect(MAX_REQUEST_BODY_BYTES).toBeGreaterThan(5000 * 80);
+    });
   });
 
   describe('resolveCorsOrigin', () => {

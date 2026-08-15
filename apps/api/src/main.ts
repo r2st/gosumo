@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
@@ -76,6 +77,52 @@ export const KEEP_ALIVE_TIMEOUT_MS = 65_000;
  */
 export const HEADERS_TIMEOUT_MS = 70_000;
 
+/**
+ * Largest request body the API will read, for every content type.
+ *
+ * Until this was set the limit was body-parser's default of 100 KB — a bound
+ * nobody chose, and one the API's own contract already exceeded:
+ * `CsvImportDto` advertises `@ArrayMaxSize(5000)` rows, and 5000 lead rows is
+ * roughly 400 KB of JSON, so a full-size import was refused with a bare 413
+ * from the parser rather than by anything that could explain itself. The
+ * documented ceiling was unreachable and the real one was invisible.
+ *
+ * 1 MB is set deliberately above every DTO's own declared maximum and far
+ * below what a body this process should buffer: nothing here receives file
+ * bytes (media is uploaded out of band and only its metadata is posted), so no
+ * legitimate request is anywhere near it. The per-DTO caps — `ArrayMaxSize`,
+ * `MaxLength` — remain the bound on *work*; this is the bound on *bytes*, which
+ * is charged before any of them get to run.
+ *
+ * Applied after {@link securityHeaders} so that a 413 from the parser, which
+ * never reaches a controller or the global exception filter, still carries
+ * them. Express's own final handler answers it, and omits the stack when
+ * `NODE_ENV=production`.
+ */
+export const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
+
+/** The `useBodyParser` surface this file needs — kept narrow so it is mockable. */
+export interface BodyParserConfigurableApp {
+  useBodyParser(
+    parser: 'json' | 'urlencoded' | 'text' | 'raw',
+    options?: Record<string, unknown>,
+  ): unknown;
+}
+
+/**
+ * Install the JSON and urlencoded parsers at {@link MAX_REQUEST_BODY_BYTES}.
+ *
+ * `extended: true` mirrors what Nest's own registration passes, so the only
+ * difference from the default setup is the ceiling.
+ */
+export function applyBodyLimits(
+  app: BodyParserConfigurableApp,
+  limit: number = MAX_REQUEST_BODY_BYTES,
+): void {
+  app.useBodyParser('json', { limit });
+  app.useBodyParser('urlencoded', { limit, extended: true });
+}
+
 /** The bits of `http.Server` this file touches — kept narrow so it is mockable. */
 export interface LifecycleHttpServer {
   keepAliveTimeout?: number;
@@ -145,7 +192,7 @@ async function bootstrap() {
 
   runStartupChecks(logger);
 
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: ['error', 'warn', 'log', 'debug', 'verbose'],
     rawBody: true,
   });
@@ -161,6 +208,14 @@ async function bootstrap() {
   app.use(securityHeaders({ hsts: isProduction() }));
   // Express's default advertisement of what is running here. Free to remove.
   app.getHttpAdapter().getInstance().disable?.('x-powered-by');
+
+  // Body size ceiling, registered here rather than left to body-parser's 100 KB
+  // default (see MAX_REQUEST_BODY_BYTES). Registering a parser now claims the
+  // slot: Nest's own `registerParserMiddleware` runs at init and skips a parser
+  // that is already applied, so these are the only ones installed — and they
+  // inherit `rawBody: true` from the factory options, which the webhook HMAC
+  // checks depend on.
+  applyBodyLimits(app);
 
   // CORS
   const corsOrigin = resolveCorsOrigin();
