@@ -60,6 +60,8 @@ pnpm --filter @gosumo/api test --testPathPattern=modules/payment
 
 ## Key Gotchas
 
+- **Webhook idempotency keys name the event's *subject*, not whatever entity rode along.** Razorpay sends every entity an event touches — a `refund.processed` carries `payload.refund` *and* `payload.payment` — and `external_id` is unique in `webhook_events`, so a key that reaches for the payment first makes two partial refunds on one payment collide and silently discards the second. `deriveWebhookExternalId` picks by the event's namespace (`refund.*` → refund, `payment_link.*` → link, `payment.*` → payment) and falls back to a payload digest, never a constant.
+
 - **Razorpay webhook signature MUST be verified** with HMAC-SHA256 using `RAZORPAY_WEBHOOK_SECRET` before processing any event — `razorpay.service.ts` owns this check
 - **Webhook idempotency:** `webhook_events` table has unique constraint on `(source, external_id)` — duplicate Razorpay webhook deliveries are silently ignored
 - **Refund policy enforcement:** refund amount cannot exceed the payment's **refundable balance** AND cannot exceed `business_policies.maxRefundAmountPaise` — both checks happen before calling Razorpay

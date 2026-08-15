@@ -1782,12 +1782,94 @@ describe('PaymentService', () => {
       );
     });
 
-    it('falls back to "unknown" when the payload carries no entity at all', async () => {
-      await service.handleRazorpayWebhook(rzpPayload('order.paid', {}), 'sig');
+    // The bug this pins: Razorpay's `refund.processed` payload carries the
+    // parent payment alongside the refund, and the key used to prefer the
+    // payment. Two partial refunds against one payment then produced the same
+    // external_id, so the second was written off as a duplicate and never
+    // processed — the refund stayed PENDING with no event emitted.
+    it('keys refund.processed on the refund, not the payment it came from', async () => {
+      repository.findRefundByGatewayId.mockResolvedValue(null as never);
+
+      const partialRefund = (refundId: string) =>
+        rzpPayload('refund.processed', {
+          refund: { entity: { id: refundId, payment_id: 'pay_shared', amount: 5000 } },
+          payment: { entity: { id: 'pay_shared', amount: 10000 } },
+        });
+
+      await service.handleRazorpayWebhook(partialRefund('rfnd_first'), 'sig');
+      await service.handleRazorpayWebhook(partialRefund('rfnd_second'), 'sig');
+
+      const keys = repository.recordWebhookEvent.mock.calls.map(
+        (call) => (call[0] as { externalId: string }).externalId,
+      );
+      expect(keys).toEqual(['refund.processed_rfnd_first', 'refund.processed_rfnd_second']);
+    });
+
+    // Same shape on the other side: `payment_link.paid` carries the settling
+    // payment too, so the key has to stay pinned to the link.
+    it('keys payment_link.paid on the link even when a payment entity rides along', async () => {
+      repository.findPaymentByLinkId.mockResolvedValue(null as never);
+
+      await service.handleRazorpayWebhook(
+        rzpPayload('payment_link.paid', {
+          payment_link: { entity: { id: 'plink_z' } },
+          payment: { entity: { id: 'pay_z' } },
+        }),
+        'sig',
+      );
 
       expect(repository.recordWebhookEvent).toHaveBeenCalledWith(
-        expect.objectContaining({ externalId: 'order.paid_unknown' }),
+        expect.objectContaining({ externalId: 'payment_link.paid_plink_z' }),
       );
+    });
+
+    it('keys payment.* events on the payment even when a refund rides along', async () => {
+      repository.findPaymentByGatewayId.mockResolvedValue(null as never);
+
+      await service.handleRazorpayWebhook(
+        rzpPayload('payment.captured', {
+          payment: { entity: { id: 'pay_c' } },
+          refund: { entity: { id: 'rfnd_c' } },
+        }),
+        'sig',
+      );
+
+      expect(repository.recordWebhookEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ externalId: 'payment.captured_pay_c' }),
+      );
+    });
+
+    // An unrecognised namespace still has to produce a key that identifies the
+    // event. The old constant fallback ("…_unknown") meant the first such
+    // event claimed the row and every later one of that type was discarded.
+    it('gives entity-less events of the same type distinct keys', async () => {
+      await service.handleRazorpayWebhook(
+        rzpPayload('order.paid', { order: { entity: { id: 'order_a' } } }),
+        'sig',
+      );
+      await service.handleRazorpayWebhook(
+        rzpPayload('order.paid', { order: { entity: { id: 'order_b' } } }),
+        'sig',
+      );
+
+      const keys = repository.recordWebhookEvent.mock.calls.map(
+        (call) => (call[0] as { externalId: string }).externalId,
+      );
+      expect(keys[0]).toMatch(/^order\.paid_[0-9a-f]{32}$/);
+      expect(keys[1]).toMatch(/^order\.paid_[0-9a-f]{32}$/);
+      expect(keys[0]).not.toEqual(keys[1]);
+    });
+
+    it('gives a byte-identical redelivery the same key, so it still dedupes', async () => {
+      const body = rzpPayload('order.paid', { order: { entity: { id: 'order_a' } } });
+
+      await service.handleRazorpayWebhook(body, 'sig');
+      await service.handleRazorpayWebhook(body, 'sig');
+
+      const keys = repository.recordWebhookEvent.mock.calls.map(
+        (call) => (call[0] as { externalId: string }).externalId,
+      );
+      expect(keys[0]).toEqual(keys[1]);
     });
   });
 

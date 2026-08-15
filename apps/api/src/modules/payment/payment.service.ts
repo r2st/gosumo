@@ -6,6 +6,8 @@ import {
   OnModuleInit,
   UnauthorizedException,
 } from '@nestjs/common';
+import { createHash } from 'crypto';
+
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { ConfigService } from '@nestjs/config';
 import type { payments, refunds } from '@prisma/client';
@@ -1488,16 +1490,64 @@ export class PaymentService implements OnModuleInit {
   // ─────────────────────────────────────────────
 
   /**
-   * Derive a unique external ID from a Razorpay webhook for idempotency.
+   * Derive the idempotency key for a Razorpay webhook.
+   *
+   * This key is the whole of our replay defence: `recordWebhookEvent` writes it
+   * to `webhook_events.external_id` under a unique constraint, and anything
+   * that collides with an existing row is discarded unprocessed. So the key has
+   * to name *the thing the event happened to* — nothing coarser.
+   *
+   * Razorpay sends every entity an event touches, not just its subject. A
+   * `refund.processed` payload carries `payload.refund` **and**
+   * `payload.payment` (its `contains` array lists both), and a
+   * `payment_link.paid` carries the link and the payment that settled it.
+   * Reaching for `payload.payment.entity.id` first therefore keyed a refund on
+   * the *payment* it came from: two partial refunds against one payment both
+   * derived `refund.processed_pay_XXX`, the second was written off as a
+   * duplicate, and that refund stayed PENDING forever with no
+   * `payment.refund.completed` ever emitted — money the customer was told had
+   * been returned, and no error anywhere to say otherwise.
+   *
+   * The event name already says which entity is the subject: everything before
+   * the first `.` is Razorpay's entity namespace (`refund.processed` →
+   * `refund`). Use that entity's id, and fall back most-specific-first only
+   * when the namespace is one we do not know.
    */
   private deriveWebhookExternalId(data: RazorpayWebhookPayload): string {
-    const event = data.event;
-    const paymentId =
-      data.payload.payment?.entity?.id ??
-      data.payload.payment_link?.entity?.id ??
-      data.payload.refund?.entity?.id ??
-      'unknown';
-    return `${event}_${paymentId}`;
+    const event = data.event ?? 'unknown';
+    const entities = data.payload ?? {};
+
+    const refundId = entities.refund?.entity?.id;
+    const paymentId = entities.payment?.entity?.id;
+    const linkId = entities.payment_link?.entity?.id;
+
+    const subject =
+      event.split('.')[0] === 'refund'
+        ? refundId
+        : event.split('.')[0] === 'payment_link'
+          ? linkId
+          : event.split('.')[0] === 'payment'
+            ? paymentId
+            : undefined;
+
+    const entityId = subject ?? refundId ?? paymentId ?? linkId;
+    if (entityId) return `${event}_${entityId}`;
+
+    // No entity we recognise. A constant here (this was `'unknown'`) is worse
+    // than useless: the first such event claims `${event}_unknown` and every
+    // later one of that type — a different order, a different subscription —
+    // collides with it and is silently dropped for the life of the row. A
+    // digest of the payload keeps genuine redeliveries (identical bytes)
+    // deduping while letting distinct events through.
+    return `${event}_${this.payloadDigest(data)}`;
+  }
+
+  /** Short, stable content digest — the last-resort idempotency key. */
+  private payloadDigest(data: RazorpayWebhookPayload): string {
+    return createHash('sha256')
+      .update(JSON.stringify(data.payload ?? {}))
+      .digest('hex')
+      .slice(0, 32);
   }
 
   /**
