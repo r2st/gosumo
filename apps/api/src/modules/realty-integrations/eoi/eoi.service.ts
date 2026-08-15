@@ -277,19 +277,40 @@ export class EoiService {
     return this.map(eoi);
   }
 
-  /** Settle an EOI as PAID and advance its lead's stage. Idempotent. */
+  /**
+   * Settle an EOI as PAID and advance its lead's stage. Idempotent under
+   * concurrency, which is the only kind that matters here.
+   *
+   * Two settlements race routinely: Razorpay redelivers `payment_link.paid`
+   * whenever our response is slow, and `POST /:id/reconcile` exists to be used
+   * exactly when a webhook looks like it went missing — so an operator clicking
+   * it while the webhook is in flight is the designed-for case, not an exotic
+   * one. This used to guard on `eoi.status` from a row read *before* the write,
+   * so both callers passed the check, both wrote PAID, and both did everything
+   * below it: the lead was advanced twice and `realty.eoi.paid` was emitted
+   * twice, double-counting a booking that happened once.
+   *
+   * The claim is now made in the database, and only the caller that wins it
+   * does the rest.
+   */
   private async markPaid(
     businessId: string,
     eoi: realty_eoi_requests,
     gatewayPaymentId?: string,
   ): Promise<realty_eoi_requests> {
-    if (eoi.status === RealtyEoiStatus.PAID) return eoi;
+    const { eoi: updated, claimed } = await this.repository.settleEoiAsPaid(
+      businessId,
+      eoi.id,
+      gatewayPaymentId ?? null,
+      new Date(),
+    );
 
-    const updated = await this.repository.updateEoi(businessId, eoi.id, {
-      status: RealtyEoiStatus.PAID,
-      paidAt: new Date(),
-      gatewayPaymentId: gatewayPaymentId ?? null,
-    });
+    if (!claimed) {
+      this.logger.log(
+        `EOI ${eoi.id} was already settled — skipping duplicate stage advance and event`,
+      );
+      return updated;
+    }
 
     // Advance the lead — a paid token is a strong buying signal.
     try {

@@ -419,6 +419,105 @@ describe('RealtyIntegrationsRepository', () => {
     });
   });
 
+  /**
+   * The settlement claim.
+   *
+   * Two settlements race here as a matter of course: Razorpay redelivers
+   * `payment_link.paid` whenever our response is slow, and the operator-facing
+   * reconcile route exists to be used exactly when a webhook looks missing, so
+   * the two run concurrently by design. Deciding "already paid?" from a row read
+   * before the write lets both callers pass the check, both write PAID, and both
+   * advance the lead and emit `realty.eoi.paid` — double-counting token money
+   * that was paid once.
+   *
+   * The `status: { not: PAID }` predicate is what makes the answer trustworthy:
+   * under READ COMMITTED the loser blocks on the row lock, re-evaluates once the
+   * winner commits, and matches nothing.
+   */
+  describe('settleEoiAsPaid', () => {
+    const PAID_AT = new Date('2026-08-15T09:00:00Z');
+
+    beforeEach(() => {
+      prisma.realty_eoi_requests.findFirst.mockResolvedValue({ id: EOI_ID });
+      prisma.realty_eoi_requests.updateMany.mockResolvedValue({ count: 1 });
+    });
+
+    it('only claims a row that is not already paid', async () => {
+      await repository.settleEoiAsPaid(BUSINESS_ID, EOI_ID, 'pay_1', PAID_AT);
+
+      expect(argsOf(prisma.realty_eoi_requests.updateMany).where).toEqual({
+        id: EOI_ID,
+        business_id: BUSINESS_ID,
+        status: { not: 'PAID' },
+      });
+    });
+
+    it('still scopes the write to the tenant', async () => {
+      // The webhook driving this is @Public(); the tenant comes from the stored
+      // EOI, and this guard is what keeps a link id from settling another
+      // business's row.
+      await repository.settleEoiAsPaid(BUSINESS_ID, EOI_ID, 'pay_1', PAID_AT);
+
+      expect(argsOf(prisma.realty_eoi_requests.updateMany).where).toMatchObject({
+        business_id: BUSINESS_ID,
+      });
+    });
+
+    it('reports the claim when it moved the row', async () => {
+      prisma.realty_eoi_requests.updateMany.mockResolvedValue({ count: 1 });
+
+      const result = await repository.settleEoiAsPaid(BUSINESS_ID, EOI_ID, 'pay_1', PAID_AT);
+
+      expect(result.claimed).toBe(true);
+    });
+
+    /**
+     * The whole point. A caller told `false` must not re-emit the paid event or
+     * re-advance the lead — that is the only thing standing between a redelivered
+     * webhook and a double-counted booking.
+     */
+    it('reports no claim when another caller got there first', async () => {
+      prisma.realty_eoi_requests.updateMany.mockResolvedValue({ count: 0 });
+
+      const result = await repository.settleEoiAsPaid(BUSINESS_ID, EOI_ID, 'pay_1', PAID_AT);
+
+      expect(result.claimed).toBe(false);
+      // It still returns the row, so the caller has the settled state to map.
+      expect(result.eoi).toBeTruthy();
+    });
+
+    it('records the paid timestamp and the gateway payment id', async () => {
+      await repository.settleEoiAsPaid(BUSINESS_ID, EOI_ID, 'pay_1', PAID_AT);
+
+      expect(argsOf(prisma.realty_eoi_requests.updateMany).data).toEqual({
+        status: 'PAID',
+        paid_at: PAID_AT,
+        gateway_payment_id: 'pay_1',
+      });
+    });
+
+    /**
+     * A reconcile that could not read a payment id must not blank the one the
+     * webhook already recorded — the two paths settle the same row and only one
+     * of them is guaranteed to know the payment.
+     */
+    it('leaves the payment id alone when the gateway named none', async () => {
+      await repository.settleEoiAsPaid(BUSINESS_ID, EOI_ID, null, PAID_AT);
+
+      const data = argsOf(prisma.realty_eoi_requests.updateMany).data as Record<string, unknown>;
+      expect(data).toEqual({ status: 'PAID', paid_at: PAID_AT });
+      expect('gateway_payment_id' in data).toBe(false);
+    });
+
+    it('throws when the row cannot be re-read', async () => {
+      prisma.realty_eoi_requests.findFirst.mockResolvedValue(null);
+
+      await expect(
+        repository.settleEoiAsPaid(BUSINESS_ID, EOI_ID, 'pay_1', PAID_AT),
+      ).rejects.toBeInstanceOf(ResourceNotFoundError);
+    });
+  });
+
   describe('updateEoi', () => {
     beforeEach(() => {
       prisma.realty_eoi_requests.findFirst.mockResolvedValue({ id: EOI_ID });

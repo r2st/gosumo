@@ -65,6 +65,9 @@ describe('EoiService', () => {
       findEoiByPaymentLink: jest.fn(),
       findAnyEoiByPaymentLink: jest.fn(),
       updateEoi: jest.fn(),
+      // The settlement path claims PAID atomically instead of guarding on a
+      // status read before the write; `claimed` says whether this caller won.
+      settleEoiAsPaid: jest.fn(),
       listEoi: jest.fn(),
     } as unknown as jest.Mocked<RealtyIntegrationsRepository>;
     leads = {
@@ -226,17 +229,19 @@ describe('EoiService', () => {
       repo.findEoiByPaymentLink.mockResolvedValue(
         makeEoi({ status: RealtyEoiStatus.LINK_SENT, payment_link_id: 'plink_1' }),
       );
-      repo.updateEoi.mockResolvedValue(
-        makeEoi({ status: RealtyEoiStatus.PAID, payment_link_id: 'plink_1' }),
-      );
+      repo.settleEoiAsPaid.mockResolvedValue({
+        eoi: makeEoi({ status: RealtyEoiStatus.PAID, payment_link_id: 'plink_1' }),
+        claimed: true,
+      });
 
       const res = await service.handleRazorpayWebhook(paidPayload, 'sig');
 
       expect(res).toEqual({ handled: true });
-      expect(repo.updateEoi).toHaveBeenCalledWith(
+      expect(repo.settleEoiAsPaid).toHaveBeenCalledWith(
         BUSINESS_ID,
         EOI_ID,
-        expect.objectContaining({ status: RealtyEoiStatus.PAID, gatewayPaymentId: 'pay_1' }),
+        'pay_1',
+        expect.any(Date),
       );
       expect(leads.transitionStage).toHaveBeenCalledWith(BUSINESS_ID, LEAD_ID, {
         stage: LeadStage.NEGOTIATING,
@@ -269,7 +274,10 @@ describe('EoiService', () => {
         amountPaidPaise: 2500000,
         paymentId: 'pay_9',
       });
-      repo.updateEoi.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.PAID }));
+      repo.settleEoiAsPaid.mockResolvedValue({
+        eoi: makeEoi({ status: RealtyEoiStatus.PAID }),
+        claimed: true,
+      });
 
       const res = await service.reconcileEoi(BUSINESS_ID, EOI_ID);
 
@@ -341,7 +349,10 @@ describe('EoiService', () => {
       repo.findEoiByPaymentLink.mockResolvedValue(
         makeEoi({ status: RealtyEoiStatus.LINK_SENT, payment_link_id: 'plink_1' }),
       );
-      repo.updateEoi.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.PAID }));
+      repo.settleEoiAsPaid.mockResolvedValue({
+        eoi: makeEoi({ status: RealtyEoiStatus.PAID }),
+        claimed: true,
+      });
 
       await service.handleRazorpayWebhook(
         webhook({
@@ -363,7 +374,10 @@ describe('EoiService', () => {
       repo.findAnyEoiByPaymentLink.mockResolvedValue(
         makeEoi({ status: RealtyEoiStatus.LINK_SENT, payment_link_id: 'plink_1' }),
       );
-      repo.updateEoi.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.PAID }));
+      repo.settleEoiAsPaid.mockResolvedValue({
+        eoi: makeEoi({ status: RealtyEoiStatus.PAID }),
+        claimed: true,
+      });
 
       await service.handleRazorpayWebhook(
         webhook({
@@ -374,7 +388,12 @@ describe('EoiService', () => {
       );
 
       expect(repo.findAnyEoiByPaymentLink).toHaveBeenCalledWith('plink_1');
-      expect(repo.updateEoi).toHaveBeenCalledWith(BUSINESS_ID, EOI_ID, expect.anything());
+      expect(repo.settleEoiAsPaid).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        EOI_ID,
+        expect.anything(),
+        expect.any(Date),
+      );
     });
 
     it('writes against the tenant on the stored row, not the one in the payload', async () => {
@@ -385,7 +404,10 @@ describe('EoiService', () => {
       repo.findAnyEoiByPaymentLink.mockResolvedValue(
         makeEoi({ status: RealtyEoiStatus.LINK_SENT, business_id: BUSINESS_ID }),
       );
-      repo.updateEoi.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.PAID }));
+      repo.settleEoiAsPaid.mockResolvedValue({
+        eoi: makeEoi({ status: RealtyEoiStatus.PAID }),
+        claimed: true,
+      });
 
       await service.handleRazorpayWebhook(
         webhook({
@@ -395,8 +417,18 @@ describe('EoiService', () => {
         'sig',
       );
 
-      expect(repo.updateEoi).toHaveBeenCalledWith(BUSINESS_ID, EOI_ID, expect.anything());
-      expect(repo.updateEoi).not.toHaveBeenCalledWith(OTHER, expect.anything(), expect.anything());
+      expect(repo.settleEoiAsPaid).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        EOI_ID,
+        expect.anything(),
+        expect.any(Date),
+      );
+      expect(repo.settleEoiAsPaid).not.toHaveBeenCalledWith(
+        OTHER,
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+      );
     });
 
     it('ignores a payment link belonging to another product', async () => {
@@ -429,7 +461,10 @@ describe('EoiService', () => {
       repo.findAnyEoiByPaymentLink.mockResolvedValue(
         makeEoi({ status: RealtyEoiStatus.LINK_SENT }),
       );
-      repo.updateEoi.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.PAID }));
+      repo.settleEoiAsPaid.mockResolvedValue({
+        eoi: makeEoi({ status: RealtyEoiStatus.PAID }),
+        claimed: true,
+      });
 
       const res = await service.handleRazorpayWebhook(
         webhook({ payment_link: { entity: { id: 'plink_1', status: 'paid' } } }),
@@ -439,10 +474,11 @@ describe('EoiService', () => {
       // Still settled — the link is what identifies the EOI. There is simply
       // no gateway payment id to record.
       expect(res).toEqual({ handled: true });
-      expect(repo.updateEoi).toHaveBeenCalledWith(
+      expect(repo.settleEoiAsPaid).toHaveBeenCalledWith(
         BUSINESS_ID,
         EOI_ID,
-        expect.objectContaining({ gatewayPaymentId: null }),
+        null,
+        expect.any(Date),
       );
     });
 
@@ -461,11 +497,27 @@ describe('EoiService', () => {
       expect(repo.updateEoi).not.toHaveBeenCalled();
     });
 
-    it('is idempotent across a replayed delivery', async () => {
-      // Razorpay retries until it sees a 2xx, so the same paid event arrives
-      // more than once in normal operation. The second must not re-emit
-      // `realty.eoi.paid` or re-advance the lead.
-      repo.findEoiByPaymentLink.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.PAID }));
+    /**
+     * Razorpay retries until it sees a 2xx, so the same paid event arrives more
+     * than once in normal operation — and the operator-facing reconcile route
+     * exists to be used exactly when a webhook looks slow, so the two run
+     * concurrently by design.
+     *
+     * Idempotency is decided in the database, not from the status on a row read
+     * before the write. Reading it first is what let two concurrent settlements
+     * both pass the check, both advance the lead, and both emit
+     * `realty.eoi.paid` — double-counting a booking that happened once. The
+     * loser here is told `claimed: false` and must do nothing further.
+     */
+    it('does no settlement work when it loses the claim', async () => {
+      repo.findEoiByPaymentLink.mockResolvedValue(
+        makeEoi({ status: RealtyEoiStatus.LINK_SENT }),
+      );
+      // What the conditional update reports to the caller that arrived second.
+      repo.settleEoiAsPaid.mockResolvedValue({
+        eoi: makeEoi({ status: RealtyEoiStatus.PAID }),
+        claimed: false,
+      });
 
       const res = await service.handleRazorpayWebhook(
         webhook({
@@ -475,9 +527,33 @@ describe('EoiService', () => {
         'sig',
       );
 
+      // Still a 2xx — the event *was* handled, just not by this caller.
       expect(res).toEqual({ handled: true });
-      expect(repo.updateEoi).not.toHaveBeenCalled();
       expect(leads.transitionStage).not.toHaveBeenCalled();
+      expect(emitter.emit).not.toHaveBeenCalledWith('realty.eoi.paid', expect.anything());
+    });
+
+    /**
+     * The complement: the settlement is attempted unconditionally, and the
+     * database is what decides. A pre-read status check short-circuiting here
+     * is the bug — it looks like idempotency and is not.
+     */
+    it('always attempts the claim rather than trusting a pre-read status', async () => {
+      repo.findEoiByPaymentLink.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.PAID }));
+      repo.settleEoiAsPaid.mockResolvedValue({
+        eoi: makeEoi({ status: RealtyEoiStatus.PAID }),
+        claimed: false,
+      });
+
+      await service.handleRazorpayWebhook(
+        webhook({
+          payment_link: { entity: { id: 'plink_1', status: 'paid' } },
+          payment: { entity: { id: 'pay_1', notes: { businessId: BUSINESS_ID } } },
+        }),
+        'sig',
+      );
+
+      expect(repo.settleEoiAsPaid).toHaveBeenCalledTimes(1);
       expect(emitter.emit).not.toHaveBeenCalledWith('realty.eoi.paid', expect.anything());
     });
 
@@ -485,6 +561,10 @@ describe('EoiService', () => {
       // Express hands the raw body through as a Buffer; the signature is
       // verified over those bytes, so the parse must accept them too.
       repo.findEoiByPaymentLink.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.PAID }));
+      repo.settleEoiAsPaid.mockResolvedValue({
+        eoi: makeEoi({ status: RealtyEoiStatus.PAID }),
+        claimed: false,
+      });
 
       const res = await service.handleRazorpayWebhook(
         Buffer.from(
@@ -519,7 +599,10 @@ describe('EoiService', () => {
       repo.findEoiByPaymentLink.mockResolvedValue(
         makeEoi({ status: RealtyEoiStatus.LINK_SENT, payment_link_id: 'plink_1' }),
       );
-      repo.updateEoi.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.PAID }));
+      repo.settleEoiAsPaid.mockResolvedValue({
+        eoi: makeEoi({ status: RealtyEoiStatus.PAID }),
+        claimed: true,
+      });
       leads.transitionStage.mockRejectedValue(new Error('illegal stage transition'));
 
       const res = await service.handleRazorpayWebhook(
@@ -534,10 +617,11 @@ describe('EoiService', () => {
       );
 
       expect(res).toEqual({ handled: true });
-      expect(repo.updateEoi).toHaveBeenCalledWith(
+      expect(repo.settleEoiAsPaid).toHaveBeenCalledWith(
         BUSINESS_ID,
         EOI_ID,
-        expect.objectContaining({ status: RealtyEoiStatus.PAID }),
+        expect.anything(),
+        expect.any(Date),
       );
       expect(emitter.emit).toHaveBeenCalledWith('realty.eoi.paid', expect.anything());
     });

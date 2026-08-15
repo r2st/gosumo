@@ -1,10 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, RealtyIntegrationProvider } from '@prisma/client';
+// `RealtyEoiStatus` is a value here, not just a type: `settleEoiAsPaid` reads
+// `.PAID` off it to build the conditional-update predicate.
+import { Prisma, RealtyIntegrationProvider, RealtyEoiStatus } from '@prisma/client';
 import type {
   realty_integration_connections,
   realty_eoi_requests,
   RealtyIntegrationStatus,
-  RealtyEoiStatus,
 } from '@prisma/client';
 import { PrismaService } from '../../common/services/prisma.service';
 import { ResourceNotFoundError } from '@gosumo/shared';
@@ -235,5 +236,50 @@ export class RealtyIntegrationsRepository {
       });
     }
     return updated;
+  }
+
+  /**
+   * Claim the PAID transition for one EOI, and report whether *this* call is
+   * the one that made it.
+   *
+   * The `status: { not: PAID }` predicate is the whole point. Two settlements
+   * race routinely here — Razorpay redelivers its `payment_link.paid` webhook,
+   * and the operator-facing reconcile endpoint exists precisely to be used when
+   * a webhook looks slow, so the two run concurrently by design. Deciding
+   * "already paid?" from a row read before the write lets both callers pass the
+   * check and both do the settlement work.
+   *
+   * Under READ COMMITTED the loser blocks on the row lock, re-evaluates the
+   * predicate once the winner commits, matches nothing, and reports
+   * `claimed: false`. Exactly one caller ever gets `true`.
+   */
+  async settleEoiAsPaid(
+    businessId: string,
+    eoiId: string,
+    gatewayPaymentId: string | null,
+    paidAt: Date,
+  ): Promise<{ eoi: realty_eoi_requests; claimed: boolean }> {
+    const result = await this.prisma.realty_eoi_requests.updateMany({
+      where: {
+        id: eoiId,
+        business_id: businessId,
+        status: { not: RealtyEoiStatus.PAID },
+      },
+      data: {
+        status: RealtyEoiStatus.PAID,
+        paid_at: paidAt,
+        // Only overwrite when the gateway named a payment — a reconcile that
+        // could not read one must not blank the id the webhook recorded.
+        ...(gatewayPaymentId ? { gateway_payment_id: gatewayPaymentId } : {}),
+      },
+    });
+
+    const eoi = await this.findEoi(businessId, eoiId);
+    if (!eoi) {
+      throw new ResourceNotFoundError('EOI', eoiId, {
+        context: { businessId, stage: 'after-settle' },
+      });
+    }
+    return { eoi, claimed: result.count > 0 };
   }
 }
