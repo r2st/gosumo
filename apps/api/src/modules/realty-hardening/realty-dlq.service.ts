@@ -26,11 +26,39 @@ export interface DeadLetterMeta {
   conversationId?: string | null;
 }
 
-/** A function that re-executes a captured operation from its stored payload. */
+/**
+ * A dead letter as it leaves this service — every column except `error_stack`.
+ *
+ * The stack is still written on capture, because it is what we debug from. It
+ * just never crosses back out: `list`, `get`, `replay`, and `resolve` are all
+ * returned straight to the client by `RealtyHardeningController` with no DTO in
+ * between, so a raw row put a full Node trace — absolute `/opt/gosumo/...`
+ * paths, the internal module layout, the `node_modules` frames of whatever
+ * failed — on the wire for any authenticated user of the business. `list` did
+ * it for every parked entry at once.
+ *
+ * Redacting here rather than in the controller is what makes it hold: this is
+ * the boundary every route goes through, so a route added later inherits it
+ * instead of having to remember it.
+ */
+export type RedactedDeadLetter = Omit<realty_dead_letters, 'error_stack'>;
+
+/** Strip the stack from a row on its way out of this service. */
+function redact(entry: realty_dead_letters): RedactedDeadLetter {
+  const { error_stack: _errorStack, ...rest } = entry;
+  return rest;
+}
+
+/**
+ * A function that re-executes a captured operation from its stored payload.
+ *
+ * `entry` is redacted like every other read — no registered replayer reads the
+ * stack, and a handler is not a reason to reconstitute it.
+ */
 export type ReplayHandler = (
   businessId: string,
   payload: Record<string, unknown>,
-  entry: realty_dead_letters,
+  entry: RedactedDeadLetter,
 ) => Promise<void>;
 
 export interface RunWithRetryOptions {
@@ -165,14 +193,15 @@ export class RealtyDlqService {
   async list(
     businessId: string,
     filter: ListDeadLettersFilter = {},
-  ): Promise<realty_dead_letters[]> {
-    return this.repository.list(businessId, filter);
+  ): Promise<RedactedDeadLetter[]> {
+    const rows = await this.repository.list(businessId, filter);
+    return rows.map(redact);
   }
 
-  async get(businessId: string, id: string): Promise<realty_dead_letters> {
+  async get(businessId: string, id: string): Promise<RedactedDeadLetter> {
     const entry = await this.repository.findById(businessId, id);
     if (!entry) throw new NotFoundException(`Dead letter ${id} not found`);
-    return entry;
+    return redact(entry);
   }
 
   /**
@@ -180,7 +209,7 @@ export class RealtyDlqService {
    * entry becomes REPLAYED; on failure its attempt count is bumped and it stays
    * PENDING (until it exhausts `DLQ_MAX_REPLAYS`, after which it is DISCARDED).
    */
-  async replay(businessId: string, id: string): Promise<realty_dead_letters> {
+  async replay(businessId: string, id: string): Promise<RedactedDeadLetter> {
     const entry = await this.get(businessId, id);
     if (entry.status === DeadLetterStatus.REPLAYED) {
       return entry; // idempotent — already recovered
@@ -228,7 +257,7 @@ export class RealtyDlqService {
         operation: entry.operation,
       });
       this.logger.log(`Replayed dead letter ${id} (${entry.operation})`);
-      return updated;
+      return redact(updated);
     } catch (err) {
       const exhausted = attempts - DEFAULT_RETRY_POLICY.attempts >= DLQ_MAX_REPLAYS;
       const updated = await this.repository.update(businessId, id, {
@@ -239,7 +268,7 @@ export class RealtyDlqService {
       this.logger.warn(
         `Replay of dead letter ${id} failed (${attempts} attempts)${exhausted ? ' — discarded' : ''}`,
       );
-      return updated;
+      return redact(updated);
     }
   }
 
@@ -249,7 +278,7 @@ export class RealtyDlqService {
     id: string,
     status: DeadLetterStatus,
     note?: string,
-  ): Promise<realty_dead_letters> {
+  ): Promise<RedactedDeadLetter> {
     if (status !== DeadLetterStatus.RESOLVED && status !== DeadLetterStatus.DISCARDED) {
       throw new BadRequestException('resolve status must be RESOLVED or DISCARDED');
     }
@@ -264,7 +293,7 @@ export class RealtyDlqService {
       deadLetterId: id,
       status,
     });
-    return updated;
+    return redact(updated);
   }
 
   async stats(businessId: string): Promise<Record<string, number>> {
@@ -277,7 +306,7 @@ export class RealtyDlqService {
     return { pending, replayed, resolved, discarded };
   }
 
-  private readPayload(entry: realty_dead_letters): Record<string, unknown> {
+  private readPayload(entry: RedactedDeadLetter): Record<string, unknown> {
     const p = entry.payload;
     return p && typeof p === 'object' && !Array.isArray(p)
       ? (p as Record<string, unknown>)
