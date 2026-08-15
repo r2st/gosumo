@@ -22,6 +22,7 @@ import {
   UpdateItemDto,
   ItemQueryDto,
   SearchItemsQueryDto,
+  EffectivePriceQueryDto,
   CreateVariantDto,
   UpdateVariantDto,
   StockUpdateDto,
@@ -294,15 +295,16 @@ export class CatalogController {
   async getEffectivePrice(
     @TenantId() tenantId: string,
     @Param('itemId', UuidValidationPipe) itemId: string,
-    @Query('variantId') variantId?: string,
-    @Query('quantity') quantity?: string,
+    @Query() query: EffectivePriceQueryDto,
   ) {
-    const parsedQuantity = quantity ? parseInt(quantity, 10) : 1;
+    // Read through the DTO, never `parseInt` on a raw @Query() string: this
+    // quantity multiplies money, and NaN / negative / fractional values all
+    // used to reach the arithmetic. See EffectivePriceQueryDto.
     return this.catalogService.getEffectivePrice(
       tenantId,
       itemId,
-      variantId,
-      parsedQuantity,
+      query.variantId,
+      query.quantity ?? 1,
     );
   }
 }

@@ -20,6 +20,7 @@ import {
   MAX_PAGE_NUMBER,
   MAX_PAGE_SIZE,
 } from '../../../common/validators/pagination.constants';
+import { MAX_PRICE_QUANTITY } from '../catalog.constants';
 
 // ─────────────────────────────────────────────
 // CATEGORY DTOs
@@ -706,4 +707,42 @@ export class SearchItemsQueryDto {
   @Min(1)
   @Max(MAX_PAGE_SIZE)
   limit?: number = 10;
+}
+
+/**
+ * Query for `GET /catalog/items/:itemId/price`.
+ *
+ * `quantity` was read as a bare `@Query()` string and run through
+ * `parseInt(quantity, 10)`, which is the failure this file's sibling DTOs
+ * exist to prevent — except the value here is not a page size, it is a
+ * multiplier on money:
+ *
+ *   - `?quantity=abc` → `parseInt` is NaN → `totalPaise: NaN`, which
+ *     `JSON.stringify` renders as `null`. The endpoint answered 200 with a
+ *     price of null and no indication anything was wrong.
+ *   - `?quantity=-5` → a negative total, which the AI quotes back to a
+ *     customer and a payment link can be built from.
+ *   - `?quantity=1e400` → `Infinity`, also `null` once serialised.
+ *   - `?quantity=1.5` → `parseInt` silently truncates to 1, so the caller is
+ *     quoted a total for a quantity they did not ask for.
+ *
+ * Read through the pipe instead, every one of those is a 400 naming the field.
+ * `MAX_PRICE_QUANTITY` is not a business rule about order size — the order
+ * module enforces that — it is the bound that keeps `finalPricePaise *
+ * quantity` inside a safe integer, since the result is paise and rule #4 says
+ * money is an integer or it is wrong.
+ */
+export class EffectivePriceQueryDto {
+  @ApiPropertyOptional({ description: 'Variant UUID' })
+  @IsOptional()
+  @IsUUID()
+  variantId?: string;
+
+  @ApiPropertyOptional({ description: 'Quantity for total calculation', default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_PRICE_QUANTITY)
+  quantity?: number = 1;
 }

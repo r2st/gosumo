@@ -30,6 +30,10 @@ const migration0034 = readFileSync(
   join(DATABASE_DIR, 'migrations/0034_add_search_and_inbox_indexes.sql'),
   'utf8',
 );
+const migration0039 = readFileSync(
+  join(DATABASE_DIR, 'migrations/0039_index_retention_sweeps_and_match.sql'),
+  'utf8',
+);
 
 /**
  * The `@@index([...])` declarations inside one model block, each normalized to
@@ -113,6 +117,43 @@ describe('hot-path index contract', () => {
     it('windows the intelligence aggregation by first_touch_at', () => {
       expect(hasIndex('realty_leads', ['business_id', 'first_touch_at'])).toBe(true);
     });
+
+    it('walks the retention sweep oldest-first without sorting the tenant', () => {
+      // findInactiveLeads orders by created_at and takes 500. Without this the
+      // planner reads every lead the tenant has, sorts the survivors, and
+      // throws all but the oldest 500 away — nightly, forever, on the table
+      // that grows with the tenant's success. Every other business_id-leading
+      // index here puts a category column (stage, temperature, source) second,
+      // which the sweep does not supply.
+      expect(hasIndex('realty_leads', ['business_id', 'created_at'])).toBe(true);
+    });
+  });
+
+  describe('file_uploads', () => {
+    it('seeks the media retention scrub by age', () => {
+      // anonymizeOldFileUploads filters (business_id, created_at < cutoff).
+      // The only other business_id-leading index is (business_id, type), and
+      // the sweep does not filter on type — so it re-read every media row the
+      // tenant has ever stored, weekly.
+      expect(hasIndex('file_uploads', ['business_id', 'created_at'])).toBe(true);
+    });
+  });
+
+  describe('realty_units', () => {
+    it('serves the lead-match candidate query', () => {
+      // findMatchCandidates runs on the inbound path, per lead matched:
+      // (business_id, deleted_at IS NULL, availability = AVAILABLE,
+      // verified_at >= cutoff). The three existing business_id-leading indexes
+      // each put a column the query does not constrain in second position
+      // (project_id, config, all_in_price), so none can seek past business_id.
+      //
+      // Column order is load-bearing: equality on availability must precede
+      // the range on verified_at, or only one of the two is an index
+      // condition.
+      expect(hasIndex('realty_units', ['business_id', 'availability', 'verified_at'])).toBe(
+        true,
+      );
+    });
   });
 
   describe('search indexes use trigram ops', () => {
@@ -168,6 +209,31 @@ describe('hot-path index contract', () => {
       const unguarded = migration0034.match(/^CREATE INDEX(?! IF NOT EXISTS)/gm) ?? [];
       expect(unguarded).toHaveLength(0);
       expect(migration0034.match(/^CREATE INDEX IF NOT EXISTS/gm)).toHaveLength(9);
+    });
+  });
+
+  describe('migration 0039 matches schema.prisma', () => {
+    it.each([
+      'realty_leads_business_id_created_at_idx',
+      'file_uploads_business_id_created_at_idx',
+      'realty_units_business_id_availability_verified_at_idx',
+    ])('creates %s', (name) => {
+      expect(migration0039).toContain(`CREATE INDEX IF NOT EXISTS "${name}"`);
+    });
+
+    it('spells realty_units in the column order the query needs', () => {
+      // Reordering these silently costs the range scan: with verified_at
+      // before availability, only the leading equality is an index condition
+      // and the rest is a filter over the tenant's whole catalogue.
+      expect(migration0039).toContain(
+        '("business_id", "availability", "verified_at")',
+      );
+    });
+
+    it('is written to be re-runnable', () => {
+      const unguarded = migration0039.match(/^CREATE INDEX(?! IF NOT EXISTS)/gm) ?? [];
+      expect(unguarded).toHaveLength(0);
+      expect(migration0039.match(/^CREATE INDEX IF NOT EXISTS/gm)).toHaveLength(3);
     });
   });
 });

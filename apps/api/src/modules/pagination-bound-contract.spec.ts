@@ -31,7 +31,8 @@ import {
   MAX_PAGE_NUMBER,
   MAX_PAGE_SIZE,
 } from '../common/validators/pagination.constants';
-import { SearchItemsQueryDto } from './catalog/dto';
+import { EffectivePriceQueryDto, SearchItemsQueryDto } from './catalog/dto';
+import { MAX_PRICE_QUANTITY } from './catalog/catalog.constants';
 import { ListRefundsQueryDto } from './payment/dto';
 import { MatchForLeadQueryDto } from './realty-inventory/dto';
 import { ListTeamQueryDto } from './tenant/dto/list-team-query.dto';
@@ -269,5 +270,107 @@ describe('no controller parses a pagination parameter by hand', () => {
 
   it('is actually scanning controllers', () => {
     expect(controllerFiles(MODULES_DIR).length).toBeGreaterThan(15);
+  });
+});
+
+// ─────────────────────────────────────────────
+// The same failure, on a number that is money
+// ─────────────────────────────────────────────
+
+/**
+ * `GET /catalog/items/:itemId/price?quantity=`.
+ *
+ * The scanner above looks for pagination names, so this one sat outside it for
+ * as long as it existed: a bare `@Query('quantity') quantity?: string` run
+ * through `parseInt`, feeding `totalPaise: finalPricePaise * quantity`.
+ *
+ * The consequences are worse than a paginated list's, because the output is a
+ * price the AI quotes to a customer and a payment link can be built from:
+ * `abc` produced `NaN`, which `JSON.stringify` renders as `null` — a 200
+ * response with no price and no error — while `-5` produced a negative total
+ * and `1.5` was silently truncated to a quantity nobody asked for.
+ */
+describe('the price endpoint bounds its quantity', () => {
+  it('rejects a non-numeric quantity instead of answering with null', async () => {
+    expect(await rejects(EffectivePriceQueryDto, { quantity: 'abc' })).toBe(true);
+  });
+
+  it('rejects a negative quantity, which produced a negative price', async () => {
+    expect(await rejects(EffectivePriceQueryDto, { quantity: -5 })).toBe(true);
+    expect(await rejects(EffectivePriceQueryDto, { quantity: 0 })).toBe(true);
+  });
+
+  it('rejects a fractional quantity rather than truncating it', async () => {
+    expect(await rejects(EffectivePriceQueryDto, { quantity: 1.5 })).toBe(true);
+  });
+
+  it('rejects a quantity that would take the total past a safe integer', async () => {
+    // `1e400` parsed to Infinity, which also serialises as null. Paise are an
+    // integer by rule #4 or they are not money.
+    expect(await rejects(EffectivePriceQueryDto, { quantity: MAX_PRICE_QUANTITY + 1 })).toBe(
+      true,
+    );
+    expect(await rejects(EffectivePriceQueryDto, { quantity: 1e400 })).toBe(true);
+  });
+
+  it('keeps the total inside a safe integer at the ceiling', () => {
+    // The bound is only worth having if it actually bounds the arithmetic.
+    // ₹10,00,000 an item is far past anything in a small-business catalogue.
+    const generousItemPricePaise = 1_000_000 * 100;
+    expect(MAX_PRICE_QUANTITY * generousItemPricePaise).toBeLessThan(
+      Number.MAX_SAFE_INTEGER,
+    );
+  });
+
+  it('still accepts an ordinary quantity, and defaults to one', async () => {
+    expect(await rejects(EffectivePriceQueryDto, { quantity: 3 })).toBe(false);
+    const dto = await accepted<EffectivePriceQueryDto>(EffectivePriceQueryDto, {});
+    expect(dto.quantity).toBe(1);
+  });
+
+  it('validates variantId as a uuid, so a junk id is a 400 not a 404', async () => {
+    expect(await rejects(EffectivePriceQueryDto, { variantId: 'not-a-uuid' })).toBe(true);
+  });
+});
+
+describe('no controller runs parseInt on a raw query string', () => {
+  // The scanner above is keyed on parameter *names*, which is why `quantity`
+  // escaped it for as long as it did. This one is keyed on the mistake itself:
+  // any hand-parse of a @Query() value skips the pipe, and what the value is
+  // called has nothing to do with whether that is safe.
+  const MODULES_DIR = __dirname;
+
+  function controllerSources(dir: string): Array<[string, string]> {
+    const out: Array<[string, string]> = [];
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) out.push(...controllerSources(full));
+      else if (entry.name.endsWith('.controller.ts') && !entry.name.includes('.spec.'))
+        out.push([path.relative(MODULES_DIR, full), fs.readFileSync(full, 'utf8')]);
+    }
+    return out;
+  }
+
+  it('has no parseInt / parseFloat / Number() over a @Query-bound string', () => {
+    const offenders = controllerSources(MODULES_DIR).flatMap(([file, src]) => {
+      // The parameter names bound as bare @Query() strings in this file…
+      const queryParams = [
+        ...src.matchAll(/@Query\(\s*['"]([\w.]+)['"]\s*\)\s*(\w+)/g),
+      ].map((m) => m[2]!);
+      if (queryParams.length === 0) return [];
+
+      // …and any line that hand-parses one of them.
+      return src
+        .split('\n')
+        .map((line, i) => ({ line, n: i + 1 }))
+        .filter(({ line }) =>
+          queryParams.some((p) =>
+            new RegExp(`(parseInt|parseFloat|Number)\\(\\s*${p}\\b`).test(line),
+          ),
+        )
+        .map(({ n, line }) => `${file}:${n} ${line.trim()}`);
+    });
+
+    expect(offenders).toEqual([]);
   });
 });

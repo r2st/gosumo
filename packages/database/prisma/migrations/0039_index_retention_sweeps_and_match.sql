@@ -1,0 +1,93 @@
+-- Migration: 0039_index_retention_sweeps_and_match
+-- Three indexes for queries that currently sequential-scan a growing table.
+--
+-- Two are retention sweeps and one is the realty match hot path. They share a
+-- shape: the filter is (business_id, <a timestamp>), the tables grow without
+-- bound, and every existing index on them leads with a *category* column
+-- (stage, type, project_id, config) that the query does not supply — so the
+-- planner can seek on business_id and must then read the tenant's entire
+-- history to apply the date.
+--
+-- That cost is invisible until it isn't. A sequential scan over 500 rows in
+-- staging and 5,000,000 in production is the same query plan and the same
+-- passing test.
+--
+--
+-- 1. realty_leads(business_id, created_at)
+--
+--   ComplianceRepository.findInactiveLeads — the DPDPA auto-anonymization
+--   sweep, nightly, per tenant:
+--
+--     SELECT * FROM realty_leads
+--      WHERE business_id = $1
+--        AND deleted_at IS NULL
+--        AND (last_activity_at < $2 OR (last_activity_at IS NULL AND created_at < $2))
+--        AND NOT (metadata->'erased' = 'true')
+--      ORDER BY created_at ASC
+--      LIMIT 500;
+--
+--   The `OR` means no index can serve the date predicate outright — but the
+--   ORDER BY plus LIMIT is where the win is. With this index the planner walks
+--   the tenant's leads oldest-first, applies the filters row by row, and stops
+--   at 500. Without it, it reads every lead the tenant has, applies the
+--   filters, sorts the survivors, and discards all but the oldest 500 — and
+--   the leads table is the one row-count that grows with the tenant's
+--   *success*.
+--
+--   `(business_id, last_activity_at)` was considered instead: it serves the
+--   common arm of the OR directly, but not the null arm, and not the sort. The
+--   sort is what the LIMIT hangs off, so it is the column that pays.
+--
+--
+-- 2. file_uploads(business_id, created_at)
+--
+--   ComplianceRepository.anonymizeOldFileUploads — the media half of the same
+--   sweep, which scrubs `filename` and `cdn_url` past the retention window:
+--
+--     UPDATE file_uploads SET ... WHERE business_id = $1 AND created_at < $2
+--       AND (filename <> '[redacted]' OR cdn_url IS NOT NULL OR thumbnail_key IS NOT NULL);
+--
+--   The only index that leads with business_id is (business_id, type), and the
+--   sweep does not filter on type. This table gets a row per media message, so
+--   it grows at the rate of the busiest thing the product does, and the sweep
+--   re-reads all of it weekly to find the tail that has aged out.
+--
+--
+-- 3. realty_units(business_id, availability, verified_at)
+--
+--   RealtyInventoryRepository.findMatchCandidates — not a sweep. This runs on
+--   the inbound path every time a lead is matched to inventory:
+--
+--     SELECT * FROM realty_units
+--      WHERE business_id = $1 AND deleted_at IS NULL
+--        AND availability = 'AVAILABLE' AND verified_at >= $2;
+--
+--   All three existing business_id-leading indexes put a column the query does
+--   not constrain in second position — project_id, config, all_in_price — so
+--   none of them can seek past business_id, and a tenant with a large
+--   catalogue re-reads it per match. The column order here is the query's:
+--   equality on availability first, then the range on verified_at, which is
+--   the only order that lets both be index conditions.
+--
+--   Deliberately not partial (`WHERE availability = 'AVAILABLE'`): units cycle
+--   through availability states constantly, so a partial index would churn
+--   its own entries on every booking and would stop serving the moment the
+--   matcher considers a second state.
+--
+--
+-- Index names match what `prisma migrate diff` emits for the @@index entries
+-- added to schema.prisma in the same commit, so a hand-applied database and a
+-- migrated one end up identical.
+--
+-- Plain CREATE INDEX, matching every migration before this one. On a live
+-- database, run these as CREATE INDEX CONCURRENTLY instead; that form cannot
+-- run inside a transaction, so issue it outside any wrapping BEGIN/COMMIT.
+
+CREATE INDEX IF NOT EXISTS "realty_leads_business_id_created_at_idx"
+    ON "realty_leads" ("business_id", "created_at");
+
+CREATE INDEX IF NOT EXISTS "file_uploads_business_id_created_at_idx"
+    ON "file_uploads" ("business_id", "created_at");
+
+CREATE INDEX IF NOT EXISTS "realty_units_business_id_availability_verified_at_idx"
+    ON "realty_units" ("business_id", "availability", "verified_at");
