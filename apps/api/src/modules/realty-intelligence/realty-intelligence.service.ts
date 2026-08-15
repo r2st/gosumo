@@ -59,11 +59,21 @@ export interface SourceQualityReport {
 }
 
 export interface NightlyRunResult {
+  /** Businesses whose aggregates were rebuilt. Excludes any that threw. */
   businessCount: number;
   aggregateCount: number;
   corridorCount: number;
   periodStart: Date;
   periodEnd: Date;
+  /**
+   * Businesses whose aggregation threw and was skipped.
+   *
+   * Separate from `businessCount` because the two answer different questions,
+   * and the run used to answer neither: one tenant throwing took the whole
+   * nightly build down, so "how many tenants got fresh priors" was either
+   * "all of them" or nothing at all.
+   */
+  businessesFailed: number;
 }
 
 /**
@@ -111,31 +121,53 @@ export class RealtyIntelligenceService {
     let aggregateCount = 0;
     const corridors = new Set<string>();
 
+    let businessesFailed = 0;
+
+    // Per-business isolation. Without it one tenant — a lead row the projection
+    // chokes on, a corridor that trips a constraint — threw straight out of the
+    // loop and ended the run, so every tenant *after* it in the list silently
+    // kept yesterday's priors. Bull then retried the same poisoned list twice
+    // more and gave up, and the only trace was one failed job: nothing named
+    // the tenant, and nothing said the other tenants had been skipped rather
+    // than found to have nothing to build.
     for (const bId of businessIds) {
-      const leads = await this.fetchIntelLeads(bId, periodStart);
-      const aggregates = computeAggregatesForBusiness(leads, DEFAULT_MIN_N_THRESHOLD);
-      for (const agg of aggregates) {
-        await this.repository.upsertAggregate({
-          businessId: bId,
-          corridor: agg.corridor,
-          metricType: agg.metricType,
-          metricValue: agg.metricValue as unknown as Prisma.InputJsonValue,
-          sampleSize: agg.sampleSize,
-          minNThreshold: DEFAULT_MIN_N_THRESHOLD,
-          periodStart,
-          periodEnd,
-        });
-        aggregateCount++;
-        corridors.add(`${bId}:${agg.corridor}`);
+      try {
+        const leads = await this.fetchIntelLeads(bId, periodStart);
+        const aggregates = computeAggregatesForBusiness(leads, DEFAULT_MIN_N_THRESHOLD);
+        for (const agg of aggregates) {
+          await this.repository.upsertAggregate({
+            businessId: bId,
+            corridor: agg.corridor,
+            metricType: agg.metricType,
+            metricValue: agg.metricValue as unknown as Prisma.InputJsonValue,
+            sampleSize: agg.sampleSize,
+            minNThreshold: DEFAULT_MIN_N_THRESHOLD,
+            periodStart,
+            periodEnd,
+          });
+          aggregateCount++;
+          corridors.add(`${bId}:${agg.corridor}`);
+        }
+      } catch (err) {
+        // Aggregates are upserted per corridor, so a mid-tenant failure leaves
+        // that tenant partially rebuilt. That is safe to leave: the rows are
+        // idempotent and tonight's run overwrites them wholesale.
+        businessesFailed++;
+        this.logger.error(
+          `Nightly aggregation failed for business ${bId}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
       }
     }
 
     const result: NightlyRunResult = {
-      businessCount: businessIds.length,
+      businessCount: businessIds.length - businessesFailed,
       aggregateCount,
       corridorCount: corridors.size,
       periodStart,
       periodEnd,
+      businessesFailed,
     };
 
     this.emit<RealtyIntelligenceAggregatesGeneratedEvent>(
@@ -150,10 +182,17 @@ export class RealtyIntelligenceService {
         periodEnd: periodEnd.toISOString(),
       },
     );
-    this.logger.log(
-      `Nightly aggregates: ${aggregateCount} rows across ${corridors.size} corridors ` +
-        `for ${businessIds.length} opted-in business(es)`,
-    );
+    const scope =
+      `${aggregateCount} rows across ${corridors.size} corridors ` +
+      `for ${result.businessCount} opted-in business(es)`;
+    if (businessesFailed > 0) {
+      this.logger.warn(
+        `Nightly aggregates: ${scope}; ${businessesFailed} business(es) failed and ` +
+          `kept yesterday's priors`,
+      );
+    } else {
+      this.logger.log(`Nightly aggregates: ${scope}`);
+    }
     return result;
   }
 

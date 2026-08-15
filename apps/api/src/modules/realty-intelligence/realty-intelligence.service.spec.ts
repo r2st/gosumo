@@ -125,6 +125,72 @@ describe('RealtyIntelligenceService', () => {
       expect(repository.listOptInBusinessIds).not.toHaveBeenCalled();
       expect(result.businessCount).toBe(1);
     });
+
+    // ─────────────────────────────────────────────
+    // Per-tenant isolation
+    //
+    // The loop had no try/catch, so the first tenant that threw ended the run
+    // and every tenant after it kept yesterday's priors — indistinguishable,
+    // from outside, from a tenant that simply had nothing to aggregate.
+    // ─────────────────────────────────────────────
+    describe('a tenant that fails', () => {
+      const BIZ_B = '00000000-0000-4000-b000-00000000000b';
+      const BIZ_C = '00000000-0000-4000-b000-00000000000c';
+
+      beforeEach(() => {
+        repository.listOptInBusinessIds.mockResolvedValue([BUSINESS_ID, BIZ_B, BIZ_C]);
+      });
+
+      it('does not stop the tenants queued behind it', async () => {
+        leads.listLeadsForAggregation.mockImplementation(async (bid: string) => {
+          if (bid === BUSINESS_ID) throw new Error('projection blew up');
+          return fetched(Array.from({ length: 6 }, () => makeLead()));
+        });
+
+        const result = await service.generateNightlyAggregates();
+
+        // B and C still got fresh priors.
+        expect(result.businessCount).toBe(2);
+        expect(result.businessesFailed).toBe(1);
+        expect(result.aggregateCount).toBe(10); // 5 metrics × 2 tenants
+      });
+
+      it('isolates a failure in the upsert half of the loop too', async () => {
+        leads.listLeadsForAggregation.mockResolvedValue(
+          fetched(Array.from({ length: 6 }, () => makeLead())),
+        );
+        repository.upsertAggregate.mockImplementation((async (arg: {
+          businessId: string;
+        }) => {
+          if (arg.businessId === BIZ_B) throw new Error('constraint violation');
+          return undefined;
+        }) as never);
+
+        const result = await service.generateNightlyAggregates();
+
+        expect(result.businessesFailed).toBe(1);
+        expect(result.businessCount).toBe(2);
+      });
+
+      it('reports every tenant failing without throwing the run away', async () => {
+        leads.listLeadsForAggregation.mockRejectedValue(new Error('database down'));
+
+        const result = await service.generateNightlyAggregates();
+
+        expect(result.businessCount).toBe(0);
+        expect(result.businessesFailed).toBe(3);
+        expect(result.aggregateCount).toBe(0);
+      });
+
+      it('counts no failures on a clean run', async () => {
+        leads.listLeadsForAggregation.mockResolvedValue(
+          fetched(Array.from({ length: 6 }, () => makeLead())),
+        );
+        const result = await service.generateNightlyAggregates();
+        expect(result.businessesFailed).toBe(0);
+        expect(result.businessCount).toBe(3);
+      });
+    });
   });
 
   describe('consent', () => {
