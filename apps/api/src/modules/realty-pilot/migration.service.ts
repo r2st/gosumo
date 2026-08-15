@@ -96,7 +96,14 @@ export class MigrationService {
           total: result.total,
           created: result.created,
           merged: result.merged,
-          skipped: result.skipped,
+          // Both kinds of non-landing row. `importCsv` reports them apart —
+          // `skipped` for a row it rejected, `failed` for one whose write threw
+          // — because the ingestion webhooks need that distinction to decide
+          // what to dead-letter. A migration run has one "did not land"
+          // counter, and a row that errored belongs in it just as much as one
+          // that was malformed; counting only `skipped` would file a run whose
+          // every row hit a database blip as having skipped nothing.
+          skipped: result.skipped + result.failed,
           errors: result.errors,
         };
       } catch (err) {

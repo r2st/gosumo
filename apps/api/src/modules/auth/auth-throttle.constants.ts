@@ -96,6 +96,22 @@ export const AUTH_THROTTLE_BUCKETS: Record<string, AuthThrottleRule> = {
   'reset-password': {
     ip: { limit: 10, windowMs: 15 * MINUTE },
   },
+
+  /**
+   * Web-chat widget bootstrap. Not an auth route — but it is `@Public()`, it
+   * takes a caller-supplied channel id, and it does an unindexed-by-tenant
+   * `channel_accounts` lookup on every call, which makes it the one anonymous
+   * read path in this API with no ceiling of any kind on it.
+   *
+   * Keyed per IP, which is the right dimension here: the legitimate callers are
+   * *browsers* on the sites that embed the widget, one request each per page
+   * load from their own addresses. 60 a minute is far past what any real
+   * visitor generates and far below what makes the endpoint worth pointing at a
+   * database that this deployment shares with another service.
+   */
+  'webchat-embed': {
+    ip: { limit: 60, windowMs: MINUTE },
+  },
 };
 
 /**

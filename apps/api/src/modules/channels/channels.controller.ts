@@ -24,6 +24,7 @@ interface ChannelListResponse {
 }
 import { ConnectChannelDto } from "./dto";
 import { Roles } from '../auth/decorators/roles.decorator';
+import { AuthThrottle } from '../auth/auth-throttle.decorator';
 import { TeamMemberRole } from '@gosumo/database';
 
 /**
@@ -118,15 +119,21 @@ export class ChannelsController {
   }
 
   @Public()
+  // Reachable by anyone, takes a caller-supplied id, and hits the database on
+  // every call. Without a ceiling this is an anonymous handle on a Postgres
+  // that is shared with another service — a token bounds every other read path
+  // in this API, and this route had nothing in its place.
+  @AuthThrottle('webchat-embed')
   @Get("webchat/embed/:channelId")
   @ApiOperation({
     summary: "Get the web-chat widget embed snippet",
     description:
-      "Public — external sites fetch this by widget id. Returns only the widget config and script tag, never credentials.",
+      "Public — external sites fetch this by widget id. Returns only the widget config and script tag, never credentials. Rate-limited per caller IP.",
   })
   @ApiParam({ name: "channelId", description: "Web-chat channel account UUID" })
   @ApiResponse({ status: 200, description: "Widget id, config and embed snippet" })
   @ApiResponse({ status: 404, description: "Not found, or not visible to this business" })
+  @ApiResponse({ status: 429, description: "Too many requests from this address" })
   async getWebChatEmbed(@Param("channelId") channelId: string) {
     // Public endpoint — external websites load the embed script.
     // Pass empty businessId; service will look up by channelId alone.

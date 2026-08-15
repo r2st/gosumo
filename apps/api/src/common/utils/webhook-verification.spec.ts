@@ -292,7 +292,9 @@ describe('portal-email webhook — missing ingest token', () => {
 
   function controller(env: string, token = '') {
     const ingestion = {
-      ingestPortalEmail: jest.fn().mockResolvedValue({ ingested: 1 }),
+      // The controller routes through the DLQ-backed wrapper, not the bare
+      // ingest — that is what parks a failed enquiry instead of logging it away.
+      handlePortalEmailDelivery: jest.fn().mockResolvedValue({ ingested: 1 }),
     } as unknown as RealtyIngestionService;
     const config = makeConfig(env, token ? { 'realty.portalIngestToken': token } : {});
     return {
@@ -308,7 +310,7 @@ describe('portal-email webhook — missing ingest token', () => {
   it('accepts an untokened post in development', async () => {
     const { controller: c, ingestion } = controller('development');
     await expect(c.handlePortalEmail('', 'biz_1', DTO)).resolves.toEqual({ status: 'ok' });
-    expect(ingestion.ingestPortalEmail).toHaveBeenCalled();
+    expect(ingestion.handlePortalEmailDelivery).toHaveBeenCalled();
   });
 
   it('REJECTS an untokened post in production rather than accepting everyone', async () => {
@@ -316,7 +318,7 @@ describe('portal-email webhook — missing ingest token', () => {
     await expect(c.handlePortalEmail('', 'biz_1', DTO)).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
-    expect(ingestion.ingestPortalEmail).not.toHaveBeenCalled();
+    expect(ingestion.handlePortalEmailDelivery).not.toHaveBeenCalled();
   });
 
   it('rejects a wrong token and accepts the configured one', async () => {
@@ -327,19 +329,25 @@ describe('portal-email webhook — missing ingest token', () => {
     await expect(c.handlePortalEmail('right-token', 'biz_1', DTO)).resolves.toEqual({
       status: 'ok',
     });
-    expect(ingestion.ingestPortalEmail).toHaveBeenCalledTimes(1);
+    expect(ingestion.handlePortalEmailDelivery).toHaveBeenCalledTimes(1);
   });
 
-  it('swallows a downstream failure and still acks', async () => {
+  it('still acks when the wrapper reports nothing ingested', async () => {
     const { controller: c, ingestion } = controller('development');
-    (ingestion.ingestPortalEmail as jest.Mock).mockRejectedValueOnce(new Error('db down'));
+    // What the wrapper returns after dead-lettering a failed enquiry: it
+    // absorbs the error itself, so the handler above it needs no catch.
+    (ingestion.handlePortalEmailDelivery as jest.Mock).mockResolvedValueOnce(null);
     await expect(c.handlePortalEmail('', 'biz_1', DTO)).resolves.toEqual({ status: 'ok' });
   });
 
   it('falls back to an "unknown" tenant when the gateway header is absent', async () => {
     const { controller: c, ingestion } = controller('development');
     await c.handlePortalEmail('', undefined as unknown as string, DTO);
-    expect(ingestion.ingestPortalEmail).toHaveBeenCalledWith('unknown', DTO);
+    expect(ingestion.handlePortalEmailDelivery).toHaveBeenCalledWith(
+      'unknown',
+      DTO,
+      expect.anything(),
+    );
   });
 });
 

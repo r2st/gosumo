@@ -79,7 +79,7 @@ describe('MigrationService', () => {
     });
 
     it('commit delegates to ingestion and records a COMMITTED run + event', async () => {
-      ingestion.importCsv.mockResolvedValue({ total: 3, created: 2, merged: 1, skipped: 0, errors: [] });
+      ingestion.importCsv.mockResolvedValue({ total: 3, created: 2, merged: 1, skipped: 0, failed: 0, errors: [] });
       const run = await service.importLeads(BUSINESS_ID, { rows: [{ phone: '9876543210' }] });
       expect(ingestion.importCsv).toHaveBeenCalledWith(BUSINESS_ID, { rows: [{ phone: '9876543210' }] });
       expect(run.status).toBe(MigrationStatus.COMMITTED);
@@ -88,6 +88,37 @@ describe('MigrationService', () => {
         'realty.migration.completed',
         expect.objectContaining({ status: MigrationStatus.COMMITTED, merged: 1 }),
       );
+    });
+
+    /**
+     * `importCsv` reports two kinds of non-landing row apart — `skipped` for one
+     * it rejected, `failed` for one whose write threw — because the ingestion
+     * webhooks need that distinction to decide what is worth dead-lettering. A
+     * migration run has a single "did not land" counter, so both belong in it.
+     * Recording only `skipped` would file a run whose rows all hit a database
+     * blip as having skipped nothing, and the audit history is the only place
+     * an operator would look.
+     */
+    it('counts rows that errored, not just rows that were rejected', async () => {
+      ingestion.importCsv.mockResolvedValue({
+        total: 4,
+        created: 1,
+        merged: 0,
+        skipped: 1,
+        failed: 2,
+        errors: [
+          { row: 2, reason: 'invalid phone' },
+          { row: 3, reason: 'db down' },
+          { row: 4, reason: 'db down' },
+        ],
+      });
+
+      const run = await service.importLeads(BUSINESS_ID, { rows: [{ phone: '9876543210' }] });
+
+      expect(run.skipped).toBe(3);
+      // The count and the reasons have to agree — an operator reading one
+      // against the other is exactly how a silent loss gets noticed.
+      expect(run.errors).toHaveLength(3);
     });
 
     it('records a FAILED run when the importer throws', async () => {
@@ -110,6 +141,7 @@ describe('MigrationService', () => {
         created: 0,
         merged: 0,
         skipped: 3,
+        failed: 0,
         errors: [
           { row: 1, reason: 'invalid phone' },
           { row: 2, reason: 'invalid phone' },
@@ -135,6 +167,7 @@ describe('MigrationService', () => {
         created: 0,
         merged: 1,
         skipped: 2,
+        failed: 0,
         errors: [{ row: 2, reason: 'invalid phone' }, { row: 3, reason: 'invalid phone' }],
       });
       const run = await service.importLeads(BUSINESS_ID, {
@@ -146,7 +179,7 @@ describe('MigrationService', () => {
     it('records COMMITTED for an empty file rather than calling it a failure', async () => {
       // Nothing to import is not a failed import; only a run that had rows and
       // moved none of them is.
-      ingestion.importCsv.mockResolvedValue({ total: 0, created: 0, merged: 0, skipped: 0, errors: [] });
+      ingestion.importCsv.mockResolvedValue({ total: 0, created: 0, merged: 0, skipped: 0, failed: 0, errors: [] });
       const run = await service.importLeads(BUSINESS_ID, { rows: [] });
       expect(run.status).toBe(MigrationStatus.COMMITTED);
     });

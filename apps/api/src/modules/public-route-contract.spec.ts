@@ -702,3 +702,95 @@ describe('anonymous-by-design routes are held to a short list', () => {
     ]);
   });
 });
+
+/**
+ * Every anonymous route states what bounds the work it can be made to do.
+ *
+ * Authentication and rate limiting answer different questions, and the routes
+ * above have given up the first one. That matters more than it looks: a token
+ * is what bounds how often a caller can reach anything else in this API, so a
+ * route without one has no ceiling at all unless it declares its own. Two of
+ * these three do real dependency work per call — a Postgres round-trip, a Redis
+ * PING, a queue depth read — which turns a well-known URL into a dependency
+ * amplifier pointed at a database this deployment shares with another service.
+ *
+ * Signature-verified webhooks are deliberately *not* covered here. An HMAC the
+ * caller cannot forge is itself the bound, and a 429 on a payment or lead
+ * webhook drops a real event; the anonymous routes have no such excuse.
+ *
+ * Each route names one of two bounds, and each is checked against the code:
+ *
+ *   - `throttled`      — carries an `@AuthThrottle` bucket, so a flood is
+ *                        rejected before the handler runs.
+ *   - `cached`         — memoizes its result, so any number of callers per
+ *                        second costs one unit of real work. The right choice
+ *                        for a probe, where a 429 would read to a load balancer
+ *                        as an unhealthy instance and cause the outage it was
+ *                        meant to prevent.
+ *   - `no-dependency`  — touches nothing external, so there is nothing to
+ *                        amplify.
+ *
+ * A new anonymous route lands here with no entry and fails until someone says
+ * which of the three it is.
+ */
+describe('anonymous routes declare what bounds their cost', () => {
+  const BOUNDS: Record<string, 'throttled' | 'cached' | 'no-dependency'> = {
+    // Returns process uptime and a timestamp. No dependency is touched, which
+    // is the entire point of splitting it from the readiness probe.
+    'HealthController.liveness': 'no-dependency',
+    // Probes Postgres, Redis and every registered queue. Cached rather than
+    // throttled so a balancer is never told it is being rate limited.
+    'HealthController.readiness': 'cached',
+    // Reads `channel_accounts` by a caller-supplied id on every call.
+    'ChannelsController.getWebChatEmbed': 'throttled',
+  };
+
+  it('covers every anonymous route', () => {
+    expect(Object.keys(BOUNDS).sort()).toEqual(BY_MECHANISM('anonymous-by-design').sort());
+  });
+
+  it.each(Object.entries(BOUNDS).filter(([, b]) => b === 'throttled'))(
+    '%s declares a throttle bucket that exists',
+    (handler) => {
+      const [controllerName, handlerName] = handler.split('.') as [string, string];
+      const controller = CONTROLLERS.find((c) => c.name === controllerName)!;
+      const fn = (controller.cls.prototype as Record<string, unknown>)[handlerName];
+
+      const bucket =
+        Reflect.getMetadata(AUTH_THROTTLE_BUCKET, fn as object) ??
+        Reflect.getMetadata(AUTH_THROTTLE_BUCKET, controller.cls);
+
+      expect(typeof bucket).toBe('string');
+      // A decorator pointing at a bucket nobody defined throttles nothing, and
+      // looks exactly like protection in review.
+      expect(Object.keys(AUTH_THROTTLE_BUCKETS)).toContain(bucket);
+    },
+  );
+
+  it.each(Object.entries(BOUNDS).filter(([, b]) => b === 'cached'))(
+    '%s memoizes its result instead of probing per request',
+    (handler) => {
+      // Asserted against the service the handler delegates to: the controller
+      // is a pass-through, and the cache is only useful where the work is.
+      const src = fs.readFileSync(
+        path.join(__dirname, 'health', 'health.service.ts'),
+        'utf8',
+      );
+      expect(handler).toBe('HealthController.readiness');
+      expect(src).toMatch(/cachedReadiness/);
+      // Single-flight as well as TTL. Without it a burst against a cold cache
+      // fires one probe per request — the case actually worth defending.
+      expect(src).toMatch(/inFlightReadiness/);
+    },
+  );
+
+  it('the no-dependency routes really touch nothing', () => {
+    for (const [handler, bound] of Object.entries(BOUNDS)) {
+      if (bound !== 'no-dependency') continue;
+      const src = sourceFor(handler);
+      // A probe that grew a dependency call would need a different bound, and
+      // this is the assertion that notices.
+      expect(src).not.toMatch(/prisma|redis|\$queryRaw|getJobCounts/i);
+    }
+  });
+});

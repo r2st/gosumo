@@ -295,3 +295,122 @@ describe('HealthController', () => {
     expect(report.dependencies.database.status).toBe('down');
   });
 });
+
+/**
+ * `GET /health/ready` is `@Public()`, so it is reachable by anyone, and it does
+ * real work per call: a Postgres round-trip, a Redis PING, and a queue-depth
+ * read. That combination — no authentication, no ceiling, a well-known URL, and
+ * a dependency touched on every request — is what turns a health probe into an
+ * amplifier against a database this deployment shares with another service.
+ *
+ * The bound is a cache rather than a rate limit on purpose: a 429 reads to a
+ * load balancer as an unhealthy instance and pulls it from rotation, causing
+ * the outage the limit was meant to prevent. A cache costs a flood nothing and
+ * costs a real probe nothing either.
+ */
+describe('HealthService — readiness is bounded', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('probes the dependencies once for a burst of callers', async () => {
+    const { service, query, ping } = makeService();
+
+    await Promise.all(Array.from({ length: 50 }, () => service.readiness()));
+
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(ping).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The single-flight half, isolated. A TTL cache alone does nothing here:
+   * with a cold cache and 25 concurrent requests, none of them finds a stored
+   * result, so every one starts its own probe — which is precisely the burst
+   * worth defending against.
+   */
+  it('collapses concurrent callers onto one in-flight probe', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const query = jest.fn().mockImplementation(() => gate.then(() => [{ ok: 1 }]));
+    const { service, ping } = makeService({ query });
+
+    const inFlight = Array.from({ length: 25 }, () => service.readiness());
+    // Every caller is now waiting on a probe that has not resolved.
+    expect(query).toHaveBeenCalledTimes(1);
+
+    release();
+    const reports = await Promise.all(inFlight);
+
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(ping).toHaveBeenCalledTimes(1);
+    // They all get the same answer, not a half-filled one.
+    for (const r of reports) expect(r.status).toBe('ok');
+  });
+
+  it('serves a second caller from cache without re-probing', async () => {
+    const { service, query } = makeService();
+
+    const first = await service.readiness();
+    const second = await service.readiness();
+
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(second).toBe(first);
+  });
+
+  /**
+   * A cache that outlived its window would be worse than none: a balancer would
+   * keep being told an instance is healthy after its database went away.
+   */
+  it('re-probes once the cache window has elapsed', async () => {
+    const { service, query } = makeService();
+    const realNow = Date.now();
+    const now = jest.spyOn(Date, 'now').mockReturnValue(realNow);
+
+    await service.readiness();
+    expect(query).toHaveBeenCalledTimes(1);
+
+    now.mockReturnValue(realNow + 1_001);
+    await service.readiness();
+
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it('reflects a dependency that went down after the window', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([{ ok: 1 }])
+      .mockRejectedValue(new Error('pg down'));
+    const { service } = makeService({ query });
+    const realNow = Date.now();
+    const now = jest.spyOn(Date, 'now').mockReturnValue(realNow);
+
+    expect((await service.readiness()).status).toBe('ok');
+
+    now.mockReturnValue(realNow + 1_001);
+
+    expect((await service.readiness()).status).toBe('degraded');
+  });
+
+  /**
+   * A rejected probe must not be cached. `probeReadiness` converts every
+   * dependency outcome into a report rather than throwing, so this is about the
+   * in-flight promise: holding a rejected one would serve one failed probe to
+   * every later caller for the life of the process.
+   */
+  it('does not pin a failed probe for later callers', async () => {
+    const depthBreaches = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('redis gone'))
+      .mockResolvedValue([]);
+    const { service } = makeService({ depthBreaches });
+    const realNow = Date.now();
+    const now = jest.spyOn(Date, 'now').mockReturnValue(realNow);
+
+    await expect(service.readiness()).resolves.toMatchObject({ status: 'ok' });
+
+    now.mockReturnValue(realNow + 1_001);
+
+    await expect(service.readiness()).resolves.toMatchObject({ status: 'ok' });
+    expect(depthBreaches).toHaveBeenCalledTimes(2);
+  });
+});

@@ -292,3 +292,72 @@ describe('AuthThrottleGuard', () => {
     });
   });
 });
+
+/**
+ * The `webchat-embed` bucket.
+ *
+ * `AUTH_THROTTLE_BUCKETS` started as the ceilings for the unauthenticated
+ * *auth* routes, but the property it enforces is not about auth at all: a JWT
+ * is what bounds how often a caller can reach anything else in this API, so
+ * *any* `@Public()` route has no ceiling unless it declares one. The web-chat
+ * embed lookup is the case that made that concrete — anonymous, caller-supplied
+ * id, one `channel_accounts` read per call, and nothing standing in front of a
+ * Postgres this deployment shares with another service.
+ *
+ * The per-IP dimension is the right one here rather than a per-tenant window:
+ * the legitimate callers are browsers on the embedding sites, one request each
+ * per page load, from their own addresses.
+ */
+describe('AuthThrottleGuard — webchat-embed bucket', () => {
+  const rule = AUTH_THROTTLE_BUCKETS['webchat-embed']!;
+
+  let limiter: AuthThrottleLimiter;
+  let guard: AuthThrottleGuard;
+  let res: { setHeader: jest.Mock };
+
+  beforeEach(() => {
+    limiter = new AuthThrottleLimiter();
+    guard = new AuthThrottleGuard(limiter, new Reflector());
+    res = { setHeader: jest.fn() };
+  });
+
+  const call = () =>
+    guard.canActivate(contextFor('webchat-embed', { ip: IP, body: {} }, res));
+
+  it('admits a page-load-rate caller', () => {
+    for (let i = 0; i < rule.ip.limit; i += 1) {
+      expect(call()).toBe(true);
+    }
+  });
+
+  it('rejects the request past the ceiling with a 429', () => {
+    for (let i = 0; i < rule.ip.limit; i += 1) call();
+
+    try {
+      call();
+      throw new Error('expected a 429');
+    } catch (err) {
+      expect(err).toBeInstanceOf(HttpException);
+      expect((err as HttpException).getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
+    }
+  });
+
+  /**
+   * Browsers on an embedding site each arrive from their own address, so one
+   * exhausted visitor must not be able to take the widget down for everyone
+   * else on that page.
+   */
+  it('does not charge one caller against another', () => {
+    for (let i = 0; i < rule.ip.limit; i += 1) call();
+
+    const other = guard.canActivate(
+      contextFor('webchat-embed', { ip: '198.51.100.9', body: {} }, res),
+    );
+
+    expect(other).toBe(true);
+  });
+
+  it('is keyed per IP only — this route has no body to key a subject on', () => {
+    expect(rule.subject).toBeUndefined();
+  });
+});

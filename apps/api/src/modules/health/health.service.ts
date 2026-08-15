@@ -9,6 +9,28 @@ import {
 /** How long a dependency probe may hang before it is called a failure. */
 const PROBE_TIMEOUT_MS = 2_000;
 
+/**
+ * How long a readiness result is reused before the dependencies are probed
+ * again.
+ *
+ * `GET /health/ready` is `@Public()` — a load balancer carries no JWT — and it
+ * is the one anonymous route in this API that does real work on every call: a
+ * Postgres round-trip, a Redis PING, and a `getJobCounts` per registered queue.
+ * Unthrottled, that makes a well-known URL into a dependency amplifier, and
+ * this deployment shares a 50-connection Postgres with another service, so
+ * saturating it is not a theoretical concern.
+ *
+ * Caching is the right control here rather than a rate limit. A 429 to a load
+ * balancer reads as "this instance is unhealthy" and pulls it out of rotation —
+ * a mitigation that causes the outage it was meant to prevent. A cache bounds
+ * the work instead: any number of callers per second costs one probe.
+ *
+ * One second is well under every probe interval a balancer uses (typically 5s
+ * or more), so a real health check still gets a fresh answer every time, while
+ * a flood collapses onto a single probe.
+ */
+const READINESS_CACHE_MS = 1_000;
+
 export type DependencyStatus = 'up' | 'down';
 
 export interface DependencyReport {
@@ -59,6 +81,12 @@ export interface ReadinessReport {
 export class HealthService {
   private readonly logger = new Logger(HealthService.name);
 
+  /** Last readiness result, reused until `expiresAt`. */
+  private cachedReadiness: { report: ReadinessReport; expiresAt: number } | null = null;
+
+  /** The probe currently running, so concurrent callers share one. */
+  private inFlightReadiness: Promise<ReadinessReport> | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     @Inject(REDIS_CLIENT) private readonly redis: RedisClient,
@@ -79,8 +107,40 @@ export class HealthService {
     };
   }
 
-  /** Readiness — probes every dependency a request needs, concurrently. */
+  /**
+   * Readiness — probes every dependency a request needs, concurrently.
+   *
+   * Bounded by {@link READINESS_CACHE_MS} in two ways: a result younger than
+   * the window is reused, and callers arriving while a probe is already in
+   * flight join that one instead of starting their own. The second half is
+   * what a plain TTL cache would miss — a burst against a cold cache would
+   * otherwise fire one probe per request, which is the exact case worth
+   * defending against.
+   */
   async readiness(): Promise<ReadinessReport> {
+    const now = Date.now();
+
+    if (this.cachedReadiness && now < this.cachedReadiness.expiresAt) {
+      return this.cachedReadiness.report;
+    }
+    if (this.inFlightReadiness) return this.inFlightReadiness;
+
+    this.inFlightReadiness = this.probeReadiness()
+      .then((report) => {
+        this.cachedReadiness = { report, expiresAt: Date.now() + READINESS_CACHE_MS };
+        return report;
+      })
+      .finally(() => {
+        // Cleared whatever happened: holding a rejected promise here would
+        // serve one failed probe to every later caller forever.
+        this.inFlightReadiness = null;
+      });
+
+    return this.inFlightReadiness;
+  }
+
+  /** The actual dependency probes, run concurrently under their own timeouts. */
+  private async probeReadiness(): Promise<ReadinessReport> {
     const [database, redis, queueBacklog] = await Promise.all([
       this.probe('database', () => this.prisma.$queryRaw`SELECT 1`),
       this.probe('redis', () => this.redis.ping()),
