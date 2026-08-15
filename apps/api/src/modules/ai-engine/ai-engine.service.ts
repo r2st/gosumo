@@ -35,6 +35,7 @@ import {
   ScoredConfidence,
 } from './pipeline/confidence-calculator.service';
 import { ActionRouterService, RoutingDecision } from './pipeline/action-router.service';
+import { CatalogMatchService } from './pipeline/catalog-match.service';
 import { extractAmountPaise } from './pipeline/money-extract.util';
 import { GuardrailsService } from './safety/guardrails.service';
 import { ReviewQueueService } from './hitl/review-queue.service';
@@ -119,6 +120,7 @@ export class AiEngineService {
     private readonly responseParser: ResponseParserService,
     private readonly confidence: ConfidenceCalculatorService,
     private readonly router: ActionRouterService,
+    private readonly catalogMatch: CatalogMatchService,
     private readonly guardrails: GuardrailsService,
     private readonly reviewQueue: ReviewQueueService,
     private readonly knowledgeIngestion: KnowledgeIngestionService,
@@ -210,12 +212,23 @@ export class AiEngineService {
         });
 
     // ── DECIDE ────────────────────────────────
+    // Does the business actually sell what is being priced? Returns an empty
+    // signal for every intent that is not asking, so this costs one bounded
+    // catalog read on pricing/order turns and nothing on the rest.
+    const catalog = await this.catalogMatch.evaluate(
+      businessId,
+      classification.intent,
+      text,
+    );
+
     const scored = this.confidence.calculate({
       intent: classification.intent,
       data: {
         ragChunkCount: chunks.length,
         clientKnown: context.client !== null,
+        catalogMatch: catalog.catalogMatch,
       },
+      priceNotInCatalog: catalog.priceNotInCatalog,
       policy: { policyDefined: context.businessRules.length > 0 },
       safety,
       forceEscalate: dto.forceEscalate === true,

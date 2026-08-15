@@ -19,6 +19,8 @@ import { KnowledgeIngestionService } from './rag/knowledge-ingestion.service';
 import { PrismaService } from '../../common/services/prisma.service';
 import { ChannelAdapterModule } from '../channel-adapter/channel-adapter.module';
 import { RealtyTenantModule } from './realty/realty-tenant.module';
+import { CatalogModule } from '../catalog/catalog.module';
+import { CatalogMatchService } from './pipeline/catalog-match.service';
 
 /**
  * AiEngineModule — the cognitive core of GoSumo.
@@ -33,7 +35,7 @@ import { RealtyTenantModule } from './realty/realty-tenant.module';
  * the HITL module for draft management.
  */
 @Module({
-  imports: [ConfigModule, ChannelAdapterModule, RealtyTenantModule],
+  imports: [ConfigModule, ChannelAdapterModule, RealtyTenantModule, CatalogModule],
   controllers: [AiEngineController],
   providers: [
     AiEngineService,
@@ -45,6 +47,7 @@ import { RealtyTenantModule } from './realty/realty-tenant.module';
     ResponseParserService,
     ConfidenceCalculatorService,
     ActionRouterService,
+    CatalogMatchService,
     GuardrailsService,
     ReviewQueueService,
     QdrantClient,

@@ -34,6 +34,8 @@ import {
   ActionRouterService,
   RoutingDecision,
 } from './pipeline/action-router.service';
+import { CatalogMatchService } from './pipeline/catalog-match.service';
+import { CatalogService } from '../catalog/catalog.service';
 import { GuardrailsService, SafetySignals } from './safety/guardrails.service';
 import { ReviewQueueService } from './hitl/review-queue.service';
 import { KnowledgeIngestionService } from './rag/knowledge-ingestion.service';
@@ -216,6 +218,12 @@ function makeHarness() {
     responseParser,
     confidence,
     router,
+    // Catalog-less tenant: no catalog signal, so these cases score exactly as
+    // they did before the price-override wiring existed.
+    new CatalogMatchService({
+      listItems: jest.fn().mockResolvedValue({ total: 0, data: [] }),
+      searchCatalog: jest.fn().mockResolvedValue([]),
+    } as unknown as CatalogService),
     guardrails,
     reviewQueue,
     { ingest: jest.fn() } as unknown as KnowledgeIngestionService,

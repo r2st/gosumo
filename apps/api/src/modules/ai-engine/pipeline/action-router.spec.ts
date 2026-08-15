@@ -28,6 +28,23 @@ describe('ActionRouterService', () => {
     expect(decision.holdingMessage).toBeNull();
   });
 
+  it('AUTO_PILOT with an escalation-forcing override → escalate, not send', () => {
+    // The band that talks to the customer unreviewed is the one that most
+    // needs to honour `requiresEscalation`. That the two currently cannot
+    // co-occur is arithmetic in ai-engine.constants (every escalating override
+    // caps at ≤ 0.49, MIN_AUTO_EXECUTE_BAND is 0.50) — not a property of the
+    // router, and not something a future constant change would preserve.
+    const decision = router.route(
+      scored({ mode: ConfidenceMode.AUTO_PILOT, requiresEscalation: true }),
+      IntentType.REFUND,
+    );
+
+    expect(decision.action).toBe('ESCALATE');
+    expect(decision.mode).toBe(ConfidenceMode.ESCALATION);
+    expect(decision.createsTask).toBe(true);
+    expect(decision.holdingMessage).toBeTruthy();
+  });
+
   it('DRAFT → draft review with a task and a holding message', () => {
     const decision = router.route(
       scored({ mode: ConfidenceMode.DRAFT, finalScore: 0.8 }),

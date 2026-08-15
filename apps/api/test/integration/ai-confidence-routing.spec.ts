@@ -47,6 +47,8 @@ import { LlmClientService } from '../../src/modules/ai-engine/pipeline/llm-clien
 import { ResponseParserService } from '../../src/modules/ai-engine/pipeline/response-parser.service';
 import { ConfidenceCalculatorService } from '../../src/modules/ai-engine/pipeline/confidence-calculator.service';
 import { ActionRouterService } from '../../src/modules/ai-engine/pipeline/action-router.service';
+import { CatalogMatchService } from '../../src/modules/ai-engine/pipeline/catalog-match.service';
+import { CatalogService } from '../../src/modules/catalog/catalog.service';
 import { GuardrailsService } from '../../src/modules/ai-engine/safety/guardrails.service';
 import { ReviewQueueService } from '../../src/modules/ai-engine/hitl/review-queue.service';
 import { KnowledgeIngestionService } from '../../src/modules/ai-engine/rag/knowledge-ingestion.service';
@@ -286,6 +288,12 @@ function buildPipeline() {
     responseParser,
     confidence,
     router,
+    // The tenants in this file keep no catalog, so the price override supplies
+    // no signal and every case here scores on grounding alone, as before.
+    new CatalogMatchService({
+      listItems: jest.fn().mockResolvedValue({ total: 0, data: [] }),
+      searchCatalog: jest.fn().mockResolvedValue([]),
+    } as unknown as CatalogService),
     guardrails,
     reviewQueue,
     { ingest: jest.fn() } as unknown as KnowledgeIngestionService,

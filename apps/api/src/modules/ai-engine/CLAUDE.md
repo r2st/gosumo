@@ -26,7 +26,7 @@ confidence = (data_availability × 0.5) + (policy_clarity × 0.5)
 ```
 
 **Hard overrides (force confidence to 0 regardless of formula):**
-- Price requested but item not in catalog
+- Price requested but item not in catalog — fed by `CatalogMatchService` (pipeline), which runs only for price-bearing intents and only for tenants that actually keep a catalog
 - Refund exceeds `maxRefundAmountPaise` from business policy
 - Customer message contains legal threat keywords
 - Loop: >3 consecutive exchanges with identical intent
@@ -79,3 +79,5 @@ pnpm --filter @gosumo/api test --testPathPattern=modules/ai-engine
 - **LLM timeout (>8s):** retry once; if still fails, escalate the conversation via HITL task
 - RAG max chunks: 5 (defined in `ai-engine.constants.ts`). Always pass the top-5 by similarity score, not all matches
 - `ai_decisions` is immutable — never UPDATE a decision record; create a new one for regenerated drafts
+- **An override the pipeline never feeds is not a control** — `PRICE_NOT_IN_CATALOG` and `REFUND_OVER_LIMIT` were both implemented in the calculator while nothing supplied their inputs, so both sat dark and the cases they name auto-executed. When adding an override, wire its input in `runPipeline` in the same change, and cover it end-to-end in `ai-engine.service.spec.ts` — a calculator unit test passes either way
+- **`requiresEscalation` outranks the band in every arm of `ActionRouterService`**, AUTO_PILOT included. That the two cannot currently co-occur is arithmetic between `OVERRIDE.*.forceScore` and `MIN_AUTO_EXECUTE_BAND`, not a property of the router

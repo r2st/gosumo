@@ -49,6 +49,20 @@ export class ActionRouterService {
     // always divert DRAFT/GUIDED into the ESCALATION path.
     switch (scored.mode) {
       case ConfidenceMode.AUTO_PILOT:
+        // An escalation-forcing override outranks the band here too.
+        //
+        // Today the two cannot co-occur, and only by arithmetic: every
+        // escalating override caps the score at 0.49 or below, and
+        // `MIN_AUTO_EXECUTE_BAND` refuses to honour a tenant auto-execute gate
+        // under 0.50. That is a coincidence of two constants in a different
+        // file, not a property of this switch — raise `PRICE_NOT_IN_CATALOG`'s
+        // ceiling by a hundredth, or lower the floor, and a legal threat
+        // auto-sends with no other line of code changing. DRAFT and GUIDED
+        // both consult `requiresEscalation`; the band that actually talks to
+        // the customer unreviewed is the one that most needs to.
+        if (scored.requiresEscalation) {
+          return this.escalation(scored, urgency);
+        }
         return {
           mode: scored.mode,
           action: 'AUTO_EXECUTE',

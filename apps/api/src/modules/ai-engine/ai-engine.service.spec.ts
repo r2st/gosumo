@@ -13,6 +13,8 @@ import { LlmClientService } from './pipeline/llm-client.service';
 import { ResponseParserService } from './pipeline/response-parser.service';
 import { ConfidenceCalculatorService } from './pipeline/confidence-calculator.service';
 import { ActionRouterService } from './pipeline/action-router.service';
+import { CatalogMatchService } from './pipeline/catalog-match.service';
+import { CatalogService } from '../catalog/catalog.service';
 import { GuardrailsService } from './safety/guardrails.service';
 import { ReviewQueueService } from './hitl/review-queue.service';
 import { KnowledgeIngestionService } from './rag/knowledge-ingestion.service';
@@ -66,6 +68,10 @@ function llmResponse(intent: string, escalate = false): string {
 
 interface Harness {
   service: AiEngineService;
+  /** Catalog size probe — `{ total }` decides whether the tenant has a catalog. */
+  listItems: jest.Mock;
+  /** Per-term catalog lookup; a non-empty array means the item is stocked. */
+  searchCatalog: jest.Mock;
   llmComplete: jest.SpyInstance;
   ragRetrieve: jest.Mock;
   createDecision: jest.Mock;
@@ -102,6 +108,16 @@ function makeHarness(): Harness {
   const responseParser = new ResponseParserService(llm);
   const confidence = new ConfidenceCalculatorService();
   const router = new ActionRouterService();
+  // A real CatalogMatchService over a fake catalog, so the price-override
+  // wiring is exercised rather than stubbed away. Empty catalog by default:
+  // every pre-existing case in this file predates the check and must keep
+  // scoring exactly as it did.
+  const listItems = jest.fn().mockResolvedValue({ total: 0, data: [] });
+  const searchCatalog = jest.fn().mockResolvedValue([]);
+  const catalogMatch = new CatalogMatchService({
+    listItems,
+    searchCatalog,
+  } as unknown as CatalogService);
   const guardrails = new GuardrailsService();
   const promptAssembler = new PromptAssemblerService();
 
@@ -190,6 +206,7 @@ function makeHarness(): Harness {
     responseParser,
     confidence,
     router,
+    catalogMatch,
     guardrails,
     reviewQueue,
     knowledgeIngestion,
@@ -203,6 +220,8 @@ function makeHarness(): Harness {
 
   return {
     service,
+    listItems,
+    searchCatalog,
     llmComplete,
     ragRetrieve,
     createDecision,
@@ -256,6 +275,77 @@ describe('AiEngineService — processMessage pipeline', () => {
     );
     // The customer receives a holding message immediately.
     expect(h.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  // ── Price / catalog override ────────────────
+  //
+  // `PRICE_NOT_IN_CATALOG` was implemented in the calculator and never fed:
+  // nothing in the pipeline set `priceNotInCatalog`, so a pricing question
+  // about an item the business does not stock scored on RAG depth and policy
+  // clarity alone, landed in AUTO_PILOT, and was answered unreviewed from
+  // whatever the retrieved documents happened to say.
+
+  it('does not auto-execute a price for an item the business does not stock', async () => {
+    const h = makeHarness();
+    h.listItems.mockResolvedValue({ total: 25, data: [] });
+    h.searchCatalog.mockResolvedValue([]); // nothing in the catalog matches
+    h.context.value = makeContext('facial ka price kya hai');
+
+    const result = await h.service.processMessage('b1', dto);
+
+    expect(result.outcome).not.toBe('AUTO_EXECUTED');
+    expect(result.confidence.overrides.map((o) => o.code)).toContain('price_not_in_catalog');
+    expect(h.emit).not.toHaveBeenCalledWith('ai.auto.executed', expect.any(Object));
+  });
+
+  it('hands the unstocked-item case to a human with the reason attached', async () => {
+    const h = makeHarness();
+    h.listItems.mockResolvedValue({ total: 25, data: [] });
+    h.searchCatalog.mockResolvedValue([]);
+    h.context.value = makeContext('facial ka price kya hai');
+
+    await h.service.processMessage('b1', dto);
+
+    expect(h.createReviewTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'ESCALATE',
+        escalationReason: expect.stringContaining('not in the catalog'),
+      }),
+    );
+  });
+
+  it('still auto-executes a price for an item that is in the catalog', async () => {
+    const h = makeHarness();
+    h.listItems.mockResolvedValue({ total: 25, data: [] });
+    h.searchCatalog.mockResolvedValue([{ id: 'item-1', name: 'facial' }]);
+    h.context.value = makeContext('facial ka price kya hai');
+
+    const result = await h.service.processMessage('b1', dto);
+
+    expect(result.outcome).toBe('AUTO_EXECUTED');
+    expect(result.confidence.overrides).toHaveLength(0);
+  });
+
+  it('leaves a tenant with no catalog scoring exactly as before', async () => {
+    // Their price list lives in the knowledge base. Treating "no catalog" as
+    // "not stocked" would escalate every pricing conversation they have.
+    const h = makeHarness();
+    h.listItems.mockResolvedValue({ total: 0, data: [] });
+    h.context.value = makeContext('facial ka price kya hai');
+
+    const result = await h.service.processMessage('b1', dto);
+
+    expect(result.outcome).toBe('AUTO_EXECUTED');
+    expect(h.searchCatalog).not.toHaveBeenCalled();
+  });
+
+  it('does not consult the catalog for an intent that is not quoting a price', async () => {
+    const h = makeHarness();
+    h.context.value = makeContext('kal 3 baje book karna hai');
+
+    await h.service.processMessage('b1', dto);
+
+    expect(h.listItems).not.toHaveBeenCalled();
   });
 
   it('ESCALATES a legal threat WITHOUT calling the LLM for a reply', async () => {
