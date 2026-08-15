@@ -35,6 +35,7 @@ import { RealtyAuditService } from './realty-audit.service';
 import { RealtyIntelligenceService } from '../../realty-intelligence/realty-intelligence.service';
 import { ComplianceNoticeService } from '../../compliance/compliance-notice.service';
 import { computeRealtyConfidence } from './realty-confidence.util';
+import { RealtyTenantService } from './realty-tenant.service';
 import {
   buildRealtySystemPrompt,
   buildRealtyUserPrompt,
@@ -120,6 +121,13 @@ export class RealtyAiService {
      * then run with an empty transcript exactly as before.
      */
     @Optional() private readonly context?: ContextLoaderService,
+    /**
+     * Optional — the tenant classifier, read here only for its cached view of
+     * `businesses.ai_settings`. Absent in unit tests that construct the service
+     * positionally, which then route on the module default bands exactly as
+     * before.
+     */
+    @Optional() private readonly tenants?: RealtyTenantService,
   ) {}
 
   async processTurn(businessId: string, dto: RealtyTurnDto): Promise<RealtyDecision> {
@@ -202,6 +210,10 @@ export class RealtyAiService {
       bltcSlotsFilled: countFilledCoreSlots(profile),
       ragChunkCount: dto.playbookChunks?.length ?? 0,
       guard,
+      // The tenant's own bands. Without this the realty loop routed on the
+      // module constants and silently ignored the thresholds the settings page
+      // writes — see `resolveRealtyBands`.
+      thresholds: await this.tenants?.confidenceThresholds(businessId),
     });
 
     // ── ACT ───────────────────────────────────

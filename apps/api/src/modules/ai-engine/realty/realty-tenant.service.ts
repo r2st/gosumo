@@ -7,6 +7,17 @@ interface CacheEntry {
   expiresAt: number;
 }
 
+/** The stored routing thresholds, in percent, exactly as `ai_settings` holds them. */
+export interface StoredThresholds {
+  autoExecute?: number;
+  draftReview?: number;
+}
+
+interface ThresholdCacheEntry {
+  value: StoredThresholds;
+  expiresAt: number;
+}
+
 /** How long a resolved realty-tenant verdict stays cached (ms). */
 export const REALTY_TENANT_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -37,8 +48,62 @@ const REALTY_VERTICALS = new Set(['realty', 'real_estate', 'real-estate']);
 export class RealtyTenantService {
   private readonly logger = new Logger(RealtyTenantService.name);
   private readonly cache = new Map<string, CacheEntry>();
+  private readonly thresholdCache = new Map<string, ThresholdCacheEntry>();
 
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * The tenant's stored confidence-routing thresholds, for the realty loop.
+   *
+   * Lives here rather than in `RealtyAiService` for the same reason
+   * {@link isRealtyTenant} does: this is the dependency-light leaf both
+   * pipelines already consume, it already reads `businesses` on the hot path of
+   * every inbound message, and it already drops its caches on
+   * `business.settings.updated` — which is precisely the event that changes
+   * this answer.
+   *
+   * Returned raw and uncoerced. `resolveRealtyBands` is the one place that
+   * decides what a stored pair means, including which pairs are unusable; a
+   * value sanitized on the way out of here would be sanitized twice, by two
+   * rules that can disagree.
+   *
+   * Fails open to "no stored thresholds", which resolves to the module
+   * defaults — a settings read that errors must not decide a buyer's message
+   * gets auto-sent, and must not stall the turn either.
+   */
+  async confidenceThresholds(businessId: string): Promise<StoredThresholds> {
+    if (!businessId) return {};
+
+    const cached = this.thresholdCache.get(businessId);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+    let value: StoredThresholds;
+    try {
+      const business = await this.prisma.businesses.findFirst({
+        where: { id: businessId, deleted_at: null },
+        select: { ai_settings: true },
+      });
+      const settings = (business?.ai_settings ?? {}) as Record<string, unknown>;
+      value = {
+        autoExecute: settings['autoExecuteThreshold'] as number | undefined,
+        draftReview: settings['reviewThreshold'] as number | undefined,
+      };
+    } catch (err) {
+      this.logger.warn(
+        `Could not read confidence thresholds for ${businessId}: ` +
+          `${err instanceof Error ? err.message : String(err)} — using module defaults`,
+      );
+      // Deliberately not cached: a transient failure must not pin the defaults
+      // in place for the whole TTL.
+      return {};
+    }
+
+    this.thresholdCache.set(businessId, {
+      value,
+      expiresAt: Date.now() + REALTY_TENANT_CACHE_TTL_MS,
+    });
+    return value;
+  }
 
   /** Whether `businessId` is a GoSumo Realty tenant. Fails closed (false) on error. */
   async isRealtyTenant(businessId: string): Promise<boolean> {
@@ -66,6 +131,7 @@ export class RealtyTenantService {
   /** Drop a cached verdict — call after a business changes vertical. */
   invalidate(businessId: string): void {
     this.cache.delete(businessId);
+    this.thresholdCache.delete(businessId);
   }
 
   /**
