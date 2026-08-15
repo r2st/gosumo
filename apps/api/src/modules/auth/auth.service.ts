@@ -552,23 +552,61 @@ export class AuthService {
   // Login throttling
   // ─────────────────────────────────────────────
 
+  /**
+   * Refuse a login while the address is inside its lockout window.
+   *
+   * A counter that is at the ceiling but carries no TTL (`-1`) is repaired here
+   * rather than trusted. `recordFailedAttempt` is the normal place the window is
+   * applied, but this method runs *first* and throws — so an address that ever
+   * reached the ceiling without a TTL would never reach the repair below, and a
+   * key with no expiry is a permanent lockout. The user is not even told that:
+   * `Math.ceil(-1 / 60)` is `0`, so the floor of one reported a countdown of
+   * "1 minute" on every attempt, forever. Stamping the window on discovery
+   * makes the worst case a single full lockout that then drains normally.
+   *
+   * `-2` is the other negative `TTL` reply and means the key is already gone —
+   * it expired between the `get` and the `ttl`. There is nothing to lock out
+   * and nothing to repair, so the attempt proceeds.
+   */
   private async assertNotLockedOut(email: string): Promise<void> {
-    const attempts = await this.redis.get(loginAttemptsKey(email));
-    if (attempts && parseInt(attempts, 10) >= MAX_LOGIN_ATTEMPTS) {
-      const ttl = await this.redis.ttl(loginAttemptsKey(email));
-      const minutes = Math.max(1, Math.ceil(ttl / 60));
-      throw new UnauthorizedException(
-        `Too many failed login attempts. Try again in ${minutes} minute(s).`,
-      );
+    const key = loginAttemptsKey(email);
+    const attempts = await this.redis.get(key);
+    if (!attempts || parseInt(attempts, 10) < MAX_LOGIN_ATTEMPTS) return;
+
+    let ttl = await this.redis.ttl(key);
+    if (ttl === -2) return;
+    if (ttl < 0) {
+      await this.redis.expire(key, LOGIN_LOCKOUT_SECONDS);
+      ttl = LOGIN_LOCKOUT_SECONDS;
     }
+
+    const minutes = Math.max(1, Math.ceil(ttl / 60));
+    throw new UnauthorizedException(
+      `Too many failed login attempts. Try again in ${minutes} minute(s).`,
+    );
   }
 
+  /**
+   * Charge one failed attempt against the address, opening the lockout window
+   * on the first.
+   *
+   * The `EXPIRE` is issued on *every* attempt, with `NX` making it a no-op once
+   * a TTL exists. Applying it only when the counter came back `1` left the key
+   * permanent whenever that one command did not land — the process restarting
+   * between the two round trips, or the `EXPIRE` itself failing (the client
+   * retries a command three times and then rejects, and this runs on a path
+   * that is already handling a failure). `INCR` creates the key with no expiry,
+   * so what survived was a counter that only ever climbs: Redis holds it
+   * forever, and after five attempts that address can never log in again.
+   *
+   * `NX` rather than a bare `EXPIRE` because the window is fixed, not sliding.
+   * Refreshing it on each failure would let someone hold a victim's address
+   * locked out indefinitely by failing one login every fourteen minutes.
+   */
   private async recordFailedAttempt(email: string): Promise<void> {
     const key = loginAttemptsKey(email);
-    const count = await this.redis.incr(key);
-    if (count === 1) {
-      await this.redis.expire(key, LOGIN_LOCKOUT_SECONDS);
-    }
+    await this.redis.incr(key);
+    await this.redis.expire(key, LOGIN_LOCKOUT_SECONDS, 'NX');
   }
 
   private async clearFailedAttempts(email: string): Promise<void> {

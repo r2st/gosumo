@@ -17,7 +17,13 @@ export interface RedisClient {
   set(key: string, value: string, mode: 'EX', seconds: number): Promise<string | null>;
   del(...keys: string[]): Promise<number>;
   exists(...keys: string[]): Promise<number>;
-  expire(key: string, seconds: number): Promise<number>;
+  /**
+   * Set a key's TTL. `NX` applies it only when the key currently has none —
+   * the login lockout depends on that flag to be repairable without extending
+   * its own window (see `AuthService.recordFailedAttempt`). Redis 7, which this
+   * stack pins, is where `NX` was added.
+   */
+  expire(key: string, seconds: number, mode?: 'NX' | 'XX' | 'GT' | 'LT'): Promise<number>;
   incr(key: string): Promise<number>;
   ttl(key: string): Promise<number>;
   mget(...keys: string[]): Promise<(string | null)[]>;

@@ -374,7 +374,7 @@ describe('AuthService — refresh, reset, throttling, sessions', () => {
       expect(redis.del).toHaveBeenCalledWith('gosumo:test@example.com:login_attempts');
     });
 
-    it('sets the lockout TTL only on the first failed attempt', async () => {
+    it('opens the lockout window on the first failed attempt', async () => {
       redis.get.mockResolvedValue(null);
       repo.findTeamMemberByEmail.mockResolvedValue(null);
       redis.incr.mockResolvedValue(1);
@@ -386,10 +386,17 @@ describe('AuthService — refresh, reset, throttling, sessions', () => {
       expect(redis.expire).toHaveBeenCalledWith(
         'gosumo:ghost@example.com:login_attempts',
         15 * 60,
+        'NX',
       );
     });
 
-    it('does not reset the TTL on subsequent failed attempts', async () => {
+    it('re-issues the expiry on every failed attempt, so a lost one is repaired', async () => {
+      // `INCR` creates the key with no TTL. Applying the window only when the
+      // counter came back `1` meant a single dropped `EXPIRE` — a restart
+      // between the two round trips, or a rejected command — left a counter
+      // that only ever climbs: held by Redis forever, and a permanent lockout
+      // for that address once it passed five. Issuing it unconditionally makes
+      // the next failure repair it.
       redis.get.mockResolvedValue('2');
       repo.findTeamMemberByEmail.mockResolvedValue(buildTeamMember());
       redis.incr.mockResolvedValue(3);
@@ -398,8 +405,80 @@ describe('AuthService — refresh, reset, throttling, sessions', () => {
         service.login({ email: 'test@example.com', password: 'WrongPassword!' }),
       ).rejects.toThrow(UnauthorizedException);
 
-      expect(redis.incr).toHaveBeenCalled();
-      expect(redis.expire).not.toHaveBeenCalled();
+      expect(redis.expire).toHaveBeenCalledWith(
+        'gosumo:test@example.com:login_attempts',
+        15 * 60,
+        'NX',
+      );
+    });
+
+    it('does not extend a window that is already running', async () => {
+      // `NX` is what makes the repeated call safe. A bare `EXPIRE` would refresh
+      // the window on every failure, so one login failed every fourteen minutes
+      // would hold a victim's address locked out indefinitely.
+      redis.get.mockResolvedValue('2');
+      repo.findTeamMemberByEmail.mockResolvedValue(buildTeamMember());
+      redis.incr.mockResolvedValue(3);
+
+      await expect(
+        service.login({ email: 'test@example.com', password: 'WrongPassword!' }),
+      ).rejects.toThrow(UnauthorizedException);
+
+      for (const call of redis.expire.mock.calls) {
+        expect(call[2]).toBe('NX');
+      }
+    });
+
+    it('stamps a window on a locked-out counter that has no TTL', async () => {
+      // The repair in `recordFailedAttempt` is unreachable once the ceiling is
+      // hit — `assertNotLockedOut` runs first and throws. Without this branch a
+      // TTL-less counter left over from before the fix stays locked out for the
+      // life of the Redis instance.
+      redis.get.mockResolvedValue('5');
+      redis.ttl.mockResolvedValue(-1);
+
+      await expect(
+        service.login({ email: 'stuck@example.com', password: PLAINTEXT_PASSWORD }),
+      ).rejects.toThrow(/Try again in 15 minute/);
+
+      expect(redis.expire).toHaveBeenCalledWith(
+        'gosumo:stuck@example.com:login_attempts',
+        15 * 60,
+      );
+      // ...and the credential check is still short-circuited.
+      expect(repo.findTeamMemberByEmail).not.toHaveBeenCalled();
+    });
+
+    it('reported the phantom countdown before that repair existed', async () => {
+      // Pins the symptom, not just the cause: `Math.ceil(-1 / 60)` is 0, so the
+      // floor of one told a permanently locked-out operator to wait a minute,
+      // on every attempt, forever. The message must now name the real window.
+      redis.get.mockResolvedValue('5');
+      redis.ttl.mockResolvedValue(-1);
+
+      await expect(
+        service.login({ email: 'stuck@example.com', password: PLAINTEXT_PASSWORD }),
+      ).rejects.toThrow(
+        expect.objectContaining({
+          message: expect.not.stringContaining('1 minute(s)') as unknown as string,
+        }),
+      );
+    });
+
+    it('lets the attempt through when the counter expired mid-check', async () => {
+      // `-2` is "no such key" — it drained between the `get` and the `ttl`.
+      // There is nothing to lock out, and nothing to repair.
+      redis.get.mockResolvedValue('5');
+      redis.ttl.mockResolvedValue(-2);
+      repo.findTeamMemberByEmail.mockResolvedValue(buildTeamMember());
+
+      await expect(
+        service.login({ email: 'test@example.com', password: PLAINTEXT_PASSWORD }),
+      ).resolves.toHaveProperty('accessToken');
+      expect(redis.expire).not.toHaveBeenCalledWith(
+        'gosumo:test@example.com:login_attempts',
+        15 * 60,
+      );
     });
 
     it('counts a failed attempt for an OAuth-only account without leaking that it exists', async () => {
