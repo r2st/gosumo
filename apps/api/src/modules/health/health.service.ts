@@ -5,6 +5,7 @@ import {
   QueueTelemetryService,
   type QueueDepthBreach,
 } from '../../common/queue/queue-telemetry.service';
+import { QdrantClient } from '../ai-engine/rag/qdrant.client';
 
 /** How long a dependency probe may hang before it is called a failure. */
 const PROBE_TIMEOUT_MS = 2_000;
@@ -71,6 +72,12 @@ export interface ReadinessReport {
   dependencies: {
     database: DependencyReport;
     redis: DependencyReport;
+    /**
+     * Qdrant. Reported like the others, but **excluded from `status`** — see
+     * {@link HealthService.probeReadiness} for why that is a decision rather
+     * than an oversight.
+     */
+    vector: DependencyReport;
   };
   /**
    * Queues whose waiting backlog is over the alert threshold. Empty in normal
@@ -116,6 +123,12 @@ export class HealthService {
      * backlog is reported.
      */
     @Optional() private readonly queues?: QueueTelemetryService,
+    /**
+     * Optional for the same reason as `queues`: a test builds this service
+     * without the ai-engine graph. Absent means the vector store reports down
+     * — which changes no status, by design.
+     */
+    @Optional() private readonly qdrant?: QdrantClient,
   ) {}
 
   /** Cheap liveness signal — deliberately touches no dependency. */
@@ -159,11 +172,37 @@ export class HealthService {
     return this.inFlightReadiness;
   }
 
-  /** The actual dependency probes, run concurrently under their own timeouts. */
+  /**
+   * The actual dependency probes, run concurrently under their own timeouts.
+   *
+   * **Only Postgres and Redis decide `status`.** Qdrant is probed and reported
+   * but deliberately cannot make this instance unready, for two reasons that
+   * point the same way:
+   *
+   *   - The AI pipeline is *built* to run without it. A Qdrant outage means
+   *     answers are produced with no RAG context and the confidence calculator
+   *     penalizes `dataAvailability`, which routes the turn to a human instead
+   *     of auto-executing (see the ai-engine module's CLAUDE.md, and the
+   *     end-to-end degradation contract pinned in its spec). Every other route
+   *     in the API — auth, inbox, payments, leads, inventory — does not touch
+   *     it at all.
+   *   - Every instance shares one vector store, so a store-side failure fails
+   *     every probe at once. Letting it set `status` would return 503 from all
+   *     of them simultaneously and take the whole API out of rotation to
+   *     protect a feature designed to degrade — converting a partial
+   *     degradation into a total outage, which is the classic way a health
+   *     check causes the incident it was added to catch.
+   *
+   * It is still reported, because "RAG has been silently answering without
+   * context for a week" is precisely the failure that otherwise goes unnoticed:
+   * degrading quietly is right for the request, and invisible is wrong for the
+   * operator.
+   */
   private async probeReadiness(): Promise<ReadinessReport> {
-    const [database, redis, queueBacklog] = await Promise.all([
+    const [database, redis, vector, queueBacklog] = await Promise.all([
       this.probe('database', () => this.prisma.$queryRaw`SELECT 1`),
       this.probe('redis', () => this.redis.ping()),
+      this.probeVector(),
       this.backlog(),
     ]);
 
@@ -173,6 +212,15 @@ export class HealthService {
     if (status === 'degraded') {
       this.logger.warn(
         `Readiness degraded — database: ${database.status}, redis: ${redis.status}`,
+      );
+    }
+
+    if (vector.status === 'down') {
+      // Warn, not error: this is a supported degraded mode, not a fault. It is
+      // logged every probe interval rather than once, because the condition is
+      // ongoing and a single line at onset is one nobody scrolls back to.
+      this.logger.warn(
+        'Vector store unreachable — AI responses are being generated without RAG context',
       );
     }
 
@@ -187,9 +235,31 @@ export class HealthService {
     return {
       status,
       timestamp: new Date().toISOString(),
-      dependencies: { database, redis },
+      dependencies: { database, redis, vector },
       queueBacklog,
     };
+  }
+
+  /**
+   * Probe the vector store, or report it down if none is wired.
+   *
+   * `QdrantClient` is optional in the container so this module can be built
+   * without dragging in the whole ai-engine graph; absent, the honest answer
+   * is `down` with no latency, since nothing here can reach a vector store.
+   * It never affects `status`, so reporting down costs nothing operationally
+   * and saying `up` would be a lie a dashboard would believe.
+   */
+  private async probeVector(): Promise<DependencyReport> {
+    if (!this.qdrant) {
+      return { status: 'down', latencyMs: 0, error: 'unreachable' };
+    }
+    // `isReachable()` resolves false rather than throwing, so it is wrapped to
+    // look like the other probes: a false becomes the rejection `probe()`
+    // reports as `unreachable`, and a hang is still cut off by its timeout.
+    return this.probe('vector', async () => {
+      const reachable = await this.qdrant!.isReachable();
+      if (!reachable) throw new Error('vector store did not answer');
+    });
   }
 
   /**

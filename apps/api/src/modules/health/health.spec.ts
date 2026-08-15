@@ -12,11 +12,18 @@ import type { RedisClient } from '../auth/redis.provider';
 import { HealthService } from './health.service';
 import { HealthController } from './health.controller';
 import type { QueueTelemetryService } from '../../common/queue/queue-telemetry.service';
+import type { QdrantClient } from '../ai-engine/rag/qdrant.client';
 
 function makeService(overrides: {
   query?: jest.Mock;
   ping?: jest.Mock;
   depthBreaches?: jest.Mock;
+  /**
+   * Omitted means no `QdrantClient` in the container at all, which is the
+   * shape most of these tests want — and, as it happens, the shape production
+   * currently runs in.
+   */
+  isReachable?: jest.Mock;
 } = {}) {
   const query = overrides.query ?? jest.fn().mockResolvedValue([{ '?column?': 1 }]);
   const ping = overrides.ping ?? jest.fn().mockResolvedValue('PONG');
@@ -25,7 +32,16 @@ function makeService(overrides: {
   const queues = overrides.depthBreaches
     ? ({ depthBreaches: overrides.depthBreaches } as unknown as QueueTelemetryService)
     : undefined;
-  return { service: new HealthService(prisma, redis, queues), query, ping };
+  const isReachable = overrides.isReachable;
+  const qdrant = isReachable
+    ? ({ isReachable } as unknown as QdrantClient)
+    : undefined;
+  return {
+    service: new HealthService(prisma, redis, queues, qdrant),
+    query,
+    ping,
+    isReachable,
+  };
 }
 
 /** Minimal Express response double capturing only the status code. */
@@ -412,5 +428,102 @@ describe('HealthService — readiness is bounded', () => {
 
     await expect(service.readiness()).resolves.toMatchObject({ status: 'ok' });
     expect(depthBreaches).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * The vector store is the one dependency that is probed but deliberately
+ * cannot make an instance unready.
+ *
+ * That is the whole design: the AI pipeline is built to run without Qdrant
+ * (answers are produced with no RAG context and the confidence calculator
+ * penalizes `dataAvailability`, routing the turn to a human), while every
+ * other route in the API never touches it. Since all instances share one
+ * vector store, letting it set `status` would 503 every instance at once and
+ * convert a supported partial degradation into a total outage.
+ *
+ * Production currently runs with no Qdrant at all, so these are not
+ * hypotheticals — the `down` arms are the live configuration.
+ */
+describe('HealthService — vector store never gates readiness', () => {
+  it('stays ok when the vector store is unreachable', async () => {
+    const { service } = makeService({ isReachable: jest.fn().mockResolvedValue(false) });
+
+    const report = await service.readiness();
+
+    expect(report.status).toBe('ok');
+    expect(report.dependencies.vector).toMatchObject({ status: 'down' });
+  });
+
+  it('stays ok when no vector client is wired at all', async () => {
+    // The production shape today. Reporting `up` here would be a lie a
+    // dashboard would believe.
+    const report = await makeService().service.readiness();
+
+    expect(report.status).toBe('ok');
+    expect(report.dependencies.vector.status).toBe('down');
+  });
+
+  it('reports the vector store up when it answers', async () => {
+    const { service } = makeService({ isReachable: jest.fn().mockResolvedValue(true) });
+
+    const report = await service.readiness();
+
+    expect(report.dependencies.vector).toMatchObject({ status: 'up' });
+    expect(report.status).toBe('ok');
+  });
+
+  it('still degrades on a real dependency while the vector store is up', async () => {
+    // Proves the exemption is scoped to the vector store and has not been
+    // widened into "nothing sets status".
+    const { service } = makeService({
+      ping: jest.fn().mockRejectedValue(new Error('ECONNREFUSED 127.0.0.1:6379')),
+      isReachable: jest.fn().mockResolvedValue(true),
+    });
+
+    const report = await service.readiness();
+
+    expect(report.status).toBe('degraded');
+  });
+
+  it('does not let a hanging vector store hang the probe', async () => {
+    // An unreachable dependency usually hangs rather than refusing, and a
+    // health check that hangs tells a balancer nothing.
+    const { service } = makeService({
+      isReachable: jest.fn().mockImplementation(() => new Promise(() => undefined)),
+    });
+
+    const report = await service.readiness();
+
+    expect(report.status).toBe('ok');
+    expect(report.dependencies.vector).toMatchObject({ status: 'down', error: 'timeout' });
+  }, 10_000);
+
+  it('never publishes what the vector store said went wrong', async () => {
+    // Same rule as the other probes: the failure text names internal topology
+    // (`http://localhost:6333`), and this route is public.
+    const { service } = makeService({
+      isReachable: jest.fn().mockRejectedValue(
+        new Error('fetch failed: connect ECONNREFUSED http://10.0.0.4:6333/collections'),
+      ),
+    });
+
+    const report = await service.readiness();
+    const body = JSON.stringify(report);
+
+    expect(body).not.toContain('6333');
+    expect(body).not.toContain('10.0.0.4');
+    expect(body).not.toContain('ECONNREFUSED');
+    expect(report.dependencies.vector.error).toBe('unreachable');
+  });
+
+  it('answers 200 from the controller with the vector store down', async () => {
+    // The end-to-end statement of the rule: a balancer keeps routing here.
+    const { service } = makeService({ isReachable: jest.fn().mockResolvedValue(false) });
+    const res = makeResponse();
+
+    await new HealthController(service).readiness(res);
+
+    expect(res.statusCode).toBe(HttpStatus.OK);
   });
 });

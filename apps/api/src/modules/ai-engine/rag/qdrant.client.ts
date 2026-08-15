@@ -125,6 +125,30 @@ export class QdrantClient {
     }
   }
 
+  /**
+   * Liveness of the vector store, for the readiness probe.
+   *
+   * `GET /collections` rather than `/healthz`: it has existed in every Qdrant
+   * version this has ever run against, and it exercises the same authenticated
+   * path the real calls use, so a store that is up but rejecting our
+   * credentials reports down here instead of looking healthy right up until
+   * the first search fails.
+   *
+   * Throws nothing and returns a bare boolean on purpose — this is the one
+   * method whose caller is a health endpoint, and the endpoint decides what a
+   * failure means. The error text stays in the log, never in the probe's
+   * response, because the URL it names is internal topology.
+   */
+  async isReachable(): Promise<boolean> {
+    try {
+      const res = await this.request('GET', '/collections');
+      return res.ok;
+    } catch (err) {
+      this.logger.warn(`health check failed: ${this.msg(err)}`);
+      return false;
+    }
+  }
+
   private request(method: string, path: string, body?: unknown): Promise<Response> {
     return fetchWithTimeout(
       `${this.baseUrl}${path}`,
