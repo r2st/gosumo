@@ -1079,6 +1079,64 @@ export class ConversationService {
   }
 
   /**
+   * ai.escalated → the conversation is now a human's, and says so.
+   *
+   * The AI pipeline files a HITL task when it escalates, but for a long time
+   * that was the *only* trace: the conversation itself stayed OPEN. Three
+   * things were broken by that, all silently —
+   *
+   *  - the inbox's "Escalated" filter never showed an AI escalation, so the
+   *    queue a business actually watches did not contain the conversations
+   *    the AI had given up on;
+   *  - `handleTaskResolved` below returns early unless the status is
+   *    ESCALATED, so the documented ESCALATED → OPEN return path could never
+   *    fire — the hand-back half of the handoff was unreachable code;
+   *  - the AI's own "don't answer over a human" guard keys off this status,
+   *    so the pipeline kept auto-replying to a conversation it had itself
+   *    escalated moments earlier.
+   *
+   * Best-effort and non-throwing, like every other listener here: the task is
+   * already written by the time this runs, so a failure to relabel the
+   * conversation must not unwind the escalation.
+   */
+  @OnEvent('ai.escalated')
+  async handleAiEscalated(event: {
+    businessId: string;
+    conversationId: string;
+    reason?: string;
+  }): Promise<void> {
+    if (!event.businessId || !event.conversationId) return;
+    try {
+      const conversation = await this.repository.findById(
+        event.businessId,
+        event.conversationId,
+      );
+      if (!conversation) return;
+
+      // Already there, or somewhere ESCALATED cannot be reached from (a
+      // RESOLVED thread the customer has since reopened is handled by the
+      // reopen path, not here). Either way there is nothing to relabel, and
+      // `escalateConversation` would throw on the invalid transition.
+      const current = conversation.status as ConversationStatus;
+      if (current === ConversationStatus.ESCALATED) return;
+      if (!this.canTransition(current, ConversationStatus.ESCALATED)) {
+        this.logger.debug(
+          `Not escalating conversation ${event.conversationId}: ${current} → ESCALATED is not a valid transition`,
+        );
+        return;
+      }
+
+      await this.escalateConversation(event.businessId, event.conversationId, {
+        reason: event.reason ?? ESCALATION_REASON.LOW_CONFIDENCE,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to handle ai.escalated for conversation ${event.conversationId}: ${this.errMsg(error)}`,
+      );
+    }
+  }
+
+  /**
    * task.resolved → an escalated conversation returns to OPEN for follow-up.
    */
   @OnEvent('task.resolved')
@@ -1162,13 +1220,24 @@ export class ConversationService {
     return conversation;
   }
 
+  /**
+   * The same state-machine question {@link assertTransition} asks, answered
+   * rather than thrown. Event listeners need to *skip* a transition they
+   * cannot make; a rejected REST call needs to hear why.
+   */
+  private canTransition(
+    current: ConversationStatus,
+    next: ConversationStatus,
+  ): boolean {
+    if (current === next) return true;
+    return VALID_TRANSITIONS[current]?.includes(next) ?? false;
+  }
+
   private assertTransition(
     current: ConversationStatus,
     next: ConversationStatus,
   ): void {
-    if (current === next) return;
-    const allowed = VALID_TRANSITIONS[current];
-    if (!allowed || !allowed.includes(next)) {
+    if (!this.canTransition(current, next)) {
       throw new BadRequestException(
         `Invalid status transition: ${current} → ${next}`,
       );

@@ -685,6 +685,133 @@ describe('ConversationService — lifecycle & features', () => {
 
   // ─── handoff event handlers ──────────────────
 
+  describe('handleAiEscalated', () => {
+    const aiEscalated = {
+      businessId: BUSINESS_ID,
+      conversationId: CONVERSATION_ID,
+      reason: 'LOW_CONFIDENCE',
+    };
+
+    it('moves an OPEN conversation to ESCALATED so the inbox shows it', async () => {
+      repository.findById.mockResolvedValue(makeConversation({ status: ConversationStatus.OPEN }));
+      repository.update.mockResolvedValue(
+        makeConversation({ status: ConversationStatus.ESCALATED }),
+      );
+
+      await service.handleAiEscalated(aiEscalated);
+
+      expect(repository.update).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        CONVERSATION_ID,
+        expect.objectContaining({ status: ConversationStatus.ESCALATED }),
+      );
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'conversation.escalated',
+        expect.objectContaining({ reason: 'LOW_CONFIDENCE' }),
+      );
+    });
+
+    it('escalates a SNOOZED conversation too', async () => {
+      repository.findById.mockResolvedValue(
+        makeConversation({ status: ConversationStatus.SNOOZED }),
+      );
+      repository.update.mockResolvedValue(
+        makeConversation({ status: ConversationStatus.ESCALATED }),
+      );
+
+      await service.handleAiEscalated(aiEscalated);
+
+      expect(repository.update).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        CONVERSATION_ID,
+        expect.objectContaining({ status: ConversationStatus.ESCALATED }),
+      );
+    });
+
+    it('falls back to LOW_CONFIDENCE when the event carries no reason', async () => {
+      repository.findById.mockResolvedValue(makeConversation({ status: ConversationStatus.OPEN }));
+      repository.update.mockResolvedValue(
+        makeConversation({ status: ConversationStatus.ESCALATED }),
+      );
+
+      await service.handleAiEscalated({
+        businessId: BUSINESS_ID,
+        conversationId: CONVERSATION_ID,
+      });
+
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'conversation.escalated',
+        expect.objectContaining({ reason: 'LOW_CONFIDENCE' }),
+      );
+    });
+
+    it('is a no-op when the conversation is already ESCALATED', async () => {
+      repository.findById.mockResolvedValue(
+        makeConversation({ status: ConversationStatus.ESCALATED }),
+      );
+
+      await service.handleAiEscalated(aiEscalated);
+
+      expect(repository.update).not.toHaveBeenCalled();
+    });
+
+    it('skips a status ESCALATED cannot be reached from instead of throwing', async () => {
+      repository.findById.mockResolvedValue(
+        makeConversation({ status: ConversationStatus.RESOLVED }),
+      );
+
+      await expect(service.handleAiEscalated(aiEscalated)).resolves.toBeUndefined();
+      expect(repository.update).not.toHaveBeenCalled();
+    });
+
+    it('swallows a write failure — the HITL task is already filed', async () => {
+      repository.findById.mockResolvedValue(makeConversation({ status: ConversationStatus.OPEN }));
+      repository.update.mockRejectedValue(new Error('db down'));
+
+      await expect(service.handleAiEscalated(aiEscalated)).resolves.toBeUndefined();
+    });
+
+    it('ignores an event with no conversation', async () => {
+      await service.handleAiEscalated({ businessId: BUSINESS_ID, conversationId: '' });
+      expect(repository.findById).not.toHaveBeenCalled();
+    });
+
+    it('closes the loop: the escalation it writes is the one task.resolved reopens', async () => {
+      // Escalate…
+      repository.findById.mockResolvedValue(makeConversation({ status: ConversationStatus.OPEN }));
+      repository.update.mockResolvedValue(
+        makeConversation({ status: ConversationStatus.ESCALATED }),
+      );
+      await service.handleAiEscalated(aiEscalated);
+
+      // …then resolve the task the AI filed. Before the escalation was
+      // recorded on the conversation, this handler returned early every time
+      // and the hand-back never happened.
+      repository.findById.mockResolvedValue(
+        makeConversation({ status: ConversationStatus.ESCALATED }),
+      );
+      repository.updateStatus.mockResolvedValue(makeConversation());
+      await service.handleTaskResolved({
+        type: 'task.resolved',
+        id: 'evt',
+        timestamp: new Date().toISOString(),
+        businessId: BUSINESS_ID,
+        correlationId: 'corr',
+        taskId: 'task-1',
+        conversationId: CONVERSATION_ID,
+        resolvedByMemberId: AGENT_A,
+        resolutionDurationSeconds: 120,
+        slaBreach: false,
+      });
+
+      expect(repository.updateStatus).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        CONVERSATION_ID,
+        ConversationStatus.OPEN,
+      );
+    });
+  });
+
   describe('handleTaskResolved', () => {
     it('returns an ESCALATED conversation to OPEN', async () => {
       repository.findById.mockResolvedValue(
