@@ -23,6 +23,13 @@ cd packages/database
 DATABASE_URL="postgresql://gosumo:gs_prod_2026_secure@127.0.0.1:5433/gosumo_db" npx prisma migrate deploy
 cd /opt/gosumo
 
+# The API build does not fit in Node's default heap on this box. `nest build`
+# type-checks the whole project in one pass and peaks around 1.9 GB, so it dies
+# with "Ineffective mark-compacts near heap limit" and exit 134 — which reads
+# like a code fault and is not one. The box has 4 GB shared with Postgres and
+# the web server, so this is headroom rather than a fix for a leak.
+export NODE_OPTIONS="--max-old-space-size=3072"
+
 echo "[5/8] Building API..."
 npx turbo build --filter=@gosumo/api
 
