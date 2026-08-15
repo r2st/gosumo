@@ -250,7 +250,18 @@ manual approval step before prod.)
 - Required `.env.prod` keys (mirror `apps/api/.env.example` + infra):
   `DATABASE_URL`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `QDRANT_API_KEY`,
   `CLOUDFLARE_TUNNEL_TOKEN`, `OPENROUTER_API_KEY`, `JWT_SECRET`,
-  `WHATSAPP_*`, `RAZORPAY_*`, `S3_*` (R2).
+  `CHANNEL_ENCRYPTION_KEY`, `WHATSAPP_*`, `RAZORPAY_*`, `S3_*` (R2).
+- **`CHANNEL_ENCRYPTION_KEY` must be set, and set to its own value.** It is the
+  AES-256-GCM key for the `credentials` JSONB on `channel_accounts` — the
+  WhatsApp/Instagram/Razorpay tokens the platform sends on the business's behalf.
+  Generate one per environment with `openssl rand -base64 48` and never reuse the
+  staging value in production.
+  - Unset, the key falls back to `JWT_SECRET`, and failing that to a constant
+    committed to this repository. The API refuses to boot on the second case
+    under `NODE_ENV=production` (`assertChannelEncryptionKey`, `main.ts`), and
+    boots with a warning on the first.
+  - Deriving it from `JWT_SECRET` is what makes it dangerous rather than merely
+    untidy: it silently welds token rotation to credential encryption. See §7.3.
 - `CORS_ORIGIN` must be set to the dashboard origin. Left unset the API falls
   back to `*` **with credentials disabled** and logs a warning at boot — the
   dashboard's authenticated calls will fail rather than be silently exposed.
@@ -398,6 +409,19 @@ already done in `Dockerfile.api`).
 - **Rotation:** rotate `JWT_SECRET`, DB/Redis/Qdrant passwords, and the deploy key
   on a schedule (`ARCHITECTURE.md §11` calls for 90-day key rotation). The tunnel
   token and provider keys (Anthropic, Razorpay, WhatsApp) rotate via their dashboards.
+- **Rotating `CHANNEL_ENCRYPTION_KEY` is destructive, and silently so.** It is the
+  key boundary for every stored channel credential, and `decryptJson` returns an
+  empty object rather than throwing when the key does not match. Rotate it and
+  every business's channel credentials read back as *absent*: no exception, no log
+  line, just channels that quietly stop authenticating until someone notices
+  messages are not sending. Re-enter channel credentials immediately after any
+  rotation, and treat it as a maintenance window rather than routine hygiene.
+- **This is the reason `CHANNEL_ENCRYPTION_KEY` must be set explicitly (§4.1).**
+  Left unset it is derived from `JWT_SECRET`, which turns the routine 90-day
+  `JWT_SECRET` rotation directly above into exactly that destructive event —
+  with nothing about `JWT_SECRET` to suggest it is load-bearing for anything but
+  tokens. Setting it explicitly decouples the two, so token rotation stays
+  routine.
 - **Field-level PII encryption** (AES-256) stays an app concern per `ARCHITECTURE.md`.
 
 ---

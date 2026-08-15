@@ -101,3 +101,5 @@ Example: `feat(payment): add COD confirmation flow`
 ## Environment
 
 Copy `apps/api/.env.example` to `apps/api/.env` and fill in values before running. Required: `DATABASE_URL`, `REDIS_URL`, `OPENROUTER_API_KEY`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `JWT_SECRET`.
+
+**In production, also set `CHANNEL_ENCRYPTION_KEY`** (`openssl rand -base64 48`). It encrypts stored channel credentials; unset, it silently derives from `JWT_SECRET`, which makes rotating `JWT_SECRET` destroy every stored credential without erroring. See `DEPLOYMENT.md` §4.1 and §7.3.
