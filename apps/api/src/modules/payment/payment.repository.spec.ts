@@ -52,6 +52,10 @@ type PrismaMock = {
     update: jest.Mock;
   };
   webhook_events: { create: jest.Mock; update: jest.Mock };
+  /** `reserveRefund` locks the payment row with a raw `SELECT … FOR UPDATE`. */
+  $queryRaw: jest.Mock;
+  /** Runs its callback against the same mock, standing in for the tx client. */
+  $transaction: jest.Mock;
 };
 
 describe('PaymentRepository', () => {
@@ -90,7 +94,16 @@ describe('PaymentRepository', () => {
         create: jest.fn().mockResolvedValue({ id: 'wh-1' }),
         update: jest.fn().mockResolvedValue({}),
       },
+      // Default: the payment exists and is a ₹500 capture.
+      $queryRaw: jest.fn().mockResolvedValue([{ amount: decimal(500) }]),
+      $transaction: jest.fn(),
     };
+    // The interactive form hands the callback a transaction client. Passing the
+    // same mock keeps every assertion below pointed at one set of calls, which
+    // is also what makes "the aggregate ran inside the transaction" checkable.
+    prisma.$transaction.mockImplementation(
+      (fn: (tx: PrismaMock) => unknown) => fn(prisma),
+    );
     repository = new PaymentRepository(prisma as never);
   });
 
@@ -575,6 +588,164 @@ describe('PaymentRepository', () => {
       ).where.status.in;
       expect(statuses).not.toContain('FAILED');
       expect(statuses).not.toContain('REJECTED');
+    });
+  });
+
+  // ─────────────────────────────────────────────
+  // reserveRefund
+  //
+  // Where the refundable-balance rule actually lives. Summing the committed
+  // refunds and then inserting a row as two separate statements is
+  // check-then-act on a total any concurrent caller can move: two ₹300 refunds
+  // against one ₹500 payment both read `committed = 0`, both find the whole
+  // balance free, and both insert.
+  //
+  // The gateway is not the backstop it looks like — it caps cumulative refunds
+  // only on the paths that reach it. A COD payment has no gateway, and an
+  // over-policy refund is recorded for approval without calling one, so on
+  // exactly the refunds a person later pays out by hand there is nothing else
+  // holding the line.
+  // ─────────────────────────────────────────────
+
+  describe('reserveRefund', () => {
+    /** The SQL text of the lock statement, with its template holes closed up. */
+    const lockSql = (): string => {
+      const [strings] = prisma.$queryRaw.mock.calls[0] as [TemplateStringsArray];
+      return Array.from(strings).join(' ').replace(/\s+/g, ' ');
+    };
+
+    const reserve = (amountPaise: number, extra: Record<string, unknown> = {}) =>
+      repository.reserveRefund(BUSINESS_ID, PAYMENT_ID, { amountPaise, ...extra });
+
+    it('locks the payment row before reading the committed total', async () => {
+      await reserve(10000);
+
+      // Without FOR UPDATE the sum is a plain read and two callers can pass it
+      // at once — the entire failure this method exists to prevent.
+      expect(lockSql()).toMatch(/FOR UPDATE/i);
+      expect(lockSql()).toMatch(/FROM payments/i);
+    });
+
+    it('scopes the lock to the tenant as well as the payment id', async () => {
+      await reserve(10000);
+
+      const [, ...values] = prisma.$queryRaw.mock.calls[0] as [
+        TemplateStringsArray,
+        ...string[],
+      ];
+      expect(lockSql()).toMatch(/business_id/);
+      expect(values).toContain(BUSINESS_ID);
+      expect(values).toContain(PAYMENT_ID);
+    });
+
+    it('does the whole check inside one transaction', async () => {
+      await reserve(10000);
+
+      // A sum read outside the transaction is not covered by the lock, so the
+      // insert could still race it.
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.refunds.aggregate).toHaveBeenCalled();
+      expect(prisma.refunds.create).toHaveBeenCalled();
+    });
+
+    it('grants a refund that fits the remaining balance and writes the row', async () => {
+      prisma.refunds.aggregate.mockResolvedValue({ _sum: { amount: decimal(300) } });
+
+      const result = await reserve(20000, { reason: 'Balance', currency: 'INR' });
+
+      expect(result.reserved).toBe(true);
+      expect(result.refund).not.toBeNull();
+      expect(result.originalAmountPaise).toBe(50000);
+      expect(result.committedPaise).toBe(30000);
+      expect(result.refundablePaise).toBe(20000);
+
+      const { data } = prisma.refunds.create.mock.calls[0][0];
+      expect(data.business_id).toBe(BUSINESS_ID);
+      expect(data.payment_id).toBe(PAYMENT_ID);
+      expect(data.status).toBe('INITIATED');
+      expect(data.reason).toBe('Balance');
+      // Rows are rupees; the caller works in paise.
+      expect(Number(data.amount)).toBe(200);
+    });
+
+    it('refuses a refund past the remaining balance and writes nothing', async () => {
+      prisma.refunds.aggregate.mockResolvedValue({ _sum: { amount: decimal(300) } });
+
+      const result = await reserve(30000);
+
+      expect(result.reserved).toBe(false);
+      expect(result.refund).toBeNull();
+      expect(result.refundablePaise).toBe(20000);
+      // The row is the reservation, so refusing must not create one.
+      expect(prisma.refunds.create).not.toHaveBeenCalled();
+    });
+
+    it('allows a refund that exactly exhausts the balance', async () => {
+      prisma.refunds.aggregate.mockResolvedValue({ _sum: { amount: decimal(300) } });
+
+      // An off-by-one here would refuse the last legitimate refund on every
+      // partially refunded payment.
+      const result = await reserve(20000);
+
+      expect(result.reserved).toBe(true);
+    });
+
+    it('counts in-flight refunds against the balance, not just settled ones', async () => {
+      await reserve(10000);
+
+      const statuses = prisma.refunds.aggregate.mock.calls[0][0].where.status.in;
+      // The money is already requested; waiting for COMPLETED would leave the
+      // gap open for as long as the gateway takes to settle.
+      expect(statuses).toEqual(
+        expect.arrayContaining(['INITIATED', 'PROCESSING', 'COMPLETED']),
+      );
+      expect(statuses).not.toContain('FAILED');
+      expect(statuses).not.toContain('REJECTED');
+    });
+
+    it('scopes the committed sum to the tenant and payment', async () => {
+      await reserve(10000);
+
+      const { where } = prisma.refunds.aggregate.mock.calls[0][0];
+      expect(where.business_id).toBe(BUSINESS_ID);
+      expect(where.payment_id).toBe(PAYMENT_ID);
+    });
+
+    it('treats a payment with no refunds yet as fully refundable', async () => {
+      prisma.refunds.aggregate.mockResolvedValue({ _sum: { amount: null } });
+
+      const result = await reserve(50000);
+
+      expect(result.committedPaise).toBe(0);
+      expect(result.refundablePaise).toBe(50000);
+      expect(result.reserved).toBe(true);
+    });
+
+    it('clamps an over-committed balance to zero rather than going negative', async () => {
+      // Drift past the original must not wrap into a negative ceiling, which
+      // would compare as less than any request and let everything through.
+      prisma.refunds.aggregate.mockResolvedValue({ _sum: { amount: decimal(600) } });
+
+      const result = await reserve(1);
+
+      expect(result.refundablePaise).toBe(0);
+      expect(result.reserved).toBe(false);
+    });
+
+    it('carries the approval flag onto the reserved row', async () => {
+      // An over-policy refund is reserved before anyone approves it — otherwise
+      // two of them could each be approved against the same balance later.
+      await reserve(10000, { requiresApproval: true });
+
+      expect(prisma.refunds.create.mock.calls[0][0].data.requires_approval).toBe(true);
+    });
+
+    it('refuses to reserve against a payment the tenant does not own', async () => {
+      // The locking SELECT is itself the tenant check: no row, no reservation.
+      prisma.$queryRaw.mockResolvedValue([]);
+
+      await expect(reserve(10000)).rejects.toBeInstanceOf(ResourceNotFoundError);
+      expect(prisma.refunds.create).not.toHaveBeenCalled();
     });
   });
 

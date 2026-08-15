@@ -777,29 +777,6 @@ export class PaymentService implements OnModuleInit {
       );
     }
 
-    // Rule 1: a refund cannot take the payment past what the customer actually
-    // paid. The ceiling is the original amount MINUS what is already committed —
-    // a PARTIALLY_REFUNDED payment is refundable again, so checking only against
-    // the original would let ₹500 be refunded twice on a ₹500 payment. Refunds
-    // still in flight at the gateway count against the ceiling too; they settle
-    // asynchronously, so waiting for COMPLETED would leave the same gap open for
-    // as long as the gateway takes to confirm.
-    const originalAmountPaise = currencyToPaise(Number(payment.amount));
-    const committedRefundRupees =
-      (await this.repository.sumCommittedRefundsForPayment(businessId, dto.transactionId)) ?? 0;
-    const refundablePaise = Math.max(
-      0,
-      originalAmountPaise - currencyToPaise(committedRefundRupees),
-    );
-
-    if (dto.amountPaise > refundablePaise) {
-      throw new BadRequestException(
-        `Refund amount (${dto.amountPaise} paise) exceeds the refundable balance ` +
-          `(${refundablePaise} paise) on payment ${dto.transactionId} — original ` +
-          `${originalAmountPaise} paise, ${currencyToPaise(committedRefundRupees)} paise already refunded`,
-      );
-    }
-
     // Rule 2: Check business policy max refund amount
     const maxRefundPaise = this.configService.get<number>(
       'BUSINESS_MAX_REFUND_PAISE',
@@ -807,15 +784,50 @@ export class PaymentService implements OnModuleInit {
     );
 
     const requiresApproval = dto.amountPaise > maxRefundPaise;
-    const amountRupees = dto.amountPaise / 100;
 
-    let gatewayRefundId: string | undefined;
-    let gatewayResponse: Record<string, unknown> | undefined;
+    // Rule 1: a refund cannot take the payment past what the customer actually
+    // paid. The ceiling is the original amount MINUS what is already committed —
+    // a PARTIALLY_REFUNDED payment is refundable again, so checking only against
+    // the original would let ₹500 be refunded twice on a ₹500 payment. Refunds
+    // still in flight at the gateway count against the ceiling too; they settle
+    // asynchronously, so waiting for COMPLETED would leave the same gap open for
+    // as long as the gateway takes to confirm.
+    //
+    // The check and the row that consumes the balance happen under one lock on
+    // the payment. Read separately, two concurrent refunds both see the whole
+    // balance free and both take it. The gateway would refuse the overdraft on
+    // the paths that reach it — but a COD payment has no gateway, and an
+    // over-policy refund is recorded for approval without calling one, so on
+    // exactly the paths a human later pays out by hand there is nothing else
+    // holding the line.
+    const reservation = await this.repository.reserveRefund(businessId, dto.transactionId, {
+      amountPaise: dto.amountPaise,
+      orderId: payment.order_id ?? undefined,
+      currency: payment.currency,
+      reason: dto.reason,
+      requiresApproval,
+    });
 
-    // If within policy, process via the originating gateway immediately.
+    if (!reservation.reserved || !reservation.refund) {
+      throw new BadRequestException(
+        `Refund amount (${dto.amountPaise} paise) exceeds the refundable balance ` +
+          `(${reservation.refundablePaise} paise) on payment ${dto.transactionId} — original ` +
+          `${reservation.originalAmountPaise} paise, ${reservation.committedPaise} paise already refunded`,
+      );
+    }
+
+    let refund = reservation.refund;
+
+    // If within policy, process via the originating gateway. This runs after the
+    // reservation, not before it: the row is what reserves the balance, and it
+    // must exist before money moves. Called first, a gateway refund whose insert
+    // then failed would have moved money this ledger has no record of at all.
     if (!requiresApproval && payment.gateway_payment_id) {
       const gateway = payment.gateway as string;
       try {
+        let gatewayRefundId: string;
+        let gatewayResponse: Record<string, unknown>;
+
         if (gateway === PaymentGateway.STRIPE) {
           const stripeRefund = await this.stripe.createRefund(
             payment.gateway_payment_id,
@@ -831,26 +843,37 @@ export class PaymentService implements OnModuleInit {
           gatewayRefundId = razorpayRefund.id;
           gatewayResponse = razorpayRefund as unknown as Record<string, unknown>;
         }
+
+        refund = await this.repository.updateRefundStatus(businessId, refund.id, {
+          status: RefundStatus.INITIATED,
+          gatewayRefundId,
+          gatewayResponse,
+        });
       } catch (error) {
         this.logger.error(
           `${gateway} refund failed for payment ${dto.transactionId}: ${error instanceof Error ? error.message : String(error)}`,
         );
+
+        // Release the reservation. FAILED is outside the committed set, so the
+        // balance this row was holding returns to the payment — otherwise a
+        // gateway error would permanently strand money as unrefundable.
+        try {
+          await this.repository.updateRefundStatus(businessId, refund.id, {
+            status: RefundStatus.FAILED,
+            failedAt: new Date(),
+          });
+        } catch (releaseError) {
+          // Worth its own line: the refund is now holding balance it will never
+          // use, and only a person reading this will know to clear it.
+          this.logger.error(
+            `Failed to release refund reservation ${refund.id} after a gateway error: ` +
+              `${releaseError instanceof Error ? releaseError.message : String(releaseError)}`,
+          );
+        }
+
         throw new BadRequestException('Failed to process refund with payment gateway');
       }
     }
-
-    // Create the refund record
-    const refund = await this.repository.createRefund({
-      businessId,
-      paymentId: dto.transactionId,
-      orderId: payment.order_id ?? undefined,
-      amountRupees,
-      currency: payment.currency,
-      reason: dto.reason,
-      requiresApproval,
-      gatewayRefundId,
-      gatewayResponse,
-    });
 
     // Emit domain event
     const event: PaymentRefundEvent = {

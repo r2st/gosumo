@@ -87,6 +87,37 @@ function createMockRefund(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * A granted reservation, as `reserveRefund` returns one.
+ *
+ * The balance arithmetic itself is the repository's job and is tested against a
+ * real transaction in `payment.repository.spec.ts`. What the service owes is
+ * narrower: ask for exactly the amount requested, refuse when the reservation is
+ * refused, and release the row when the gateway rejects the call. These helpers
+ * state the outcome directly so a service test never re-derives the sum.
+ */
+function grantedReservation(overrides: Record<string, unknown> = {}) {
+  return {
+    refund: createMockRefund(),
+    reserved: true,
+    originalAmountPaise: 50000,
+    committedPaise: 0,
+    refundablePaise: 50000,
+    ...overrides,
+  };
+}
+
+function refusedReservation(overrides: Record<string, unknown> = {}) {
+  return {
+    refund: null,
+    reserved: false,
+    originalAmountPaise: 50000,
+    committedPaise: 50000,
+    refundablePaise: 0,
+    ...overrides,
+  };
+}
+
 // ─────────────────────────────────────────────
 // Test suite
 // ─────────────────────────────────────────────
@@ -115,9 +146,15 @@ describe('PaymentService', () => {
       findPaymentByGatewayOrderId: jest.fn(),
       findPaymentByLinkId: jest.fn(),
       createRefund: jest.fn(),
+      // Reserving the balance and writing the row is one atomic step, so the
+      // service no longer sums refunds itself. Default to a granted
+      // reservation; the tests that care state their own.
+      reserveRefund: jest.fn().mockResolvedValue(grantedReservation()),
       getRefund: jest.fn(),
       listRefunds: jest.fn(),
-      updateRefundStatus: jest.fn(),
+      // The gateway path stamps the gateway ids onto the reserved row and
+      // returns it, so this has to hand back a refund rather than undefined.
+      updateRefundStatus: jest.fn().mockResolvedValue(createMockRefund()),
       findRefundByGatewayId: jest.fn(),
       sumCompletedRefundsForPayment: jest.fn(),
       sumCommittedRefundsForPayment: jest.fn(),
@@ -877,8 +914,7 @@ describe('PaymentService', () => {
         status: 'processed',
       });
 
-      const mockRefund = createMockRefund();
-      repository.createRefund.mockResolvedValue(mockRefund as never);
+      repository.reserveRefund.mockResolvedValue(grantedReservation() as never);
 
       const result = await service.initiateRefund(BUSINESS_ID, dto);
 
@@ -888,12 +924,12 @@ describe('PaymentService', () => {
       // Verify Razorpay was called for refund
       expect(razorpay.createRefund).toHaveBeenCalledWith('pay_gw123', 25000);
 
-      // Verify refund record was created
-      expect(repository.createRefund).toHaveBeenCalledWith(
+      // Verify the balance was reserved for exactly what was asked
+      expect(repository.reserveRefund).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        PAYMENT_ID,
         expect.objectContaining({
-          businessId: BUSINESS_ID,
-          paymentId: PAYMENT_ID,
-          amountRupees: 250,
+          amountPaise: 25000,
           requiresApproval: false,
           reason: 'Customer request',
         }),
@@ -925,16 +961,24 @@ describe('PaymentService', () => {
 
       repository.getPayment.mockResolvedValue(successPayment as never);
 
-      const mockRefund = createMockRefund({ requires_approval: true });
-      repository.createRefund.mockResolvedValue(mockRefund as never);
+      repository.reserveRefund.mockResolvedValue(
+        grantedReservation({
+          refund: createMockRefund({ requires_approval: true }),
+          originalAmountPaise: 2_500_000,
+          refundablePaise: 2_500_000,
+        }) as never,
+      );
 
       const result = await service.initiateRefund(BUSINESS_ID, dto);
 
       // Should NOT call Razorpay for refund — routes to HITL instead
       expect(razorpay.createRefund).not.toHaveBeenCalled();
 
-      // Should create refund with requires_approval=true
-      expect(repository.createRefund).toHaveBeenCalledWith(
+      // The row still reserves the balance while it waits for approval —
+      // otherwise a second refund could be approved against the same money.
+      expect(repository.reserveRefund).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        PAYMENT_ID,
         expect.objectContaining({
           requiresApproval: true,
         }),
@@ -956,13 +1000,16 @@ describe('PaymentService', () => {
       });
 
       repository.getPayment.mockResolvedValue(successPayment as never);
+      repository.reserveRefund.mockResolvedValue(
+        refusedReservation({ originalAmountPaise: 50000, committedPaise: 0, refundablePaise: 50000 }) as never,
+      );
 
       await expect(
         service.initiateRefund(BUSINESS_ID, dto),
       ).rejects.toThrow(BadRequestException);
 
+      // A refused reservation wrote nothing, so nothing may reach the gateway.
       expect(razorpay.createRefund).not.toHaveBeenCalled();
-      expect(repository.createRefund).not.toHaveBeenCalled();
     });
 
     it('should reject refund for non-success payment', async () => {
@@ -1001,6 +1048,13 @@ describe('PaymentService', () => {
   // A PARTIALLY_REFUNDED payment is refundable again, so the ceiling has to be
   // the original amount minus what is already committed. Checking only against
   // the original amount lets the same money go out twice.
+  //
+  // The arithmetic itself moved into `reserveRefund`, where it runs under a lock
+  // on the payment — summing and then inserting as two statements lets two
+  // concurrent refunds both claim the same balance. Those sums are tested
+  // against a real transaction in `payment.repository.spec.ts`. What is left
+  // here is the service's half of the contract: ask for the right amount, refuse
+  // when the reservation is refused, and say why.
   // ─────────────────────────────────────────────
 
   describe('initiateRefund — refundable balance', () => {
@@ -1013,10 +1067,16 @@ describe('PaymentService', () => {
       });
     }
 
-    it('rejects a second refund that would take the total past the amount paid', async () => {
+    it('rejects a refund the reservation would not grant', async () => {
       repository.getPayment.mockResolvedValue(refundablePayment('PARTIALLY_REFUNDED') as never);
       // ₹300 of the ₹500 is already refunded — only ₹200 remains.
-      repository.sumCommittedRefundsForPayment.mockResolvedValue(300);
+      repository.reserveRefund.mockResolvedValue(
+        refusedReservation({
+          originalAmountPaise: 50000,
+          committedPaise: 30000,
+          refundablePaise: 20000,
+        }) as never,
+      );
 
       await expect(
         service.initiateRefund(BUSINESS_ID, {
@@ -1026,14 +1086,22 @@ describe('PaymentService', () => {
         }),
       ).rejects.toThrow(BadRequestException);
 
+      // Nothing may reach the gateway once the balance was refused.
       expect(razorpay.createRefund).not.toHaveBeenCalled();
-      expect(repository.createRefund).not.toHaveBeenCalled();
     });
 
     it('names the remaining balance in the rejection so the operator can retry', async () => {
       repository.getPayment.mockResolvedValue(refundablePayment('PARTIALLY_REFUNDED') as never);
-      repository.sumCommittedRefundsForPayment.mockResolvedValue(300);
+      repository.reserveRefund.mockResolvedValue(
+        refusedReservation({
+          originalAmountPaise: 50000,
+          committedPaise: 30000,
+          refundablePaise: 20000,
+        }) as never,
+      );
 
+      // The numbers come from the refusal itself, observed under the lock — not
+      // from a second read that could disagree with the one that refused.
       await expect(
         service.initiateRefund(BUSINESS_ID, {
           transactionId: PAYMENT_ID,
@@ -1043,16 +1111,36 @@ describe('PaymentService', () => {
       ).rejects.toThrow(/refundable balance \(20000 paise\)/);
     });
 
-    it('allows a second refund that exactly exhausts the remaining balance', async () => {
+    it('reports a clamped balance as zero rather than a negative ceiling', async () => {
       repository.getPayment.mockResolvedValue(refundablePayment('PARTIALLY_REFUNDED') as never);
-      repository.sumCommittedRefundsForPayment.mockResolvedValue(300);
+      repository.reserveRefund.mockResolvedValue(
+        refusedReservation({
+          originalAmountPaise: 50000,
+          committedPaise: 60000,
+          refundablePaise: 0,
+        }) as never,
+      );
+
+      await expect(
+        service.initiateRefund(BUSINESS_ID, {
+          transactionId: PAYMENT_ID,
+          amountPaise: 1,
+          reason: 'Anything',
+        }),
+      ).rejects.toThrow(/refundable balance \(0 paise\)/);
+    });
+
+    it('sends a granted refund on to the gateway', async () => {
+      repository.getPayment.mockResolvedValue(refundablePayment('PARTIALLY_REFUNDED') as never);
+      repository.reserveRefund.mockResolvedValue(
+        grantedReservation({ committedPaise: 30000, refundablePaise: 20000 }) as never,
+      );
       razorpay.createRefund.mockResolvedValue({
         id: 'rfnd_second',
         paymentId: 'pay_gw123',
         amountPaise: 20000,
         status: 'processed',
       });
-      repository.createRefund.mockResolvedValue(createMockRefund() as never);
 
       await service.initiateRefund(BUSINESS_ID, {
         transactionId: PAYMENT_ID,
@@ -1063,32 +1151,14 @@ describe('PaymentService', () => {
       expect(razorpay.createRefund).toHaveBeenCalledWith('pay_gw123', 20000);
     });
 
-    it('counts an in-flight refund against the balance, not just settled ones', async () => {
+    it('scopes the reservation to the tenant and payment', async () => {
       repository.getPayment.mockResolvedValue(refundablePayment() as never);
-      // The full ₹500 is committed but still INITIATED at the gateway.
-      repository.sumCommittedRefundsForPayment.mockResolvedValue(500);
-
-      await expect(
-        service.initiateRefund(BUSINESS_ID, {
-          transactionId: PAYMENT_ID,
-          amountPaise: 10000,
-          reason: 'Duplicate while the first is pending',
-        }),
-      ).rejects.toThrow(BadRequestException);
-
-      expect(razorpay.createRefund).not.toHaveBeenCalled();
-    });
-
-    it('scopes the committed-refund lookup to the tenant and payment', async () => {
-      repository.getPayment.mockResolvedValue(refundablePayment() as never);
-      repository.sumCommittedRefundsForPayment.mockResolvedValue(0);
       razorpay.createRefund.mockResolvedValue({
         id: 'rfnd_first',
         paymentId: 'pay_gw123',
         amountPaise: 10000,
         status: 'processed',
       });
-      repository.createRefund.mockResolvedValue(createMockRefund() as never);
 
       await service.initiateRefund(BUSINESS_ID, {
         transactionId: PAYMENT_ID,
@@ -1096,9 +1166,10 @@ describe('PaymentService', () => {
         reason: 'First',
       });
 
-      expect(repository.sumCommittedRefundsForPayment).toHaveBeenCalledWith(
+      expect(repository.reserveRefund).toHaveBeenCalledWith(
         BUSINESS_ID,
         PAYMENT_ID,
+        expect.objectContaining({ amountPaise: 10000 }),
       );
     });
 
@@ -1112,9 +1183,12 @@ describe('PaymentService', () => {
           amount: { toNumber: () => 25000, toString: () => '25000.00' },
         }) as never,
       );
-      repository.sumCommittedRefundsForPayment.mockResolvedValue(0);
-      repository.createRefund.mockResolvedValue(
-        createMockRefund({ requires_approval: true }) as never,
+      repository.reserveRefund.mockResolvedValue(
+        grantedReservation({
+          refund: createMockRefund({ requires_approval: true }),
+          originalAmountPaise: 2_500_000,
+          refundablePaise: 2_500_000,
+        }) as never,
       );
 
       const result = await service.initiateRefund(BUSINESS_ID, {
@@ -1127,19 +1201,59 @@ describe('PaymentService', () => {
       expect(razorpay.createRefund).not.toHaveBeenCalled();
     });
 
-    it('treats a fully refunded payment as having no balance left', async () => {
-      repository.getPayment.mockResolvedValue(refundablePayment('PARTIALLY_REFUNDED') as never);
-      // Defensive: a rounding drift past the original must clamp to zero, not
-      // wrap into a negative ceiling that would let any amount through.
-      repository.sumCommittedRefundsForPayment.mockResolvedValue(600);
+    /**
+     * The reservation is what holds the balance, so a gateway rejection has to
+     * give it back. Left INITIATED, the row counts as committed forever and
+     * permanently shrinks what the customer can be refunded — money stranded by
+     * an error that moved none of it.
+     */
+    it('releases the reservation when the gateway rejects the refund', async () => {
+      repository.getPayment.mockResolvedValue(refundablePayment() as never);
+      razorpay.createRefund.mockRejectedValue(new Error('gateway said no'));
 
       await expect(
         service.initiateRefund(BUSINESS_ID, {
           transactionId: PAYMENT_ID,
-          amountPaise: 1,
-          reason: 'Anything',
+          amountPaise: 10000,
+          reason: 'Will fail',
         }),
-      ).rejects.toThrow(/refundable balance \(0 paise\)/);
+      ).rejects.toThrow(BadRequestException);
+
+      expect(repository.updateRefundStatus).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        REFUND_ID,
+        expect.objectContaining({ status: 'FAILED' }),
+      );
+    });
+
+    /**
+     * A refund that never reaches a gateway still consumes balance. COD is the
+     * case with no external ledger at all — the money was handed over in cash,
+     * and these rows are what a person pays back against.
+     */
+    it('reserves the balance for a payment with no gateway to check it', async () => {
+      repository.getPayment.mockResolvedValue(
+        createMockPayment({
+          status: 'SUCCESS',
+          gateway: 'MANUAL',
+          gateway_payment_id: null,
+          amount: { toNumber: () => 500, toString: () => '500.00' },
+        }) as never,
+      );
+
+      await service.initiateRefund(BUSINESS_ID, {
+        transactionId: PAYMENT_ID,
+        amountPaise: 10000,
+        reason: 'COD return',
+      });
+
+      expect(repository.reserveRefund).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        PAYMENT_ID,
+        expect.objectContaining({ amountPaise: 10000 }),
+      );
+      expect(razorpay.createRefund).not.toHaveBeenCalled();
+      expect(stripe.createRefund).not.toHaveBeenCalled();
     });
   });
 
@@ -2440,8 +2554,8 @@ describe('PaymentService', () => {
       );
       repository.sumCompletedRefundsForPayment.mockResolvedValue(0);
       razorpay.createRefund.mockResolvedValue({ id: 'rfnd_1' } as never);
-      repository.createRefund.mockResolvedValue(
-        createMockRefund({ order_id: null }) as never,
+      repository.reserveRefund.mockResolvedValue(
+        grantedReservation({ refund: createMockRefund({ order_id: null }) }) as never,
       );
 
       await service.initiateRefund(BUSINESS_ID, {
@@ -2450,7 +2564,9 @@ describe('PaymentService', () => {
         reason: 'Customer request',
       } as InitiateRefundDto);
 
-      expect(repository.createRefund).toHaveBeenCalledWith(
+      expect(repository.reserveRefund).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        PAYMENT_ID,
         expect.objectContaining({ orderId: undefined }),
       );
       expect(eventEmitter.emit).toHaveBeenCalledWith(

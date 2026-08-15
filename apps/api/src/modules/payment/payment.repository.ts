@@ -36,6 +36,22 @@ export interface CreateRefundData {
   gatewayResponse?: Record<string, unknown>;
 }
 
+/**
+ * Outcome of an atomic refund reservation.
+ *
+ * The amounts are the ones observed while the payment row was locked, so a
+ * refusal can explain itself with the numbers that actually caused it rather
+ * than with a second, unsynchronized read.
+ */
+export interface ReserveRefundResult {
+  /** The reserved row, or null when the balance did not cover the request. */
+  refund: refunds | null;
+  reserved: boolean;
+  originalAmountPaise: number;
+  committedPaise: number;
+  refundablePaise: number;
+}
+
 export interface PaymentListFilters {
   status?: string;
   orderId?: string;
@@ -416,6 +432,106 @@ export class PaymentRepository {
   // ─────────────────────────────────────────────
   // Refunds
   // ─────────────────────────────────────────────
+
+  /**
+   * Reserve refundable balance and write the refund row, atomically.
+   *
+   * Summing the committed refunds and then inserting a row is check-then-act on
+   * a total that any concurrent caller can move. Two ₹300 refunds against one
+   * ₹500 payment both read `committed = 0`, both find ₹500 available, and both
+   * insert — ₹600 refunded against ₹500 collected.
+   *
+   * The gateway is not the backstop people assume. It does cap cumulative
+   * refunds, but the paths that never reach it have nothing in their way:
+   * a COD payment has no `gateway_payment_id` and is refunded purely in this
+   * ledger, and an over-policy refund is recorded for human approval without a
+   * gateway call. Those are exactly the refunds a person later pays out by hand,
+   * against these numbers.
+   *
+   * `FOR UPDATE` on the parent payment is what serializes them. Every
+   * reservation against a payment takes that one row lock, so the sum computed
+   * under it cannot change before the insert commits; the second caller blocks,
+   * re-reads a total that now includes the first, and is refused.
+   *
+   * The lock is held across two statements against one row and no external call
+   * — the gateway request deliberately happens after this returns, since holding
+   * a row lock across an HTTP round-trip would pin a connection from a pool this
+   * deployment shares.
+   */
+  async reserveRefund(
+    businessId: string,
+    paymentId: string,
+    data: {
+      amountPaise: number;
+      orderId?: string;
+      currency?: string;
+      reason?: string;
+      requiresApproval?: boolean;
+    },
+  ): Promise<ReserveRefundResult> {
+    return this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<Array<{ amount: Prisma.Decimal }>>`
+        SELECT amount FROM payments
+        WHERE id = ${paymentId}::uuid AND business_id = ${businessId}::uuid
+        FOR UPDATE
+      `;
+
+      const row = locked[0];
+      if (!row) {
+        throw new ResourceNotFoundError('Payment', paymentId, {
+          context: { businessId, stage: 'reserve-refund' },
+        });
+      }
+
+      const originalAmountPaise = currencyToPaise(Number(row.amount));
+
+      const committed = await tx.refunds.aggregate({
+        where: {
+          business_id: businessId,
+          payment_id: paymentId,
+          status: {
+            in: [RefundStatus.INITIATED, RefundStatus.PROCESSING, RefundStatus.COMPLETED],
+          },
+        },
+        _sum: { amount: true },
+      });
+
+      const committedPaise = currencyToPaise(Number(committed._sum.amount ?? 0));
+      const refundablePaise = Math.max(0, originalAmountPaise - committedPaise);
+
+      if (data.amountPaise > refundablePaise) {
+        return {
+          refund: null,
+          reserved: false,
+          originalAmountPaise,
+          committedPaise,
+          refundablePaise,
+        };
+      }
+
+      const refund = await tx.refunds.create({
+        data: {
+          business_id: businessId,
+          payment_id: paymentId,
+          order_id: data.orderId ?? null,
+          status: RefundStatus.INITIATED,
+          amount: new Prisma.Decimal(data.amountPaise / 100),
+          currency: data.currency ?? 'INR',
+          reason: data.reason ?? null,
+          requires_approval: data.requiresApproval ?? false,
+          gateway_response: Prisma.JsonNull,
+        },
+      });
+
+      return {
+        refund,
+        reserved: true,
+        originalAmountPaise,
+        committedPaise,
+        refundablePaise,
+      };
+    });
+  }
 
   /**
    * Create a refund record.

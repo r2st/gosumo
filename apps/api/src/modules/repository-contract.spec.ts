@@ -244,6 +244,8 @@ function makeRecordingPrisma(): { prisma: PrismaService; calls: PrismaCall[] } {
     avatar_url: null,
     total_orders: 0,
     total_spent: decimalLike(0),
+    // Read off the row a `SELECT … FOR UPDATE` locks before a balance check.
+    amount: decimalLike(0),
     first_seen_at: new Date(0),
     last_interaction_at: null,
   };
@@ -284,7 +286,13 @@ function makeRecordingPrisma(): { prisma: PrismaService; calls: PrismaCall[] } {
         if (model === '$queryRaw' || model === '$queryRawUnsafe') {
           return (...a: unknown[]) => {
             calls.push({ model, op: 'raw', args: {}, sql: rawSql(a) });
-            return Promise.resolve([]);
+            // One row, not none. A raw read that locks a row before deciding
+            // something — `SELECT … FOR UPDATE` ahead of a balance check —
+            // treats an empty result as "not found" and throws, which hides
+            // every query the method would have made afterwards from the
+            // isolation assertions. Those later writes are the ones that most
+            // need checking.
+            return Promise.resolve([row]);
           };
         }
         if (model === '$executeRaw' || model === '$executeRawUnsafe') {
