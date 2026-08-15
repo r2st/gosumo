@@ -94,6 +94,37 @@ export class KnowledgeIngestionService {
   }
 
   /**
+   * Remove every vector chunk belonging to one knowledge entry.
+   *
+   * Deletion is by payload filter, not by id: {@link ingest} generates a fresh
+   * point id per chunk and only the first one is ever recorded, so an id-based
+   * delete would strand chunks 2..N in the collection — still matching queries,
+   * still grounding answers, with the entry gone from Postgres. The filter is
+   * scoped by `businessId` as well as `entryId` so a delete can never reach
+   * across tenants even if an entry id were guessed.
+   *
+   * Returns false when the vectors could not be removed; the caller must not
+   * treat the entry as deleted in that case.
+   */
+  async remove(businessId: string, entryId: string): Promise<boolean> {
+    const collection = knowledgeCollection(businessId);
+    const ok = await this.qdrant.deleteByFilter(collection, {
+      must: [
+        { key: 'businessId', match: { value: businessId } },
+        { key: 'entryId', match: { value: entryId } },
+      ],
+    });
+
+    if (!ok) {
+      this.logger.warn(`Qdrant delete failed for entry ${entryId} in ${collection}`);
+      return false;
+    }
+
+    this.logger.log(`Removed vectors for entry ${entryId} from ${collection}`);
+    return true;
+  }
+
+  /**
    * Semantic chunker. Splits on blank-line paragraph boundaries; any paragraph
    * over the max size is split on sentence boundaries. Adjacent chunks overlap
    * by ~`overlapChars` to avoid losing context at boundaries.

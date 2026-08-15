@@ -1,5 +1,11 @@
 import { PrismaService } from '../../common/services/prisma.service';
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import {
@@ -689,27 +695,58 @@ export class AiEngineService {
     });
 
     if (result.chunksIndexed > 0 && result.pointIds[0]) {
-      await this.repository.createEmbeddingMetadata({
-        business_id: businessId,
-        entity_type: this.embeddingEntityType(dto.sourceType),
-        entity_id: entryId,
-        collection: result.collection,
-        qdrant_point_id: result.pointIds[0],
-        content_hash: this.embeddings.hash(dto.content),
-        model_id: 'text-embedding-3-small',
-      });
+      try {
+        await this.repository.createEmbeddingMetadata({
+          business_id: businessId,
+          entity_type: this.embeddingEntityType(dto.sourceType),
+          entity_id: entryId,
+          collection: result.collection,
+          qdrant_point_id: result.pointIds[0],
+          content_hash: this.embeddings.hash(dto.content),
+          model_id: 'text-embedding-3-small',
+        });
+      } catch (err) {
+        // The vectors are already live in Qdrant. Without a metadata row the
+        // caller never learns this entryId, so nothing can ever ask for these
+        // chunks to be deleted — they would ground answers forever with no
+        // record they exist. Roll the vectors back before surfacing the error.
+        this.logger.error(
+          `Embedding metadata write failed for entry ${entryId} — rolling back its vectors: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        await this.knowledgeIngestion.remove(businessId, entryId);
+        throw err;
+      }
     }
 
     this.logger.log(`Ingested knowledge entry ${entryId}: ${result.chunksIndexed} chunk(s)`);
     return { entryId, chunksIndexed: result.chunksIndexed, collection: result.collection };
   }
 
-  /** Remove a knowledge entry's vectors and metadata. */
+  /**
+   * Remove a knowledge entry's vectors and metadata.
+   *
+   * Vectors go first, and their failure aborts the delete. Dropping the
+   * metadata row while the chunks survive in Qdrant is the worst outcome
+   * available: the entry disappears from the tenant's knowledge base while its
+   * text keeps being retrieved into `<rag_context>` and grounding answers, and
+   * the row that pointed at it — the only handle a retry could use — is gone.
+   * Leaving the row and failing loudly keeps the delete retryable.
+   */
   async deleteKnowledgeEntry(businessId: string, entryId: string): Promise<void> {
     const meta = await this.repository.findEmbeddingMetadata(businessId, entryId);
     if (!meta) {
       throw new NotFoundException(`Knowledge entry ${entryId} not found`);
     }
+
+    const removed = await this.knowledgeIngestion.remove(businessId, entryId);
+    if (!removed) {
+      throw new ServiceUnavailableException(
+        `Could not remove the vectors for knowledge entry ${entryId} — entry left intact, retry once the vector store is reachable`,
+      );
+    }
+
     await this.repository.deleteEmbeddingMetadata(businessId, entryId);
     this.logger.log(`Deleted knowledge entry ${entryId}`);
   }

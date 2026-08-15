@@ -1,7 +1,11 @@
 import { PrismaService } from "../../common/services/prisma.service";
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  NotFoundException,
+  BadRequestException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ChannelType, IntentType } from '@gosumo/shared';
 
 import { AiEngineService } from './ai-engine.service';
@@ -87,6 +91,7 @@ interface Harness {
   findEmbeddingMetadata: jest.Mock;
   deleteEmbeddingMetadata: jest.Mock;
   ingest: jest.Mock;
+  removeVectors: jest.Mock;
   businesses: { findUniqueOrThrow: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
 }
 
@@ -182,7 +187,11 @@ function makeHarness(): Harness {
     pointIds: ['pt-1', 'pt-2'],
     collection: 'kb_b1',
   });
-  const knowledgeIngestion = { ingest } as unknown as KnowledgeIngestionService;
+  const removeVectors = jest.fn().mockResolvedValue(true);
+  const knowledgeIngestion = {
+    ingest,
+    remove: removeVectors,
+  } as unknown as KnowledgeIngestionService;
   const hash = jest.fn().mockReturnValue('hash-1');
   const embeddings = { hash } as unknown as EmbeddingService;
 
@@ -237,6 +246,7 @@ function makeHarness(): Harness {
     findEmbeddingMetadata,
     deleteEmbeddingMetadata,
     ingest,
+    removeVectors,
     businesses,
   };
 }
@@ -755,6 +765,97 @@ describe('AiEngineService — standalone methods', () => {
     await h.service.deleteKnowledgeEntry('b1', 'entry-1');
 
     expect(h.deleteEmbeddingMetadata).toHaveBeenCalledWith('b1', 'entry-1');
+  });
+
+  it('removes the entry vectors, not just its metadata row', async () => {
+    // The delete used to drop the Postgres row and leave every chunk in
+    // Qdrant. The entry vanished from the tenant's knowledge base while its
+    // text kept being retrieved into <rag_context> and grounding answers —
+    // a withdrawn refund policy still quoted at customers, indefinitely.
+    const h = makeHarness();
+    h.findEmbeddingMetadata.mockResolvedValueOnce({ id: 'meta-1' });
+
+    await h.service.deleteKnowledgeEntry('b1', 'entry-1');
+
+    expect(h.removeVectors).toHaveBeenCalledWith('b1', 'entry-1');
+  });
+
+  it('removes the vectors before the metadata row', async () => {
+    // Ordering is the whole safety property: the metadata row is the only
+    // handle a retry has on those vectors, so it must outlive them.
+    const h = makeHarness();
+    h.findEmbeddingMetadata.mockResolvedValueOnce({ id: 'meta-1' });
+    const order: string[] = [];
+    h.removeVectors.mockImplementationOnce(async () => {
+      order.push('vectors');
+      return true;
+    });
+    h.deleteEmbeddingMetadata.mockImplementationOnce(async () => {
+      order.push('metadata');
+    });
+
+    await h.service.deleteKnowledgeEntry('b1', 'entry-1');
+
+    expect(order).toEqual(['vectors', 'metadata']);
+  });
+
+  it('keeps the entry intact when the vectors cannot be removed', async () => {
+    // Failing loudly keeps the delete retryable. Dropping the row anyway
+    // would orphan the chunks with nothing left pointing at them.
+    const h = makeHarness();
+    h.findEmbeddingMetadata.mockResolvedValueOnce({ id: 'meta-1' });
+    h.removeVectors.mockResolvedValueOnce(false);
+
+    await expect(h.service.deleteKnowledgeEntry('b1', 'entry-1')).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    expect(h.deleteEmbeddingMetadata).not.toHaveBeenCalled();
+  });
+
+  it('does not touch the vector store for an entry that does not exist', async () => {
+    const h = makeHarness();
+    h.findEmbeddingMetadata.mockResolvedValueOnce(null);
+
+    await expect(h.service.deleteKnowledgeEntry('b1', 'missing')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(h.removeVectors).not.toHaveBeenCalled();
+  });
+
+  it('rolls the vectors back when the metadata write fails', async () => {
+    // The upsert has already landed by this point. With no metadata row the
+    // caller never learns the entryId, so nothing can ever ask for these
+    // chunks to be deleted — they would ground answers forever, unreachable.
+    const h = makeHarness();
+    h.createEmbeddingMetadata.mockRejectedValueOnce(new Error('deadlock detected'));
+
+    await expect(
+      h.service.ingestKnowledgeBase('b1', {
+        content: 'Refunds within 24 hours.',
+        sourceType: 'REFUND_POLICY',
+      } as never),
+    ).rejects.toThrow('deadlock detected');
+
+    expect(h.removeVectors).toHaveBeenCalledTimes(1);
+    const [businessId, entryId] = h.removeVectors.mock.calls[0]!;
+    expect(businessId).toBe('b1');
+    // Rolled back under the same entry id the vectors were stamped with.
+    expect(h.ingest).toHaveBeenCalledWith(expect.objectContaining({ entryId }));
+  });
+
+  it('does not roll anything back when nothing was indexed', async () => {
+    // Embeddings unavailable: no points were written, so there is nothing to
+    // undo and no metadata row to write.
+    const h = makeHarness();
+    h.ingest.mockResolvedValueOnce({ chunksIndexed: 0, pointIds: [], collection: 'kb_b1' });
+
+    await h.service.ingestKnowledgeBase('b1', {
+      content: 'Refunds within 24 hours.',
+      sourceType: 'REFUND_POLICY',
+    } as never);
+
+    expect(h.createEmbeddingMetadata).not.toHaveBeenCalled();
+    expect(h.removeVectors).not.toHaveBeenCalled();
   });
 
   it('maps retrieved chunks into knowledge entry DTOs', async () => {

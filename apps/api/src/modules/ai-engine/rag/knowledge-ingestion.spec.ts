@@ -8,13 +8,21 @@ function makeService(embedReturns: number[] | null = [0.1, 0.2, 0.3]): {
   ensureCollection: jest.Mock;
   upsert: jest.Mock;
   embed: jest.Mock;
+  deleteByFilter: jest.Mock;
 } {
   const ensureCollection = jest.fn().mockResolvedValue(true);
   const upsert = jest.fn().mockResolvedValue(true);
+  const deleteByFilter = jest.fn().mockResolvedValue(true);
   const embed = jest.fn().mockResolvedValue(embedReturns);
-  const qdrant = { ensureCollection, upsert } as unknown as QdrantClient;
+  const qdrant = { ensureCollection, upsert, deleteByFilter } as unknown as QdrantClient;
   const embeddings = { embed, hash: jest.fn() } as unknown as EmbeddingService;
-  return { service: new KnowledgeIngestionService(qdrant, embeddings), ensureCollection, upsert, embed };
+  return {
+    service: new KnowledgeIngestionService(qdrant, embeddings),
+    ensureCollection,
+    upsert,
+    embed,
+    deleteByFilter,
+  };
 }
 
 describe('KnowledgeIngestionService', () => {
@@ -231,6 +239,76 @@ describe('KnowledgeIngestionService', () => {
       const b = 'Second paragraph of the refund policy, also long enough here.';
 
       expect(service.chunk(`${a}\r\n\r\n${b}`)).toEqual(service.chunk(`${a}\n\n${b}`));
+    });
+  });
+
+  describe('remove', () => {
+    it('deletes every chunk of an entry by filter, not by point id', async () => {
+      // A document becomes N points with N generated ids, and only the first
+      // is ever recorded in Postgres. Deleting by id would leave chunks 2..N
+      // in the collection — still matching queries, still grounding answers,
+      // with the entry gone from the tenant's knowledge base.
+      const { service, deleteByFilter } = makeService();
+
+      await expect(service.remove('biz-1', 'entry-1')).resolves.toBe(true);
+
+      expect(deleteByFilter).toHaveBeenCalledTimes(1);
+      const [collection, filter] = deleteByFilter.mock.calls[0]!;
+      expect(collection).toContain('biz-1');
+      expect(filter).toEqual({
+        must: [
+          { key: 'businessId', match: { value: 'biz-1' } },
+          { key: 'entryId', match: { value: 'entry-1' } },
+        ],
+      });
+    });
+
+    it('scopes the delete by businessId as well as entryId', async () => {
+      // Tenant isolation: an entry id from another business must not be able
+      // to reach this collection's points even if it were guessed.
+      const { service, deleteByFilter } = makeService();
+
+      await service.remove('biz-1', 'entry-1');
+
+      const [, filter] = deleteByFilter.mock.calls[0]!;
+      expect(filter.must).toContainEqual({ key: 'businessId', match: { value: 'biz-1' } });
+    });
+
+    it('reports failure when the vector store rejects the delete', async () => {
+      const { service, deleteByFilter } = makeService();
+      deleteByFilter.mockResolvedValueOnce(false);
+
+      await expect(service.remove('biz-1', 'entry-1')).resolves.toBe(false);
+    });
+
+    it('removes exactly the chunks a multi-chunk ingest created', async () => {
+      // End-to-end on the payload contract: whatever ingest stamps on each
+      // point is what remove filters on.
+      const { service, upsert, deleteByFilter } = makeService();
+      const para = `${'A'.repeat(1700)}.`;
+
+      await service.ingest({
+        businessId: 'biz-1',
+        entryId: 'entry-1',
+        content: `${para}\n\n${para}\n\n${para}`,
+        sourceType: 'REFUND_POLICY',
+      });
+
+      const [, points] = upsert.mock.calls[0]!;
+      expect(points.length).toBeGreaterThan(1);
+      for (const point of points) {
+        expect(point.payload).toMatchObject({ businessId: 'biz-1', entryId: 'entry-1' });
+      }
+
+      await service.remove('biz-1', 'entry-1');
+
+      const [, filter] = deleteByFilter.mock.calls[0]!;
+      // Every point above matches this filter.
+      for (const point of points) {
+        for (const clause of filter.must) {
+          expect(point.payload[clause.key]).toBe(clause.match.value);
+        }
+      }
     });
   });
 });

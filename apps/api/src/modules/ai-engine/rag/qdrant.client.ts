@@ -89,6 +89,30 @@ export class QdrantClient {
     }
   }
 
+  /**
+   * Delete every point matching a payload filter. Returns false on failure.
+   *
+   * This is the only way to delete a *document*: ingestion splits it into an
+   * unbounded number of chunks, each with its own generated point id, and
+   * nothing durably records the full id list. Deleting by
+   * `{businessId, entryId}` removes all of them without having to know how
+   * many there were.
+   *
+   * A missing collection is treated as success — a tenant that never had a
+   * vector indexed has nothing to delete, and reporting failure there would
+   * block the caller from clearing its own metadata forever.
+   */
+  async deleteByFilter(collection: string, filter: QdrantFilter): Promise<boolean> {
+    try {
+      const res = await this.request('POST', `/collections/${collection}/points/delete`, { filter });
+      if (res.status === 404) return true;
+      return res.ok;
+    } catch (err) {
+      this.logger.warn(`deleteByFilter in ${collection} failed: ${this.msg(err)}`);
+      return false;
+    }
+  }
+
   /** Delete points by id. Returns false on failure. */
   async deletePoints(collection: string, ids: string[]): Promise<boolean> {
     if (ids.length === 0) return true;

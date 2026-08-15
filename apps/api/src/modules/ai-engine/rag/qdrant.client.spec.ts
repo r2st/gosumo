@@ -353,4 +353,50 @@ describe('QdrantClient', () => {
       );
     });
   });
+
+  // ─────────────────────────────────────────────
+  // deleteByFilter
+  // ─────────────────────────────────────────────
+
+  describe('deleteByFilter', () => {
+    const filter = {
+      must: [
+        { key: 'businessId', match: { value: 'biz-1' } },
+        { key: 'entryId', match: { value: 'entry-1' } },
+      ],
+    };
+
+    it('posts the filter to the delete endpoint', async () => {
+      fetchMock.mockResolvedValue(ok);
+
+      await expect(build().deleteByFilter('kb', filter)).resolves.toBe(true);
+
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe('http://qdrant.test:6333/collections/kb/points/delete');
+      // Filter, not ids: a document is an unbounded number of points and only
+      // the first id was ever recorded.
+      expect(JSON.parse(init.body)).toEqual({ filter });
+    });
+
+    it('treats a missing collection as nothing to delete', async () => {
+      // A tenant that never indexed a vector has no collection. Reporting
+      // failure there would leave its metadata undeletable forever.
+      fetchMock.mockResolvedValue({ ok: false, status: 404 });
+
+      await expect(build().deleteByFilter('kb', filter)).resolves.toBe(true);
+    });
+
+    it('reports a rejected delete', async () => {
+      fetchMock.mockResolvedValue({ ok: false, status: 500 });
+
+      await expect(build().deleteByFilter('kb', filter)).resolves.toBe(false);
+    });
+
+    it('degrades to false when Qdrant is unreachable', async () => {
+      fetchMock.mockRejectedValue(new Error('ECONNREFUSED'));
+
+      await expect(build().deleteByFilter('kb', filter)).resolves.toBe(false);
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('ECONNREFUSED'));
+    });
+  });
 });
