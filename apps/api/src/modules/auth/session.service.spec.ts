@@ -4,6 +4,7 @@ import {
   SessionService,
   StoredSession,
   MAX_CONCURRENT_SESSIONS,
+  SESSION_TTL_SECONDS,
 } from './session.service';
 import { REDIS_CLIENT } from './redis.provider';
 
@@ -35,6 +36,7 @@ describe('SessionService', () => {
     zrem: jest.fn(),
     zcard: jest.fn(),
     zrange: jest.fn(),
+    zremrangebyrank: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -52,6 +54,7 @@ describe('SessionService', () => {
     redis.expire.mockResolvedValue(1);
     redis.zcard.mockResolvedValue(0);
     redis.zrange.mockResolvedValue([]);
+    redis.zremrangebyrank.mockResolvedValue(0);
   });
 
   describe('createSession', () => {
@@ -77,14 +80,34 @@ describe('SessionService', () => {
     });
 
     it('evicts the oldest session(s) when the cap is exceeded', async () => {
-      // Already at the cap → one must be evicted before inserting the new one.
-      redis.zcard.mockResolvedValue(MAX_CONCURRENT_SESSIONS);
-      redis.zrange.mockResolvedValue(['oldest']);
+      // The new session is indexed first, so the set the trim sees already
+      // includes it: one over the cap → exactly one eviction.
+      const overCap = [
+        'oldest',
+        ...Array.from({ length: MAX_CONCURRENT_SESSIONS }, (_, i) => `sess-${i}`),
+      ];
+      redis.zrange.mockResolvedValue(overCap);
 
       await service.createSession('user-1', 'biz-1', 'sess-new', 'rt');
 
       expect(redis.del).toHaveBeenCalledWith('gosumo:session:user-1:oldest');
-      expect(redis.zrem).toHaveBeenCalledWith('gosumo:sessions:user-1', 'oldest');
+      // The index itself is trimmed by rank, in one command.
+      expect(redis.zremrangebyrank).toHaveBeenCalledWith(
+        'gosumo:sessions:user-1',
+        0,
+        -(MAX_CONCURRENT_SESSIONS + 1),
+      );
+      // Only the overflow goes: everything else is still within the cap.
+      expect(redis.del).not.toHaveBeenCalledWith('gosumo:session:user-1:sess-0');
+    });
+
+    it('does not trim a user who is under the cap', async () => {
+      redis.zrange.mockResolvedValue(['sess-a', 'sess-b']);
+
+      await service.createSession('user-1', 'biz-1', 'sess-b', 'rt');
+
+      expect(redis.zremrangebyrank).not.toHaveBeenCalled();
+      expect(redis.del).not.toHaveBeenCalled();
     });
   });
 
@@ -209,6 +232,27 @@ describe('SessionService', () => {
 
       expect(redis.set).not.toHaveBeenCalled();
     });
+
+    it('extends the index TTL alongside the session it points at', async () => {
+      // Extending only the session key lets the index expire out from under a
+      // live session. The index is the only record that the session exists, so
+      // `revokeAllSessions` — the mechanism behind logout-everywhere, change
+      // password and password reset — would no longer be able to see it, while
+      // `isActive` reads the session key and keeps admitting the token.
+      redis.get.mockResolvedValue(JSON.stringify(makeStored()));
+
+      await service.touch('user-1', 'sess-1');
+
+      expect(redis.expire).toHaveBeenCalledWith('gosumo:sessions:user-1', SESSION_TTL_SECONDS);
+    });
+
+    it('leaves the index alone when there is no session to extend', async () => {
+      redis.get.mockResolvedValue(null);
+
+      await service.touch('user-1', 'sess-1');
+
+      expect(redis.expire).not.toHaveBeenCalled();
+    });
   });
 
   describe('listSessions', () => {
@@ -267,6 +311,153 @@ describe('SessionService', () => {
       redis.zrange.mockResolvedValue([]);
       await service.revokeAllSessions('user-1');
       expect(redis.del).toHaveBeenCalledWith('gosumo:sessions:user-1');
+    });
+  });
+
+  /**
+   * The concurrent-session cap under load.
+   *
+   * These run against a stateful fake rather than call-count assertions: the
+   * bug being covered is an ordering one, and only a store that actually holds
+   * the sorted set can show a cap being overshot.
+   */
+  describe('concurrent-session cap', () => {
+    interface FakeRedis {
+      keys: Map<string, string>;
+      index: { score: number; member: string }[];
+      client: Record<string, unknown>;
+    }
+
+    function makeFakeRedis(): FakeRedis {
+      const keys = new Map<string, string>();
+      const index: { score: number; member: string }[] = [];
+      const sorted = (): { score: number; member: string }[] =>
+        [...index].sort((a, b) => a.score - b.score || a.member.localeCompare(b.member));
+
+      const client = {
+        // `await` on each op so the two logins genuinely interleave rather than
+        // running one after the other inside a single microtask.
+        set: async (k: string, v: string) => {
+          await Promise.resolve();
+          keys.set(k, v);
+          return 'OK';
+        },
+        del: async (...ks: string[]) => {
+          await Promise.resolve();
+          let n = 0;
+          for (const k of ks) if (keys.delete(k)) n++;
+          return n;
+        },
+        exists: async (k: string) => (keys.has(k) ? 1 : 0),
+        expire: async () => 1,
+        zadd: async (_k: string, score: number, member: string) => {
+          await Promise.resolve();
+          index.push({ score, member });
+          return 1;
+        },
+        zrem: async (_k: string, ...members: string[]) => {
+          await Promise.resolve();
+          let n = 0;
+          for (const m of members) {
+            const i = index.findIndex((e) => e.member === m);
+            if (i >= 0) {
+              index.splice(i, 1);
+              n++;
+            }
+          }
+          return n;
+        },
+        zcard: async () => {
+          await Promise.resolve();
+          return index.length;
+        },
+        zrange: async (_k: string, start: number, stop: number) => {
+          await Promise.resolve();
+          const all = sorted().map((e) => e.member);
+          return stop === -1 ? all.slice(start) : all.slice(start, stop + 1);
+        },
+        zremrangebyrank: async (_k: string, start: number, stop: number) => {
+          await Promise.resolve();
+          const all = sorted();
+          const end = stop < 0 ? all.length + stop : stop;
+          const removed = all.slice(start, end + 1);
+          for (const entry of removed) {
+            index.splice(
+              index.findIndex((e) => e.member === entry.member),
+              1,
+            );
+          }
+          return removed.length;
+        },
+      };
+
+      return { keys, index, client };
+    }
+
+    const build = (fake: FakeRedis): SessionService =>
+      new SessionService(fake.client as never);
+
+    it('holds the cap when many logins land at once', async () => {
+      // Counting before inserting is a check-then-act: every racer reads a
+      // count that predates the others' writes, concludes there is room, and
+      // inserts. Nothing trims afterwards, so the overshoot is permanent — the
+      // cap that bounds the blast radius of a stolen credential stops bounding
+      // anything.
+      const fake = makeFakeRedis();
+      const svc = build(fake);
+
+      await Promise.all(
+        Array.from({ length: MAX_CONCURRENT_SESSIONS + 4 }, (_, i) =>
+          svc.createSession('user-1', 'biz-1', `sess-${i}`, `token-${i}`),
+        ),
+      );
+
+      expect(fake.index).toHaveLength(MAX_CONCURRENT_SESSIONS);
+      // Evicted sessions must lose their key too: `isActive` reads the key, so
+      // a session dropped from the index alone would still authenticate.
+      expect(fake.keys.size).toBe(MAX_CONCURRENT_SESSIONS);
+    });
+
+    it('never evicts the session it was asked to create', async () => {
+      // Millisecond scores tie for sessions created in the same tick, and a
+      // tie is broken on the member — so without a monotonic score the newest
+      // session can rank as the oldest and be trimmed by its own login.
+      const fake = makeFakeRedis();
+      const svc = build(fake);
+
+      for (let i = 9; i >= 0; i--) {
+        await svc.createSession('user-1', 'biz-1', `sess-${i}`, 'token');
+      }
+
+      // 'sess-0' sorts first on every tie-break, but it was created last.
+      expect(fake.index.map((e) => e.member)).toContain('sess-0');
+      expect(fake.keys.has('gosumo:session:user-1:sess-0')).toBe(true);
+      expect(fake.index).toHaveLength(MAX_CONCURRENT_SESSIONS);
+    });
+
+    it('keeps the newest sessions and drops only the oldest', async () => {
+      const fake = makeFakeRedis();
+      const svc = build(fake);
+
+      for (let i = 0; i < MAX_CONCURRENT_SESSIONS + 2; i++) {
+        await svc.createSession('user-1', 'biz-1', `sess-${i}`, 'token');
+      }
+
+      expect(fake.index.map((e) => e.member)).toEqual([
+        ...Array.from({ length: MAX_CONCURRENT_SESSIONS }, (_, i) => `sess-${i + 2}`),
+      ]);
+      expect(fake.keys.has('gosumo:session:user-1:sess-0')).toBe(false);
+      expect(fake.keys.has('gosumo:session:user-1:sess-1')).toBe(false);
+    });
+
+    it('leaves an under-cap user untouched', async () => {
+      const fake = makeFakeRedis();
+      const svc = build(fake);
+
+      await svc.createSession('user-1', 'biz-1', 'sess-a', 'token');
+      await svc.createSession('user-1', 'biz-1', 'sess-b', 'token');
+
+      expect(fake.index.map((e) => e.member)).toEqual(['sess-a', 'sess-b']);
     });
   });
 });

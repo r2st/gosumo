@@ -293,6 +293,49 @@ describe('AuthService — refresh, reset, throttling, sessions', () => {
 
       expect(repo.findTeamMemberById).toHaveBeenCalledWith(BUSINESS_ID, USER_ID);
     });
+
+    // ── Token type ──────────────────────────────
+    //
+    // The two halves of a pair are signed with the same secret and carry
+    // identical claims, so each consumer has to say which half it wants.
+
+    it('refuses to exchange an access token for a new pair', async () => {
+      jwt.verify.mockReturnValue({ ...payload, type: 'access' });
+
+      await expect(service.refreshTokens('an-access-token')).rejects.toThrow(
+        /access token cannot be exchanged/,
+      );
+      // Rejected on the claim alone — the session store is never consulted,
+      // so this cannot be probed for whether a session exists.
+      expect(sessions.verifyRefreshToken).not.toHaveBeenCalled();
+    });
+
+    it('accepts a properly typed refresh token', async () => {
+      jwt.verify.mockReturnValue({ ...payload, type: 'refresh' });
+      repo.findTeamMemberById.mockResolvedValue(buildTeamMember());
+
+      await expect(service.refreshTokens('valid-refresh')).resolves.toBeDefined();
+    });
+
+    it('still accepts a refresh token signed before the type claim existed', async () => {
+      // The rollout depends on this: the bearer guard rejects type-less access
+      // tokens, and this is the path that hands the client a typed pair back.
+      // Reject it here too and every logged-in user is signed out on deploy.
+      jwt.verify.mockReturnValue({ ...payload, type: undefined });
+      repo.findTeamMemberById.mockResolvedValue(buildTeamMember());
+
+      await expect(service.refreshTokens('legacy-refresh')).resolves.toBeDefined();
+    });
+
+    it('marks the two tokens it signs as access and refresh', async () => {
+      jwt.verify.mockReturnValue(payload);
+      repo.findTeamMemberById.mockResolvedValue(buildTeamMember());
+
+      await service.refreshTokens('valid-refresh');
+
+      const types = jwt.signAsync.mock.calls.map(([claims]: [JwtPayload]) => claims.type);
+      expect(types).toEqual(['access', 'refresh']);
+    });
   });
 
   // ═══════════════════════════════════════════

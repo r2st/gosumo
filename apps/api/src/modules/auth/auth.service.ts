@@ -244,6 +244,14 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token is not bound to a session');
     }
 
+    // The mirror of the check in `JwtStrategy`: an access token is not a
+    // refresh token. A type-less token predates the claim and is still
+    // honoured here — that is what lets a client holding an old pair recover
+    // its now-rejected access token without being logged out.
+    if (payload.type === 'access') {
+      throw new UnauthorizedException('An access token cannot be exchanged for new tokens');
+    }
+
     const matches = await this.sessionService.verifyRefreshToken(
       payload.sub,
       payload.sessionId,
@@ -495,7 +503,7 @@ export class AuthService {
     teamMember: TeamMemberWithBusiness,
     sessionId: string,
   ): Promise<AuthTokensDto> {
-    const payload: Omit<JwtPayload, 'jti'> = {
+    const payload: Omit<JwtPayload, 'jti' | 'type'> = {
       sub: teamMember.id,
       businessId: teamMember.business_id,
       email: teamMember.email,
@@ -515,13 +523,20 @@ export class AuthService {
     // The access and refresh token get *different* ids as well, so a token can
     // be identified as one or the other by id alone (needed by any future
     // per-token denylist, which must not kill both halves of a pair at once).
+    //
+    // `type` is what lets each consumer tell the two apart. `jti` makes them
+    // unique but says nothing about what a token is *for*, and every other
+    // claim is identical by design — so the bearer guard accepted a refresh
+    // token as an access token, and this endpoint would have accepted an
+    // access token as a refresh token had its hash ever matched. Each side now
+    // states which half it wants.
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(
-        { ...payload, jti: randomUUID() },
+        { ...payload, type: 'access', jti: randomUUID() },
         { expiresIn: ACCESS_TOKEN_TTL },
       ),
       this.jwtService.signAsync(
-        { ...payload, jti: randomUUID() },
+        { ...payload, type: 'refresh', jti: randomUUID() },
         { expiresIn: REFRESH_TOKEN_TTL },
       ),
     ]);

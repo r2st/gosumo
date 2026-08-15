@@ -12,6 +12,7 @@ const payload = (overrides: Partial<JwtPayload> = {}): JwtPayload => ({
   businessId: 'biz-1',
   email: 'op@example.com',
   role: 'MANAGER',
+  type: 'access',
   ...overrides,
 });
 
@@ -73,6 +74,49 @@ describe('JwtStrategy', () => {
       await strategy.validate(payload());
       expect(sessions.isActive).not.toHaveBeenCalled();
       expect(sessions.touch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('token type', () => {
+    it('refuses a refresh token presented as a bearer credential', async () => {
+      // The whole point of the claim. A refresh token is signed with the same
+      // secret and carries the same claims, so without this it authenticated
+      // every protected route — for seven days, from wherever it was stored.
+      await expect(
+        strategy.validate(payload({ type: 'refresh', sessionId: 'sess-1' })),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('does not consult the session store before rejecting a refresh token', async () => {
+      await expect(
+        strategy.validate(payload({ type: 'refresh', sessionId: 'sess-1' })),
+      ).rejects.toThrow();
+      expect(sessions.isActive).not.toHaveBeenCalled();
+    });
+
+    it('rejects a rotated-away refresh token even while its session is live', async () => {
+      // Rotation revokes a stale refresh token at /auth/refresh. If the bearer
+      // guard still took it, detecting the theft would buy nothing: the
+      // attacker keeps full API access until the token's own expiry.
+      sessions.isActive.mockResolvedValue(true);
+      await expect(
+        strategy.validate(payload({ type: 'refresh', sessionId: 'sess-1' })),
+      ).rejects.toThrow(/cannot be used to authenticate/);
+    });
+
+    it('refuses a token signed before the type claim existed', async () => {
+      // Deliberate: accepting these would leave every pre-deploy refresh token
+      // usable as a bearer credential for a further seven days. The client
+      // refreshes once on the 401 and replays, so an active user sees nothing.
+      await expect(strategy.validate(payload({ type: undefined }))).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it('accepts an access token', async () => {
+      await expect(strategy.validate(payload({ type: 'access' }))).resolves.toMatchObject({
+        sub: 'user-1',
+      });
     });
   });
 

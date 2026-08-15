@@ -37,6 +37,8 @@ export interface SessionMeta {
 @Injectable()
 export class SessionService {
   private readonly logger = new Logger(SessionService.name);
+  /** Last index score handed out — see {@link SessionService.nextScore}. */
+  private lastScore = 0;
 
   constructor(@Inject(REDIS_CLIENT) private readonly redis: RedisClient) {}
 
@@ -52,8 +54,6 @@ export class SessionService {
     refreshToken: string,
     meta: SessionMeta = {},
   ): Promise<void> {
-    await this.evictOverflow(userId, MAX_CONCURRENT_SESSIONS - 1);
-
     const now = new Date().toISOString();
     const session: StoredSession = {
       sessionId,
@@ -72,8 +72,23 @@ export class SessionService {
       'EX',
       SESSION_TTL_SECONDS,
     );
-    await this.redis.zadd(sessionIndexKey(userId), Date.now(), sessionId);
+    await this.redis.zadd(sessionIndexKey(userId), this.nextScore(), sessionId);
     await this.redis.expire(sessionIndexKey(userId), SESSION_TTL_SECONDS);
+
+    // Trim *after* inserting, not before.
+    //
+    // Counting first and inserting second is a check-then-act: two logins that
+    // both read a count of 4 (cap 5) both concluded there was room, and the
+    // user ended up with 6 live sessions. Nothing trimmed later, so the excess
+    // was permanent — every concurrent burst raised the ceiling again, and the
+    // cap that exists to bound the blast radius of a stolen credential stopped
+    // being a bound at all.
+    //
+    // Inserting first makes the trim self-healing instead: whichever order the
+    // two racers arrive in, each one counts a set that already contains every
+    // session inserted so far and cuts it back to the cap. The worst case is
+    // that both evict the same oldest sessions, which is idempotent.
+    await this.evictOverflow(userId, MAX_CONCURRENT_SESSIONS);
   }
 
   /** True when the session still exists (i.e. has not expired or been revoked). */
@@ -143,6 +158,18 @@ export class SessionService {
       'EX',
       SESSION_TTL_SECONDS,
     );
+    // The index has to be pushed out with the session it points at.
+    //
+    // Writing the session key with a fresh TTL and leaving the index on its
+    // original one lets the index expire out from under a session that is
+    // still alive — and the index is the *only* record that the session
+    // exists. `revokeAllSessions` and `listSessions` both read it, so an
+    // orphaned session becomes one that "log out everywhere" cannot see and
+    // therefore cannot revoke, while `isActive` (which reads the session key)
+    // happily keeps authenticating it. Change-password and password-reset both
+    // rely on that same revoke-all to kill the attacker's session, so the gap
+    // lands squarely on the paths that exist to end a compromise.
+    await this.redis.expire(sessionIndexKey(userId), SESSION_TTL_SECONDS);
   }
 
   async listSessions(userId: string, currentSessionId?: string): Promise<SessionDto[]> {
@@ -188,21 +215,57 @@ export class SessionService {
   }
 
   /**
-   * Trim a user's sessions down to at most `keep`, removing the oldest first.
-   * Used before inserting a new session so the live count never exceeds the cap.
+   * Trim a user's sessions down to at most `keep`, oldest first. Runs after a
+   * new session is indexed, so the live set is pulled back to the cap however
+   * many logins raced to insert.
+   *
+   * The index is trimmed with a single rank-ranged removal rather than by
+   * counting the excess and removing that many members. Both halves of that
+   * arithmetic — the count and the list — are separate reads, and two logins
+   * racing them go wrong in *both* directions: each may spare a session the
+   * other also spared (leaving the user over the cap), or evict a session the
+   * other already accounted for (dropping sessions that were inside it). One
+   * rank-ranged command is evaluated against the set as it stands, so a
+   * concurrent second run simply finds nothing left to remove.
+   *
+   * The session keys still have to be deleted one by one, and that is
+   * deliberately done for every member this call *observed* as overflow: a
+   * session key that outlives its index entry is a session `revokeAllSessions`
+   * can no longer see but `isActive` still admits.
    */
   private async evictOverflow(userId: string, keep: number): Promise<void> {
-    const count = await this.redis.zcard(sessionIndexKey(userId));
-    const excess = count - keep;
-    if (excess <= 0) {
+    const index = sessionIndexKey(userId);
+    // Oldest → newest.
+    const ids = await this.redis.zrange(index, 0, -1);
+    if (ids.length <= keep) {
       return;
     }
-    const oldest = await this.redis.zrange(sessionIndexKey(userId), 0, excess - 1);
-    for (const id of oldest) {
+
+    const doomed = ids.slice(0, ids.length - keep);
+    // Rank -(keep+1) is the newest member that is still surplus, so this keeps
+    // exactly the newest `keep` whatever the set looks like when it lands.
+    await this.redis.zremrangebyrank(index, 0, -(keep + 1));
+    for (const id of doomed) {
       await this.redis.del(sessionKey(userId, id));
-      await this.redis.zrem(sessionIndexKey(userId), id);
     }
-    this.logger.debug(`Evicted ${oldest.length} oldest session(s) for user ${userId}`);
+    this.logger.debug(`Evicted ${doomed.length} oldest session(s) for user ${userId}`);
+  }
+
+  /**
+   * A strictly increasing index score.
+   *
+   * `Date.now()` alone has millisecond resolution, so sessions created in the
+   * same millisecond tie — and Redis breaks a tie on the member's own sort
+   * order, which is a random UUID. The newest session can therefore rank as
+   * the *oldest*, and the rank-ranged trim would evict the very session the
+   * login just created: the user is logged out by their own login, or, worse,
+   * signs in and displaces nothing while an attacker's older session survives.
+   * Bumping past the last score issued makes "newest" mean what it says for
+   * every session this process creates.
+   */
+  private nextScore(): number {
+    this.lastScore = Math.max(Date.now(), this.lastScore + 1);
+    return this.lastScore;
   }
 
   private hashToken(token: string): string {

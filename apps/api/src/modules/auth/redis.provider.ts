@@ -25,6 +25,17 @@ export interface RedisClient {
   zrem(key: string, ...members: string[]): Promise<number>;
   zcard(key: string): Promise<number>;
   zrange(key: string, start: number, stop: number): Promise<string[]>;
+  /**
+   * Trim a sorted set by rank in one round trip.
+   *
+   * The session cap needs this rather than a read-then-remove pair: computing
+   * "how many are over the cap" in the client and removing that many is a
+   * check-then-act, and two logins racing it either both spare the same
+   * session (cap exceeded) or both evict it (sessions dropped that were
+   * inside the cap). Evaluated server-side against the live set, the same
+   * command run twice is simply a no-op the second time.
+   */
+  zremrangebyrank(key: string, start: number, stop: number): Promise<number>;
   /** Liveness probe for the readiness check. */
   ping(): Promise<string>;
   quit(): Promise<'OK'>;

@@ -492,6 +492,7 @@ describe('JwtStrategy', () => {
       businessId: 'biz-id',
       email: 'test@example.com',
       role: 'OWNER',
+      type: 'access' as const,
     };
 
     const result = await strategy.validate(payload);

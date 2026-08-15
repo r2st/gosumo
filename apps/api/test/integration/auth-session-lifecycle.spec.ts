@@ -37,6 +37,7 @@ import {
   MAX_CONCURRENT_SESSIONS,
 } from '../../src/modules/auth/session.service';
 import { RedisClient } from '../../src/modules/auth/redis.provider';
+import { JwtStrategy, JwtPayload } from '../../src/modules/auth/strategies/jwt.strategy';
 
 const JWT_SECRET = 'integration-test-secret-value-32-chars';
 /** Arbitrary fixed epoch (ms) for tests that need a deterministic clock. */
@@ -125,6 +126,23 @@ class FakeRedis implements RedisClient {
       .map(([m]) => m);
     const end = stop < 0 ? ordered.length + stop + 1 : stop + 1;
     return ordered.slice(start, end);
+  }
+
+  /**
+   * Rank-ranged trim, with Redis's own inclusive-stop and negative-index
+   * semantics — `-(n+1)` means "all but the newest n". The session cap is
+   * enforced entirely by this command, so a fake that approximated it would
+   * make the cap tests prove nothing.
+   */
+  async zremrangebyrank(key: string, start: number, stop: number): Promise<number> {
+    const set = this.zsets.get(key);
+    if (!set) return 0;
+    const ordered = [...set].sort((a, b) => a[1] - b[1]).map(([m]) => m);
+    const from = start < 0 ? ordered.length + start : start;
+    const to = stop < 0 ? ordered.length + stop : stop;
+    const doomed = ordered.slice(Math.max(0, from), to + 1);
+    for (const member of doomed) set.delete(member);
+    return doomed.length;
   }
 
   async ping(): Promise<string> {
@@ -529,6 +547,79 @@ describe('auth session lifecycle (integration)', () => {
 
       expect((await sessions.listSessions(USER_ID)).length).toBeLessThanOrEqual(
         MAX_CONCURRENT_SESSIONS,
+      );
+    });
+  });
+
+  /**
+   * The bearer guard and the token issuer, wired to the same secret.
+   *
+   * Neither unit spec can catch this on its own: AuthService is asked what it
+   * signs, JwtStrategy is asked what it accepts, and the bug lived in the fact
+   * that what it accepted was a superset of what an access token is.
+   */
+  describe('token type across issuer and guard', () => {
+    const strategyFor = (): JwtStrategy =>
+      new JwtStrategy(
+        {
+          get: (key: string, fallback?: unknown) =>
+            key === 'app.jwt.secret' ? JWT_SECRET : fallback,
+        } as unknown as ConfigService,
+        sessions,
+      );
+
+    const claimsOf = (token: string): JwtPayload => jwt.verify<JwtPayload>(token);
+
+    it('authenticates with the access token from a login', async () => {
+      const tokens = await login();
+
+      await expect(strategyFor().validate(claimsOf(tokens.accessToken))).resolves.toMatchObject({
+        sub: USER_ID,
+        businessId: BUSINESS_ID,
+      });
+    });
+
+    it('refuses the refresh token from the same login as a bearer credential', async () => {
+      // Same secret, same session, same claims — the refresh token authenticated
+      // every protected route for seven days from wherever it was stored (the
+      // OAuth callback fragment, localStorage, a logout request body).
+      const tokens = await login();
+
+      await expect(strategyFor().validate(claimsOf(tokens.refreshToken))).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it('makes rotation mean something: a replaced refresh token cannot authenticate', async () => {
+      const first = await login();
+      await auth.refreshTokens(first.refreshToken);
+
+      // The session is deliberately still live — rotation replaced the hash,
+      // it did not revoke anything. Before the type claim, a captured refresh
+      // token stayed a working API credential right through the rotation that
+      // was supposed to have retired it.
+      expect(await sessions.isActive(USER_ID, sessionIdOf(first.accessToken))).toBe(true);
+      await expect(strategyFor().validate(claimsOf(first.refreshToken))).rejects.toThrow(
+        /cannot be used to authenticate/,
+      );
+    });
+
+    it('still refuses a refresh token after it has been exchanged for a fresh pair', async () => {
+      const first = await login();
+      const second = await auth.refreshTokens(first.refreshToken);
+
+      await expect(strategyFor().validate(claimsOf(second.accessToken))).resolves.toBeDefined();
+      await expect(strategyFor().validate(claimsOf(second.refreshToken))).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it('revocation still wins over a valid access token', async () => {
+      const tokens = await login();
+      await auth.logout(USER_ID, sessionIdOf(tokens.accessToken));
+
+      await expect(strategyFor().validate(claimsOf(tokens.accessToken))).rejects.toThrow(
+        /expired or been revoked/,
       );
     });
   });
