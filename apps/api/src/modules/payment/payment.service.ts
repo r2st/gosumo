@@ -1144,25 +1144,29 @@ export class PaymentService implements OnModuleInit {
       return;
     }
 
-    // Already processed? Skip
-    if (payment.status === PaymentStatus.SUCCESS) {
-      this.logger.debug(
-        `Payment ${payment.id} already SUCCESS — skipping captured webhook`,
-      );
-      return;
-    }
-
-    await this.repository.updatePaymentStatus(
+    // Claim the transition in the database rather than deciding from the row
+    // read above. `payment.authorized` and `payment.captured` are separate
+    // events with separate idempotency keys, sent milliseconds apart for the
+    // same payment, and the reconcile sweep can be settling it at the same
+    // moment — so a pre-read check lets all of them through and `payment.success`
+    // is emitted more than once for money collected once.
+    const { claimed } = await this.repository.claimPaymentSuccess(
       payment.business_id,
       payment.id,
       {
-        status: PaymentStatus.SUCCESS,
         method: paymentEntity.method ?? null,
         gatewayPaymentId: paymentEntity.id,
         capturedAt: new Date(),
         gatewayResponse: webhookData.payload as unknown as Record<string, unknown>,
       },
     );
+
+    if (!claimed) {
+      this.logger.debug(
+        `Payment ${payment.id} was already settled — skipping duplicate success event`,
+      );
+      return;
+    }
 
     const event: PaymentSuccessEvent = {
       type: 'payment.success',
@@ -1378,11 +1382,20 @@ export class PaymentService implements OnModuleInit {
     payment: payments,
     gatewayPaymentId: string | null,
   ): Promise<void> {
-    await this.repository.updatePaymentStatus(payment.business_id, payment.id, {
-      status: PaymentStatus.SUCCESS,
-      gatewayPaymentId,
-      capturedAt: new Date(),
-    });
+    // Same claim as the webhook path. Reconciliation runs precisely when a
+    // webhook looks late, so it is the caller most likely to be racing one.
+    const { claimed } = await this.repository.claimPaymentSuccess(
+      payment.business_id,
+      payment.id,
+      { gatewayPaymentId, capturedAt: new Date() },
+    );
+
+    if (!claimed) {
+      this.logger.debug(
+        `Payment ${payment.id} was already settled by the webhook — reconcile is a no-op`,
+      );
+      return;
+    }
 
     const event: PaymentSuccessEvent = {
       type: 'payment.success',

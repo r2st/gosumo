@@ -80,6 +80,12 @@ describe('PaymentService (remaining branches)', () => {
       getPayment: jest.fn(),
       listPayments: jest.fn(),
       updatePaymentStatus: jest.fn(),
+      // The settlement path claims SUCCESS atomically instead of deciding
+      // from a status read before the write; `claimed` says whether this
+      // caller is the one that moved the row.
+      claimPaymentSuccess: jest
+        .fn()
+        .mockResolvedValue({ payment: {}, claimed: true }),
       findPaymentByGatewayId: jest.fn().mockResolvedValue(null),
       findPaymentByGatewayOrderId: jest.fn().mockResolvedValue(null),
       findPaymentByLinkId: jest.fn().mockResolvedValue(null),

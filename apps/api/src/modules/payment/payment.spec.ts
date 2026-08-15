@@ -105,6 +105,12 @@ describe('PaymentService', () => {
       getPayment: jest.fn(),
       listPayments: jest.fn(),
       updatePaymentStatus: jest.fn(),
+      // The settlement path claims SUCCESS atomically instead of deciding
+      // from a status read before the write; `claimed` says whether this
+      // caller is the one that moved the row.
+      claimPaymentSuccess: jest
+        .fn()
+        .mockResolvedValue({ payment: {}, claimed: true }),
       findPaymentByGatewayId: jest.fn(),
       findPaymentByGatewayOrderId: jest.fn(),
       findPaymentByLinkId: jest.fn(),
@@ -679,7 +685,7 @@ describe('PaymentService', () => {
       repository.findPaymentByGatewayId.mockResolvedValue(
         createMockPayment({ status: 'PENDING' }) as never,
       );
-      repository.updatePaymentStatus.mockRejectedValue(new Error('write conflict'));
+      repository.claimPaymentSuccess.mockRejectedValue(new Error('write conflict'));
 
       await expect(
         service.handleRazorpayWebhook(failingPayload, 'valid_sig'),
@@ -803,7 +809,7 @@ describe('PaymentService', () => {
 
       expect(razorpay.verifyWebhookSignature).not.toHaveBeenCalled();
       expect(repository.recordWebhookEvent).not.toHaveBeenCalled();
-      expect(repository.updatePaymentStatus).toHaveBeenCalled();
+      expect(repository.claimPaymentSuccess).toHaveBeenCalled();
     });
 
     it('propagates a replay failure so the DLQ can reschedule it', async () => {
@@ -1624,6 +1630,37 @@ describe('PaymentService', () => {
       );
     });
 
+    /**
+     * Reconciliation exists to catch a webhook that went missing, so it runs
+     * precisely when a webhook is late — which makes it the caller most likely
+     * to be racing one, not least. Losing the claim must produce no second
+     * `payment.success`, while still reporting the payment as settled: it is,
+     * just not by this caller.
+     */
+    it('emits nothing when the webhook settled the payment first', async () => {
+      repository.getPayment.mockResolvedValue(
+        createMockPayment({ status: 'PENDING', gateway: 'RAZORPAY' }) as never,
+      );
+      razorpay.fetchPaymentLinkStatus.mockResolvedValue({
+        id: 'plink_test123',
+        status: 'paid',
+        amountPaidPaise: 50000,
+        paymentId: 'pay_recon',
+      });
+      repository.claimPaymentSuccess.mockResolvedValue({
+        payment: createMockPayment({ status: 'SUCCESS' }) as never,
+        claimed: false,
+      });
+
+      const result = await service.reconcilePayment(BUSINESS_ID, PAYMENT_ID);
+
+      expect(result.currentStatus).toBe(PaymentStatus.SUCCESS);
+      expect(eventEmitter.emit).not.toHaveBeenCalledWith(
+        'payment.success',
+        expect.anything(),
+      );
+    });
+
     it('should mark a Stripe payment EXPIRED when session expired', async () => {
       repository.getPayment.mockResolvedValue(
         createMockPayment({ status: 'PENDING', gateway: 'STRIPE' }) as never,
@@ -1734,6 +1771,76 @@ describe('PaymentService', () => {
         );
       },
     );
+
+    /**
+     * `payment.authorized` and `payment.captured` describe one payment and are
+     * sent milliseconds apart. They are *not* collapsed by the `webhook_events`
+     * ledger: its key is `${event}_${paymentId}`, so the two events carry
+     * different keys and both reach the handler.
+     *
+     * Settlement therefore cannot be decided from the payment row read at the
+     * top of the handler — under concurrency both callers see PENDING, both
+     * write SUCCESS, and `payment.success` is emitted twice for money collected
+     * once, double-counting revenue in whatever consumes that event. The claim
+     * is made in the database, and only the winner emits.
+     */
+    it('emits payment.success only for the caller that claimed the row', async () => {
+      repository.findPaymentByGatewayId.mockResolvedValue(
+        createMockPayment({ status: 'PENDING' }) as never,
+      );
+      // The first event wins the claim; the second finds the row already
+      // SUCCESS and matches nothing.
+      repository.claimPaymentSuccess
+        .mockResolvedValueOnce({
+          payment: createMockPayment({ status: 'SUCCESS' }) as never,
+          claimed: true,
+        })
+        .mockResolvedValueOnce({
+          payment: createMockPayment({ status: 'SUCCESS' }) as never,
+          claimed: false,
+        });
+
+      await service.handleRazorpayWebhook(
+        rzpPayload('payment.authorized', { payment: { entity: { id: 'pay_1', method: 'card' } } }),
+        'sig',
+      );
+      await service.handleRazorpayWebhook(
+        rzpPayload('payment.captured', { payment: { entity: { id: 'pay_1', method: 'card' } } }),
+        'sig',
+      );
+
+      const successes = eventEmitter.emit.mock.calls.filter(
+        (call) => call[0] === 'payment.success',
+      );
+      expect(successes).toHaveLength(1);
+    });
+
+    /**
+     * Both events still reach the claim — the second must be *rejected by the
+     * database*, not short-circuited by a stale read. A handler that returns
+     * early on the pre-read status looks identical in this test's happy path
+     * and is exactly the bug.
+     */
+    it('attempts the claim for both events rather than trusting the pre-read status', async () => {
+      repository.findPaymentByGatewayId.mockResolvedValue(
+        createMockPayment({ status: 'SUCCESS' }) as never,
+      );
+      repository.claimPaymentSuccess.mockResolvedValue({
+        payment: createMockPayment({ status: 'SUCCESS' }) as never,
+        claimed: false,
+      });
+
+      await service.handleRazorpayWebhook(
+        rzpPayload('payment.captured', { payment: { entity: { id: 'pay_1', method: 'card' } } }),
+        'sig',
+      );
+
+      expect(repository.claimPaymentSuccess).toHaveBeenCalledTimes(1);
+      expect(eventEmitter.emit).not.toHaveBeenCalledWith(
+        'payment.success',
+        expect.anything(),
+      );
+    });
 
     it('ignores an unhandled event type but still marks it processed', async () => {
       await service.handleRazorpayWebhook(rzpPayload('order.paid', {}), 'sig');
@@ -1939,7 +2046,7 @@ describe('PaymentService', () => {
       );
 
       expect(repository.findPaymentByGatewayOrderId).toHaveBeenCalledWith('order_rzp_1');
-      expect(repository.updatePaymentStatus).toHaveBeenCalledWith(
+      expect(repository.claimPaymentSuccess).toHaveBeenCalledWith(
         BUSINESS_ID,
         PAYMENT_ID,
         expect.objectContaining({ method: null }),
@@ -2570,10 +2677,10 @@ describe('PaymentService', () => {
 
       expect(result.currentStatus).toBe(PaymentStatus.SUCCESS);
       expect(result.changed).toBe(true);
-      expect(repository.updatePaymentStatus).toHaveBeenCalledWith(
+      expect(repository.claimPaymentSuccess).toHaveBeenCalledWith(
         BUSINESS_ID,
         PAYMENT_ID,
-        expect.objectContaining({ status: PaymentStatus.SUCCESS, gatewayPaymentId: null }),
+        expect.objectContaining({ gatewayPaymentId: null }),
       );
     });
 

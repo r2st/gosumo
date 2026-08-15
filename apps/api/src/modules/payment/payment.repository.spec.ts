@@ -33,6 +33,7 @@ type PrismaMock = {
     findMany: jest.Mock;
     count: jest.Mock;
     update: jest.Mock;
+    updateMany: jest.Mock;
     groupBy: jest.Mock;
   };
   refunds: {
@@ -65,6 +66,7 @@ describe('PaymentRepository', () => {
         findMany: jest.fn().mockResolvedValue([]),
         count: jest.fn().mockResolvedValue(0),
         update: jest.fn().mockResolvedValue({ id: PAYMENT_ID }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         groupBy: jest.fn().mockResolvedValue([]),
       },
       refunds: {
@@ -281,6 +283,129 @@ describe('PaymentRepository', () => {
 
       expect(result.totalPages).toBe(0);
       expect(result.limit).toBe(5);
+    });
+  });
+
+  // ─────────────────────────────────────────────
+  // claimPaymentSuccess
+  // ─────────────────────────────────────────────
+
+  /**
+   * Three callers settle the same payment and they overlap routinely:
+   * `payment.authorized` and `payment.captured` are separate Razorpay events
+   * sent milliseconds apart, they carry different `webhook_events` keys so the
+   * idempotency ledger does not collapse them, and the reconcile sweep polls
+   * the gateway exactly when a webhook looks late.
+   *
+   * Deciding "already SUCCESS?" from a row read before the write lets all of
+   * them through, and `payment.success` is emitted more than once for money
+   * collected once. The predicate below is what makes the answer trustworthy.
+   */
+  describe('claimPaymentSuccess', () => {
+    const CAPTURED_AT = new Date('2026-08-15T09:00:00.000Z');
+
+    beforeEach(() => {
+      prisma.payments.findFirst.mockResolvedValue({ id: PAYMENT_ID });
+    });
+
+    it('only claims a payment that is not already SUCCESS', async () => {
+      await repository.claimPaymentSuccess(BUSINESS_ID, PAYMENT_ID, {
+        gatewayPaymentId: 'pay_1',
+        capturedAt: CAPTURED_AT,
+      });
+
+      expect(prisma.payments.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: PAYMENT_ID,
+          business_id: BUSINESS_ID,
+          status: { not: 'SUCCESS' },
+        },
+        data: expect.objectContaining({ status: 'SUCCESS', captured_at: CAPTURED_AT }),
+      });
+    });
+
+    it('reports the claim when it moved the row', async () => {
+      prisma.payments.updateMany.mockResolvedValue({ count: 1 });
+
+      const result = await repository.claimPaymentSuccess(BUSINESS_ID, PAYMENT_ID, {
+        capturedAt: CAPTURED_AT,
+      });
+
+      expect(result.claimed).toBe(true);
+    });
+
+    it('reports no claim when another caller got there first', async () => {
+      prisma.payments.updateMany.mockResolvedValue({ count: 0 });
+
+      const result = await repository.claimPaymentSuccess(BUSINESS_ID, PAYMENT_ID, {
+        capturedAt: CAPTURED_AT,
+      });
+
+      expect(result.claimed).toBe(false);
+      // The row still comes back — the loser needs the settled state, it just
+      // must not emit for it.
+      expect(result.payment).toBeTruthy();
+    });
+
+    /**
+     * Reconciliation frequently has no method and a null payment id. Writing
+     * those over what the webhook recorded would erase the only trace of how
+     * the money actually arrived.
+     */
+    it('leaves fields the caller did not learn untouched', async () => {
+      await repository.claimPaymentSuccess(BUSINESS_ID, PAYMENT_ID, {
+        method: null,
+        gatewayPaymentId: null,
+        capturedAt: CAPTURED_AT,
+      });
+
+      const data = (prisma.payments.updateMany.mock.calls[0]![0] as { data: Record<string, unknown> })
+        .data;
+      expect(data).toEqual({ status: 'SUCCESS', captured_at: CAPTURED_AT });
+      expect('method' in data).toBe(false);
+      expect('gateway_payment_id' in data).toBe(false);
+    });
+
+    it('records what it did learn', async () => {
+      await repository.claimPaymentSuccess(BUSINESS_ID, PAYMENT_ID, {
+        method: 'UPI',
+        gatewayPaymentId: 'pay_1',
+        gatewayResponse: { ok: true },
+        capturedAt: CAPTURED_AT,
+      });
+
+      expect(
+        (prisma.payments.updateMany.mock.calls[0]![0] as { data: Record<string, unknown> }).data,
+      ).toEqual({
+        status: 'SUCCESS',
+        captured_at: CAPTURED_AT,
+        method: 'UPI',
+        gateway_payment_id: 'pay_1',
+        gateway_response: { ok: true },
+      });
+    });
+
+    it('is scoped to the tenant on both the write and the re-read', async () => {
+      await repository.claimPaymentSuccess(BUSINESS_ID, PAYMENT_ID, {
+        capturedAt: CAPTURED_AT,
+      });
+
+      expect(
+        (prisma.payments.updateMany.mock.calls[0]![0] as { where: Record<string, unknown> }).where,
+      ).toMatchObject({ business_id: BUSINESS_ID });
+      expect(prisma.payments.findFirst).toHaveBeenCalledWith({
+        where: { id: PAYMENT_ID, business_id: BUSINESS_ID },
+      });
+    });
+
+    it('throws when the payment is not visible to the business', async () => {
+      prisma.payments.findFirst.mockResolvedValue(null);
+
+      await expect(
+        repository.claimPaymentSuccess(OTHER_BUSINESS_ID, PAYMENT_ID, {
+          capturedAt: CAPTURED_AT,
+        }),
+      ).rejects.toBeInstanceOf(ResourceNotFoundError);
     });
   });
 

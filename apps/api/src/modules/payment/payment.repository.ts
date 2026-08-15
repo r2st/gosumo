@@ -270,6 +270,69 @@ export class PaymentRepository {
   }
 
   /**
+   * Claim the SUCCESS transition for one payment, and report whether *this*
+   * call is the one that made it.
+   *
+   * Three callers settle the same payment and they overlap routinely:
+   *
+   *   - `payment.authorized` and `payment.captured` are separate Razorpay
+   *     events sent milliseconds apart for one payment. They carry different
+   *     `webhook_events` keys — `${event}_${paymentId}` — so the idempotency
+   *     ledger does not collapse them, and both dispatch to the same handler.
+   *   - the reconcile sweep polls the gateway and settles anything it finds
+   *     paid, which is most likely to run precisely when a webhook is late.
+   *
+   * Deciding "already SUCCESS?" from a row read before the write lets every
+   * one of them pass the check and emit `payment.success` again for money that
+   * was collected once. Under READ COMMITTED the losers block on the row lock,
+   * re-evaluate the predicate after the winner commits, and match nothing.
+   */
+  async claimPaymentSuccess(
+    businessId: string,
+    paymentId: string,
+    data: {
+      method?: string | null;
+      gatewayPaymentId?: string | null;
+      gatewayResponse?: Record<string, unknown>;
+      capturedAt: Date;
+    },
+  ): Promise<{ payment: payments; claimed: boolean }> {
+    const updateData: Record<string, unknown> = {
+      status: PaymentStatus.SUCCESS,
+      captured_at: data.capturedAt,
+    };
+    // Only overwrite what the caller actually learned. The reconcile path often
+    // has no method and a null payment id; blanking the values the webhook
+    // recorded would lose the only trace of how the money arrived.
+    if (data.method != null) updateData['method'] = data.method;
+    if (data.gatewayPaymentId != null) {
+      updateData['gateway_payment_id'] = data.gatewayPaymentId;
+    }
+    if (data.gatewayResponse !== undefined) {
+      updateData['gateway_response'] = data.gatewayResponse as Prisma.InputJsonValue;
+    }
+
+    const result = await this.prisma.payments.updateMany({
+      where: {
+        id: paymentId,
+        business_id: businessId,
+        status: { not: PaymentStatus.SUCCESS },
+      },
+      data: updateData,
+    });
+
+    const payment = await this.prisma.payments.findFirst({
+      where: { id: paymentId, business_id: businessId },
+    });
+    if (!payment) {
+      throw new ResourceNotFoundError('Payment', paymentId, {
+        context: { businessId, stage: 'after-claim' },
+      });
+    }
+    return { payment, claimed: result.count > 0 };
+  }
+
+  /**
    * Find a payment by gateway payment ID (used for webhook processing).
    * Not scoped by business — webhook processing looks up the payment globally
    * and then uses the payment's business_id for further operations.
