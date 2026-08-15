@@ -3,6 +3,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { BullModule } from '@nestjs/bull';
 import appConfig from './config/app.config';
+import { QueueTelemetryModule } from './common/queue/queue-telemetry.module';
+import { JOB_TIMEOUT_MS } from './common/queue/queue.constants';
 
 // Feature modules
 import { AuthModule } from './modules/auth/auth.module';
@@ -80,12 +82,26 @@ import { HealthModule } from './modules/health/health.module';
             type: 'exponential',
             delay: 1000,
           },
+          // A job with no timeout that hangs never fails, and a job that never
+          // fails never retries: it holds its concurrency slot until the
+          // process restarts, and the queue quietly loses throughput with
+          // nothing in the logs. Outbound HTTP is separately bounded, so this
+          // is the backstop for everything else (a stuck Prisma call, an
+          // unresolved promise) and is set high enough that no legitimate job
+          // is cut short — anything genuinely running for five minutes in a
+          // worker is a problem worth surfacing rather than waiting out.
+          timeout: JOB_TIMEOUT_MS,
           removeOnComplete: 100,
           removeOnFail: 50,
         },
       }),
       inject: [ConfigService],
     }),
+
+    // Watches every registered queue for failed / stalled / errored jobs.
+    // Global, and imported before the feature modules that register queues —
+    // discovery runs at onApplicationBootstrap, by which point they all exist.
+    QueueTelemetryModule,
 
     // Health probes — first so /v1/health stays answerable even while a
     // later module is still warming up.

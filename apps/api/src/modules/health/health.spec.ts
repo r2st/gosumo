@@ -11,16 +11,21 @@ import { PrismaService } from '../../common/services/prisma.service';
 import type { RedisClient } from '../auth/redis.provider';
 import { HealthService } from './health.service';
 import { HealthController } from './health.controller';
+import type { QueueTelemetryService } from '../../common/queue/queue-telemetry.service';
 
 function makeService(overrides: {
   query?: jest.Mock;
   ping?: jest.Mock;
+  depthBreaches?: jest.Mock;
 } = {}) {
   const query = overrides.query ?? jest.fn().mockResolvedValue([{ '?column?': 1 }]);
   const ping = overrides.ping ?? jest.fn().mockResolvedValue('PONG');
   const prisma = { $queryRaw: query } as unknown as PrismaService;
   const redis = { ping } as unknown as RedisClient;
-  return { service: new HealthService(prisma, redis), query, ping };
+  const queues = overrides.depthBreaches
+    ? ({ depthBreaches: overrides.depthBreaches } as unknown as QueueTelemetryService)
+    : undefined;
+  return { service: new HealthService(prisma, redis, queues), query, ping };
 }
 
 /** Minimal Express response double capturing only the status code. */
@@ -205,6 +210,53 @@ describe('HealthService — readiness', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+});
+
+describe('HealthService — queue backlog', () => {
+  const breach = { name: 'notification', waiting: 900, active: 2, delayed: 0, failed: 4, threshold: 500 };
+
+  it('reports a backing-up queue', async () => {
+    const { service } = makeService({
+      depthBreaches: jest.fn().mockResolvedValue([breach]),
+    });
+
+    await expect(service.readiness()).resolves.toMatchObject({
+      queueBacklog: [breach],
+    });
+  });
+
+  it('stays "ok" while a queue is backed up', async () => {
+    // A backlog means work is piling up, not that this instance should be
+    // pulled from rotation — doing that removes one of the workers draining it.
+    const { service } = makeService({
+      depthBreaches: jest.fn().mockResolvedValue([breach]),
+    });
+
+    await expect(service.readiness()).resolves.toMatchObject({ status: 'ok' });
+  });
+
+  it('reports an empty backlog when every queue is healthy', async () => {
+    const { service } = makeService({ depthBreaches: jest.fn().mockResolvedValue([]) });
+
+    await expect(service.readiness()).resolves.toMatchObject({ queueBacklog: [] });
+  });
+
+  it('still answers when the depth probe itself fails', async () => {
+    const { service } = makeService({
+      depthBreaches: jest.fn().mockRejectedValue(new Error('redis down')),
+    });
+
+    const report = await service.readiness();
+
+    expect(report.queueBacklog).toEqual([]);
+    expect(report.dependencies.database.status).toBe('up');
+  });
+
+  it('omits nothing when no telemetry service is wired at all', async () => {
+    const { service } = makeService();
+
+    await expect(service.readiness()).resolves.toMatchObject({ queueBacklog: [] });
   });
 });
 

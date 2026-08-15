@@ -60,7 +60,16 @@ All 16 feature modules are registered in `app.module.ts`. The registration order
 BullMQ is configured globally in `app.module.ts` with:
 - 3 retry attempts, exponential backoff starting at 1s
 - Completed jobs retained: last 100; failed jobs retained: last 50
+- `timeout: JOB_TIMEOUT_MS` (5 min) — the backstop for a handler that hangs on something with no deadline of its own. Without it such a job never fails, so it never retries: it holds its concurrency slot until the process restarts.
 - Redis connection comes from `ConfigService`
+
+`QueueTelemetryService` (global, `common/queue/`) discovers every registered
+queue by its `BullQueue_*` provider token and logs `failed` / `stalled` /
+`error`. A job that exhausts its retries logs at ERROR — that line is the only
+record it existed, since `removeOnFail: 50` trims the payload out of Redis.
+`GET /v1/health/ready` reports `queueBacklog` for any queue whose **waiting**
+count is over `QUEUE_DEPTH_WARN_THRESHOLD`; a backlog does not make readiness
+degrade, since pulling the instance from rotation removes a worker draining it.
 
 ## Event Bus
 

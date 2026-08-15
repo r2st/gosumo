@@ -1,6 +1,10 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
 import { REDIS_CLIENT, RedisClient } from '../auth/redis.provider';
+import {
+  QueueTelemetryService,
+  type QueueDepthBreach,
+} from '../../common/queue/queue-telemetry.service';
 
 /** How long a dependency probe may hang before it is called a failure. */
 const PROBE_TIMEOUT_MS = 2_000;
@@ -26,6 +30,13 @@ export interface ReadinessReport {
     database: DependencyReport;
     redis: DependencyReport;
   };
+  /**
+   * Queues whose waiting backlog is over the alert threshold. Empty in normal
+   * operation, and reported *without* changing `status`: a backlog means work
+   * is piling up, not that this instance should stop being sent traffic —
+   * pulling it out of rotation would remove one of the workers draining it.
+   */
+  queueBacklog?: QueueDepthBreach[];
 }
 
 /**
@@ -51,6 +62,12 @@ export class HealthService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(REDIS_CLIENT) private readonly redis: RedisClient,
+    /**
+     * Optional so a test (or a deployment with no queues registered) can build
+     * this service without the whole Bull graph. Absent simply means no
+     * backlog is reported.
+     */
+    @Optional() private readonly queues?: QueueTelemetryService,
   ) {}
 
   /** Cheap liveness signal — deliberately touches no dependency. */
@@ -64,9 +81,10 @@ export class HealthService {
 
   /** Readiness — probes every dependency a request needs, concurrently. */
   async readiness(): Promise<ReadinessReport> {
-    const [database, redis] = await Promise.all([
+    const [database, redis, queueBacklog] = await Promise.all([
       this.probe('database', () => this.prisma.$queryRaw`SELECT 1`),
       this.probe('redis', () => this.redis.ping()),
+      this.backlog(),
     ]);
 
     const status =
@@ -78,11 +96,38 @@ export class HealthService {
       );
     }
 
+    if (queueBacklog.length > 0) {
+      this.logger.warn(
+        `Queue backlog over threshold — ${queueBacklog
+          .map((q) => `${q.name}: ${q.waiting} waiting (>${q.threshold})`)
+          .join(', ')}`,
+      );
+    }
+
     return {
       status,
       timestamp: new Date().toISOString(),
       dependencies: { database, redis },
+      queueBacklog,
     };
+  }
+
+  /**
+   * Queues over the depth threshold, or nothing if the telemetry service is
+   * not wired. Never throws — a readiness endpoint that 500s because Redis
+   * would not answer a `getJobCounts` tells a balancer strictly less than one
+   * that reports the dependency probes it did manage.
+   */
+  private async backlog(): Promise<QueueDepthBreach[]> {
+    if (!this.queues) return [];
+    try {
+      return await this.queues.depthBreaches();
+    } catch (err) {
+      this.logger.warn(
+        `Queue depth probe failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return [];
+    }
   }
 
   /**
