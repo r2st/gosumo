@@ -1,6 +1,7 @@
 import {
   AUDIO_CONTENT_TYPE_PREFIXES,
   MAX_MEDIA_DOWNLOAD_BYTES,
+  VISUAL_MEDIA_CONTENT_TYPE_PREFIXES,
   MediaTooLargeError,
   UnexpectedContentTypeError,
   assertContentType,
@@ -134,6 +135,32 @@ describe('assertContentType', () => {
     expect(() => assertContentType('Test', 'text/html')).toThrow(
       new RegExp(AUDIO_CONTENT_TYPE_PREFIXES[0]!),
     );
+  });
+
+  describe('VISUAL_MEDIA_CONTENT_TYPE_PREFIXES', () => {
+    it('accepts image/*, which the audio list deliberately omits', () => {
+      // A channel attachment is most often a photo. Checking those against the
+      // audio list would reject every working image download.
+      expect(() => assertContentType('Test', 'image/jpeg')).toThrow(UnexpectedContentTypeError);
+      expect(() =>
+        assertContentType('Test', 'image/jpeg', VISUAL_MEDIA_CONTENT_TYPE_PREFIXES),
+      ).not.toThrow();
+    });
+
+    it.each(['audio/ogg', 'video/mp4', 'application/octet-stream'])(
+      'still accepts %s',
+      (contentType) => {
+        expect(() =>
+          assertContentType('Test', contentType, VISUAL_MEDIA_CONTENT_TYPE_PREFIXES),
+        ).not.toThrow();
+      },
+    );
+
+    it.each(['text/html', 'application/json'])('still rejects %s', (contentType) => {
+      expect(() =>
+        assertContentType('Test', contentType, VISUAL_MEDIA_CONTENT_TYPE_PREFIXES),
+      ).toThrow(UnexpectedContentTypeError);
+    });
   });
 });
 

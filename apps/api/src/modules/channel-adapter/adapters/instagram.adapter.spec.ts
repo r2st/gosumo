@@ -1,6 +1,6 @@
 import { ConfigService } from "@nestjs/config";
 import { InstagramAdapter } from "./instagram.adapter";
-import { ChannelType, MessageContentType, RawRequest } from "@gosumo/shared";
+import { ChannelType, ExternalServiceError, MessageContentType, RawRequest } from "@gosumo/shared";
 
 describe("InstagramAdapter", () => {
   let adapter: InstagramAdapter;
@@ -266,6 +266,120 @@ describe("InstagramAdapter", () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toMatch(/does not support sending location/);
+    });
+  });
+
+  // ── Media ────────────────────────────────────
+
+  describe("downloadMedia", () => {
+    const realFetch = global.fetch;
+    afterEach(() => {
+      global.fetch = realFetch;
+    });
+
+    /** A CDN response whose body streams `chunks` back one at a time. */
+    function cdnBody(chunks: number[][], headers: Record<string, string> = {}): unknown {
+      let i = 0;
+      return {
+        ok: true,
+        headers: new Headers(headers),
+        body: {
+          getReader: () => ({
+            read: async () =>
+              i < chunks.length
+                ? { done: false, value: new Uint8Array(chunks[i++]!) }
+                : { done: true, value: undefined },
+            cancel: async () => undefined,
+          }),
+        },
+      };
+    }
+
+    function stub(response: unknown): jest.Mock {
+      const fetchMock = jest.fn().mockResolvedValue(response);
+      global.fetch = fetchMock as unknown as typeof fetch;
+      return fetchMock;
+    }
+
+    it("streams the bytes of an image attachment", async () => {
+      stub(cdnBody([[1, 2], [3]], { "content-type": "image/jpeg" }));
+
+      const buffer = await adapter.downloadMedia("https://cdn.ig/photo.jpg");
+
+      expect(buffer).toEqual(Buffer.from([1, 2, 3]));
+    });
+
+    it("refuses a body over the download ceiling", async () => {
+      // The address is whatever `attachment.payload.url` carried, and the
+      // whole response would otherwise land in this process's heap.
+      stub(
+        cdnBody([[1]], {
+          "content-type": "video/mp4",
+          "content-length": String(512 * 1024 * 1024),
+        }),
+      );
+
+      await expect(adapter.downloadMedia("https://cdn.ig/huge.mp4")).rejects.toThrow(
+        /over the .*-byte limit/,
+      );
+    });
+
+    it("refuses a body that outgrows the ceiling mid-stream despite an honest-looking header", async () => {
+      // No content-length at all: only the running total catches this one.
+      const oneMeg = (): number[] => new Array(1024 * 1024).fill(7);
+      stub(cdnBody(new Array(30).fill(null).map(oneMeg), { "content-type": "video/mp4" }));
+
+      await expect(adapter.downloadMedia("https://cdn.ig/chunked.mp4")).rejects.toThrow(
+        /over the .*-byte limit/,
+      );
+    });
+
+    it("refuses a plaintext url rather than fetching it", async () => {
+      // The URL comes off an inbound webhook, so it names the host this server
+      // connects to. http:// puts every internal target in reach.
+      const fetchMock = stub(cdnBody([[1]]));
+
+      await expect(adapter.downloadMedia("http://169.254.169.254/latest/meta-data/")).rejects.toThrow(
+        /must be an https URL/,
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("refuses a non-url media reference rather than fetching it", async () => {
+      const fetchMock = stub(cdnBody([[1]]));
+
+      await expect(adapter.downloadMedia("not-a-url")).rejects.toThrow(/must be an https URL/);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("refuses an html body served in place of an expired attachment", async () => {
+      // An expired or swapped CDN URL answers with an error page. Storing that
+      // as an image is the stored-XSS shape the message module refuses too.
+      stub(cdnBody([[60, 104, 116]], { "content-type": "text/html; charset=utf-8" }));
+
+      await expect(adapter.downloadMedia("https://cdn.ig/expired.jpg")).rejects.toThrow(
+        /unexpected content-type text\/html/,
+      );
+    });
+
+    it("allows a CDN that omits content-type, leaving the size cap as the bound", async () => {
+      stub(cdnBody([[9]]));
+
+      await expect(adapter.downloadMedia("https://cdn.ig/x.bin")).resolves.toEqual(
+        Buffer.from([9]),
+      );
+    });
+
+    it("throws when the CDN download fails", async () => {
+      stub({ ok: false, status: 410, statusText: "Gone" });
+
+      const error = await adapter.downloadMedia("https://cdn.ig/gone.jpg").then(
+        () => null,
+        (err: unknown) => err,
+      );
+
+      expect(error).toBeInstanceOf(ExternalServiceError);
+      expect((error as ExternalServiceError).message).toBe("Instagram Media: download failed");
     });
   });
 });

@@ -17,6 +17,12 @@ import { generateId } from '@gosumo/shared';
 import { BaseChannelAdapter } from './base.adapter';
 import { allowUnverifiedWebhook, isProductionEnv } from '../../../common/utils/webhook-verification.util';
 import { MEDIA_HTTP_TIMEOUT_MS, fetchWithTimeout } from '../../../common/utils/http-timeout.util';
+import {
+  VISUAL_MEDIA_CONTENT_TYPE_PREFIXES,
+  assertContentType,
+  isFetchableMediaUrl,
+  readBodyWithLimit,
+} from '../../../common/utils/media-download.util';
 import { ExternalServiceError, PayloadParseError, UnsupportedOperationError } from '@gosumo/shared';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -401,8 +407,33 @@ export class InstagramAdapter extends BaseChannelAdapter {
    * short-lived) CDN URLs, so `mediaId` here is the full URL captured at
    * parse time. We fetch it straight away — these URLs expire, so callers
    * should re-upload to GoSumo storage immediately.
+   *
+   * That "the URL comes off the payload" is exactly why the three checks below
+   * are not ceremony. This method is the one media path that fetches an address
+   * it did not construct, and the bytes land in the API process's heap:
+   *
+   *  - **https only.** The address is read from `attachment.payload.url` on an
+   *    inbound webhook. Anything that can put a URL there picks the host this
+   *    server connects to, and a plaintext scheme makes every internal target
+   *    (`http://localhost:6379`, the cloud metadata endpoint) reachable.
+   *  - **content-type.** A CDN URL that has expired or been swapped answers
+   *    with an HTML error page or a JSON body, not a photo. Storing that as an
+   *    image attachment is the stored-XSS shape `message.service` already
+   *    refuses at the other end of the same pipe.
+   *  - **bounded body.** `arrayBuffer()` allocates until the process dies. The
+   *    WhatsApp path was moved off it for this reason; this one was missed, so
+   *    a single oversized video was an OOM on a box that shares 4 GB with
+   *    Postgres and the web server.
    */
   async downloadMedia(mediaId: string): Promise<Buffer> {
+    if (!isFetchableMediaUrl(mediaId)) {
+      throw new ExternalServiceError('Instagram Media', 'media reference must be an https URL', {
+        status: 400,
+        retryable: false,
+        context: { operation: 'downloadMedia' },
+      });
+    }
+
     const resp = await fetchWithTimeout(
       mediaId,
       { headers: { Authorization: `Bearer ${this.accessToken}` } },
@@ -416,8 +447,12 @@ export class InstagramAdapter extends BaseChannelAdapter {
       });
     }
 
-    const arrayBuffer = await resp.arrayBuffer();
-    return Buffer.from(arrayBuffer);
+    assertContentType(
+      'Instagram Media',
+      resp.headers.get('content-type'),
+      VISUAL_MEDIA_CONTENT_TYPE_PREFIXES,
+    );
+    return readBodyWithLimit(resp, { service: 'Instagram Media' });
   }
 
   // ─────────────────────────────────────────────

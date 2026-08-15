@@ -858,12 +858,23 @@ describe('InstagramAdapter — downloadMedia', () => {
   });
 
   it('returns the fetched bytes as a Buffer', async () => {
+    // The body is streamed against a running size total rather than read with
+    // `arrayBuffer()`, so the stub supplies a reader — see `readBodyWithLimit`.
     const bytes = Buffer.from('jpeg-bytes');
+    let sent = false;
     stubFetch({
       ok: true,
       status: 200,
-      arrayBuffer: async () =>
-        bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+      headers: new Headers({ 'content-type': 'image/jpeg' }),
+      body: {
+        getReader: () => ({
+          read: async () =>
+            sent
+              ? { done: true, value: undefined }
+              : ((sent = true), { done: false, value: new Uint8Array(bytes) }),
+          cancel: async () => undefined,
+        }),
+      },
     } as unknown as Response);
 
     const result = await adapter.downloadMedia('https://cdn/asset.jpg');

@@ -40,6 +40,22 @@ export const MAX_MEDIA_DOWNLOAD_BYTES = 25 * 1024 * 1024;
  */
 export const AUDIO_CONTENT_TYPE_PREFIXES = ['audio/', 'video/', 'application/octet-stream'];
 
+/**
+ * Content types a *visual* channel attachment may legitimately have.
+ *
+ * Identical in spirit to {@link AUDIO_CONTENT_TYPE_PREFIXES}, plus `image/`.
+ * The audio list is deliberately not reused for channel media: an Instagram or
+ * Messenger attachment is most often a photo, and checking it against a list
+ * that omits `image/` would reject every working image download while catching
+ * nothing extra.
+ */
+export const VISUAL_MEDIA_CONTENT_TYPE_PREFIXES = [
+  'image/',
+  'audio/',
+  'video/',
+  'application/octet-stream',
+];
+
 /** A body that exceeded its ceiling. Not retryable — it will be just as big next time. */
 export class MediaTooLargeError extends ExternalServiceError {
   constructor(service: string, bytes: number, maxBytes: number) {
