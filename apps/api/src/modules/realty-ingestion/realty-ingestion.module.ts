@@ -6,6 +6,7 @@ import { RealtyIngestionService } from './realty-ingestion.service';
 import { RealtyIvrService } from './realty-ivr.service';
 import { RealtyLeadsModule } from '../realty-leads/realty-leads.module';
 import { ChannelAdapterModule } from '../channel-adapter/channel-adapter.module';
+import { WebhookLogModule } from '../webhook-log/webhook-log.module';
 import { PrismaService } from '../../common/services/prisma.service';
 import { ParserHealthService } from './health/parser-health.service';
 import { ParserHealthRepository } from './health/parser-health.repository';
@@ -39,6 +40,11 @@ import {
   imports: [
     RealtyLeadsModule,
     ChannelAdapterModule,
+    // Supplies `WebhookDlqService`, so a lead delivery whose ingest throws is
+    // parked and retried rather than logged and lost. All three webhooks here
+    // answer 200 unconditionally to keep providers from retry-storming, which
+    // means the DLQ is the *only* recovery path any of them has.
+    WebhookLogModule,
     BullModule.registerQueue({ name: PARSER_HEALTH_QUEUE }),
   ],
   controllers: [RealtyIngestionController, ParserHealthController],

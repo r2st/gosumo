@@ -32,6 +32,13 @@ const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
 function makeHarness(configValues: Record<string, unknown> = {}) {
   const ingestMetaLeadgen = jest.fn().mockResolvedValue(undefined);
   const ingestPortalEmail = jest.fn().mockResolvedValue(undefined);
+  // The DLQ-backed wrappers the controller actually calls. They own the
+  // try/catch now, so the controller must *not* have one of its own — a
+  // handler that swallows on its way past these would defeat the capture.
+  const handleMetaLeadgenDelivery = jest
+    .fn()
+    .mockResolvedValue({ total: 0, created: 0, merged: 0, skipped: 0, failed: 0, errors: [] });
+  const handlePortalEmailDelivery = jest.fn().mockResolvedValue(null);
   const importCsv = jest.fn().mockResolvedValue({ imported: 0 });
   const ingestCtwa = jest.fn().mockResolvedValue({ leadId: 'l1' });
   const verifyMetaSignature = jest.fn().mockReturnValue(true);
@@ -40,6 +47,8 @@ function makeHarness(configValues: Record<string, unknown> = {}) {
   const ingestionService = {
     ingestMetaLeadgen,
     ingestPortalEmail,
+    handleMetaLeadgenDelivery,
+    handlePortalEmailDelivery,
     importCsv,
     ingestCtwa,
     verifyMetaSignature,
@@ -47,8 +56,13 @@ function makeHarness(configValues: Record<string, unknown> = {}) {
   } as unknown as RealtyIngestionService;
 
   const processIvrCallback = jest.fn().mockResolvedValue(undefined);
+  const handleIvrDelivery = jest.fn().mockResolvedValue(null);
   const verifyIvrSignature = jest.fn().mockReturnValue(true);
-  const ivrService = { processIvrCallback, verifyIvrSignature } as unknown as RealtyIvrService;
+  const ivrService = {
+    processIvrCallback,
+    handleIvrDelivery,
+    verifyIvrSignature,
+  } as unknown as RealtyIvrService;
 
   const config = {
     get: (key: string, fallback?: unknown) => configValues[key] ?? fallback,
@@ -60,11 +74,14 @@ function makeHarness(configValues: Record<string, unknown> = {}) {
     controller,
     ingestMetaLeadgen,
     ingestPortalEmail,
+    handleMetaLeadgenDelivery,
+    handlePortalEmailDelivery,
     importCsv,
     ingestCtwa,
     verifyMetaSignature,
     resolveMetaChallenge,
     processIvrCallback,
+    handleIvrDelivery,
     verifyIvrSignature,
   };
 }
@@ -102,9 +119,10 @@ describe('RealtyIngestionController', () => {
         h.controller.handleIvrCallback(req(), 'sig', BUSINESS_ID, call),
       ).resolves.toEqual({ status: 'ok' });
 
-      expect(h.processIvrCallback).toHaveBeenCalledWith(
+      expect(h.handleIvrDelivery).toHaveBeenCalledWith(
         BUSINESS_ID,
         expect.objectContaining({ phone: '+919876543210', provider: 'exotel' }),
+        expect.anything(),
       );
     });
 
@@ -121,7 +139,7 @@ describe('RealtyIngestionController', () => {
         h.controller.handleIvrCallback(req(), 'forged', BUSINESS_ID, call),
       ).resolves.toEqual({ status: 'ok' });
 
-      expect(h.processIvrCallback).not.toHaveBeenCalled();
+      expect(h.handleIvrDelivery).not.toHaveBeenCalled();
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('invalid signature'));
     });
 
@@ -152,7 +170,7 @@ describe('RealtyIngestionController', () => {
         h.controller.handleIvrCallback(req(), 'sig', BUSINESS_ID, { nothing: 'useful' }),
       ).resolves.toEqual({ status: 'ok' });
 
-      expect(h.processIvrCallback).not.toHaveBeenCalled();
+      expect(h.handleIvrDelivery).not.toHaveBeenCalled();
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('no caller phone'));
     });
 
@@ -162,27 +180,58 @@ describe('RealtyIngestionController', () => {
 
       await h.controller.handleIvrCallback(req(), 'sig', undefined as unknown as string, call);
 
-      expect(h.processIvrCallback).toHaveBeenCalledWith('unknown', expect.anything());
+      expect(h.handleIvrDelivery).toHaveBeenCalledWith(
+        'unknown',
+        expect.anything(),
+        expect.anything(),
+      );
     });
 
-    it('swallows a processing failure and still acknowledges', async () => {
+    /**
+     * The controller no longer owns a catch: it routes through the DLQ-backed
+     * wrapper, whose whole job is to park the failure before returning. A
+     * `try { … } catch { log }` here would re-swallow the delivery *after*
+     * capture and quietly re-open the hole this route used to have.
+     */
+    it('routes a processing failure through the DLQ wrapper, not a local catch', async () => {
       const h = makeHarness();
-      h.processIvrCallback.mockRejectedValue(new Error('lead table is gone'));
 
       await expect(
         h.controller.handleIvrCallback(req(), 'sig', BUSINESS_ID, call),
       ).resolves.toEqual({ status: 'ok' });
 
-      expect(error).toHaveBeenCalledWith(expect.stringContaining('lead table is gone'));
+      expect(h.handleIvrDelivery).toHaveBeenCalledTimes(1);
+      // `processIvrCallback` is the un-parked path — reaching it directly would
+      // mean the capture wrapper was bypassed.
+      expect(h.processIvrCallback).not.toHaveBeenCalled();
     });
 
-    it('reports a non-Error rejection rather than "[object Object]"', async () => {
+    it('still acknowledges 200 when the delivery could not be handled', async () => {
       const h = makeHarness();
-      h.processIvrCallback.mockRejectedValue('connection reset');
+      // What the wrapper returns after dead-lettering: it absorbs the error and
+      // reports nothing processed.
+      h.handleIvrDelivery.mockResolvedValue(null);
+
+      await expect(
+        h.controller.handleIvrCallback(req(), 'sig', BUSINESS_ID, call),
+      ).resolves.toEqual({ status: 'ok' });
+    });
+
+    /**
+     * If the wrapper itself ever threw, the provider would get a 500 and retry
+     * into an endpoint that keeps failing. The wrapper is written not to; this
+     * pins the controller's side of that contract.
+     */
+    it('carries the tenant header through to the capture metadata', async () => {
+      const h = makeHarness();
 
       await h.controller.handleIvrCallback(req(), 'sig', BUSINESS_ID, call);
 
-      expect(error).toHaveBeenCalledWith(expect.stringContaining('connection reset'));
+      expect(h.handleIvrDelivery).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        expect.anything(),
+        expect.objectContaining({ 'x-business-id': BUSINESS_ID }),
+      );
     });
   });
 
@@ -225,7 +274,11 @@ describe('RealtyIngestionController', () => {
         h.controller.handleLeadgenWebhook(req(), 'sha256=good', BUSINESS_ID, { entry: [] }),
       ).resolves.toEqual({ status: 'ok' });
 
-      expect(h.ingestMetaLeadgen).toHaveBeenCalledWith(BUSINESS_ID, { entry: [] });
+      expect(h.handleMetaLeadgenDelivery).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        { entry: [] },
+        expect.anything(),
+      );
     });
 
     it('discards an unsigned payload but still answers 200', async () => {
@@ -236,7 +289,7 @@ describe('RealtyIngestionController', () => {
         h.controller.handleLeadgenWebhook(req(), 'sha256=forged', BUSINESS_ID, { entry: [] }),
       ).resolves.toEqual({ status: 'ok' });
 
-      expect(h.ingestMetaLeadgen).not.toHaveBeenCalled();
+      expect(h.handleMetaLeadgenDelivery).not.toHaveBeenCalled();
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('invalid signature'));
     });
 
@@ -245,27 +298,55 @@ describe('RealtyIngestionController', () => {
 
       await h.controller.handleLeadgenWebhook(req(), 'sig', undefined as unknown as string, {});
 
-      expect(h.ingestMetaLeadgen).toHaveBeenCalledWith('unknown', {});
+      expect(h.handleMetaLeadgenDelivery).toHaveBeenCalledWith(
+        'unknown',
+        {},
+        expect.anything(),
+      );
     });
 
-    it('swallows an ingestion failure and acknowledges', async () => {
+    /**
+     * The DLQ-backed wrapper is the only path to ingestion. Calling the bare
+     * `ingestMetaLeadgen` from here would skip the capture — and because that
+     * method reports per-candidate failures in a summary rather than throwing,
+     * skipping the capture is exactly how a paid Lead Ad used to vanish behind
+     * a 200 with nothing but a log line left of it.
+     */
+    it('ingests only through the capturing wrapper', async () => {
       const h = makeHarness();
-      h.ingestMetaLeadgen.mockRejectedValue(new Error('qdrant down'));
+
+      await h.controller.handleLeadgenWebhook(req(), 'sig', BUSINESS_ID, { entry: [] });
+
+      expect(h.handleMetaLeadgenDelivery).toHaveBeenCalledTimes(1);
+      expect(h.ingestMetaLeadgen).not.toHaveBeenCalled();
+    });
+
+    it('acknowledges 200 even when every candidate in the batch failed', async () => {
+      const h = makeHarness();
+      h.handleMetaLeadgenDelivery.mockResolvedValue({
+        total: 2,
+        created: 0,
+        merged: 0,
+        skipped: 0,
+        failed: 2,
+        errors: [{ row: 1, reason: 'qdrant down' }],
+      });
 
       await expect(
         h.controller.handleLeadgenWebhook(req(), 'sig', BUSINESS_ID, {}),
       ).resolves.toEqual({ status: 'ok' });
-
-      expect(error).toHaveBeenCalledWith(expect.stringContaining('qdrant down'));
     });
 
-    it('reports a non-Error ingestion rejection', async () => {
+    it('carries the tenant header through to the capture metadata', async () => {
       const h = makeHarness();
-      h.ingestMetaLeadgen.mockRejectedValue('socket hang up');
 
       await h.controller.handleLeadgenWebhook(req(), 'sig', BUSINESS_ID, {});
 
-      expect(error).toHaveBeenCalledWith(expect.stringContaining('socket hang up'));
+      expect(h.handleMetaLeadgenDelivery).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        {},
+        expect.objectContaining({ 'x-business-id': BUSINESS_ID }),
+      );
     });
   });
 
@@ -281,7 +362,11 @@ describe('RealtyIngestionController', () => {
       await expect(h.controller.handlePortalEmail('secret', BUSINESS_ID, dto)).resolves.toEqual({
         status: 'ok',
       });
-      expect(h.ingestPortalEmail).toHaveBeenCalledWith(BUSINESS_ID, dto);
+      expect(h.handlePortalEmailDelivery).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        dto,
+        expect.anything(),
+      );
     });
 
     /** Unlike the HMAC webhooks this one 401s — it is not provider-retried. */
@@ -291,7 +376,7 @@ describe('RealtyIngestionController', () => {
       await expect(
         h.controller.handlePortalEmail('guessed', BUSINESS_ID, dto),
       ).rejects.toBeInstanceOf(UnauthorizedException);
-      expect(h.ingestPortalEmail).not.toHaveBeenCalled();
+      expect(h.handlePortalEmailDelivery).not.toHaveBeenCalled();
     });
 
     it('rejects a missing token', async () => {
@@ -313,7 +398,7 @@ describe('RealtyIngestionController', () => {
       await expect(h.controller.handlePortalEmail('anything', BUSINESS_ID, dto)).rejects.toBeInstanceOf(
         UnauthorizedException,
       );
-      expect(h.ingestPortalEmail).not.toHaveBeenCalled();
+      expect(h.handlePortalEmailDelivery).not.toHaveBeenCalled();
     });
 
     it('allows an unauthenticated call outside production when no token is configured', async () => {
@@ -322,7 +407,7 @@ describe('RealtyIngestionController', () => {
       await expect(h.controller.handlePortalEmail('', BUSINESS_ID, dto)).resolves.toEqual({
         status: 'ok',
       });
-      expect(h.ingestPortalEmail).toHaveBeenCalled();
+      expect(h.handlePortalEmailDelivery).toHaveBeenCalled();
     });
 
     it('falls back to "unknown" without the business header', async () => {
@@ -330,26 +415,46 @@ describe('RealtyIngestionController', () => {
 
       await h.controller.handlePortalEmail('secret', undefined as unknown as string, dto);
 
-      expect(h.ingestPortalEmail).toHaveBeenCalledWith('unknown', dto);
+      expect(h.handlePortalEmailDelivery).toHaveBeenCalledWith(
+        'unknown',
+        dto,
+        expect.anything(),
+      );
     });
 
-    it('swallows a processing failure and acknowledges', async () => {
+    /**
+     * Same contract as the other two: the capturing wrapper is the only path
+     * in, so an enquiry whose write failed is parked rather than logged away.
+     */
+    it('ingests only through the capturing wrapper', async () => {
       const h = makeHarness({ [TOKEN_KEY]: 'secret' });
-      h.ingestPortalEmail.mockRejectedValue(new Error('parser blew up'));
+
+      await h.controller.handlePortalEmail('secret', BUSINESS_ID, dto);
+
+      expect(h.handlePortalEmailDelivery).toHaveBeenCalledTimes(1);
+      expect(h.ingestPortalEmail).not.toHaveBeenCalled();
+    });
+
+    it('acknowledges 200 when the wrapper reports nothing ingested', async () => {
+      const h = makeHarness({ [TOKEN_KEY]: 'secret' });
+      // What the wrapper returns after dead-lettering a failed enquiry.
+      h.handlePortalEmailDelivery.mockResolvedValue(null);
 
       await expect(h.controller.handlePortalEmail('secret', BUSINESS_ID, dto)).resolves.toEqual({
         status: 'ok',
       });
-      expect(error).toHaveBeenCalledWith(expect.stringContaining('parser blew up'));
     });
 
-    it('reports a non-Error processing rejection', async () => {
+    it('carries the tenant header through to the capture metadata', async () => {
       const h = makeHarness({ [TOKEN_KEY]: 'secret' });
-      h.ingestPortalEmail.mockRejectedValue('timeout');
 
       await h.controller.handlePortalEmail('secret', BUSINESS_ID, dto);
 
-      expect(error).toHaveBeenCalledWith(expect.stringContaining('timeout'));
+      expect(h.handlePortalEmailDelivery).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        dto,
+        expect.objectContaining({ 'x-business-id': BUSINESS_ID }),
+      );
     });
   });
 

@@ -206,6 +206,18 @@ export interface IngestSummaryDto {
   total: number;
   created: number;
   merged: number;
+  /**
+   * Candidates rejected by the payload itself — no phone, an unparseable row.
+   * Permanent: replaying the same body produces the same skip, so a skip is
+   * never a reason to dead-letter.
+   */
   skipped: number;
+  /**
+   * Candidates whose ingest *threw* — a database blip, a lock timeout, a
+   * downstream outage. Retryable, and counted apart from `skipped` for exactly
+   * that reason: these are the leads a webhook handler would otherwise report
+   * as "handled" while they were being lost.
+   */
+  failed: number;
   errors: Array<{ row: number; reason: string }>;
 }

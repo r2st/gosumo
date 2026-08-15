@@ -71,18 +71,16 @@ export class RealtyIngestionController {
       this.logger.warn('IVR webhook rejected: invalid signature');
       return { status: 'ok' };
     }
-    try {
-      const call = parseIvrCallback(body);
-      if (!call) {
-        this.logger.warn('IVR webhook payload had no caller phone — ignoring');
-        return { status: 'ok' };
-      }
-      await this.ivrService.processIvrCallback(businessId ?? 'unknown', call);
-    } catch (err) {
-      this.logger.error(
-        `Error processing IVR callback: ${err instanceof Error ? err.message : String(err)}`,
-      );
+    const call = parseIvrCallback(body);
+    if (!call) {
+      // Nothing to retry: a payload with no caller phone will not grow one.
+      this.logger.warn('IVR webhook payload had no caller phone — ignoring');
+      return { status: 'ok' };
     }
+    // Dead-letters on failure instead of swallowing, then still answers 200.
+    await this.ivrService.handleIvrDelivery(businessId ?? 'unknown', call, {
+      'x-business-id': businessId ?? null,
+    });
     return { status: 'ok' };
   }
 
@@ -128,14 +126,12 @@ export class RealtyIngestionController {
       this.logger.warn('Meta Leadgen webhook rejected: invalid signature');
       return { status: 'ok' };
     }
-    try {
-      const tenant = businessId ?? 'unknown';
-      await this.ingestionService.ingestMetaLeadgen(tenant, body);
-    } catch (err) {
-      this.logger.error(
-        `Error processing Meta Leadgen webhook: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    // Dead-letters a thrown batch *and* individually failed candidates, then
+    // still answers 200. A partial failure used to be counted into a summary
+    // this handler discarded, which lost paid leads with no record at all.
+    await this.ingestionService.handleMetaLeadgenDelivery(businessId ?? 'unknown', body, {
+      'x-business-id': businessId ?? null,
+    });
     return { status: 'ok' };
   }
 
@@ -170,13 +166,10 @@ export class RealtyIngestionController {
       // anyone, so it authenticates no one rather than everyone.
       throw new UnauthorizedException('Portal ingest is not configured');
     }
-    try {
-      await this.ingestionService.ingestPortalEmail(businessId ?? 'unknown', dto);
-    } catch (err) {
-      this.logger.error(
-        `Error processing portal email: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    // Dead-letters on failure instead of swallowing, then still answers 200.
+    await this.ingestionService.handlePortalEmailDelivery(businessId ?? 'unknown', dto, {
+      'x-business-id': businessId ?? null,
+    });
     return { status: 'ok' };
   }
 

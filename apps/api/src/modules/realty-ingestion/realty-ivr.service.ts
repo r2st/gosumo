@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import {
@@ -18,6 +18,12 @@ import {
 import { IvrDedupTracker } from './ivr/ivr-dedup.util';
 import type { NormalizedIvrCall } from './ivr/ivr-callback.parser';
 import type { IvrCallbackResult } from './dto';
+import { WebhookDlqService } from '../webhook-log/webhook-dlq.service';
+import {
+  REALTY_INGEST_EVENT_TYPES,
+  REALTY_INGEST_SOURCES,
+  ingestDeliveryId,
+} from './realty-ingestion.constants';
 
 const DEFAULT_GREETING =
   'Hi! 👋 Thanks for the missed call — this is our team. Tell us the area, budget, and ' +
@@ -35,7 +41,7 @@ const DEFAULT_GREETING =
  * the short-lived dedup tracker.
  */
 @Injectable()
-export class RealtyIvrService {
+export class RealtyIvrService implements OnModuleInit {
   private readonly logger = new Logger(RealtyIvrService.name);
   private readonly dedup = new IvrDedupTracker();
   private readonly isProduction: boolean;
@@ -45,8 +51,85 @@ export class RealtyIvrService {
     private readonly channelAdapter: ChannelAdapterService,
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    /** Optional for the same reason as in `RealtyIngestionService`. */
+    @Optional() private readonly webhookDlq?: WebhookDlqService,
   ) {
     this.isProduction = isProductionEnv(this.configService);
+  }
+
+  /**
+   * Teach the webhook DLQ how to re-run a failed missed-call callback.
+   *
+   * Replay re-runs the whole callback, greeting included. That is deliberate:
+   * `ingestLead` merges on the phone so the lead cannot duplicate, and the
+   * greeting is the entire point of the flow — a buyer who rang and heard
+   * nothing back is the failure being fixed. The dedup window suppresses the
+   * greeting on the first retry (30s) if the original send did land.
+   */
+  onModuleInit(): void {
+    if (!this.webhookDlq) return;
+
+    this.webhookDlq.registerReplayer(REALTY_INGEST_SOURCES.IVR, async (payload) => {
+      const stored = payload as { businessId?: string; call?: NormalizedIvrCall };
+      if (!stored?.businessId || !stored.call) {
+        throw new Error('Dead-lettered IVR callback is missing its tenant or call');
+      }
+      await this.processIvrCallback(stored.businessId, stored.call);
+    });
+  }
+
+  /**
+   * Process a missed call, parking it for retry if the ingest threw.
+   *
+   * The webhook answers 200 regardless (the provider must not retry-storm),
+   * which is precisely why the failure needs somewhere to go: before this, an
+   * IVR callback that hit a database blip was logged and dropped, and the
+   * buyer who rang the number got no WhatsApp reply and never became a lead.
+   */
+  async handleIvrDelivery(
+    businessId: string,
+    call: NormalizedIvrCall,
+    headers: Record<string, unknown> = {},
+  ): Promise<IvrCallbackResult | null> {
+    try {
+      return await this.processIvrCallback(businessId, call);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+
+      if (!this.webhookDlq) {
+        this.logger.error(
+          `IVR callback for ${businessId} failed and no webhook DLQ is wired — ` +
+            `the missed call is lost: ${reason}`,
+        );
+        return null;
+      }
+
+      try {
+        await this.webhookDlq.capture(
+          {
+            businessId,
+            source: REALTY_INGEST_SOURCES.IVR,
+            eventType: REALTY_INGEST_EVENT_TYPES[REALTY_INGEST_SOURCES.IVR],
+            // Hashed over the normalized call rather than the raw body: the two
+            // carry the same delivery, and the normalized form is what replay
+            // actually re-runs.
+            externalId: ingestDeliveryId(REALTY_INGEST_SOURCES.IVR, call),
+            payload: { businessId, call } as unknown as Record<string, unknown>,
+            headers,
+          },
+          err,
+        );
+      } catch (captureErr) {
+        // See `RealtyIngestionService.captureIngestFailure` — a DLQ failure
+        // must not escape onto a path that has to answer 200.
+        this.logger.error(
+          `CRITICAL: could not dead-letter IVR callback for ${businessId} ` +
+            `(original failure: ${reason}): ` +
+            `${captureErr instanceof Error ? captureErr.message : String(captureErr)}`,
+        );
+      }
+      return null;
+    }
   }
 
   // ─────────────────────────────────────────────

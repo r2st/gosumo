@@ -212,7 +212,11 @@ describe('RealtyIngestionService (branches)', () => {
         ],
       } as never);
 
-      expect(summary).toMatchObject({ total: 2, created: 1, skipped: 1 });
+      // `failed`, not `skipped`: the row was well-formed and the write broke,
+      // so it is retryable. A row with no usable phone is the `skipped` case,
+      // and conflating the two is what let a transient failure read as a
+      // deliberate rejection.
+      expect(summary).toMatchObject({ total: 2, created: 1, failed: 1, skipped: 0 });
       expect(summary.errors).toContainEqual({ row: 1, reason: 'db down' });
     });
 
@@ -271,7 +275,7 @@ describe('RealtyIngestionService (branches)', () => {
 
       await expect(
         service.importCsv(BUSINESS_ID, { rows: [] } as never),
-      ).resolves.toEqual({ total: 0, created: 0, merged: 0, skipped: 0, errors: [] });
+      ).resolves.toEqual({ total: 0, created: 0, merged: 0, skipped: 0, failed: 0, errors: [] });
     });
   });
 
@@ -289,6 +293,7 @@ describe('RealtyIngestionService (branches)', () => {
         created: 0,
         merged: 0,
         skipped: 0,
+        failed: 0,
         errors: [],
       });
     });
