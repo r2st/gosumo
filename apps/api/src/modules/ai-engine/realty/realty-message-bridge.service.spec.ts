@@ -6,6 +6,7 @@ import { RealtyBrokerService } from '../../realty-broker/realty-broker.service';
 import { RealtyTenantService } from './realty-tenant.service';
 import { RealtyAiService, RealtyDecision } from './realty-ai.service';
 import { RealtyMessageBridgeService } from './realty-message-bridge.service';
+import { ConversationLockService } from '../../../common/services/conversation-lock.service';
 
 // ─────────────────────────────────────────────
 // Builders
@@ -96,6 +97,7 @@ function makeHarness(): Harness {
     { processTurn } as unknown as RealtyAiService,
     { evaluateAutonomy, createApproval } as unknown as RealtyBrokerService,
     { sendMessage } as unknown as ChannelAdapterService,
+    new ConversationLockService(),
   );
 
   return {
@@ -295,6 +297,111 @@ describe('RealtyMessageBridgeService', () => {
 
       await expect(h.bridge.handleMessageReceived(makeEvent())).resolves.toBeUndefined();
       expect(h.sendMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─────────────────────────────────────────────
+  // Serialization
+  // ─────────────────────────────────────────────
+
+  describe('two messages arriving back to back', () => {
+    /**
+     * `EventEmitter2.emit` does not await its listeners, so a buyer sending two
+     * messages a second apart has two of these handlers in flight at once over
+     * the same conversation. Both failures below are invisible in production:
+     * nothing errors, the bot just answers in the wrong order and forgets a
+     * fact the buyer already gave it.
+     */
+    it('does not start the second turn until the first has finished', async () => {
+      // The BLTC merge is read → merge-in-memory → write. Overlapping turns both
+      // read the same starting profile, each merges only its own message, and
+      // the second write clobbers the first — the buyer states a budget and is
+      // asked for it again on the next turn.
+      const h = makeHarness();
+      let inFlight = 0;
+      let maxInFlight = 0;
+
+      h.processTurn.mockImplementation(async () => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((r) => setImmediate(r));
+        inFlight -= 1;
+        return makeDecision();
+      });
+
+      await Promise.all([
+        h.bridge.handleMessageReceived(makeEvent({ messageId: 'm1' })),
+        h.bridge.handleMessageReceived(makeEvent({ messageId: 'm2' })),
+      ]);
+
+      expect(h.processTurn).toHaveBeenCalledTimes(2);
+      expect(maxInFlight).toBe(1);
+    });
+
+    it('replies in the order the messages arrived, not the order the LLM finished', async () => {
+      const h = makeHarness();
+      const sent: string[] = [];
+
+      // The first turn is the slow one. Unserialized, its reply lands second.
+      h.processTurn.mockImplementation(async (_biz: string, dto: { messageText: string }) => {
+        const slow = dto.messageText === 'first';
+        await new Promise((r) => setTimeout(r, slow ? 20 : 1));
+        return makeDecision({ responseText: `reply:${dto.messageText}` });
+      });
+      h.load
+        .mockResolvedValueOnce({ messageText: 'first', triggerMessage: { direction: 'INBOUND' } })
+        .mockResolvedValueOnce({ messageText: 'second', triggerMessage: { direction: 'INBOUND' } });
+      h.sendMessage.mockImplementation(async (_c: unknown, msg: { content: { text: string } }) => {
+        sent.push(msg.content.text);
+        return { success: true };
+      });
+
+      await Promise.all([
+        h.bridge.handleMessageReceived(makeEvent({ messageId: 'm1' })),
+        h.bridge.handleMessageReceived(makeEvent({ messageId: 'm2' })),
+      ]);
+
+      expect(sent).toEqual(['reply:first', 'reply:second']);
+    });
+
+    it('lets two different conversations run at once', async () => {
+      // Serializing per tenant instead of per conversation would put every
+      // buyer of a busy brokerage in one queue.
+      const h = makeHarness();
+      let inFlight = 0;
+      let maxInFlight = 0;
+
+      h.processTurn.mockImplementation(async () => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((r) => setImmediate(r));
+        inFlight -= 1;
+        return makeDecision();
+      });
+
+      await Promise.all([
+        h.bridge.handleMessageReceived(makeEvent({ conversationId: 'c1' })),
+        h.bridge.handleMessageReceived(makeEvent({ conversationId: 'c2' })),
+      ]);
+
+      expect(maxInFlight).toBe(2);
+    });
+
+    it('hands the conversation to the next message after a failed turn', async () => {
+      // A lock that stayed held on failure would wedge the buyer's conversation
+      // for the life of the process.
+      const h = makeHarness();
+      h.processTurn
+        .mockRejectedValueOnce(new Error('LLM exploded'))
+        .mockResolvedValueOnce(makeDecision());
+
+      await Promise.all([
+        h.bridge.handleMessageReceived(makeEvent({ messageId: 'm1' })),
+        h.bridge.handleMessageReceived(makeEvent({ messageId: 'm2' })),
+      ]);
+
+      expect(h.processTurn).toHaveBeenCalledTimes(2);
+      expect(h.sendMessage).toHaveBeenCalledTimes(1);
     });
   });
 });

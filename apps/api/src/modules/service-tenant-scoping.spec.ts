@@ -100,17 +100,23 @@ const { tenantModels: TENANT_MODELS, nullableTenant: NULLABLE_TENANT } =
  * entry means asserting that property about the new call.
  */
 const ALLOWED_UNSCOPED: Record<string, string> = {
-  'ChannelAdapterService.processInboundMessage':
+  'ChannelAdapterService.persistAndAnnounce':
     'Resolves the channel_account an inbound provider webhook belongs to. The ' +
     'provider posts a channel type and its own external id and nothing else, ' +
     'so there is no tenant yet — this row is what supplies one, and every ' +
     'later step uses the business_id read back from it.',
 
-  'ChannelAdapterService.isDuplicateWebhook':
+  'ChannelAdapterService.recordWebhookDelivery':
     'Dedup insert into webhook_events, which runs before the channel_account ' +
     'lookup that resolves the tenant. webhook_events.business_id is nullable ' +
     'precisely for these platform-level rows, and the insert carries no tenant ' +
     'data — only the provider id it deduplicates on.',
+
+  'ChannelAdapterService.markWebhookProcessed':
+    'Stamps the webhook_events row this same request just inserted, by the ' +
+    'primary key it returned. The id is not tenant-derived and cannot be ' +
+    'guessed from a request; scoping it would mean re-deriving a tenant the ' +
+    'row does not carry, for a write that only flips a processing flag.',
 
   'WebChatGateway.handleInit':
     'Resolves a public web-chat widget id to its channel_account. The widget ' +

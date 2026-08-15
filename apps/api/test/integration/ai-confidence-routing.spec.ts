@@ -54,6 +54,7 @@ import { EmbeddingService } from '../../src/modules/ai-engine/rag/embedding.serv
 import { AiEngineRepository } from '../../src/modules/ai-engine/ai-engine.repository';
 import { ChannelAdapterService } from '../../src/modules/channel-adapter/channel-adapter.service';
 import { RealtyTenantService } from '../../src/modules/ai-engine/realty/realty-tenant.service';
+import { ConversationLockService } from '../../src/common/services/conversation-lock.service';
 import { ESCALATION_HOLDING_MESSAGE } from '../../src/modules/ai-engine/ai-engine.constants';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
@@ -293,6 +294,7 @@ function buildPipeline() {
     channelAdapter,
     eventEmitter,
     realtyTenants,
+    new ConversationLockService(),
   );
 
   /** Point the harness at a grounding profile + inbound text. */

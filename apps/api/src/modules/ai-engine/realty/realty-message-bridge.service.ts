@@ -13,6 +13,7 @@ import { RealtyLeadsService, LeadResponseDto } from '../../realty-leads/realty-l
 import { RealtyBrokerService } from '../../realty-broker/realty-broker.service';
 import { RealtyTenantService } from './realty-tenant.service';
 import { RealtyAiService, RealtyDecision } from './realty-ai.service';
+import { ConversationLockService } from '../../../common/services/conversation-lock.service';
 
 /**
  * RealtyMessageBridgeService — the event bridge that hands inbound buyer
@@ -47,6 +48,7 @@ export class RealtyMessageBridgeService {
     private readonly realtyAi: RealtyAiService,
     private readonly broker: RealtyBrokerService,
     private readonly channelAdapter: ChannelAdapterService,
+    private readonly locks: ConversationLockService,
   ) {}
 
   @OnEvent('message.received')
@@ -63,7 +65,16 @@ export class RealtyMessageBridgeService {
 
     const traceId = event.correlationId ?? generateCorrelationId();
     try {
-      await this.route(event, traceId);
+      // One turn at a time per conversation, in arrival order. `emit` does not
+      // await listeners, so two messages a second apart otherwise run this
+      // whole route concurrently: both read the same BLTC profile, each merges
+      // only its own message, and the second write drops the first's facts —
+      // the buyer states a budget and is asked for it again. The replies also
+      // race, so the answer to the second message can land first.
+      await this.locks.runExclusive(
+        ConversationLockService.conversationKey(event.businessId, event.conversationId),
+        () => this.route(event, traceId),
+      );
     } catch (err) {
       this.logger.error(
         `[${traceId}] Realty bridge failed for message ${event.messageId}: ${

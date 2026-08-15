@@ -43,6 +43,7 @@ import { EmbeddingService } from './rag/embedding.service';
 import { AiEngineRepository } from './ai-engine.repository';
 import { ChannelAdapterService } from '../channel-adapter/channel-adapter.service';
 import { RealtyTenantService } from './realty/realty-tenant.service';
+import { ConversationLockService } from '../../common/services/conversation-lock.service';
 import {
   ProcessMessageDto,
   IntentClassificationDto,
@@ -126,6 +127,7 @@ export class AiEngineService {
     private readonly channelAdapter: ChannelAdapterService,
     private readonly eventEmitter: EventEmitter2,
     private readonly realtyTenants: RealtyTenantService,
+    private readonly conversationLocks: ConversationLockService,
   ) {}
 
   // ─────────────────────────────────────────────
@@ -855,12 +857,19 @@ export class AiEngineService {
       );
       return;
     }
+    // Captured before the closure: narrowing from the guard above does not
+    // survive into a callback.
+    const { businessId, conversationId, messageId, correlationId } = event;
+
     try {
-      await this.processMessage(event.businessId, {
-        conversationId: event.conversationId,
-        messageId: event.messageId,
-        correlationId: event.correlationId,
-      });
+      // One pipeline run at a time per conversation, in arrival order.
+      // `emit` does not await listeners, so two messages sent a second apart
+      // otherwise run the pipeline concurrently over the same conversation and
+      // the replies are delivered in whichever order the LLM finishes.
+      await this.conversationLocks.runExclusive(
+        ConversationLockService.conversationKey(businessId, conversationId),
+        () => this.processMessage(businessId, { conversationId, messageId, correlationId }),
+      );
     } catch (err) {
       this.logger.error(
         `Pipeline failed for message ${event.messageId}: ${err instanceof Error ? err.message : String(err)}`,

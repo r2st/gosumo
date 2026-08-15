@@ -41,6 +41,7 @@ import { EmbeddingService } from './rag/embedding.service';
 import { AiEngineRepository } from './ai-engine.repository';
 import { ChannelAdapterService } from '../channel-adapter/channel-adapter.service';
 import { RealtyTenantService } from './realty/realty-tenant.service';
+import { ConversationLockService } from '../../common/services/conversation-lock.service';
 import { PrismaService } from '../../common/services/prisma.service';
 import { ConfidenceMode } from '@gosumo/shared';
 
@@ -223,6 +224,7 @@ function makeHarness() {
     channelAdapter,
     eventEmitter,
     realtyTenants,
+    new ConversationLockService(),
   );
 
   return {

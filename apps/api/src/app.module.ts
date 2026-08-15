@@ -4,6 +4,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { BullModule } from '@nestjs/bull';
 import appConfig from './config/app.config';
 import { QueueTelemetryModule } from './common/queue/queue-telemetry.module';
+import { ConversationLockModule } from './common/services/conversation-lock.module';
 import { JOB_TIMEOUT_MS } from './common/queue/queue.constants';
 
 // Feature modules
@@ -102,6 +103,10 @@ import { HealthModule } from './modules/health/health.module';
     // Global, and imported before the feature modules that register queues —
     // discovery runs at onApplicationBootstrap, by which point they all exist.
     QueueTelemetryModule,
+
+    // Serializes work per conversation across the whole inbound path. Global,
+    // and imported before the feature modules that take the lock.
+    ConversationLockModule,
 
     // Health probes — first so /v1/health stays answerable even while a
     // later module is still warming up.
