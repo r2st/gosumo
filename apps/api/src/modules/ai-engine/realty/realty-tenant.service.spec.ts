@@ -145,4 +145,79 @@ describe('RealtyTenantService', () => {
       await expect(service.isRealtyTenant('biz-1')).resolves.toBe(true);
     });
   });
+
+  /**
+   * `invalidate()` existed and nothing ever called it, so the only thing that
+   * cleared a verdict was the 5-minute TTL — and the verdict that goes stale is
+   * the negative one. A business becomes a realty tenant by capturing its first
+   * lead or project, and until this listener existed every message in the five
+   * minutes after that went to the generic assistant: no BLTC qualification, no
+   * verified fact sheets, no realty guardrails. Self-healing, which is exactly
+   * why it would never have been reported as a bug.
+   */
+  describe('cache invalidation on the events that change the answer', () => {
+    it('drops a cached "not realty" when the tenant captures its first lead', async () => {
+      await expect(service.isRealtyTenant('biz-1')).resolves.toBe(false);
+
+      // The footprint that makes branch 2 true now exists.
+      leads.findFirst.mockResolvedValue({ id: 'lead-1' });
+      service.handleFootprintChanged({ businessId: 'biz-1' });
+
+      await expect(service.isRealtyTenant('biz-1')).resolves.toBe(true);
+      expect(businesses.findFirst).toHaveBeenCalledTimes(2);
+    });
+
+    it('drops a cached verdict when the business profile is edited', async () => {
+      await expect(service.isRealtyTenant('biz-1')).resolves.toBe(false);
+
+      businesses.findFirst.mockResolvedValue({ profile: { vertical: 'realty' } });
+      service.handleFootprintChanged({ businessId: 'biz-1' });
+
+      await expect(service.isRealtyTenant('biz-1')).resolves.toBe(true);
+    });
+
+    it('invalidates only the business named on the event', async () => {
+      await service.isRealtyTenant('biz-1');
+      await service.isRealtyTenant('biz-2');
+      businesses.findFirst.mockClear();
+
+      service.handleFootprintChanged({ businessId: 'biz-1' });
+
+      await service.isRealtyTenant('biz-1');
+      await service.isRealtyTenant('biz-2');
+      // Only biz-1 re-resolved; biz-2 is still served from its cached verdict.
+      expect(businesses.findFirst).toHaveBeenCalledTimes(1);
+      expect(businesses.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ id: 'biz-1' }) }),
+      );
+    });
+
+    it('ignores an event with no businessId rather than throwing on the event bus', async () => {
+      await service.isRealtyTenant('biz-1');
+      expect(() => service.handleFootprintChanged({})).not.toThrow();
+      expect(() =>
+        service.handleFootprintChanged(undefined as unknown as { businessId?: string }),
+      ).not.toThrow();
+
+      // Nothing was dropped.
+      businesses.findFirst.mockClear();
+      await service.isRealtyTenant('biz-1');
+      expect(businesses.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('is registered for all three events that can change the verdict', () => {
+      // The listeners are what make `invalidate()` reachable at all; a
+      // decorator dropped in a refactor would leave the method dead again.
+      const registered = Reflect.getMetadata(
+        'EVENT_LISTENER_METADATA',
+        RealtyTenantService.prototype.handleFootprintChanged,
+      ) as Array<{ event: string }> | undefined;
+
+      expect((registered ?? []).map((l) => l.event).sort()).toEqual([
+        'business.settings.updated',
+        'realty.lead.created',
+        'realty.project.created',
+      ]);
+    });
+  });
 });

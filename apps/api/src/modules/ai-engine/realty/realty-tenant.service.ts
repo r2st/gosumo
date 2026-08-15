@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../../common/services/prisma.service';
 
 interface CacheEntry {
@@ -65,6 +66,37 @@ export class RealtyTenantService {
   /** Drop a cached verdict — call after a business changes vertical. */
   invalidate(businessId: string): void {
     this.cache.delete(businessId);
+  }
+
+  /**
+   * Drop the verdict when the thing it was inferred from appears or changes.
+   *
+   * {@link invalidate} existed and nothing ever called it, so the only way a
+   * stale verdict cleared was the TTL — and the stale verdict that matters is
+   * the negative one. Branch 2 of {@link resolve} infers the vertical from a
+   * realty footprint, and a business acquires that footprint by capturing its
+   * *first* lead or project. Until that moment every inbound message caches
+   * `false`, so for up to five minutes after a tenant goes live their buyers
+   * are answered by the generic assistant instead of the grounded realty loop:
+   * no BLTC qualification, no verified fact sheets, no realty guardrails. It is
+   * self-healing, which is exactly why nobody would have found it — the tenant
+   * reports "the first few replies were wrong" and by the time anyone looks it
+   * is behaving.
+   *
+   * `business.settings.updated` is here for branch 1, the explicit
+   * `profile.vertical` override an operator uses to force a business on or off
+   * the vertical. That event had no listeners at all despite the ai-engine
+   * module doc claiming it invalidated cached config.
+   *
+   * Deliberately unconditional on `changedFields`: the events carry a
+   * businessId and dropping one map entry costs a `Map.delete`, so filtering
+   * would only add a way to miss.
+   */
+  @OnEvent('realty.lead.created')
+  @OnEvent('realty.project.created')
+  @OnEvent('business.settings.updated')
+  handleFootprintChanged(event: { businessId?: string }): void {
+    if (event?.businessId) this.invalidate(event.businessId);
   }
 
   private async resolve(businessId: string): Promise<boolean> {

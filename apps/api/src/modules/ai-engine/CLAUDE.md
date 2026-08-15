@@ -43,7 +43,7 @@ confidence = (data_availability × 0.5) + (policy_clarity × 0.5)
 **Listens to:**
 - `message.received` — queues `processMessage()` via BullMQ `ai-process` queue
 - `ai.response.approved` (from `hitl`) — sends the approved draft via `channel-adapter`
-- `business.settings.updated` — invalidates cached AI config in Redis
+- `business.settings.updated` — drops `RealtyTenantService`'s cached realty-vs-generic verdict. (The Redis AI-config cache this line used to claim does not exist; the event had **no** listeners until that one, so `invalidate()` was dead code and the only thing that cleared a verdict was its 5-minute TTL. The stale verdict that matters is the negative one: a tenant becomes realty by capturing its first lead or project, so `realty.lead.created` / `realty.project.created` invalidate too — without them, every message in the five minutes after go-live was answered by the generic assistant with no BLTC qualification, no verified fact sheets and no realty guardrails. Self-healing, which is exactly why it would never be reported.)
 
 ## Tables Owned
 
