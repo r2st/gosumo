@@ -289,7 +289,8 @@ export class WebhookDlqService {
       ...this.toSummaryDto(entry),
       payload: entry.payload,
       headers: entry.headers,
-      errorStack: entry.error_stack,
+      // `error_stack` is captured on the row but never returned here — see
+      // `WebhookDeadLetterDetailDto`.
       webhookEventId: entry.webhook_event_id,
     };
   }

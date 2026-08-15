@@ -563,6 +563,29 @@ describe('WebhookDlqService inspection', () => {
     expect(entry.webhookEventId).toBeNull();
   });
 
+  it('withholds the captured stack from the single-entry view', async () => {
+    // The row keeps the stack — it is what we debug from — but a Node trace
+    // names absolute paths inside the deployment (`/opt/gosumo/apps/api/...`),
+    // the internal module layout, and the dependency frames of the failing
+    // call. This route carries no `@Roles()` guard, so every authenticated user
+    // of every business, VIEWER included, could read it.
+    const { service, repository } = build();
+    repository.findById.mockResolvedValueOnce(
+      makeEntry({
+        error_stack:
+          'Error: gateway timeout\n    at /opt/gosumo/apps/api/dist/modules/payment/razorpay.service.js:214:9',
+      }),
+    );
+
+    const entry = await service.get(BUSINESS_ID, ENTRY_ID);
+
+    expect(entry).not.toHaveProperty('errorStack');
+    expect(JSON.stringify(entry)).not.toContain('/opt/gosumo');
+    // …while what an operator needs to judge a replay is untouched.
+    expect(entry.errorMessage).toBe('gateway timeout');
+    expect(entry.payload).toEqual({ event: 'payment.captured' });
+  });
+
   it('404s rather than returning another business’s entry', async () => {
     const { service, repository } = build();
     repository.findById.mockResolvedValueOnce(null);

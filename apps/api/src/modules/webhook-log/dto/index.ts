@@ -178,11 +178,21 @@ export interface WebhookDeadLetterSummaryDto {
   createdAt: string;
 }
 
-/** Detail view — adds the stored payload an operator needs to judge a replay. */
+/**
+ * Detail view — adds the stored payload an operator needs to judge a replay.
+ *
+ * Deliberately no `errorStack`. The stack is still captured on the row (it is
+ * what we debug from), but it is *our* stack, not the tenant's data: a Node
+ * trace names absolute paths inside the deployment (`/opt/gosumo/apps/api/
+ * dist/...`), the internal module layout, and the `node_modules` frames of
+ * every dependency in the failing call. This route carries no `@Roles()`, so
+ * every authenticated user of every business — VIEWER included — could read it.
+ * `errorMessage`, `payload`, and `headers` are what judging a replay actually
+ * needs, and none of them describe the server.
+ */
 export interface WebhookDeadLetterDetailDto extends WebhookDeadLetterSummaryDto {
   payload: unknown;
   headers: unknown;
-  errorStack: string | null;
   webhookEventId: string | null;
 }
 
