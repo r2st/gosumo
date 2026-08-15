@@ -142,6 +142,45 @@ describe('ComplianceService', () => {
       await service.dataRequest(BIZ_A, RAW_PHONE);
       expect(repo.listMessagesForConversation).not.toHaveBeenCalled();
     });
+
+    /**
+     * The lead and the consent history are keyed on the same phone and neither
+     * reads the other, so they are issued together. Asserted by observation
+     * rather than by timing: the consent query must already have been made
+     * while the lead query is still in flight, which is only true if they were
+     * started together.
+     */
+    it('issues the lead and consent lookups concurrently', async () => {
+      let consentsAskedDuringLeadLookup = false;
+      repo.findLeadByPhone.mockImplementationOnce(
+        () =>
+          new Promise((resolve) =>
+            setImmediate(() => {
+              consentsAskedDuringLeadLookup = repo.listConsents.mock.calls.length > 0;
+              resolve(lead());
+            }),
+          ),
+      );
+
+      await service.dataRequest(BIZ_A, RAW_PHONE);
+
+      expect(consentsAskedDuringLeadLookup).toBe(true);
+    });
+
+    /**
+     * The message history genuinely depends on the lead's conversation id, so
+     * it stays sequential. Pinned because "parallelize the queries" is exactly
+     * the change that would sweep it into the same `Promise.all` and read a
+     * conversation id that is not resolved yet.
+     */
+    it('still fetches messages only after the lead resolves', async () => {
+      repo.findLeadByPhone.mockResolvedValueOnce(lead());
+      await service.dataRequest(BIZ_A, RAW_PHONE);
+      expect(repo.listMessagesForConversation).toHaveBeenCalledWith(
+        BIZ_A,
+        lead().conversation_id,
+      );
+    });
   });
 
   // ── Right to correction ──────────────────────────────────────────────────────

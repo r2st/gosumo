@@ -101,9 +101,18 @@ export class ComplianceService {
   /** Return everything held for a phone: lead profile, messages, consent history. */
   async dataRequest(businessId: string, rawPhone: string): Promise<DataAccessResult> {
     const phone = normalizeIndianPhone(rawPhone) ?? rawPhone;
-    const lead = await this.repository.findLeadByPhone(businessId, phone);
-    const consents = await this.repository.listConsents(businessId, phone);
+    // Both are keyed on the same phone and neither reads the other's result, so
+    // awaiting them one after the other spent two round trips' latency to
+    // collect what one costs. They are also two Postgres connections held for
+    // the duration either way — running them together shortens how long, which
+    // is the resource that is actually scarce on this deployment.
+    const [lead, consents] = await Promise.all([
+      this.repository.findLeadByPhone(businessId, phone),
+      this.repository.listConsents(businessId, phone),
+    ]);
 
+    // The message history is genuinely dependent — it needs the lead's
+    // conversation id — so it stays where it is.
     let msgs: messages[] = [];
     if (lead?.conversation_id) {
       msgs = await this.repository.listMessagesForConversation(businessId, lead.conversation_id);
