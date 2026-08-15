@@ -1,4 +1,9 @@
-import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  OnModuleInit,
+  OnApplicationShutdown,
+  Logger,
+} from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
 /**
@@ -66,7 +71,10 @@ function configuredLimit(): number {
  * it. See PrismaModule for what that cost us.
  */
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnApplicationShutdown
+{
   private readonly logger = new Logger(PrismaService.name);
 
   constructor() {
@@ -79,7 +87,27 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     this.logger.log('Prisma connected to database');
   }
 
-  async onModuleDestroy(): Promise<void> {
+  /**
+   * Disconnect in the **last** shutdown phase, not the first.
+   *
+   * This was `onModuleDestroy`, which Nest runs before it closes the HTTP
+   * server and before `@nestjs/bull` closes its queues:
+   *
+   *   1. `onModuleDestroy`            ← the pool was returned here
+   *   2. `beforeApplicationShutdown`  — {@link QueueDrainService} drains workers
+   *   3. `dispose()`                  — HTTP server closes, in-flight requests drain
+   *   4. `onApplicationShutdown`      — queues close
+   *
+   * So every request and every job that was still being drained in phases 2–4
+   * — the drain the shutdown hooks exist to allow — ran against a client that
+   * had already been disconnected, and failed on a dead connection instead of
+   * finishing. The symptom is the one graceful shutdown is supposed to remove:
+   * work lost at restart, with an error that names Prisma rather than the
+   * restart.
+   *
+   * Phase 4 is after all three, so nothing is still using the pool when it goes.
+   */
+  async onApplicationShutdown(): Promise<void> {
     await this.$disconnect();
     this.logger.log('Prisma disconnected from database');
   }

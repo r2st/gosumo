@@ -52,22 +52,35 @@ describe('PrismaService', () => {
     });
   });
 
-  describe('onModuleDestroy', () => {
+  describe('onApplicationShutdown', () => {
     it('closes the connection', async () => {
-      await service.onModuleDestroy();
+      await service.onApplicationShutdown();
       expect(disconnect).toHaveBeenCalledTimes(1);
       expect(log).toHaveBeenCalledWith('Prisma disconnected from database');
     });
 
     it('propagates a disconnect failure rather than hiding a leaked pool', async () => {
       disconnect.mockRejectedValueOnce(new Error('pool busy'));
-      await expect(service.onModuleDestroy()).rejects.toThrow('pool busy');
+      await expect(service.onApplicationShutdown()).rejects.toThrow('pool busy');
     });
   });
 
   it('implements both Nest lifecycle hooks', () => {
     expect(typeof service.onModuleInit).toBe('function');
-    expect(typeof service.onModuleDestroy).toBe('function');
+    expect(typeof service.onApplicationShutdown).toBe('function');
+  });
+
+  /**
+   * The phase, not just the method. Nest runs `onModuleDestroy` *first* —
+   * before it closes the HTTP server and before `@nestjs/bull` closes its
+   * queues — so a disconnect there pulled the pool out from under every
+   * request and job that was still draining. Naming the wrong hook is a
+   * one-word change with no local symptom, so it is pinned here.
+   */
+  it('does not disconnect in the first shutdown phase', () => {
+    expect(
+      (service as unknown as { onModuleDestroy?: unknown }).onModuleDestroy,
+    ).toBeUndefined();
   });
 });
 

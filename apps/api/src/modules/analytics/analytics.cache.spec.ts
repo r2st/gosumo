@@ -3,7 +3,10 @@ import { Logger } from '@nestjs/common';
 import Redis from 'ioredis';
 import {
   ANALYTICS_CACHE,
+  ANALYTICS_CACHE_QUIT_TIMEOUT_MS,
   AnalyticsCache,
+  AnalyticsCacheLifecycle,
+  RedisAnalyticsCache,
   analyticsCacheProvider,
 } from './analytics.cache';
 import { REDIS_MAX_RETRIES_PER_REQUEST } from '../auth/redis.provider';
@@ -172,5 +175,107 @@ describe('analyticsCacheProvider', () => {
     it('resolves to undefined on write, so callers cannot depend on the raw reply', async () => {
       await expect(build().set('k', 'v', 60)).resolves.toBeUndefined();
     });
+  });
+});
+
+/**
+ * The connection this provider opens is the only one in the app built outside
+ * `redisProvider`, and nothing was ever closing it. `RedisLifecycle` closes the
+ * auth module's client on every restart; this one was left for the server to
+ * reap on its own timeout — one leaked connection per restart, against a
+ * 50-connection ceiling this deployment shares with another service.
+ */
+describe('AnalyticsCacheLifecycle', () => {
+  let warn: jest.SpyInstance;
+  let log: jest.SpyInstance;
+
+  const cacheWith = (over: Partial<AnalyticsCache> = {}): AnalyticsCache =>
+    ({ get: jest.fn(), set: jest.fn(), ...over }) as unknown as AnalyticsCache;
+
+  beforeEach(() => {
+    log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('closes the cache connection on shutdown', async () => {
+    const close = jest.fn().mockResolvedValue(undefined);
+    await new AnalyticsCacheLifecycle(cacheWith({ close })).onApplicationShutdown();
+
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(log).toHaveBeenCalledWith('Analytics cache connection closed');
+  });
+
+  it('closes in the last shutdown phase, not the first', () => {
+    // The dashboard is still being served while in-flight requests drain, and
+    // every one of those reads goes through this cache.
+    const lifecycle = new AnalyticsCacheLifecycle(cacheWith());
+    expect(typeof lifecycle.onApplicationShutdown).toBe('function');
+    expect(
+      (lifecycle as unknown as { onModuleDestroy?: unknown }).onModuleDestroy,
+    ).toBeUndefined();
+  });
+
+  it('never lets a stuck connection abort the rest of the shutdown', async () => {
+    const close = jest.fn().mockRejectedValue(new Error('connection is closed'));
+    await expect(
+      new AnalyticsCacheLifecycle(cacheWith({ close })).onApplicationShutdown(),
+    ).resolves.toBeUndefined();
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('Analytics cache shutdown failed'),
+    );
+  });
+
+  it('is a no-op for a cache implementation with nothing to close', async () => {
+    // `close` is optional so an in-memory or mocked cache satisfies the
+    // contract without inventing a teardown it does not need.
+    await expect(
+      new AnalyticsCacheLifecycle(cacheWith()).onApplicationShutdown(),
+    ).resolves.toBeUndefined();
+    expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe('RedisAnalyticsCache.close', () => {
+  it('quits gracefully when Redis answers', async () => {
+    const quit = jest.fn().mockResolvedValue('OK');
+    const disconnect = jest.fn();
+    await new RedisAnalyticsCache({ quit, disconnect } as unknown as Redis).close();
+
+    expect(quit).toHaveBeenCalledTimes(1);
+    expect(disconnect).not.toHaveBeenCalled();
+  });
+
+  it('forces the socket down when QUIT rejects', async () => {
+    const disconnect = jest.fn();
+    await new RedisAnalyticsCache({
+      quit: jest.fn().mockRejectedValue(new Error('already closed')),
+      disconnect,
+    } as unknown as Redis).close();
+
+    expect(disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops waiting for a QUIT that never answers', async () => {
+    // If Redis is *why* the process is restarting, the answer never arrives —
+    // and `quit` is not covered by maxRetriesPerRequest. An unbounded await
+    // here hangs shutdown until the supervisor SIGKILLs the process.
+    jest.useFakeTimers();
+    try {
+      const disconnect = jest.fn();
+      const closing = new RedisAnalyticsCache({
+        quit: jest.fn().mockReturnValue(new Promise(() => undefined)),
+        disconnect,
+      } as unknown as Redis).close();
+
+      jest.advanceTimersByTime(ANALYTICS_CACHE_QUIT_TIMEOUT_MS);
+      await closing;
+
+      expect(disconnect).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

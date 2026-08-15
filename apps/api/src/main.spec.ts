@@ -59,10 +59,13 @@ import {
   KEEP_ALIVE_TIMEOUT_MS,
   MAX_REQUEST_BODY_BYTES,
   SHUTDOWN_SIGNALS,
+  UNCAUGHT_EXCEPTION_EXIT_CODE,
   allowCredentials,
   applyBodyLimits,
   configureHttpServerLifecycle,
+  installProcessSafetyNets,
   isProduction,
+  resetProcessSafetyNets,
   resolveCorsOrigin,
   runStartupChecks,
   swaggerEnabled,
@@ -493,5 +496,126 @@ describe('runStartupChecks', () => {
       expect(() => runStartupChecks(logger)).not.toThrow();
       expect(warn).not.toHaveBeenCalled();
     });
+  });
+});
+
+/**
+ * The last error boundary in the process.
+ *
+ * Nothing listened for either event before this. That is not the same as
+ * "neither happens" — Node 15+ defaults to `--unhandled-rejections=throw`, so a
+ * single floating promise anywhere in the app took the whole API down, and it
+ * did so with no line naming the promise. The two events are handled with
+ * opposite verdicts on purpose, and that difference is what these pin.
+ */
+describe('installProcessSafetyNets', () => {
+  let error: jest.SpyInstance;
+  let logger: Logger;
+
+  /** A stand-in for `process` so the suite never installs a real handler. */
+  function fakeProcess() {
+    const handlers: Record<string, Array<(arg: unknown) => void>> = {};
+    return {
+      handlers,
+      on: jest.fn((event: string, handler: (arg: unknown) => void) => {
+        (handlers[event] ??= []).push(handler);
+      }),
+      fire: (event: string, arg: unknown) =>
+        (handlers[event] ?? []).forEach((h) => h(arg)),
+    };
+  }
+
+  beforeEach(() => {
+    resetProcessSafetyNets();
+    logger = new Logger('test');
+    error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    resetProcessSafetyNets();
+    jest.restoreAllMocks();
+  });
+
+  it('listens for both of the events that end a process silently', () => {
+    const proc = fakeProcess();
+    installProcessSafetyNets(logger, jest.fn(), proc as unknown as NodeJS.EventEmitter);
+
+    expect(Object.keys(proc.handlers).sort()).toEqual([
+      'uncaughtException',
+      'unhandledRejection',
+    ]);
+  });
+
+  it('logs an unhandled rejection and keeps the process alive', () => {
+    // Most floating promises here are deliberate side paths — a fire-and-forget
+    // audit write, a cache refresh. Taking a multi-tenant API down for one of
+    // them turns a lost log line into an outage.
+    const proc = fakeProcess();
+    const onFatal = jest.fn();
+    installProcessSafetyNets(logger, onFatal, proc as unknown as NodeJS.EventEmitter);
+
+    proc.fire('unhandledRejection', new Error('audit write failed'));
+
+    expect(onFatal).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining('Unhandled promise rejection'),
+    );
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('audit write failed'));
+  });
+
+  it('reports a rejection that is not an Error at all', () => {
+    // `Promise.reject('nope')` and `Promise.reject(undefined)` both reach here,
+    // and `reason.message` on either is how the handler itself would throw.
+    const proc = fakeProcess();
+    installProcessSafetyNets(logger, jest.fn(), proc as unknown as NodeJS.EventEmitter);
+
+    expect(() => proc.fire('unhandledRejection', 'just a string')).not.toThrow();
+    expect(() => proc.fire('unhandledRejection', undefined)).not.toThrow();
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('just a string'));
+  });
+
+  it('exits non-zero on an uncaught exception', () => {
+    // The opposite call from a rejection: the stack that threw is gone and
+    // whatever it was halfway through stays halfway through. Exiting is what
+    // tells the supervisor to restart onto known state.
+    const proc = fakeProcess();
+    const onFatal = jest.fn();
+    installProcessSafetyNets(logger, onFatal, proc as unknown as NodeJS.EventEmitter);
+
+    proc.fire('uncaughtException', new Error('bad state'));
+
+    expect(onFatal).toHaveBeenCalledWith(UNCAUGHT_EXCEPTION_EXIT_CODE);
+    expect(UNCAUGHT_EXCEPTION_EXIT_CODE).not.toBe(0);
+  });
+
+  it('logs the exception before exiting, since installing a handler suppresses Node own printout', () => {
+    const proc = fakeProcess();
+    const order: string[] = [];
+    error.mockImplementation(() => {
+      order.push('logged');
+    });
+    installProcessSafetyNets(
+      logger,
+      () => order.push('exited'),
+      proc as unknown as NodeJS.EventEmitter,
+    );
+
+    proc.fire('uncaughtException', new Error('bad state'));
+
+    expect(order).toEqual(['logged', 'exited']);
+  });
+
+  it('installs once, so a second call does not double every log line', () => {
+    const first = fakeProcess();
+    const second = fakeProcess();
+
+    expect(
+      installProcessSafetyNets(logger, jest.fn(), first as unknown as NodeJS.EventEmitter),
+    ).toBe(true);
+    expect(
+      installProcessSafetyNets(logger, jest.fn(), second as unknown as NodeJS.EventEmitter),
+    ).toBe(false);
+
+    expect(second.on).not.toHaveBeenCalled();
   });
 });

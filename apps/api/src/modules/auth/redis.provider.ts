@@ -1,4 +1,10 @@
-import { Inject, Injectable, Logger, OnModuleDestroy, Provider } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  OnApplicationShutdown,
+  Provider,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 
@@ -118,19 +124,27 @@ export const REDIS_QUIT_TIMEOUT_MS = 5_000;
  * socket: on every `systemd` restart the old process exited with its Redis
  * connection still established, leaving the server to reap it on its own
  * timeout. This class is the hook — `main.ts` already calls
- * `enableShutdownHooks()`, so `onModuleDestroy` runs on SIGTERM.
+ * `enableShutdownHooks()`, so it runs on SIGTERM.
+ *
+ * It hooks `onApplicationShutdown`, the **last** shutdown phase, rather than
+ * `onModuleDestroy`, the first. Sessions, the auth throttle and the login
+ * lockout all read this connection on the request path, and requests are still
+ * draining two phases later when Nest closes the HTTP server. Closing in phase
+ * 1 meant every one of those reads failed for the duration of the drain — a
+ * visitor's last request before a restart got a Redis error rather than an
+ * answer. Same reasoning as {@link PrismaService}.
  *
  * Shutdown is best-effort by design. A failure to close a connection cannot be
  * allowed to abort the shutdown of everything registered after it, so every
  * path here logs and returns rather than throwing.
  */
 @Injectable()
-export class RedisLifecycle implements OnModuleDestroy {
+export class RedisLifecycle implements OnApplicationShutdown {
   private readonly logger = new Logger(RedisLifecycle.name);
 
   constructor(@Inject(REDIS_CLIENT) private readonly client: RedisClient) {}
 
-  async onModuleDestroy(): Promise<void> {
+  async onApplicationShutdown(): Promise<void> {
     try {
       await Promise.race([
         this.client.quit(),

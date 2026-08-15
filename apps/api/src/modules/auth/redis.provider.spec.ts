@@ -112,20 +112,34 @@ describe('RedisLifecycle', () => {
     disconnect = jest.fn();
   });
 
-  it('closes the connection on module destroy', async () => {
+  it('closes the connection on shutdown', async () => {
     // Without this hook nothing ever closed the socket: every restart left the
     // old connection for the server to reap on its own timeout, against a
     // connection ceiling this deployment shares with another service.
-    await new RedisLifecycle(clientWith()).onModuleDestroy();
+    await new RedisLifecycle(clientWith()).onApplicationShutdown();
 
     expect(quit).toHaveBeenCalledTimes(1);
     expect(disconnect).not.toHaveBeenCalled();
   });
 
+  /**
+   * Sessions, the auth throttle and the login lockout all read this connection
+   * on the request path, and requests are still draining two phases after
+   * `onModuleDestroy`. Closing there gave every one of them a Redis error
+   * instead of an answer for the length of the drain.
+   */
+  it('closes in the last shutdown phase, not the first', () => {
+    const lifecycle = new RedisLifecycle(clientWith());
+    expect(typeof lifecycle.onApplicationShutdown).toBe('function');
+    expect(
+      (lifecycle as unknown as { onModuleDestroy?: unknown }).onModuleDestroy,
+    ).toBeUndefined();
+  });
+
   it('forces a disconnect when QUIT rejects', async () => {
     quit.mockRejectedValue(new Error('Connection is closed.'));
 
-    await new RedisLifecycle(clientWith()).onModuleDestroy();
+    await new RedisLifecycle(clientWith()).onApplicationShutdown();
 
     expect(disconnect).toHaveBeenCalledTimes(1);
   });
@@ -135,7 +149,7 @@ describe('RedisLifecycle', () => {
     // after it — Prisma's pool and the BullMQ workers are behind this.
     quit.mockRejectedValue(new Error('nope'));
 
-    await expect(new RedisLifecycle(clientWith()).onModuleDestroy()).resolves.toBeUndefined();
+    await expect(new RedisLifecycle(clientWith()).onApplicationShutdown()).resolves.toBeUndefined();
   });
 
   it('does not throw when the forced disconnect also fails', async () => {
@@ -144,14 +158,14 @@ describe('RedisLifecycle', () => {
       throw new Error('already gone');
     });
 
-    await expect(new RedisLifecycle(clientWith()).onModuleDestroy()).resolves.toBeUndefined();
+    await expect(new RedisLifecycle(clientWith()).onApplicationShutdown()).resolves.toBeUndefined();
   });
 
   it('tolerates a client with no disconnect method', async () => {
     quit.mockRejectedValue(new Error('nope'));
 
     await expect(
-      new RedisLifecycle(clientWith({ disconnect: undefined })).onModuleDestroy(),
+      new RedisLifecycle(clientWith({ disconnect: undefined })).onApplicationShutdown(),
     ).resolves.toBeUndefined();
   });
 
@@ -164,7 +178,7 @@ describe('RedisLifecycle', () => {
       quit.mockReturnValue(new Promise(() => {}));
       const lifecycle = new RedisLifecycle(clientWith());
 
-      const done = lifecycle.onModuleDestroy();
+      const done = lifecycle.onApplicationShutdown();
       jest.advanceTimersByTime(REDIS_QUIT_TIMEOUT_MS + 1);
       await done;
 
@@ -179,7 +193,7 @@ describe('RedisLifecycle', () => {
     try {
       const lifecycle = new RedisLifecycle(clientWith());
 
-      const done = lifecycle.onModuleDestroy();
+      const done = lifecycle.onApplicationShutdown();
       jest.advanceTimersByTime(REDIS_QUIT_TIMEOUT_MS - 1);
       await done;
 

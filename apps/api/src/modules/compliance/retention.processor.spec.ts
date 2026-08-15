@@ -77,4 +77,19 @@ describe('RetentionProcessor', () => {
 
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('3 not swept at all'));
   });
+
+  /**
+   * The sweep must fail loudly. Swallowing here would resolve the job, Bull
+   * would mark it complete, and the weekly DPDPA sweep would stop running with
+   * the only trace being an absence — no retry, no exhausted-retry line from
+   * `QueueTelemetryService`, and data past its retention window still live.
+   * This is the same reason `removeOnFail: false` is set on the cron.
+   */
+  it('lets a failed sweep reach Bull rather than reporting a clean run', async () => {
+    const runAll = jest.fn().mockRejectedValue(new Error('anonymization failed'));
+    const processor = new RetentionProcessor({ runAll } as never);
+
+    await expect(processor.handleRetentionSweep()).rejects.toThrow('anonymization failed');
+    expect(log).not.toHaveBeenCalledWith(expect.stringContaining('complete'));
+  });
 });

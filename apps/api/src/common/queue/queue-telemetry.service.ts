@@ -20,9 +20,7 @@
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
 import type { Queue } from 'bull';
-
-/** Prefix `@nestjs/bull` gives its queue provider tokens. */
-const QUEUE_TOKEN_PREFIX = 'BullQueue_';
+import { discoverQueues } from './queue-discovery.util';
 
 /** Per-queue job counts, as an ops route or a health probe wants them. */
 export interface QueueDepth {
@@ -56,7 +54,7 @@ export class QueueTelemetryService implements OnApplicationBootstrap {
   constructor(private readonly discovery: DiscoveryService) {}
 
   onApplicationBootstrap(): void {
-    for (const queue of this.discoverQueues()) {
+    for (const queue of discoverQueues(this.discovery)) {
       this.queues.push(queue);
       this.attach(queue);
     }
@@ -65,19 +63,6 @@ export class QueueTelemetryService implements OnApplicationBootstrap {
         ? `Watching ${this.queues.length} queue(s): ${this.queues.map((q) => q.name).join(', ')}`
         : 'No Bull queues found to watch',
     );
-  }
-
-  /** Every registered Bull queue in the container. */
-  private discoverQueues(): Queue[] {
-    return this.discovery
-      .getProviders()
-      .filter(
-        (wrapper) =>
-          typeof wrapper.name === 'string' &&
-          wrapper.name.startsWith(QUEUE_TOKEN_PREFIX) &&
-          isQueue(wrapper.instance),
-      )
-      .map((wrapper) => wrapper.instance as Queue);
   }
 
   /**
@@ -160,15 +145,4 @@ export class QueueTelemetryService implements OnApplicationBootstrap {
       .filter((d) => d.waiting > threshold)
       .map((d) => ({ ...d, threshold }));
   }
-}
-
-/** Structural check — narrow enough to skip a same-prefix provider that is not a queue. */
-function isQueue(instance: unknown): instance is Queue {
-  const candidate = instance as Partial<Queue> | null;
-  return (
-    candidate != null &&
-    typeof candidate.name === 'string' &&
-    typeof candidate.on === 'function' &&
-    typeof candidate.getJobCounts === 'function'
-  );
 }

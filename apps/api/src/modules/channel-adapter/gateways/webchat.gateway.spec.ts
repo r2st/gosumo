@@ -68,6 +68,8 @@ function makeSocket(id = 'socket-1', query: Record<string, unknown> = {}): Socke
     id,
     handshake: { query },
     emit: jest.fn(),
+    // Real sockets can be hung up on, and shutdown does exactly that.
+    disconnect: jest.fn(),
   } as unknown as Socket;
 }
 
@@ -81,6 +83,7 @@ function makeSocketFrom(id: string, address: string): Socket {
     id,
     handshake: { query: {}, address, headers: {} },
     emit: jest.fn(),
+    disconnect: jest.fn(),
   } as unknown as Socket;
 }
 
@@ -1450,6 +1453,94 @@ describe('WebChatGateway', () => {
       // Only the one that actually went out is dropped — replaying it would
       // show the visitor the same message twice.
       expect(webchatResponseMap.get('partial-session')?.map((m) => m.id)).toEqual(['b', 'c']);
+    });
+  });
+
+  /**
+   * Teardown used to clear the delivery sink and stop there. That stops new
+   * replies reaching a socket but leaves the socket connected and all five maps
+   * populated, so the visitor's widget sat on an open connection to a process
+   * that had stopped answering — a silent hang, until Nest tore the Engine.IO
+   * server down underneath it with no `disconnect` the client could react to.
+   *
+   * Sockets that connected but never completed `chat:init` are not disconnected
+   * here: the gateway holds their id, not the socket, and they carry no session
+   * state to lose. Nest closes the server under them, which is the same outcome
+   * they would get anyway.
+   */
+  describe('shutdown', () => {
+    it('hangs up on every live session so the widget reconnects to the replacement', async () => {
+      const a = await initSession(gateway, prisma, 'socket-a', 'session-a');
+      const b = await initSession(gateway, prisma, 'socket-b', 'session-b');
+
+      gateway.onModuleDestroy();
+
+      expect((a as unknown as { disconnect: jest.Mock }).disconnect).toHaveBeenCalledWith(true);
+      expect((b as unknown as { disconnect: jest.Mock }).disconnect).toHaveBeenCalledWith(true);
+    });
+
+    it('forgets the session, so nothing keyed on a dead socket survives', async () => {
+      await initSession(gateway, prisma, 'socket-forget', 'session-forget');
+      webchatResponseMap.set('session-forget', [
+        { id: 'm1', text: 'buffered', timestamp: new Date() },
+      ]);
+
+      gateway.onModuleDestroy();
+
+      // No socket is known for the session any more — the map that would have
+      // held it (and its businessId, and its conversationId) is empty.
+      expect(gateway.flushSession('session-forget')).toBe(false);
+    });
+
+    it('refuses a message from a socket whose session it has released', async () => {
+      const client = await initSession(gateway, prisma, 'socket-after', 'session-after');
+
+      gateway.onModuleDestroy();
+      const result = await gateway.handleMessage(client, { text: 'still there?' });
+
+      expect(result.received).toBe(false);
+      expect(prisma.messages.create).not.toHaveBeenCalled();
+    });
+
+    it('gives every per-IP connection slot back', () => {
+      const client = makeCountedSocket('socket-ip', '203.0.113.9');
+      gateway.handleConnection(client);
+      expect(gateway.liveSocketsFor('203.0.113.9')).toBe(1);
+
+      gateway.onModuleDestroy();
+
+      // A counter keyed on a caller-controlled address is the one map that must
+      // never outlive the sockets it counts.
+      expect(gateway.liveSocketsFor('203.0.113.9')).toBe(0);
+    });
+
+    it('keeps closing the rest after one socket throws', async () => {
+      const bad = await initSession(gateway, prisma, 'socket-bad', 'session-bad');
+      const good = await initSession(gateway, prisma, 'socket-good', 'session-good');
+      (bad as unknown as { disconnect: jest.Mock }).disconnect.mockImplementation(() => {
+        throw new Error('socket already gone');
+      });
+
+      expect(() => gateway.onModuleDestroy()).not.toThrow();
+      expect((good as unknown as { disconnect: jest.Mock }).disconnect).toHaveBeenCalled();
+    });
+
+    it('leaves buffered replies in the outbox rather than dropping them', async () => {
+      await initSession(gateway, prisma, 'socket-outbox', 'session-outbox');
+      webchatResponseMap.set('session-outbox', [
+        { id: 'm1', text: 'undelivered', timestamp: new Date() },
+      ]);
+
+      gateway.onModuleDestroy();
+
+      // The outbox is module-global and survives this gateway. Clearing it here
+      // would discard a reply the visitor has not seen; it ages out on its own
+      // TTL instead.
+      expect(webchatResponseMap.get('session-outbox')).toHaveLength(1);
+    });
+
+    it('is safe to call with nothing connected', () => {
+      expect(() => gateway.onModuleDestroy()).not.toThrow();
     });
   });
 });

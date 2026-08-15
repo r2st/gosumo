@@ -3,7 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AnalyticsService } from './analytics.service';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsRepository } from './analytics.repository';
-import { analyticsCacheProvider } from './analytics.cache';
+import { analyticsCacheProvider, AnalyticsCacheLifecycle } from './analytics.cache';
 import { LlmClientService } from '../ai-engine/pipeline/llm-client.service';
 
 /**
@@ -28,6 +28,9 @@ import { LlmClientService } from '../ai-engine/pipeline/llm-client.service';
     AnalyticsService,
     AnalyticsRepository,
     analyticsCacheProvider,
+    // Not injected by anything — Nest calls it on shutdown. Without it the
+    // cache's Redis connection is leaked on every restart.
+    AnalyticsCacheLifecycle,
     LlmClientService,
   ],
   exports: [AnalyticsService],

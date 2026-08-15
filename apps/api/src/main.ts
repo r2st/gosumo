@@ -60,6 +60,69 @@ export function runStartupChecks(logger: Logger): void {
 }
 
 /**
+ * The last error boundary in the process.
+ *
+ * Nothing was listening for either of these. That is not the same as "neither
+ * happens": it is the difference between a diagnosable failure and a process
+ * that vanishes.
+ *
+ *  - **`unhandledRejection`** — Node 15+ defaults to `--unhandled-rejections=throw`,
+ *    so one floating promise anywhere in the app kills the whole API. Most of
+ *    them are side paths that the request or job did not await on purpose
+ *    (fire-and-forget audit writes, cache refreshes, telemetry), and taking a
+ *    multi-tenant API down for one is the wrong trade — it turns a lost log
+ *    line into an outage. Logged loudly and survived, which is also the only
+ *    way anyone finds out the promise existed.
+ *
+ *  - **`uncaughtException`** — the opposite call. The stack that threw is gone
+ *    and whatever it was halfway through stays halfway through, so continuing
+ *    means running on state no one can reason about. Log it (Node's own
+ *    printout is what installing a handler suppresses, so this has to replace
+ *    it) and exit non-zero, which is what tells the supervisor to restart.
+ *
+ * Registered with `process.on` and guarded by {@link safetyNetsInstalled} so a
+ * second call — a test importing this module twice, a nested bootstrap — does
+ * not stack duplicate handlers and log everything twice.
+ */
+let safetyNetsInstalled = false;
+
+/** Exit code used when an uncaught exception ends the process. */
+export const UNCAUGHT_EXCEPTION_EXIT_CODE = 1;
+
+/** Reset the install guard. Tests only — a fresh process installs once. */
+export function resetProcessSafetyNets(): void {
+  safetyNetsInstalled = false;
+}
+
+export function installProcessSafetyNets(
+  logger: Logger,
+  onFatal: (code: number) => void = (code) => process.exit(code),
+  target: NodeJS.EventEmitter = process,
+): boolean {
+  if (safetyNetsInstalled) return false;
+  safetyNetsInstalled = true;
+
+  target.on('unhandledRejection', (reason: unknown) => {
+    const detail =
+      reason instanceof Error
+        ? `${reason.message}\n${reason.stack ?? ''}`
+        : String(reason);
+    logger.error(
+      `Unhandled promise rejection — the process is being kept alive, but this is a bug: ${detail}`,
+    );
+  });
+
+  target.on('uncaughtException', (err: unknown) => {
+    const detail =
+      err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : String(err);
+    logger.error(`Uncaught exception — shutting down: ${detail}`);
+    onFatal(UNCAUGHT_EXCEPTION_EXIT_CODE);
+  });
+
+  return true;
+}
+
+/**
  * Keep-alive idle timeout, in ms.
  *
  * Node's default is 5 seconds. Caddy holds its upstream connections open far
@@ -189,6 +252,10 @@ export function configureHttpServerLifecycle(
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
+
+  // Before anything that could throw asynchronously — including the startup
+  // checks below, which are the first code in the process that can.
+  installProcessSafetyNets(logger);
 
   runStartupChecks(logger);
 

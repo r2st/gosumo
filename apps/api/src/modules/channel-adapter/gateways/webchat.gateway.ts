@@ -269,13 +269,53 @@ export class WebChatGateway
   }
 
   /**
-   * Release the sink on teardown. It is module-global state, so a gateway that
-   * left itself registered would keep being called — holding this instance (and
-   * every socket it maps) alive past shutdown, and, in tests, delivering one
-   * suite's messages into another's mocks.
+   * Release the sink on teardown, then let go of every socket and every map
+   * keyed on one.
+   *
+   * The sink half was already here: it is module-global state, so a gateway
+   * that left itself registered would keep being called — holding this instance
+   * (and every socket it maps) alive past shutdown, and, in tests, delivering
+   * one suite's messages into another's mocks.
+   *
+   * The sockets were not. Clearing the sink stops new work reaching them but
+   * leaves them connected and leaves all five maps populated, so the visitor's
+   * widget sat on an open socket to a process that had stopped answering until
+   * Nest tore the Engine.IO server down underneath it — a silent hang rather
+   * than a disconnect. Disconnecting explicitly is what makes the widget
+   * reconnect, which is how it reaches the replacement process; the buffered
+   * replies are untouched in the outbox and flush on the next `chat:init`.
+   *
+   * Every map is then cleared. In production the process is about to exit and
+   * this is hygiene; in tests it is not — the gateway is constructed per suite
+   * and these maps are the state that would otherwise carry a session, its
+   * businessId and its per-IP count from one test into the next.
    */
   onModuleDestroy(): void {
     setWebChatDeliverySink(null);
+
+    for (const socket of this.sessions.values()) {
+      try {
+        socket.disconnect(true);
+      } catch (error) {
+        // An already-dead socket throwing here must not stop the rest from
+        // being closed — teardown is best-effort, like every other one.
+        this.logger.warn(
+          "WebChat socket " + socket.id + " could not be disconnected on shutdown: " +
+          (error instanceof Error ? error.message : String(error)),
+        );
+      }
+    }
+
+    const closed = this.sessions.size;
+    this.sessions.clear();
+    this.socketToSession.clear();
+    this.sessionContext.clear();
+    this.socketIp.clear();
+    this.socketsPerIp.clear();
+
+    if (closed > 0) {
+      this.logger.log("WebChat shutdown — disconnected " + closed + " live session(s)");
+    }
   }
 
   /**
