@@ -15,6 +15,7 @@ import type {
   RealtyAiTurnCompletedEvent,
 } from '@gosumo/shared';
 import { LlmClientService, LlmUnavailableError } from '../pipeline/llm-client.service';
+import { ContextLoaderService } from '../pipeline/context-loader.service';
 import { GuardrailsService } from '../safety/guardrails.service';
 import { countFilledCoreSlots } from '../../realty-leads/lead-scoring.util';
 import { RealtyLeadsService } from '../../realty-leads/realty-leads.service';
@@ -39,6 +40,7 @@ import {
   buildRealtyUserPrompt,
   ProjectFactSheet,
   RealtyPromptVars,
+  TranscriptTurn,
   resolveResponseLanguage,
 } from './realty-prompt';
 import { REALTY_INTENT_MODEL } from './realty-intent.constants';
@@ -60,6 +62,13 @@ export interface RealtyDecision {
   escalationReason: string | null;
   correlationId: string;
 }
+
+/**
+ * How many prior turns the grounded prompt carries (blueprint §16: "last 15
+ * turns"). `renderTranscript` also slices to this; keeping them equal means the
+ * window is enforced before the tokens are ever assembled.
+ */
+const REALTY_TRANSCRIPT_WINDOW = 15;
 
 const CONFIRMING_FALLBACK =
   "Let me confirm the latest availability and details with our team and get right back to you.";
@@ -105,6 +114,12 @@ export class RealtyAiService {
      * buyer receives. Absent in unit tests / non-realty deployments (no-op).
      */
     @Optional() private readonly notice?: ComplianceNoticeService,
+    /**
+     * Optional — the conversation-history loader. Wired in `RealtyAiModule`;
+     * absent only in unit tests that construct the service positionally, which
+     * then run with an empty transcript exactly as before.
+     */
+    @Optional() private readonly context?: ContextLoaderService,
   ) {}
 
   async processTurn(businessId: string, dto: RealtyTurnDto): Promise<RealtyDecision> {
@@ -146,6 +161,12 @@ export class RealtyAiService {
     // Micro-market corridor priors (L1) — anonymized guidance, never quotable.
     const corridorContext = await this.resolveCorridorContext(businessId, dto, profile);
 
+    // What was already said. The prompt reserves a `<conversation_history>`
+    // block for it; without this the model saw "No prior messages" on every
+    // single turn, so it could not resolve a follow-up ("the second one",
+    // "that one's fine") and re-opened ground the buyer had already covered.
+    const transcript = await this.loadTranscript(businessId, dto, text);
+
     // ── DECIDE ────────────────────────────────
     let grounded: RealtyGroundedResponse | null = null;
     if (!safety.jailbreakDetected && !lead.optOut) {
@@ -160,6 +181,7 @@ export class RealtyAiService {
         traceId,
         corridorContext,
         lead.languagePref,
+        transcript,
       );
     }
 
@@ -288,6 +310,54 @@ export class RealtyAiService {
     }
   }
 
+  /**
+   * The conversation so far, as prompt turns (oldest → newest, ≤15).
+   *
+   * The trailing buyer turn is dropped when it repeats `currentText`: by the
+   * time the bridge runs this loop the inbound message is already persisted, so
+   * it would otherwise appear twice — once as history and once as the
+   * `<customer_message>` being answered, which reads to the model as the buyer
+   * having sent it twice.
+   *
+   * Returns `[]` when there is no conversation to read from or no loader wired.
+   */
+  private async loadTranscript(
+    businessId: string,
+    dto: RealtyTurnDto,
+    currentText: string,
+  ): Promise<TranscriptTurn[]> {
+    if (!this.context || !dto.conversationId) return [];
+
+    let entries;
+    try {
+      entries = await this.context.loadTranscript(
+        businessId,
+        dto.conversationId,
+        REALTY_TRANSCRIPT_WINDOW + 1,
+      );
+    } catch (err) {
+      // History is context, not a precondition. Answering from the BLTC profile
+      // alone is degraded; answering nothing is an abandoned buyer.
+      this.logger.warn(
+        `Transcript unavailable for conversation ${dto.conversationId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return [];
+    }
+
+    const last = entries[entries.length - 1];
+    const withoutEcho =
+      last && last.direction === 'INBOUND' && last.text === currentText.trim()
+        ? entries.slice(0, -1)
+        : entries;
+
+    return withoutEcho.slice(-REALTY_TRANSCRIPT_WINDOW).map((entry) => ({
+      speaker: entry.direction === 'INBOUND' ? ('Buyer' as const) : ('Agent' as const),
+      text: entry.text,
+    }));
+  }
+
   // ─────────────────────────────────────────────
   // Generation
   // ─────────────────────────────────────────────
@@ -303,6 +373,7 @@ export class RealtyAiService {
     traceId: string,
     corridorContext: string | null,
     languagePref: string | null,
+    transcript: TranscriptTurn[],
   ): Promise<RealtyGroundedResponse | null> {
     try {
       const vars: RealtyPromptVars = {
@@ -314,7 +385,7 @@ export class RealtyAiService {
         leadName,
         bltc: profile,
         nextBltcQuestion: nextQuestion,
-        transcript: [],
+        transcript,
         playbookChunks: dto.playbookChunks ?? [],
         calendarSnapshot: dto.calendarSnapshot ?? null,
         templateWindow: {

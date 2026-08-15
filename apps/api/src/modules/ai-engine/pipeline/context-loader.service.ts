@@ -30,6 +30,12 @@ export interface EnrichedContext {
   recipientExternalId: string | null;
 }
 
+/** One prior turn of a conversation, reduced to who spoke and what they said. */
+export interface TranscriptEntry {
+  direction: 'INBOUND' | 'OUTBOUND';
+  text: string;
+}
+
 /**
  * ContextLoaderService — assembles {@link EnrichedContext} for the pipeline.
  *
@@ -98,6 +104,52 @@ export class ContextLoaderService {
       channelAccountId: conversation?.channel_account_id ?? triggerMessage?.channel_account_id ?? null,
       recipientExternalId: this.extractSenderExternalId(triggerMessage),
     };
+  }
+
+  /**
+   * The recent text turns of one conversation, oldest → newest.
+   *
+   * Split out from {@link load} because a caller can need the history without
+   * a trigger message to anchor it: the realty loop is handed a `leadId` and a
+   * `conversationId`, and the voice path has no message row at all. Both still
+   * have to see what was already said.
+   *
+   * Messages with no extractable text (bare media, stickers) are dropped rather
+   * than rendered as blank turns — an empty `[Buyer]` line in the prompt reads
+   * as the buyer having said nothing, which is worse than the turn's absence.
+   *
+   * Best-effort: a failed read yields an empty history, matching how every
+   * other component of {@link EnrichedContext} degrades.
+   */
+  async loadTranscript(
+    businessId: string,
+    conversationId: string,
+    limit: number = CONTEXT_MESSAGE_WINDOW,
+  ): Promise<TranscriptEntry[]> {
+    let rows: messages[];
+    try {
+      rows = await this.prisma.messages.findMany({
+        where: { conversation_id: conversationId, business_id: businessId },
+        orderBy: { created_at: 'desc' },
+        take: limit,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Transcript load failed for conversation ${conversationId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return [];
+    }
+
+    return rows
+      .slice()
+      .reverse()
+      .map((row) => ({
+        direction: row.direction === 'OUTBOUND' ? ('OUTBOUND' as const) : ('INBOUND' as const),
+        text: this.extractText(row).trim(),
+      }))
+      .filter((turn) => turn.text.length > 0);
   }
 
   /**

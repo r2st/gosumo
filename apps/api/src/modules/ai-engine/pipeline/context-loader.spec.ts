@@ -258,4 +258,84 @@ describe('ContextLoaderService', () => {
       expect(ctx.recipientExternalId).toBeNull();
     });
   });
+
+  describe('loadTranscript', () => {
+    it('returns the turns oldest to newest, scoped to the tenant', async () => {
+      const prisma = makePrisma();
+      // Prisma is asked for newest-first; the method reverses.
+      prisma.messages.findMany.mockResolvedValue([
+        message({ id: 'm2', text_content: 'second', direction: 'OUTBOUND' }),
+        message({ id: 'm1', text_content: 'first', direction: 'INBOUND' }),
+      ]);
+
+      const turns = await makeService(prisma).loadTranscript(BUSINESS_ID, CONVERSATION_ID, 5);
+
+      expect(turns).toEqual([
+        { direction: 'INBOUND', text: 'first' },
+        { direction: 'OUTBOUND', text: 'second' },
+      ]);
+      expect(prisma.messages.findMany).toHaveBeenCalledWith({
+        where: { conversation_id: CONVERSATION_ID, business_id: BUSINESS_ID },
+        orderBy: { created_at: 'desc' },
+        take: 5,
+      });
+    });
+
+    it('defaults the window to CONTEXT_MESSAGE_WINDOW', async () => {
+      const prisma = makePrisma();
+
+      await makeService(prisma).loadTranscript(BUSINESS_ID, CONVERSATION_ID);
+
+      expect(prisma.messages.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: CONTEXT_MESSAGE_WINDOW }),
+      );
+    });
+
+    it('reads text out of a TEXT content payload when text_content is empty', async () => {
+      const prisma = makePrisma();
+      prisma.messages.findMany.mockResolvedValue([
+        message({
+          text_content: null,
+          content: { type: MessageContentType.TEXT, text: 'from payload' },
+          direction: 'INBOUND',
+        }),
+      ]);
+
+      const turns = await makeService(prisma).loadTranscript(BUSINESS_ID, CONVERSATION_ID);
+
+      expect(turns).toEqual([{ direction: 'INBOUND', text: 'from payload' }]);
+    });
+
+    it('drops turns with no extractable text rather than rendering blank speakers', async () => {
+      const prisma = makePrisma();
+      prisma.messages.findMany.mockResolvedValue([
+        message({ id: 'm2', text_content: '   ', direction: 'INBOUND' }),
+        message({ id: 'm1', text_content: 'real', direction: 'INBOUND' }),
+      ]);
+
+      const turns = await makeService(prisma).loadTranscript(BUSINESS_ID, CONVERSATION_ID);
+
+      expect(turns).toEqual([{ direction: 'INBOUND', text: 'real' }]);
+    });
+
+    it('treats anything that is not OUTBOUND as a buyer turn', async () => {
+      const prisma = makePrisma();
+      prisma.messages.findMany.mockResolvedValue([
+        message({ text_content: 'note', direction: 'INTERNAL' }),
+      ]);
+
+      const turns = await makeService(prisma).loadTranscript(BUSINESS_ID, CONVERSATION_ID);
+
+      expect(turns[0]!.direction).toBe('INBOUND');
+    });
+
+    it('degrades to an empty history when the read fails', async () => {
+      const prisma = makePrisma();
+      prisma.messages.findMany.mockRejectedValue(new Error('connection reset'));
+
+      await expect(
+        makeService(prisma).loadTranscript(BUSINESS_ID, CONVERSATION_ID),
+      ).resolves.toEqual([]);
+    });
+  });
 });
