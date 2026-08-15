@@ -33,10 +33,30 @@ const READINESS_CACHE_MS = 1_000;
 
 export type DependencyStatus = 'up' | 'down';
 
+/**
+ * Why a probe failed, in a fixed vocabulary.
+ *
+ * Deliberately *not* the driver's own message. This route is `@Public()` and
+ * reachable by anyone on the internet, and the two clients probed here are the
+ * two whose failure text describes the deployment:
+ *
+ *   - Prisma: ``Can't reach database server at `127.0.0.1`:`5433` `` — internal
+ *     host, port, and (on other codes) the database and schema names.
+ *   - ioredis: `connect ECONNREFUSED 127.0.0.1:6379`, or a DNS failure that
+ *     names the internal hostname (`getaddrinfo ENOTFOUND redis.internal`).
+ *
+ * An outage is exactly when that string gets published, so the disclosure fires
+ * precisely when the operator is least able to notice it. The distinction a
+ * balancer or an on-call dashboard actually reads is "did it hang or did it
+ * refuse" — that survives here; the address does not, and the full text goes to
+ * the log next to the dependency name.
+ */
+export type DependencyFailure = 'timeout' | 'unreachable';
+
 export interface DependencyReport {
   status: DependencyStatus;
   latencyMs: number;
-  error?: string;
+  error?: DependencyFailure;
 }
 
 export interface LivenessReport {
@@ -194,6 +214,9 @@ export class HealthService {
    * Run one dependency probe under a timeout, converting any outcome into a
    * report. Never throws: a readiness endpoint that 500s tells the balancer
    * far less than one that names which dependency is down.
+   *
+   * The failure is reported as a {@link DependencyFailure} and the driver's own
+   * message is logged rather than returned — see that type for why.
    */
   private async probe(
     name: string,
@@ -201,22 +224,33 @@ export class HealthService {
   ): Promise<DependencyReport> {
     const startedAt = Date.now();
     let timer: NodeJS.Timeout | undefined;
+    /**
+     * Read synchronously in the `catch` below, so it can only be true when the
+     * timer is what rejected the race: a `fn` that rejects first gets there
+     * while this is still false, and the `finally` then clears the timer.
+     */
+    let timedOut = false;
     try {
       await Promise.race([
         fn(),
         new Promise((_resolve, reject) => {
-          timer = setTimeout(
-            () => reject(new Error(`${name} probe timed out after ${PROBE_TIMEOUT_MS}ms`)),
-            PROBE_TIMEOUT_MS,
-          );
+          timer = setTimeout(() => {
+            timedOut = true;
+            reject(new Error(`${name} probe timed out after ${PROBE_TIMEOUT_MS}ms`));
+          }, PROBE_TIMEOUT_MS);
         }),
       ]);
       return { status: 'up', latencyMs: Date.now() - startedAt };
     } catch (err) {
+      // The detail an operator needs, on the side of the wire that is already
+      // trusted with it.
+      this.logger.error(
+        `Readiness probe "${name}" failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
       return {
         status: 'down',
         latencyMs: Date.now() - startedAt,
-        error: err instanceof Error ? err.message : String(err),
+        error: timedOut ? 'timeout' : 'unreachable',
       };
     } finally {
       // Without this the losing timer keeps the event loop alive for its full

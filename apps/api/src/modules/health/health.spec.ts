@@ -96,7 +96,7 @@ describe('HealthService — readiness', () => {
     expect(report.status).toBe('degraded');
     expect(report.dependencies.database).toMatchObject({
       status: 'down',
-      error: 'connection refused',
+      error: 'unreachable',
     });
     // The healthy dependency is still reported as healthy — the point of the
     // per-dependency shape is telling an operator *which* one broke.
@@ -111,7 +111,7 @@ describe('HealthService — readiness', () => {
     const report = await service.readiness();
 
     expect(report.status).toBe('degraded');
-    expect(report.dependencies.redis).toMatchObject({ status: 'down', error: 'READONLY' });
+    expect(report.dependencies.redis).toMatchObject({ status: 'down', error: 'unreachable' });
     expect(report.dependencies.database.status).toBe('up');
   });
 
@@ -128,12 +128,12 @@ describe('HealthService — readiness', () => {
     expect(report.dependencies.redis.status).toBe('down');
   });
 
-  it('describes a non-Error rejection rather than reporting "undefined"', async () => {
+  it('classifies a non-Error rejection rather than reporting "undefined"', async () => {
     const { service } = makeService({ ping: jest.fn().mockRejectedValue('ECONNRESET') });
 
     const report = await service.readiness();
 
-    expect(report.dependencies.redis.error).toBe('ECONNRESET');
+    expect(report.dependencies.redis.error).toBe('unreachable');
   });
 
   it('never throws — it reports', async () => {
@@ -192,7 +192,7 @@ describe('HealthService — readiness', () => {
 
       expect(report.status).toBe('degraded');
       expect(report.dependencies.redis.status).toBe('down');
-      expect(report.dependencies.redis.error).toMatch(/timed out/);
+      expect(report.dependencies.redis.error).toBe('timeout');
     } finally {
       jest.useRealTimers();
     }
