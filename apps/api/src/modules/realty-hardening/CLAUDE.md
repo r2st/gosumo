@@ -57,6 +57,12 @@ captured + swallowed (the worker is never wedged) and stays replayable.
 - **Audit is best-effort** — an `audit_logs` write failure is logged, never thrown.
 - **`audit_logs` is append-only** — we only ever INSERT.
 - **DLQ capture never throws** — even a failed persistence is logged, not raised.
+- **Replay is claimed, not just status-checked.** `replay()` compare-and-sets via
+  `claimForReplay` (an optimistic lock on `attempts`) before invoking the
+  handler, so two concurrent replays of the same entry cannot both run it — the
+  loser gets a 409. The claim is also what increments `attempts`, so a replay
+  that kills the process still counts against `DLQ_MAX_REPLAYS` instead of
+  coming back PENDING forever.
 - **Money in BLTC contradiction checks is paise** (`LAKH = 1e7 paise`).
 - Auto-discard: a dead letter that fails `DLQ_MAX_REPLAYS` replays becomes `DISCARDED`.
 

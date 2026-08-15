@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma, DeadLetterStatus } from '@prisma/client';
 import type { realty_dead_letters } from '@prisma/client';
@@ -190,6 +196,26 @@ export class RealtyDlqService {
       );
     }
 
+    // Claim the entry before running anything. The status check above is a
+    // read, so two replays of the same id — two operators on the ops screen, a
+    // double-submit, a retried request — both passed it and both invoked the
+    // handler. Replaying a captured operation twice is the one thing a DLQ must
+    // not do: the payloads it holds are sends and pushes that already have a
+    // chance of having landed the first time.
+    const claimed = await this.repository.claimForReplay(
+      businessId,
+      id,
+      entry.attempts,
+    );
+    if (!claimed) {
+      throw new ConflictException(
+        `Dead letter ${id} is already being replayed — reload and retry`,
+      );
+    }
+    // The claim consumed an attempt, so failure bookkeeping below counts from
+    // here rather than incrementing again.
+    const attempts = entry.attempts + 1;
+
     try {
       await handler(businessId, this.readPayload(entry), entry);
       const updated = await this.repository.update(businessId, id, {
@@ -204,16 +230,14 @@ export class RealtyDlqService {
       this.logger.log(`Replayed dead letter ${id} (${entry.operation})`);
       return updated;
     } catch (err) {
-      const nextAttempts = entry.attempts + 1;
-      const exhausted = nextAttempts - DEFAULT_RETRY_POLICY.attempts >= DLQ_MAX_REPLAYS;
+      const exhausted = attempts - DEFAULT_RETRY_POLICY.attempts >= DLQ_MAX_REPLAYS;
       const updated = await this.repository.update(businessId, id, {
-        attempts: nextAttempts,
         status: exhausted ? DeadLetterStatus.DISCARDED : DeadLetterStatus.PENDING,
         error_message: err instanceof Error ? err.message : String(err),
         ...(exhausted ? { resolved_at: new Date(), resolution: 'auto-discarded after max replays' } : {}),
       });
       this.logger.warn(
-        `Replay of dead letter ${id} failed (${nextAttempts} attempts)${exhausted ? ' — discarded' : ''}`,
+        `Replay of dead letter ${id} failed (${attempts} attempts)${exhausted ? ' — discarded' : ''}`,
       );
       return updated;
     }

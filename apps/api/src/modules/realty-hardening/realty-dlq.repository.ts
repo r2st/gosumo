@@ -84,6 +84,40 @@ export class RealtyDlqRepository {
     });
   }
 
+  /**
+   * Take exclusive ownership of a PENDING dead letter so it can be replayed.
+   *
+   * An optimistic lock on `attempts`: the claim is the increment, and it only
+   * lands if the row is still PENDING with the attempt count the caller read.
+   * Two concurrent replays of the same entry therefore have exactly one winner
+   * — without which both pass the status check and both run the handler, which
+   * for a DLQ means executing the captured operation twice. These are the
+   * operations least safe to double: a reminder that already went out, a push
+   * that already reached a CRM.
+   *
+   * `attempts` is bumped before the handler runs rather than after it fails, so
+   * a replay that takes the process down with it still counts. Otherwise the
+   * entry returns as PENDING with its original count and is replayed forever.
+   *
+   * Returns true if this caller now owns the replay.
+   */
+  async claimForReplay(
+    businessId: string,
+    id: string,
+    expectedAttempts: number,
+  ): Promise<boolean> {
+    const res = await this.prisma.realty_dead_letters.updateMany({
+      where: {
+        id,
+        business_id: businessId,
+        status: DeadLetterStatus.PENDING,
+        attempts: expectedAttempts,
+      },
+      data: { attempts: expectedAttempts + 1 },
+    });
+    return res.count === 1;
+  }
+
   async update(
     businessId: string,
     id: string,

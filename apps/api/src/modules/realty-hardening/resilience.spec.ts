@@ -58,6 +58,7 @@ describe('Phase 7 resilience drills', () => {
       create: jest.fn().mockResolvedValue(dlqRow),
       findById: jest.fn().mockResolvedValue(dlqRow),
       update: jest.fn().mockImplementation((_b, _id, data) => ({ ...dlqRow, ...data })),
+      claimForReplay: jest.fn().mockResolvedValue(true),
     };
     const dlq = new RealtyDlqService(repo as never, { emit: jest.fn() } as never);
 

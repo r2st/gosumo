@@ -50,6 +50,7 @@ describe('RealtyDlqService — branches', () => {
     countByStatus: jest.Mock;
     countPendingGlobal: jest.Mock;
     update: jest.Mock;
+    claimForReplay: jest.Mock;
   };
   let emitter: { emit: jest.Mock };
   let service: RealtyDlqService;
@@ -68,6 +69,7 @@ describe('RealtyDlqService — branches', () => {
       countByStatus: jest.fn().mockResolvedValue(0),
       countPendingGlobal: jest.fn().mockResolvedValue(0),
       update: jest.fn().mockImplementation((_b, _id, data) => makeEntry(data)),
+      claimForReplay: jest.fn().mockResolvedValue(true),
     };
     emitter = { emit: jest.fn() };
     service = new RealtyDlqService(repo as never, emitter as never);

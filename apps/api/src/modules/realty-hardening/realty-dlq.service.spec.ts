@@ -7,6 +7,7 @@
  * auto-discard / idempotency / missing replayer), resolve, and stats.
  */
 
+import { ConflictException } from '@nestjs/common';
 import { DeadLetterStatus } from '@prisma/client';
 import { RealtyDlqService } from './realty-dlq.service';
 import { REALTY_HARDENING_EVENTS } from './realty-hardening.constants';
@@ -46,18 +47,32 @@ describe('RealtyDlqService', () => {
     countByStatus: jest.Mock;
     countPendingGlobal: jest.Mock;
     update: jest.Mock;
+    claimForReplay: jest.Mock;
   };
   let emitter: { emit: jest.Mock };
   let service: RealtyDlqService;
 
   beforeEach(() => {
+    // The claim is what writes `attempts` now, so the mock has to carry that
+    // write forward into whatever `update` returns — otherwise the row the
+    // service hands back looks like the attempt never happened, which is the
+    // opposite of what the real repository does.
+    let claimedAttempts: number | undefined;
     repo = {
       create: jest.fn().mockResolvedValue(makeEntry()),
       findById: jest.fn().mockResolvedValue(makeEntry()),
       list: jest.fn().mockResolvedValue([]),
       countByStatus: jest.fn().mockResolvedValue(0),
       countPendingGlobal: jest.fn().mockResolvedValue(0),
-      update: jest.fn().mockImplementation((_b, _id, data) => makeEntry(data)),
+      update: jest
+        .fn()
+        .mockImplementation((_b, _id, data) =>
+          makeEntry({ ...(claimedAttempts !== undefined ? { attempts: claimedAttempts } : {}), ...data }),
+        ),
+      claimForReplay: jest.fn().mockImplementation(async (_b, _id, expected: number) => {
+        claimedAttempts = expected + 1;
+        return true;
+      }),
     };
     emitter = { emit: jest.fn() };
     service = new RealtyDlqService(repo as never, emitter as never);
@@ -160,6 +175,59 @@ describe('RealtyDlqService', () => {
       const res = await service.replay(BIZ, DL_ID);
       expect(res.status).toBe(DeadLetterStatus.PENDING);
       expect(res.attempts).toBe(4);
+    });
+
+    // ─────────────────────────────────────────────
+    // Concurrent replay
+    //
+    // The status check is a read. Two replays of the same id both passed it and
+    // both ran the handler — and a dead letter's payload is precisely the kind
+    // of operation (a reminder, a CRM push) that must not go out twice.
+    // ─────────────────────────────────────────────
+    it('claims the entry before running the handler', async () => {
+      const handler = jest.fn().mockResolvedValue(undefined);
+      repo.findById.mockResolvedValue(makeEntry({ attempts: 3 }));
+      service.registerReplayer('realty.visit.reminder', handler);
+
+      await service.replay(BIZ, DL_ID);
+
+      expect(repo.claimForReplay).toHaveBeenCalledWith(BIZ, DL_ID, 3);
+      // Ordering is the point: a claim taken after the send protects nothing.
+      expect(repo.claimForReplay.mock.invocationCallOrder[0]).toBeLessThan(
+        handler.mock.invocationCallOrder[0]!,
+      );
+    });
+
+    it('does not run the handler when another replay already claimed the entry', async () => {
+      const handler = jest.fn().mockResolvedValue(undefined);
+      repo.claimForReplay.mockResolvedValue(false); // lost the race
+      service.registerReplayer('realty.visit.reminder', handler);
+
+      await expect(service.replay(BIZ, DL_ID)).rejects.toThrow(ConflictException);
+      expect(handler).not.toHaveBeenCalled();
+      // And the loser must not overwrite the winner's bookkeeping.
+      expect(repo.update).not.toHaveBeenCalled();
+    });
+
+    it('lets exactly one of two concurrent replays run the handler', async () => {
+      const handler = jest.fn().mockResolvedValue(undefined);
+      service.registerReplayer('realty.visit.reminder', handler);
+      // A real compare-and-set: only the first claim of a given attempt wins.
+      const claimed = new Set<number>();
+      repo.claimForReplay.mockImplementation(async (_b, _id, expected: number) => {
+        if (claimed.has(expected)) return false;
+        claimed.add(expected);
+        return true;
+      });
+
+      const outcomes = await Promise.allSettled([
+        service.replay(BIZ, DL_ID),
+        service.replay(BIZ, DL_ID),
+      ]);
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
+      expect(outcomes.filter((o) => o.status === 'rejected')).toHaveLength(1);
     });
 
     it('auto-discards after exhausting max replays', async () => {
