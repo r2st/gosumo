@@ -33,6 +33,7 @@ import { isBlankText } from "../../../common/utils/blank-text.util";
 import { corsOptionsFor } from "../../../common/utils/cors.util";
 import { ConversationLockService } from "../../../common/services/conversation-lock.service";
 import { isUniqueViolation } from "../../../common/utils/sequential-number.util";
+import { createSequencedMessage } from "../../../common/utils/message-sequence";
 import { WebChatThrottle } from "./webchat-throttle";
 
 interface SessionContext {
@@ -700,23 +701,41 @@ export class WebChatGateway
     }
 
     try {
-      // Store the message in the database
-      await this.prisma.messages.create({
-        data: {
-          id: messageId,
-          business_id: ctx.businessId,
-          conversation_id: ctx.conversationId,
-          channel_account_id: ctx.channelAccountId,
-          direction: MessageDirection.INBOUND,
-          type: "TEXT",
-          status: "PENDING",
-          sender_type: "CLIENT",
-          sender_id: ctx.clientId,
-          content: { type: MessageContentType.TEXT, text },
-          text_content: text,
-          external_id: "webchat_" + messageId,
-        },
+      // Store the message in the database.
+      //
+      // Through the shared allocator like every other write path, for both of
+      // the things it provides. The sequence matters here more than anywhere: a
+      // socket delivers frames back-to-back with no HTTP round-trip between
+      // them, so two lines typed quickly are the same-microsecond insert that
+      // `created_at` cannot order. And the duplicate check is the only one this
+      // path has ever had — web chat has no `webhook_events` wall in front of
+      // it, so a client that retries a frame after a flaky ack used to store
+      // the message twice and answer it twice.
+      const { duplicate } = await createSequencedMessage(this.prisma, {
+        id: messageId,
+        business_id: ctx.businessId,
+        conversation_id: ctx.conversationId,
+        channel_account_id: ctx.channelAccountId,
+        direction: MessageDirection.INBOUND,
+        type: "TEXT",
+        status: "PENDING",
+        sender_type: "CLIENT",
+        sender_id: ctx.clientId,
+        content: { type: MessageContentType.TEXT, text },
+        text_content: text,
+        external_id: "webchat_" + messageId,
       });
+
+      if (duplicate) {
+        // Already stored and already announced. Ack it so the client stops
+        // retrying, and emit nothing — a second `message.received` is a second
+        // AI turn and a second reply to the visitor.
+        this.logger.log(
+          "WebChat message " + messageId + " already stored for session " +
+          sessionId + " — acking without re-announcing",
+        );
+        return { received: true, messageId };
+      }
 
       // Update conversation last_message_at
       await this.prisma.conversations.update({

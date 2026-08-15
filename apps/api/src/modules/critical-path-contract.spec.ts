@@ -37,6 +37,7 @@ import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
 import { getQueueToken } from '@nestjs/bull';
 import { Socket } from 'socket.io';
+import { withMessageSequence } from '../common/testing/message-sequence.mock';
 import {
   ChannelType,
   MessageContentType,
@@ -134,7 +135,10 @@ function httpPrisma(channel: ChannelType) {
   const messages = { create: jest.fn().mockResolvedValue({ id: MESSAGE_ROW_ID }) };
   return {
     doubles: { conversations, messages },
-    prisma: {
+    // `withMessageSequence` teaches the double the two things storing a message
+    // now needs: a `$transaction`, and a `conversations.update` that hands back
+    // the claimed `message_seq`. Without it the allocator reads `undefined`.
+    prisma: withMessageSequence({
       channel_accounts: {
         findFirst: jest.fn().mockResolvedValue({
           id: ACCOUNT_ID,
@@ -164,7 +168,7 @@ function httpPrisma(channel: ChannelType) {
         create: jest.fn().mockResolvedValue({ id: 'evt_1' }),
         update: jest.fn().mockResolvedValue({}),
       },
-    } as unknown as PrismaService,
+    }) as unknown as PrismaService,
   };
 }
 
@@ -192,9 +196,7 @@ function webchatPrisma() {
     messages,
     $transaction: jest.fn(),
   };
-  prisma.$transaction.mockImplementation(
-    async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma),
-  );
+  withMessageSequence(prisma);
   return { doubles: { conversations, messages }, prisma };
 }
 

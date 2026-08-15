@@ -41,6 +41,7 @@ import { ChannelAdapterService } from './channel-adapter.service';
 import { PrismaService } from '../../common/services/prisma.service';
 import { WebhookDlqService } from '../webhook-log/webhook-dlq.service';
 import { ConversationLockService } from '../../common/services/conversation-lock.service';
+import { withMessageSequence } from '../../common/testing/message-sequence.mock';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
 const RESOLVED_BUSINESS_ID = '00000000-0000-4000-a000-000000000002';
@@ -116,14 +117,14 @@ function makePrisma(): PrismaDoubles {
   };
 
   return {
-    prisma: {
+    prisma: withMessageSequence({
       channel_accounts,
       channel_contacts,
       clients,
       conversations,
       messages,
       webhook_events,
-    } as unknown as PrismaService,
+    }) as unknown as PrismaService,
     channel_accounts,
     channel_contacts,
     clients,
@@ -708,6 +709,111 @@ describe('ChannelAdapterService — inbound persistence', () => {
   });
 
   // ── Idempotency ─────────────────────────────────────────
+
+  // ── The row-level dedupe wall ───────────────────────────
+  //
+  // `webhook_events(source, external_id)` turns a provider's retry away at the
+  // door, and the block below covers it. This block covers what happens when
+  // something gets *past* that door — a `webhook-dlq` replay, which skips the
+  // claim on purpose, or any path that reaches `persistAndAnnounce` twice for
+  // one provider message.
+
+  describe('a message that is already stored', () => {
+    /** Make `messages.create` behave like the unique index rejecting a repeat. */
+    function alreadyStored(existing: { id: string }): void {
+      db.messages.create.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: Prisma.prismaVersion.client,
+          meta: { target: ['business_id', 'channel_account_id', 'external_id'] },
+        }),
+      );
+      (db.prisma as unknown as { messages: { findFirst: jest.Mock } }).messages.findFirst =
+        jest.fn().mockResolvedValue(existing);
+    }
+
+    it('does not fail the delivery', async () => {
+      // The message is stored — that is the outcome the delivery asked for. A
+      // throw here would dead-letter a delivery whose work is already done, and
+      // the replay of *that* would collide the same way, forever.
+      alreadyStored({ id: 'msg-original' });
+
+      await expect(inbound(makeNormalized())).resolves.toBeDefined();
+    });
+
+    it('does not announce it a second time', async () => {
+      // This is the part that costs money and confuses the customer.
+      // `message.received` drives the AI pipeline, lead capture, and cadence
+      // stop-on-reply, so a re-announcement is a second LLM call and a second
+      // reply to a customer who sent one message.
+      alreadyStored({ id: 'msg-original' });
+
+      await inbound(makeNormalized());
+
+      const announced = emitter.emit.mock.calls.filter(
+        ([name]) => name === 'message.received',
+      );
+      expect(announced).toHaveLength(0);
+    });
+
+    it('still stamps the delivery processed', async () => {
+      // Leaving it unprocessed would have an operator chasing a delivery that
+      // succeeded, and would invite a replay that can only collide again.
+      alreadyStored({ id: 'msg-original' });
+
+      await inbound(makeNormalized());
+
+      expect(db.webhook_events.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'evt_1' },
+          data: expect.objectContaining({ processed: true }),
+        }),
+      );
+    });
+
+    it('announces normally when the message is genuinely new', async () => {
+      // The control: without it, every assertion above would also pass on a
+      // service that had simply stopped emitting.
+      await inbound(makeNormalized());
+
+      const announced = emitter.emit.mock.calls.filter(
+        ([name]) => name === 'message.received',
+      );
+      expect(announced).toHaveLength(1);
+    });
+  });
+
+  describe('the stored message position', () => {
+    it('claims a sequence from the conversation before inserting', async () => {
+      await inbound(makeNormalized());
+
+      expect(db.conversations.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { message_seq: { increment: 1 } },
+          select: { message_seq: true },
+        }),
+      );
+      expect(db.messages.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ sequence: expect.any(Number) }),
+        }),
+      );
+    });
+
+    it('scopes the sequence claim to the resolved tenant', async () => {
+      // A conversation id alone would let a claim advance a counter in another
+      // tenant's row — and, because the claim is the first statement in the
+      // transaction, this is also what makes such a write fail before any
+      // message row exists.
+      await inbound(makeNormalized());
+
+      expect(db.conversations.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: CONVERSATION_ID, business_id: RESOLVED_BUSINESS_ID },
+        }),
+      );
+    });
+  });
 
   describe('duplicate webhook deliveries', () => {
     it('claims a first delivery as unprocessed, then stamps it once it is', async () => {

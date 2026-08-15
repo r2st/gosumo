@@ -27,6 +27,7 @@ import {
 import { generateId, generateCorrelationId, normalizeIndianPhone, PayloadParseError } from '@gosumo/shared';
 import { PrismaService } from '../../common/services/prisma.service';
 import { findOrCreateClientByIdentity } from '../../common/utils/client-identity.util';
+import { createSequencedMessage } from '../../common/utils/message-sequence';
 import { ReplayDeferredError, WebhookDlqService } from '../webhook-log/webhook-dlq.service';
 import { ConversationLockService } from '../../common/services/conversation-lock.service';
 import { CircuitBreakerRegistry } from '../../common/resilience/circuit-breaker.registry';
@@ -532,6 +533,9 @@ export class ChannelAdapterService implements OnModuleInit {
     // The sender's E.164 phone, for the consumers that match on a person rather
     // than on a channel address. Hoisted out of the try so it reaches the emit.
     let resolvedSenderPhone: string | undefined;
+    // Whether the row we ended up with was already there. Hoisted for the same
+    // reason, and read at the emit below.
+    let alreadyStored = false;
 
     try {
       // Look up the channel_account by channel type and external_id, once per
@@ -701,8 +705,9 @@ export class ChannelAdapterService implements OnModuleInit {
           'text' in normalized.content && typeof normalized.content.text === 'string'
             ? normalized.content.text
             : undefined;
-        const stored = await this.prisma.messages.create({
-          data: {
+        const { message: stored, duplicate } = await createSequencedMessage(
+          this.prisma,
+          {
             business_id: channelAccount.business_id,
             conversation_id: conversation.id,
             channel_account_id: channelAccount.id,
@@ -744,11 +749,15 @@ export class ChannelAdapterService implements OnModuleInit {
             // place here one at a time, by name.
             metadata: { senderExternalId: normalized.sender.externalId },
           },
-        });
+        );
         resolvedMessageId = stored.id;
+        alreadyStored = duplicate;
 
         this.logger.log(
-          `[${traceId}] Stored inbound message ${stored.id} for conversation ${conversation.id}`,
+          duplicate
+            ? `[${traceId}] Inbound message ${normalized.externalId} was already stored as ` +
+                `${stored.id} — not re-announcing it`
+            : `[${traceId}] Stored inbound message ${stored.id} for conversation ${conversation.id}`,
         );
       } else {
         this.logger.warn(
@@ -769,7 +778,17 @@ export class ChannelAdapterService implements OnModuleInit {
       throw err instanceof Error ? err : new Error(message);
     }
 
-    // Step 4: Emit enriched domain event
+    // Step 4: Emit enriched domain event — unless this delivery turned out to
+    // be one we had already stored.
+    //
+    // Announcing it again is not a harmless repeat. `message.received` is what
+    // drives the AI pipeline, lead capture, and cadence stop-on-reply, so a
+    // re-announcement answers the customer a second time with a second LLM call
+    // behind it. The row-level constraint stopped the duplicate *row*; this
+    // stops the duplicate *reply*. Returning here still marks the delivery
+    // processed, which is right: the work it describes is done.
+    if (alreadyStored) return;
+
     const event: MessageReceivedEvent = {
       id: generateId(),
       type: 'message.received',

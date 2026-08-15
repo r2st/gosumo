@@ -25,6 +25,7 @@ import { ChannelType, MessageContentType, MessageDirection, RawRequest, Outbound
 import { WhatsAppAdapter, isStatusUpdateOnly } from './adapters/whatsapp.adapter';
 import { ChannelAdapterService } from './channel-adapter.service';
 import { PrismaService } from '../../common/services/prisma.service';
+import { withMessageSequence } from '../../common/testing/message-sequence.mock';
 
 /**
  * Mock PrismaService for the service tests. `channel_accounts.findFirst`
@@ -33,14 +34,14 @@ import { PrismaService } from '../../common/services/prisma.service';
  * channelAccountId — which is exactly what these tests assert on.
  */
 function makeMockPrisma(): PrismaService {
-  return {
+  return withMessageSequence({
     channel_accounts: { findFirst: jest.fn().mockResolvedValue(null) },
     channel_contacts: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
     clients: { findFirst: jest.fn(), create: jest.fn() },
     conversations: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
     messages: { create: jest.fn() },
     webhook_events: { create: jest.fn().mockResolvedValue({ id: 'evt_1' }) },
-  } as unknown as PrismaService;
+  }) as unknown as PrismaService;
 }
 
 // ─────────────────────────────────────────────
@@ -1015,7 +1016,7 @@ function makeResolvingPrisma(
   opts: { existingContact?: Record<string, unknown> | null } = {},
 ) {
   const { existingContact = null } = opts;
-  return {
+  return withMessageSequence({
     channel_accounts: {
       findFirst: jest.fn().mockResolvedValue({
         id: 'acct-1',
@@ -1047,7 +1048,7 @@ function makeResolvingPrisma(
     },
     messages: { create: jest.fn().mockResolvedValue({}) },
     webhook_events: { create: jest.fn().mockResolvedValue({ id: 'evt_1' }) },
-  };
+  });
 }
 
 describe('ChannelAdapterService — client phone identity', () => {

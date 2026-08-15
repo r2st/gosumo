@@ -31,6 +31,7 @@ import { ChannelAdapterService } from './channel-adapter.service';
 import { PrismaService } from '../../common/services/prisma.service';
 import { WebhookDlqService } from '../webhook-log/webhook-dlq.service';
 import { ConversationLockService } from '../../common/services/conversation-lock.service';
+import { withMessageSequence } from '../../common/testing/message-sequence.mock';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000002';
 const RESOLVED_BUSINESS_ID = '00000000-0000-4000-a000-000000000009';
@@ -85,14 +86,14 @@ function makePrisma() {
   };
 
   return {
-    prisma: {
+    prisma: withMessageSequence({
       channel_accounts,
       channel_contacts,
       clients,
       conversations,
       messages,
       webhook_events,
-    } as unknown as PrismaService,
+    }) as unknown as PrismaService,
     channel_accounts,
     channel_contacts,
     clients,

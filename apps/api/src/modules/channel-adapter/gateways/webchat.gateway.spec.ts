@@ -27,6 +27,7 @@ import {
 } from '../../../common/utils/webchat-session.util';
 import { WebChatThrottle, WEBCHAT_THROTTLE_RULES } from './webchat-throttle';
 import { ConversationLockService } from '../../../common/services/conversation-lock.service';
+import { withMessageSequence } from '../../../common/testing/message-sequence.mock';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
 const WIDGET_ID = '00000000-0000-4000-a000-000000000002';
@@ -71,7 +72,10 @@ function makePrisma(): PrismaMock {
   prisma.$transaction.mockImplementation(
     async (fn: (tx: PrismaMock) => Promise<unknown>) => fn(prisma),
   );
-  return prisma;
+  // Teach the double to allocate `messages.sequence`. Re-stubs `$transaction`
+  // with the same self-passing behaviour the block above installs, and makes
+  // `conversations.update` hand back the claimed sequence.
+  return withMessageSequence(prisma);
 }
 
 /** The P2002 Prisma raises when the loser of a find-or-create race inserts. */

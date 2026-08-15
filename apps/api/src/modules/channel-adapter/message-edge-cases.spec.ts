@@ -42,6 +42,7 @@ import {
 } from './channel-adapter.service';
 import { PrismaService } from '../../common/services/prisma.service';
 import { ConversationLockService } from '../../common/services/conversation-lock.service';
+import { withMessageSequence } from '../../common/testing/message-sequence.mock';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
 const RESOLVED_BUSINESS_ID = '00000000-0000-4000-a000-000000000002';
@@ -76,7 +77,7 @@ interface Doubles {
 
 function makePrisma(): Doubles {
   const messages = { create: jest.fn().mockResolvedValue({ id: 'm1' }) };
-  const prisma = {
+  const prismaDouble: Record<string, unknown> = {
     channel_accounts: {
       findFirst: jest.fn().mockResolvedValue({
         id: ACCOUNT_ID,
@@ -106,7 +107,9 @@ function makePrisma(): Doubles {
       create: jest.fn().mockResolvedValue({ id: 'evt_1' }),
       update: jest.fn().mockResolvedValue({}),
     },
-  } as unknown as PrismaService;
+  };
+  withMessageSequence(prismaDouble);
+  const prisma = prismaDouble as unknown as PrismaService;
 
   return { prisma, messages };
 }

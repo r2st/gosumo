@@ -7,7 +7,9 @@ import { escapeLikeTerm } from '../../common/utils/search-pattern.util';
 import {
   MESSAGE_ORDER_NEWEST_FIRST,
   MESSAGE_ORDER_OLDEST_FIRST,
+  MESSAGE_ORDER_IN_CONVERSATION_NEWEST_FIRST,
 } from '../../common/utils/message-order';
+import { createSequencedMessage } from '../../common/utils/message-sequence';
 import { MAX_SEARCH_RESULTS, SEARCHABLE_MESSAGE_TYPES } from './message.constants';
 
 // ─────────────────────────────────────────────
@@ -99,25 +101,24 @@ export class MessageRepository {
    * Create a new message record.
    */
   async create(data: CreateMessageData): Promise<messages> {
-    return this.prisma.messages.create({
-      data: {
-        business_id: data.business_id,
-        conversation_id: data.conversation_id,
-        channel_account_id: data.channel_account_id,
-        direction: data.direction,
-        type: data.type ?? MessageType.TEXT,
-        status: data.status ?? MessageStatus.PENDING,
-        sender_type: data.sender_type,
-        sender_id: data.sender_id ?? null,
-        content: data.content,
-        text_content: data.text_content ?? null,
-        external_id: data.external_id ?? null,
-        is_ai_generated: data.is_ai_generated ?? false,
-        confidence_score: data.confidence_score ?? null,
-        ai_decision_id: data.ai_decision_id ?? null,
-        metadata: data.metadata ?? {},
-      },
+    const { message } = await createSequencedMessage(this.prisma, {
+      business_id: data.business_id,
+      conversation_id: data.conversation_id,
+      channel_account_id: data.channel_account_id,
+      direction: data.direction,
+      type: data.type ?? MessageType.TEXT,
+      status: data.status ?? MessageStatus.PENDING,
+      sender_type: data.sender_type,
+      sender_id: data.sender_id ?? null,
+      content: data.content,
+      text_content: data.text_content ?? null,
+      external_id: data.external_id ?? null,
+      is_ai_generated: data.is_ai_generated ?? false,
+      confidence_score: data.confidence_score ?? null,
+      ai_decision_id: data.ai_decision_id ?? null,
+      metadata: data.metadata ?? {},
     });
+    return message;
   }
 
   /**
@@ -191,8 +192,10 @@ export class MessageRepository {
    *
    * This feeds the AI context window, so the `LIMIT` is the part that matters:
    * an untied `created_at` sort lets a tie straddling the Nth row decide
-   * arbitrarily which of the tied messages the AI gets to see. See
-   * {@link MESSAGE_ORDER_NEWEST_FIRST}.
+   * arbitrarily which of the tied messages the AI gets to see — and "book me
+   * for 2pm" / "no wait, 3pm" read in the wrong order is a different
+   * instruction. Scoped to one conversation, so it sorts on `sequence`: see
+   * {@link MESSAGE_ORDER_IN_CONVERSATION_NEWEST_FIRST}.
    */
   async getLastN(
     businessId: string,
@@ -204,7 +207,7 @@ export class MessageRepository {
         business_id: businessId,
         conversation_id: conversationId,
       },
-      orderBy: MESSAGE_ORDER_NEWEST_FIRST,
+      orderBy: MESSAGE_ORDER_IN_CONVERSATION_NEWEST_FIRST,
       take: n,
     });
   }

@@ -980,6 +980,16 @@ model conversations {
   unread_count        Int @default(0)
   human_message_count Int @default(0)
 
+  /// High-water mark for `messages.sequence` in this conversation.
+  ///
+  /// Not a duplicate of `message_count`: that one is a denormalized display
+  /// tally maintained best-effort, while this is the allocator. A writer claims
+  /// the next sequence with `UPDATE ... SET message_seq = message_seq + 1`
+  /// inside the same transaction as the message insert, so the row lock
+  /// Postgres takes on this row is what serializes two concurrent inserts into
+  /// the same conversation.
+  message_seq Int @default(0)
+
   /// 1–5 customer satisfaction score
   csat_score        Int?      @db.Integer
   csat_submitted_at DateTime? @db.Timestamptz
@@ -1032,6 +1042,21 @@ model messages {
   conversation_id    String @db.Uuid
   channel_account_id String @db.Uuid
 
+  /// 1-based arrival order within the conversation. The total order.
+  ///
+  /// `created_at` is Postgres `now()` — the *transaction start* timestamp — so
+  /// two messages whose transactions begin in the same microsecond compare
+  /// equal, and `(created_at, id)` breaks that tie by a v4 UUID that carries no
+  /// time information. Every reader agrees, but on an order that is not the
+  /// arrival order. This column is: it is claimed under a row lock on
+  /// `conversations.message_seq`, so it reflects the order the writes actually
+  /// committed in, and a reader can tell a gap from a tie.
+  ///
+  /// Deliberately has no default. Prisma makes a defaultless required scalar a
+  /// required argument to `create()`, so every write path has to go through the
+  /// allocator and `tsc` names the ones that do not.
+  sequence Int
+
   direction MessageDirection
   type      MessageType      @default(TEXT)
   status    MessageStatus    @default(PENDING)
@@ -1076,6 +1101,20 @@ model messages {
   campaign        campaigns?       @relation(fields: [campaign_id], references: [id])
   file_uploads    file_uploads[]
 
+  /// The total order, and the constraint that makes it one. A duplicate claim
+  /// cannot exist, so a reader that sorts on this can trust it.
+  @@unique([conversation_id, sequence])
+  /// One message per (tenant, channel account, channel-assigned id).
+  ///
+  /// `webhook_events(source, external_id)` already turns a provider's retry
+  /// away at the door, but two paths walk around it: a `webhook-dlq` replay
+  /// deliberately skips the dedupe wall (a delivery parked *after* it was
+  /// recorded would otherwise be discarded as its own duplicate), and the
+  /// web-chat socket has no wall at all. This is the backstop at the row that
+  /// matters. `external_id` is null for outbound and system messages, and
+  /// Postgres treats nulls as distinct in a unique index, so those are
+  /// unaffected.
+  @@unique([business_id, channel_account_id, external_id])
   @@index([conversation_id, created_at(sort: Desc)])
   @@index([business_id, created_at(sort: Desc)])
   @@index([business_id, sender_type, created_at(sort: Desc)])

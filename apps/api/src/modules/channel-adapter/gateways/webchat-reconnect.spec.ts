@@ -41,6 +41,7 @@ import {
 } from '../adapters/webchat.adapter';
 import { signWebChatSession } from '../../../common/utils/webchat-session.util';
 import { WebChatThrottle } from './webchat-throttle';
+import { withMessageSequence } from '../../../common/testing/message-sequence.mock';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
 const WIDGET_ID = '00000000-0000-4000-a000-000000000002';
@@ -75,7 +76,8 @@ function makePrisma(): PrismaMock {
   prisma.$transaction.mockImplementation(
     async (fn: (tx: PrismaMock) => Promise<unknown>) => fn(prisma),
   );
-  return prisma;
+  // Teach the double to allocate `messages.sequence` — see the mock's own note.
+  return withMessageSequence(prisma);
 }
 
 type FakeSocket = Socket & { emit: jest.Mock; disconnect: jest.Mock };

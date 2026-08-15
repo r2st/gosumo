@@ -28,7 +28,9 @@ import { PrismaService } from '../../common/services/prisma.service';
 import {
   MESSAGE_ORDER_NEWEST_FIRST,
   MESSAGE_ORDER_OLDEST_FIRST,
+  MESSAGE_ORDER_IN_CONVERSATION_NEWEST_FIRST,
 } from '../../common/utils/message-order';
+import { withMessageSequence } from '../../common/testing/message-sequence.mock';
 import { MAX_SEARCH_RESULTS } from './message.constants';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
@@ -46,11 +48,13 @@ describe('MessageRepository', () => {
       count: jest.Mock;
       groupBy: jest.Mock;
     };
+    conversations: { update: jest.Mock };
     file_uploads: { create: jest.Mock; findMany: jest.Mock };
   };
 
   beforeEach(async () => {
-    prisma = {
+    prisma = withMessageSequence({
+      conversations: { update: jest.fn() },
       messages: {
         create: jest.fn().mockResolvedValue({ id: MESSAGE_ID }),
         findFirst: jest.fn().mockResolvedValue(null),
@@ -63,7 +67,7 @@ describe('MessageRepository', () => {
         create: jest.fn().mockResolvedValue({ id: 'file-1' }),
         findMany: jest.fn().mockResolvedValue([]),
       },
-    };
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [MessageRepository, { provide: PrismaService, useValue: prisma }],
@@ -123,7 +127,8 @@ describe('MessageRepository', () => {
         business_id: BUSINESS_ID,
         conversation_id: CONVERSATION_ID,
       });
-      expect(args.orderBy).toEqual(MESSAGE_ORDER_NEWEST_FIRST);
+      // Scoped to one conversation, so it gets the true arrival order.
+      expect(args.orderBy).toEqual(MESSAGE_ORDER_IN_CONVERSATION_NEWEST_FIRST);
       expect(args.take).toBe(20);
     });
   });
@@ -461,13 +466,25 @@ describe('MessageRepository — every message read is totally ordered', () => {
   it('reads newest-first everywhere except the reply thread, which reads forwards', async () => {
     // The direction is not arbitrary: `getLastN` and `search` want the *latest*
     // N, which only a DESC sort under a LIMIT gives; a thread renders forwards.
+    //
+    // Which of the two newest-first orders applies is decided by scope, not by
+    // taste: `getLastN` filters on one `conversation_id`, so it can lead with
+    // `sequence`; `findByConversation` does too but cursors on
+    // `(created_at, id)` and a keyset must agree with its sort; `search` is
+    // tenant-wide, where every conversation has a message 1 and leading with
+    // `sequence` would sort by position-in-thread while claiming recency.
+    const expected: Record<string, unknown> = {
+      findByConversation: MESSAGE_ORDER_NEWEST_FIRST,
+      getLastN: MESSAGE_ORDER_IN_CONVERSATION_NEWEST_FIRST,
+      search: MESSAGE_ORDER_NEWEST_FIRST,
+      findReplies: MESSAGE_ORDER_OLDEST_FIRST,
+    };
+
     for (const [name, run] of READS) {
       findMany.mockClear();
       await run(repository);
       const orderBy = findMany.mock.calls[0]?.[0]?.orderBy as unknown;
-      expect(orderBy).toEqual(
-        name === 'findReplies' ? MESSAGE_ORDER_OLDEST_FIRST : MESSAGE_ORDER_NEWEST_FIRST,
-      );
+      expect(orderBy).toEqual(expected[name]);
     }
   });
 
