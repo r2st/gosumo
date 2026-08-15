@@ -39,6 +39,8 @@ import {
 
 import { ChannelAdapterService } from './channel-adapter.service';
 import { PrismaService } from '../../common/services/prisma.service';
+import { WebhookDlqService } from '../webhook-log/webhook-dlq.service';
+import { ConversationLockService } from '../../common/services/conversation-lock.service';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
 const RESOLVED_BUSINESS_ID = '00000000-0000-4000-a000-000000000002';
@@ -73,7 +75,7 @@ interface PrismaDoubles {
   clients: { findFirst: jest.Mock; create: jest.Mock; update: jest.Mock };
   conversations: { findFirst: jest.Mock; create: jest.Mock; update: jest.Mock };
   messages: { create: jest.Mock };
-  webhook_events: { create: jest.Mock };
+  webhook_events: { create: jest.Mock; update: jest.Mock };
 }
 
 /** Prisma double whose `channel_accounts` lookup *succeeds* by default. */
@@ -108,7 +110,10 @@ function makePrisma(): PrismaDoubles {
     update: jest.fn().mockResolvedValue({}),
   };
   const messages = { create: jest.fn().mockResolvedValue({ id: 'm1' }) };
-  const webhook_events = { create: jest.fn().mockResolvedValue({ id: 'evt_1' }) };
+  const webhook_events = {
+    create: jest.fn().mockResolvedValue({ id: 'evt_1' }),
+    update: jest.fn().mockResolvedValue({}),
+  };
 
   return {
     prisma: {
@@ -147,20 +152,26 @@ describe('ChannelAdapterService — inbound persistence', () => {
   let service: ChannelAdapterService;
   let db: PrismaDoubles;
   let emitter: { emit: jest.Mock };
+  let dlq: { capture: jest.Mock; registerReplayer: jest.Mock };
 
   async function build(): Promise<void> {
     db = makePrisma();
     emitter = { emit: jest.fn() };
+    dlq = { capture: jest.fn().mockResolvedValue({ id: 'dl_1' }), registerReplayer: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChannelAdapterService,
         { provide: PrismaService, useValue: db.prisma },
         { provide: EventEmitter2, useValue: emitter },
+        { provide: WebhookDlqService, useValue: dlq },
+        ConversationLockService,
       ],
     }).compile();
 
     service = module.get(ChannelAdapterService);
+    // Replayers are registered on init; drive it so the registration is covered.
+    service.onModuleInit();
   }
 
   beforeEach(build);
@@ -583,31 +594,70 @@ describe('ChannelAdapterService — inbound persistence', () => {
       expect(event.conversationId).toBe('');
     });
 
-    it('still emits — with the caller\'s tenant — when persistence throws', async () => {
-      // Losing the message entirely is worse than losing its enrichment: the AI
-      // pipeline downstream can still answer the customer.
+    it('dead-letters instead of announcing a message it never stored', async () => {
+      // Previously this emitted a partial event and moved on. That event names
+      // a conversation that does not exist, so every listener drops it — the
+      // message was gone, and `webhook_events` had already deduped away the
+      // provider's redelivery. Park it for replay instead.
       db.conversations.findFirst.mockRejectedValue(new Error('db down'));
 
       await expect(inbound(makeNormalized())).resolves.toBeDefined();
 
-      expect(emitter.emit).toHaveBeenCalledWith(
+      expect(emitter.emit).not.toHaveBeenCalledWith(
         'message.received',
-        expect.objectContaining({ businessId: RESOLVED_BUSINESS_ID, conversationId: '' }),
+        expect.anything(),
       );
+      expect(dlq.capture).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: ChannelType.WHATSAPP,
+          eventType: 'message.received',
+          externalId: 'wamid.EXTERNAL_1',
+        }),
+        expect.any(Error),
+      );
+    });
+
+    it('captures the raw body, so a replay re-parses rather than trusting a stale envelope', async () => {
+      db.conversations.findFirst.mockRejectedValue(new Error('db down'));
+
+      await inbound(makeNormalized());
+
+      const [delivery] = dlq.capture.mock.calls[0] as [
+        { payload: { body: unknown; channelType: string; webhookEventId: string | null } },
+      ];
+      expect(delivery.payload.body).toEqual({ any: 'payload' });
+      expect(delivery.payload.channelType).toBe(ChannelType.WHATSAPP);
+      // The row written before processing, so a successful replay can close it.
+      expect(delivery.payload.webhookEventId).toBe('evt_1');
     });
 
     it('handles a non-Error rejection without masking it', async () => {
       db.conversations.findFirst.mockRejectedValue('a string, not an Error');
 
       await expect(inbound(makeNormalized())).resolves.toBeDefined();
-      expect(emitter.emit).toHaveBeenCalledWith('message.received', expect.anything());
+      expect(dlq.capture).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ message: 'a string, not an Error' }),
+      );
+    });
+
+    it('does not throw at the webhook boundary when the DLQ itself fails', async () => {
+      // A 500 here would be retried by the provider straight into the dedupe
+      // wall — one lost message turned into a lost message plus a 500.
+      db.conversations.findFirst.mockRejectedValue(new Error('db down'));
+      dlq.capture.mockRejectedValue(new Error('dlq down'));
+
+      await expect(inbound(makeNormalized())).resolves.toBeDefined();
     });
   });
 
   // ── Idempotency ─────────────────────────────────────────
 
   describe('duplicate webhook deliveries', () => {
-    it('processes a first delivery and records it', async () => {
+    it('claims a first delivery as unprocessed, then stamps it once it is', async () => {
+      // The row is a dedupe claim, not a receipt. Writing `processed: true`
+      // up front made a delivery that later failed indistinguishable from one
+      // that succeeded, in the one table an operator would check.
       await inbound(makeNormalized());
 
       expect(db.webhook_events.create).toHaveBeenCalledWith(
@@ -616,11 +666,36 @@ describe('ChannelAdapterService — inbound persistence', () => {
             source: ChannelType.WHATSAPP,
             external_id: 'wamid.EXTERNAL_1',
             signature_valid: true,
-            processed: true,
+            processed: false,
           }),
         }),
       );
       expect(db.messages.create).toHaveBeenCalled();
+      expect(db.webhook_events.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'evt_1' },
+          data: expect.objectContaining({ processed: true }),
+        }),
+      );
+    });
+
+    it('leaves the delivery unprocessed when it failed', async () => {
+      db.conversations.findFirst.mockRejectedValue(new Error('db down'));
+
+      await inbound(makeNormalized());
+
+      expect(db.webhook_events.update).not.toHaveBeenCalled();
+    });
+
+    it('still delivers the message when the processed stamp fails', async () => {
+      // The message is already stored and announced; a failed audit update
+      // must not turn a delivered message into a dead-lettered one.
+      db.webhook_events.update.mockRejectedValue(new Error('update failed'));
+
+      await expect(inbound(makeNormalized())).resolves.toBeDefined();
+
+      expect(emitter.emit).toHaveBeenCalledWith('message.received', expect.anything());
+      expect(dlq.capture).not.toHaveBeenCalled();
     });
 
     it('skips reprocessing when the unique constraint rejects the insert', async () => {

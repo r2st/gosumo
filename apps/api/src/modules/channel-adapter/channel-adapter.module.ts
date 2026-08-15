@@ -12,6 +12,7 @@ import { WebChatGateway } from './gateways/webchat.gateway';
 import { WebChatThrottle } from './gateways/webchat-throttle';
 import { PrismaService } from '../../common/services/prisma.service';
 import { ChannelsModule } from '../channels/channels.module';
+import { WebhookLogModule } from '../webhook-log/webhook-log.module';
 
 /**
  * ChannelAdapterModule
@@ -33,6 +34,11 @@ import { ChannelsModule } from '../channels/channels.module';
   imports: [
     ConfigModule,
     forwardRef(() => ChannelsModule),
+    // Supplies the dead-letter queue a failed inbound delivery is parked in.
+    // Without it a message whose processing throws is lost: `webhook_events`
+    // has already recorded the delivery, so the provider's redelivery — the
+    // only retry there was — comes back and is discarded as a duplicate.
+    WebhookLogModule,
   ],
   controllers: [ChannelAdapterController, WebChatWidgetController],
   providers: [

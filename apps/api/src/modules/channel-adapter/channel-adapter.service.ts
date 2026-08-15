@@ -4,6 +4,8 @@ import {
   NotFoundException,
   BadRequestException,
   UnauthorizedException,
+  Optional,
+  OnModuleInit,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
@@ -25,6 +27,8 @@ import {
 import { generateId, generateCorrelationId, normalizeIndianPhone, PayloadParseError } from '@gosumo/shared';
 import { PrismaService } from '../../common/services/prisma.service';
 import { findOrCreateClientByIdentity } from '../../common/utils/client-identity.util';
+import { WebhookDlqService } from '../webhook-log/webhook-dlq.service';
+import { ConversationLockService } from '../../common/services/conversation-lock.service';
 
 /**
  * Adapters whose provider batches several messages into one webhook implement
@@ -33,6 +37,32 @@ import { findOrCreateClientByIdentity } from '../../common/utils/client-identity
  */
 interface BatchParsingAdapter {
   parseInboundAll(req: RawRequest): NormalizedMessage[];
+}
+
+/**
+ * What a dead-lettered inbound delivery stores so a replay can re-run exactly
+ * the one message that failed.
+ *
+ * The raw body is kept rather than the parsed `NormalizedMessage` so a replay
+ * goes through the adapter's own parser — a parser fix shipped after the
+ * capture is then picked up by the retry, which is the case that matters most.
+ * `externalId` selects the message within a batched body; the other messages in
+ * that body have their own `webhook_events` rows and their own outcomes.
+ */
+interface StoredInboundDelivery {
+  channelType: ChannelType;
+  businessId: string;
+  externalId: string;
+  body: unknown;
+  headers: Record<string, string>;
+  /** The `webhook_events` row to mark processed once the replay succeeds. */
+  webhookEventId: string | null;
+}
+
+/** Outcome of recording a delivery in `webhook_events`. */
+interface DeliveryRecord {
+  duplicate: boolean;
+  webhookEventId: string | null;
 }
 
 /**
@@ -64,7 +94,7 @@ interface BatchParsingAdapter {
  * ```
  */
 @Injectable()
-export class ChannelAdapterService {
+export class ChannelAdapterService implements OnModuleInit {
   private readonly logger = new Logger(ChannelAdapterService.name);
 
   /**
@@ -76,7 +106,36 @@ export class ChannelAdapterService {
   constructor(
     private readonly eventEmitter: EventEmitter2,
     private readonly prisma: PrismaService,
+    /**
+     * Optional so the many unit suites that construct this service directly do
+     * not each have to stand up a queue-backed DLQ. Wired in production by
+     * {@link ChannelAdapterModule}; when it is absent a failed delivery is
+     * logged at ERROR and lost, which is exactly the behaviour this replaces —
+     * so an unwired deployment is no worse off, and a wired one recovers.
+     */
+    @Optional() private readonly webhookDlq?: WebhookDlqService,
+    /** Optional for the same reason; without it turns are not serialized. */
+    @Optional() private readonly conversationLock?: ConversationLockService,
   ) {}
+
+  /**
+   * Teach the webhook DLQ how to re-run a failed inbound delivery, one replayer
+   * per channel — the DLQ keys its registry on the same `source` string that
+   * was captured, and for channel webhooks that is the `ChannelType`.
+   *
+   * Like the payment replayers, these skip signature verification (the raw
+   * bytes it needs are not stored, and the payload only reached the DLQ because
+   * its signature already passed) and skip the `webhook_events` idempotency
+   * write, which by definition already happened.
+   */
+  onModuleInit(): void {
+    if (!this.webhookDlq) return;
+    for (const channelType of Object.values(ChannelType)) {
+      this.webhookDlq.registerReplayer(channelType, async (payload) => {
+        await this.replayInboundDelivery(payload);
+      });
+    }
+  }
 
   // ─────────────────────────────────────────────
   // Registry management
@@ -250,21 +309,76 @@ export class ChannelAdapterService {
     // uses, keyed on (source, external_id). Adapters that don't have a stable
     // provider id (e.g. WebChat) generate a fresh one per call, so this is a
     // no-op for them rather than a false-positive risk.
+    let webhookEventId: string | null = null;
     if (normalized.externalId) {
-      const isDuplicate = await this.isDuplicateWebhook(
+      const delivery = await this.recordWebhookDelivery(
         channelType,
         normalized.externalId,
         req.body,
         traceId,
       );
-      if (isDuplicate) {
+      if (delivery.duplicate) {
         this.logger.log(
           `[${traceId}] Duplicate ${channelType} webhook for external_id=${normalized.externalId} — skipping reprocessing`,
         );
         return;
       }
+      webhookEventId = delivery.webhookEventId;
     }
 
+    // Step 3+4: persist and announce. A failure here used to be logged and
+    // swallowed, which lost the message for good: the delivery was already in
+    // `webhook_events`, so the provider's own redelivery — the only retry
+    // mechanism there was — came back and was discarded as a duplicate. Park
+    // it in the DLQ instead, on the same retry schedule the payment module's
+    // gateway webhooks use.
+    // Serialized per sender: two webhook POSTs from the same buyer arriving
+    // together each run find-or-create for the contact and the conversation —
+    // a read followed by a write. Concurrently, both reads miss and both write,
+    // producing two OPEN conversations for one buyer and splitting their
+    // history. The batch loop above is already sequential for exactly this
+    // reason; this extends the same guarantee across separate requests.
+    const senderKey = ConversationLockService.conversationKey(
+      businessId,
+      `${normalized.channelAccountId}:${normalized.sender.externalId}`,
+    );
+
+    try {
+      await this.withSenderLock(senderKey, async () => {
+        await this.persistAndAnnounce(channelType, normalized, businessId, traceId);
+      });
+      await this.markWebhookProcessed(webhookEventId, traceId);
+    } catch (err) {
+      await this.deadLetterInbound(
+        channelType,
+        normalized,
+        req,
+        businessId,
+        webhookEventId,
+        traceId,
+        err,
+      );
+    }
+  }
+
+  /** Run `fn` under the sender lock, or directly when no lock is wired. */
+  private async withSenderLock(key: string, fn: () => Promise<void>): Promise<void> {
+    if (!this.conversationLock) return fn();
+    return this.conversationLock.runExclusive(key, fn);
+  }
+
+  /**
+   * Resolve the message's context, store it, and emit `message.received`.
+   *
+   * Throws on failure — that is the point. The caller dead-letters what this
+   * rejects with, so the delivery can be replayed from its stored payload.
+   */
+  private async persistAndAnnounce(
+    channelType: ChannelType,
+    normalized: NormalizedMessage,
+    businessId: string,
+    traceId: string,
+  ): Promise<void> {
     // Step 3: Resolve channel_account, client, conversation, and store message
     let resolvedBusinessId = businessId;
     let resolvedClientId = '';
@@ -461,6 +575,12 @@ export class ChannelAdapterService {
       this.logger.error(
         `[${traceId}] Failed to resolve context for inbound webhook: ${message}`,
       );
+      // Rethrow rather than fall through to the emit. Announcing a message that
+      // was never stored publishes ids nothing can be joined on — an event with
+      // an empty conversationId that every downstream listener drops — and it
+      // does so *quietly*, which is what made this loss invisible. The caller
+      // parks the delivery for replay instead.
+      throw err instanceof Error ? err : new Error(message);
     }
 
     // Step 4: Emit enriched domain event
@@ -486,41 +606,169 @@ export class ChannelAdapterService {
    * it's a duplicate, via the same unique-constraint-on-conflict pattern the
    * payment module uses for Razorpay/Stripe webhooks.
    *
+   * Written `processed: false`. The row is the dedupe claim, not a receipt:
+   * marking it processed *before* processing meant a delivery that then failed
+   * was indistinguishable from one that succeeded, in the one table an operator
+   * would check to find out. {@link markWebhookProcessed} stamps it once the
+   * message is actually stored and announced.
+   *
    * Fails open: if the insert fails for a reason other than the (source,
    * external_id) unique violation (e.g. a transient DB error), the message is
    * treated as new rather than silently dropped — losing a customer message
    * is worse than occasionally double-processing one.
    */
-  private async isDuplicateWebhook(
+  private async recordWebhookDelivery(
     channelType: ChannelType,
     externalId: string,
     body: unknown,
     traceId: string,
-  ): Promise<boolean> {
+  ): Promise<DeliveryRecord> {
     try {
-      await this.prisma.webhook_events.create({
+      const row = await this.prisma.webhook_events.create({
         data: {
           source: channelType,
           event_type: 'message.received',
           external_id: externalId,
           payload: (body ?? {}) as Prisma.InputJsonValue,
           signature_valid: true,
-          processed: true,
-          processed_at: new Date(),
+          processed: false,
         },
         select: { id: true },
       });
-      return false;
+      return { duplicate: false, webhookEventId: row?.id ?? null };
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        return true;
+        return { duplicate: true, webhookEventId: null };
       }
       this.logger.error(
         `[${traceId}] Failed to record webhook_events for ${channelType}/${externalId}: ` +
           `${err instanceof Error ? err.message : String(err)}`,
       );
-      return false;
+      return { duplicate: false, webhookEventId: null };
     }
+  }
+
+  /**
+   * Stamp the delivery as processed, now that the message is stored and
+   * announced.
+   *
+   * Best-effort: the work is already done and committed, so failing to update
+   * the audit flag must not turn a delivered message into a dead-lettered one.
+   */
+  private async markWebhookProcessed(
+    webhookEventId: string | null,
+    traceId: string,
+  ): Promise<void> {
+    if (!webhookEventId) return;
+    try {
+      await this.prisma.webhook_events.update({
+        where: { id: webhookEventId },
+        data: { processed: true, processed_at: new Date() },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `[${traceId}] Could not mark webhook_event ${webhookEventId} processed: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /**
+   * Park an inbound delivery whose processing threw, so it can be retried on
+   * our own schedule instead of relying on a provider redelivery that
+   * `webhook_events` will discard.
+   *
+   * Never throws: this runs inside a catch, and a DLQ failure must not change
+   * what the provider sees. A webhook endpoint that 500s here would be retried
+   * straight into the dedupe wall — the exact loss being fixed.
+   */
+  private async deadLetterInbound(
+    channelType: ChannelType,
+    normalized: NormalizedMessage,
+    req: RawRequest,
+    businessId: string,
+    webhookEventId: string | null,
+    traceId: string,
+    error: unknown,
+  ): Promise<void> {
+    const reason = error instanceof Error ? error.message : String(error);
+
+    if (!this.webhookDlq) {
+      this.logger.error(
+        `[${traceId}] Inbound ${channelType} message ${normalized.externalId} failed and no ` +
+          `webhook DLQ is wired — the message is lost: ${reason}`,
+      );
+      return;
+    }
+
+    const stored: StoredInboundDelivery = {
+      channelType,
+      businessId,
+      externalId: normalized.externalId,
+      body: req.body,
+      headers: req.headers ?? {},
+      webhookEventId,
+    };
+
+    try {
+      await this.webhookDlq.capture(
+        {
+          businessId,
+          webhookEventId,
+          source: channelType,
+          eventType: 'message.received',
+          // The DLQ dedupes nothing, but this is the operator's handle on which
+          // delivery is parked — keep it the provider's id.
+          externalId: normalized.externalId || normalized.id,
+          payload: stored as unknown as Record<string, unknown>,
+          headers: req.headers ?? {},
+          correlationId: traceId,
+        },
+        error,
+      );
+    } catch (dlqError) {
+      this.logger.error(
+        `[${traceId}] Failed to dead-letter inbound ${channelType} message ` +
+          `${normalized.externalId}: ` +
+          `${dlqError instanceof Error ? dlqError.message : String(dlqError)}`,
+      );
+    }
+  }
+
+  /**
+   * Re-run one captured inbound delivery from its stored payload.
+   *
+   * Re-parses the original body so the replay picks up any parser fix shipped
+   * since the capture, then re-runs only the message the entry was captured
+   * for. Throws on failure, which is how the DLQ decides to reschedule or
+   * discard.
+   */
+  private async replayInboundDelivery(payload: Record<string, unknown>): Promise<void> {
+    const stored = payload as unknown as StoredInboundDelivery;
+
+    if (!stored?.channelType || !stored.businessId) {
+      throw new Error('Dead-lettered inbound delivery is missing its channel or tenant');
+    }
+
+    const traceId = generateCorrelationId();
+    const adapter = this.getAdapter(stored.channelType);
+    const req: RawRequest = { headers: stored.headers ?? {}, body: stored.body };
+
+    const parsed = this.parseInboundBatch(adapter, req, traceId);
+    // A batched body carries several messages, each captured separately. Pick
+    // ours; replaying the whole batch would re-deliver siblings that succeeded.
+    const target = stored.externalId
+      ? parsed.find((m) => m.externalId === stored.externalId)
+      : parsed[0];
+
+    if (!target) {
+      throw new Error(
+        `Replayed ${stored.channelType} payload no longer contains message ${stored.externalId}`,
+      );
+    }
+
+    await this.persistAndAnnounce(stored.channelType, target, stored.businessId, traceId);
+    await this.markWebhookProcessed(stored.webhookEventId ?? null, traceId);
   }
 
   // ─────────────────────────────────────────────
