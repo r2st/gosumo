@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bull';
-import { PrismaService } from '../../common/services/prisma.service';
 import { BookingController } from './booking.controller';
 import { BookingService } from './booking.service';
 import { BookingRepository } from './booking.repository';
@@ -29,7 +28,6 @@ import { BOOKING_QUEUE } from './booking.constants';
     BookingRepository,
     BookingProcessor,
     GoogleCalendarService,
-    PrismaService,
   ],
   exports: [BookingService],
 })

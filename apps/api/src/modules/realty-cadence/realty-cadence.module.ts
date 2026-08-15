@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { PrismaService } from '../../common/services/prisma.service';
 import { RealtyCadenceController } from './realty-cadence.controller';
 import { RealtyCadenceService } from './realty-cadence.service';
 import { CadenceEngineService } from './cadence-engine.service';
@@ -14,7 +13,7 @@ import { RealtyLeadsModule } from '../realty-leads/realty-leads.module';
 @Module({
   imports: [RealtyLeadsModule],
   controllers: [RealtyCadenceController],
-  providers: [RealtyCadenceService, CadenceEngineService, RealtyCadenceRepository, PrismaService],
+  providers: [RealtyCadenceService, CadenceEngineService, RealtyCadenceRepository],
   exports: [RealtyCadenceService, CadenceEngineService],
 })
 export class RealtyCadenceModule {}

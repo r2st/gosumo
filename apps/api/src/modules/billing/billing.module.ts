@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
-import { PrismaService } from '../../common/services/prisma.service';
 import { RealtyHardeningModule } from '../realty-hardening/realty-hardening.module';
 import { BillingController } from './billing.controller';
 import { BillingService } from './billing.service';
@@ -23,7 +22,6 @@ import { PlanGuard } from './plan.guard';
   providers: [
     BillingService,
     BillingRepository,
-    PrismaService,
     { provide: APP_GUARD, useClass: PlanGuard },
   ],
   exports: [BillingService],

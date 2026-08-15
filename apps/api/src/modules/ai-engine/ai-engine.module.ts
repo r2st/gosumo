@@ -16,7 +16,6 @@ import { QdrantClient } from './rag/qdrant.client';
 import { EmbeddingService } from './rag/embedding.service';
 import { RagRetrieverService } from './rag/rag-retriever.service';
 import { KnowledgeIngestionService } from './rag/knowledge-ingestion.service';
-import { PrismaService } from '../../common/services/prisma.service';
 import { ChannelAdapterModule } from '../channel-adapter/channel-adapter.module';
 import { RealtyTenantModule } from './realty/realty-tenant.module';
 import { CatalogModule } from '../catalog/catalog.module';
@@ -54,7 +53,6 @@ import { CatalogMatchService } from './pipeline/catalog-match.service';
     EmbeddingService,
     RagRetrieverService,
     KnowledgeIngestionService,
-    PrismaService,
   ],
   exports: [AiEngineService],
 })

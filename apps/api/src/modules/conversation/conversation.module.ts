@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bull';
-import { PrismaService } from '../../common/services/prisma.service';
 import { ConversationController } from './conversation.controller';
 import { ConversationService } from './conversation.service';
 import { ConversationRepository } from './conversation.repository';
@@ -24,7 +23,6 @@ import { CONVERSATION_QUEUE } from './conversation.constants';
     ConversationService,
     ConversationRepository,
     ConversationProcessor,
-    PrismaService,
   ],
   exports: [ConversationService],
 })

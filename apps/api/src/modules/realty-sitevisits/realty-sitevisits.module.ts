@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bull';
-import { PrismaService } from '../../common/services/prisma.service';
 import { RealtyVisitsController } from './realty-sitevisits.controller';
 import { RealtyVisitsService } from './realty-sitevisits.service';
 import { RealtyVisitsRepository } from './realty-sitevisits.repository';
@@ -33,7 +32,6 @@ import { REALTY_VISITS_QUEUE } from './realty-sitevisits.constants';
     RealtyVisitsService,
     RealtyVisitsRepository,
     RealtyVisitsProcessor,
-    PrismaService,
   ],
   exports: [RealtyVisitsService],
 })

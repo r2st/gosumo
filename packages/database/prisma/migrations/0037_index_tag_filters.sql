@@ -1,0 +1,79 @@
+-- Migration: 0037_index_tag_filters
+-- Index the two tag filters that were reading a whole tenant per keystroke.
+--
+-- `conversations.tags` and `clients.tags` are `text[]`, and both list endpoints
+-- filter them with Prisma's `hasSome`, which emits `tags && ARRAY[...]`. No
+-- btree can serve an array-overlap predicate, and 0034 indexed the *search*
+-- boxes on both tables without touching the *tag* filters beside them — so the
+-- tag filter was the one control on those screens with no index behind it.
+--
+-- EXPLAIN (ANALYZE, BUFFERS) on PostgreSQL 17.11 against a synthetic copy of
+-- the schema at 200k conversations / 120k clients over 20 tenants with one
+-- holding 60% of the rows, tags drawn from a 40-value vocabulary skewed so one
+-- tag covers ~12% of rows and the tail covers ~1%. Queries as the repositories
+-- actually spell them, including the ORDER BY and LIMIT:
+--
+--   conversation.list count companion, selective tag   5,638 buf  16.08 ms ->  1,848 buf  2.92 ms
+--   conversation.list page, tag matches nothing      120,140 buf  44.70 ms ->      6 buf  0.03 ms
+--   contact segment members count, selective tag       3,497 buf  10.39 ms ->  1,221 buf  1.67 ms
+--   contact.findMany page, tag matches nothing        72,159 buf  25.93 ms ->      3 buf  0.01 ms
+--
+-- Two different failures are being fixed here, and the second is the bad one.
+--
+-- The *count* companion is unavoidable work: `list()` and `findMany()` both run
+-- `findMany` and `count` in one Promise.all, and the count has no LIMIT to stop
+-- it, so it evaluated the tag predicate over the whole table on every page load.
+-- It was a parallel seq scan, which is why it burned three workers to answer a
+-- question about one tenant's 1,295 rows.
+--
+-- The *page* query is the one that fell off a cliff. With a LIMIT 20 the
+-- planner prefers the ordered (business_id, last_message_at DESC) index and
+-- filters rows as it walks — fine while matches are dense, because the LIMIT
+-- fills in the first few hundred rows. When the tag matches nothing recent the
+-- LIMIT never fills, so it walked every one of the tenant's 120,000
+-- conversations and discarded all of them: 120,140 buffers to return zero rows.
+-- That is the ordinary outcome of picking a tag off the filter menu that no
+-- recent thread carries, and it is the same shape 0034 found behind the search
+-- boxes — the cost only appears on the query that matches nothing, which is
+-- exactly the one a bored planner-benchmark never runs.
+--
+-- Plain GIN, not a btree_gin composite over (business_id, tags). The composite
+-- was considered and is not worth the extension dependency: the planner already
+-- BitmapAnd's this index against the existing business_id btrees, and the
+-- measurements above are with the plain form.
+--
+-- Note what did *not* change: the selective- and common-tag page queries keep
+-- their existing ordered index-scan plans (1,876 buf / 1.45 ms and 200 buf /
+-- 0.14 ms, unchanged). That is the planner making the right call — walking a
+-- few hundred rows of an already-sorted index beats sorting a bitmap. The index
+-- is there to rescue the tail, and it does not disturb the head.
+--
+-- Cheap: 488 kB against a 42 MB conversations table, 288 kB against a 25 MB
+-- clients table. Array GIN only stores the distinct element values.
+--
+-- Index names match what `prisma migrate diff` emits for the corresponding
+-- @@index([tags], type: Gin) entries added to schema.prisma in the same commit,
+-- so the two stay in sync.
+--
+-- Deliberately not added:
+--   catalog_items.tags, canned_responses.tags
+--     Same `hasSome`/`has` shape and the same pathology, but both are small
+--     back-office tables (a catalog and a snippet library, not a growing event
+--     log) and neither was measured here. Add them the same way if either shows
+--     up in slow-query logs.
+--   messages(business_id, conversation_id, created_at)
+--     Still declined, for the reason 0034 gives: conversation_id is selective
+--     enough alone and the existing (conversation_id, created_at DESC) index
+--     serves the conversation view in ~15 buffers. Re-checked, unchanged.
+--
+-- Plain CREATE INDEX, matching every migration before this one. The GIN builds
+-- are sub-second at the volumes above but hold a SHARE lock for that time,
+-- which blocks writes to the table. On a live database run them as CREATE INDEX
+-- CONCURRENTLY instead; that form cannot run inside a transaction, so issue it
+-- outside any wrapping BEGIN/COMMIT.
+
+CREATE INDEX IF NOT EXISTS "conversations_tags_idx"
+    ON "conversations" USING GIN ("tags");
+
+CREATE INDEX IF NOT EXISTS "clients_tags_idx"
+    ON "clients" USING GIN ("tags");

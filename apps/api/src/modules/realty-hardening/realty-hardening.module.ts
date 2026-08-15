@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { BullModule } from '@nestjs/bull';
-import { PrismaService } from '../../common/services/prisma.service';
 import { RealtyLeadsModule } from '../realty-leads/realty-leads.module';
 import { REALTY_DLQ_QUEUE } from './realty-hardening.constants';
 import { RealtyHardeningController } from './realty-hardening.controller';
@@ -39,7 +38,6 @@ import { RealtyContradictionService } from './realty-contradiction.service';
   ],
   controllers: [RealtyHardeningController],
   providers: [
-    PrismaService,
     RealtyOperationsAuditService,
     RealtyRateLimiter,
     RealtyDlqRepository,

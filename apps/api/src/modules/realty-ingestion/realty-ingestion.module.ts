@@ -7,7 +7,6 @@ import { RealtyIvrService } from './realty-ivr.service';
 import { RealtyLeadsModule } from '../realty-leads/realty-leads.module';
 import { ChannelAdapterModule } from '../channel-adapter/channel-adapter.module';
 import { WebhookLogModule } from '../webhook-log/webhook-log.module';
-import { PrismaService } from '../../common/services/prisma.service';
 import { ParserHealthService } from './health/parser-health.service';
 import { ParserHealthRepository } from './health/parser-health.repository';
 import { ParserHealthProcessor } from './health/parser-health.processor';
@@ -54,7 +53,6 @@ import {
     ParserHealthService,
     ParserHealthRepository,
     ParserHealthProcessor,
-    PrismaService,
   ],
   exports: [RealtyIngestionService, RealtyIvrService, ParserHealthService],
 })

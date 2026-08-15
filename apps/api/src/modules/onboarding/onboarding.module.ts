@@ -4,7 +4,6 @@ import { OnboardingController } from './onboarding.controller';
 import { OnboardingService } from './onboarding.service';
 import { OnboardingAssistantService } from './onboarding-assistant.service';
 import { OnboardingRepository } from './onboarding.repository';
-import { PrismaService } from '../../common/services/prisma.service';
 import { LlmClientService } from '../ai-engine/pipeline/llm-client.service';
 
 /**
@@ -22,7 +21,6 @@ import { LlmClientService } from '../ai-engine/pipeline/llm-client.service';
     OnboardingService,
     OnboardingAssistantService,
     OnboardingRepository,
-    PrismaService,
     LlmClientService,
   ],
   exports: [OnboardingService],

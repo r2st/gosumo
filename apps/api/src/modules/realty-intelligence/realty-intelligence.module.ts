@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bull';
 import { ConfigModule } from '@nestjs/config';
-import { PrismaService } from '../../common/services/prisma.service';
 import { LlmClientService } from '../ai-engine/pipeline/llm-client.service';
 import { RealtyLeadsModule } from '../realty-leads/realty-leads.module';
 import { RealtyIntelligenceController } from './realty-intelligence.controller';
@@ -35,7 +34,6 @@ import { REALTY_INTELLIGENCE_QUEUE } from './realty-intelligence.constants';
     RealtyIntelligenceRepository,
     RealtyIntelligenceProcessor,
     LlmClientService,
-    PrismaService,
   ],
   exports: [RealtyIntelligenceService],
 })

@@ -1,7 +1,6 @@
 import { Module, OnModuleInit, Logger } from '@nestjs/common';
 import { BullModule, InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
-import { PrismaService } from '../../common/services/prisma.service';
 import { RealtyHardeningModule } from '../realty-hardening/realty-hardening.module';
 import { ComplianceController } from './compliance.controller';
 import { ComplianceService } from './compliance.service';
@@ -41,7 +40,6 @@ import {
     ComplianceNoticeService,
     RetentionService,
     RetentionProcessor,
-    PrismaService,
   ],
   exports: [ComplianceService, ConsentService, ComplianceNoticeService],
 })

@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { PrismaService } from '../../common/services/prisma.service';
 import { RealtyPilotController } from './realty-pilot.controller';
 import { RealtyPilotRepository } from './realty-pilot.repository';
 import { MigrationService } from './migration.service';
@@ -37,7 +36,6 @@ import { RealtyBrokerModule } from '../realty-broker/realty-broker.module';
     AutonomyService,
     LaunchGateService,
     NoShipService,
-    PrismaService,
   ],
   exports: [AutonomyService, LaunchGateService, NoShipService, MigrationService],
 })

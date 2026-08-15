@@ -842,6 +842,10 @@ model clients {
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
   @@index([email(ops: raw("gin_trgm_ops"))], type: Gin)
   @@index([phone(ops: raw("gin_trgm_ops"))], type: Gin)
+  // `tags` is filtered with hasSome (`tags && ARRAY[...]`), which no btree can
+  // serve. Both the contact list and every getSegmentMembers call carry it.
+  // See migration 0037 for the measurements.
+  @@index([tags], type: Gin)
   @@map("clients")
 }
 
@@ -1013,6 +1017,10 @@ model conversations {
   // Conversation search — same unanchored-ILIKE story as clients.
   @@index([subject(ops: raw("gin_trgm_ops"))], type: Gin)
   @@index([current_topic(ops: raw("gin_trgm_ops"))], type: Gin)
+  // Inbox tag filter, `tags && ARRAY[...]`. Unindexed it walked the tenant's
+  // whole last_message_at index whenever the tag matched nothing recent.
+  // See migration 0037 for the measurements.
+  @@index([tags], type: Gin)
   @@map("conversations")
 }
 

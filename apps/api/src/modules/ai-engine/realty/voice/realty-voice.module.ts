@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { PrismaService } from '../../../../common/services/prisma.service';
 import { RealtyAiModule } from '../realty-ai.module';
 import { RealtyLeadsModule } from '../../../realty-leads/realty-leads.module';
 import { RealtyInventoryModule } from '../../../realty-inventory/realty-inventory.module';
@@ -38,7 +37,6 @@ import { VoiceMessageRouter } from './voice-message.router';
     TranscriptionService,
     VoiceCommandHistoryService,
     VoiceMessageRouter,
-    PrismaService,
   ],
   exports: [VoiceNoteProcessorService, TranscriptionService],
 })

@@ -7,7 +7,6 @@ import { WebhookDlqRepository } from './webhook-dlq.repository';
 import { WebhookDlqService } from './webhook-dlq.service';
 import { WebhookDlqProcessor } from './webhook-dlq.processor';
 import { WEBHOOK_DLQ_QUEUE } from './webhook-dlq.constants';
-import { PrismaService } from '../../common/services/prisma.service';
 
 /**
  * WebhookLogModule — inbound webhook observability *and* recovery.
@@ -31,7 +30,6 @@ import { PrismaService } from '../../common/services/prisma.service';
     WebhookDlqRepository,
     WebhookDlqService,
     WebhookDlqProcessor,
-    PrismaService,
   ],
   exports: [WebhookLogService, WebhookDlqService],
 })

@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bull';
-import { PrismaService } from '../../common/services/prisma.service';
 import { NotificationController } from './notification.controller';
 import { NotificationService } from './notification.service';
 import { NotificationRepository } from './notification.repository';
@@ -39,7 +38,6 @@ import { NOTIFICATION_QUEUE } from './notification.constants';
     SmsSender,
     WhatsAppSender,
     PushSender,
-    PrismaService,
     // The rate limiter takes an optional rules map with a default value, so it
     // is constructed via a factory rather than relying on DI for that param.
     {

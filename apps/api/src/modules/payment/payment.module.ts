@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { PrismaService } from '../../common/services/prisma.service';
 import { PaymentController } from './payment.controller';
 import { PaymentService } from './payment.service';
 import { InvoiceService } from './invoice.service';
@@ -30,7 +29,6 @@ import { WebhookLogModule } from '../webhook-log/webhook-log.module';
     PaymentRepository,
     RazorpayService,
     StripeService,
-    PrismaService,
   ],
   exports: [PaymentService, InvoiceService],
 })

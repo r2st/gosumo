@@ -1,7 +1,6 @@
 import { Module, OnModuleInit, Logger } from '@nestjs/common';
 import { BullModule, InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
-import { PrismaService } from '../../common/services/prisma.service';
 import { RealtyLeadsModule } from '../realty-leads/realty-leads.module';
 import { RealtyInventoryModule } from '../realty-inventory/realty-inventory.module';
 import { BillingModule } from '../billing/billing.module';
@@ -57,7 +56,6 @@ import { RealtyEoiController } from './eoi/eoi.controller';
   controllers: [RealtySheetsController, RealtyCrmController, RealtyEoiController],
   providers: [
     RealtyIntegrationsRepository,
-    PrismaService,
     RazorpayService,
     // Sheets
     { provide: GOOGLE_SHEETS_CLIENT, useClass: GoogleSheetsClient },

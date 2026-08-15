@@ -10,7 +10,6 @@ import { WebChatAdapter } from './adapters/webchat.adapter';
 import { EmailAdapter } from './adapters/email.adapter';
 import { WebChatGateway } from './gateways/webchat.gateway';
 import { WebChatThrottle } from './gateways/webchat-throttle';
-import { PrismaService } from '../../common/services/prisma.service';
 import { ChannelsModule } from '../channels/channels.module';
 import { WebhookLogModule } from '../webhook-log/webhook-log.module';
 
@@ -50,7 +49,6 @@ import { WebhookLogModule } from '../webhook-log/webhook-log.module';
     EmailAdapter,
     WebChatGateway,
     WebChatThrottle,
-    PrismaService,
   ],
   exports: [ChannelAdapterService],
 })

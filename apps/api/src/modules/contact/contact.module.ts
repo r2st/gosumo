@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { ContactController } from './contact.controller';
 import { ContactService } from './contact.service';
 import { ContactRepository } from './contact.repository';
-import { PrismaService } from '../../common/services/prisma.service';
 
 /**
  * ContactModule — contact management and segmentation.
@@ -12,7 +11,7 @@ import { PrismaService } from '../../common/services/prisma.service';
  */
 @Module({
   controllers: [ContactController],
-  providers: [ContactService, ContactRepository, PrismaService],
+  providers: [ContactService, ContactRepository],
   exports: [ContactService],
 })
 export class ContactModule {}

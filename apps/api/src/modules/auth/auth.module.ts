@@ -14,7 +14,6 @@ import { RolesGuard } from './guards/roles.guard';
 import { AuthThrottleGuard } from './auth-throttle.guard';
 import { AuthThrottleLimiter } from './auth-throttle.limiter';
 import { redisProvider, REDIS_CLIENT, RedisLifecycle } from './redis.provider';
-import { PrismaService } from '../../common/services/prisma.service';
 
 @Module({
   imports: [
@@ -67,7 +66,6 @@ import { PrismaService } from '../../common/services/prisma.service';
     // has no lifecycle hook of its own — this is what closes the socket when
     // Nest tears the app down.
     RedisLifecycle,
-    PrismaService,
   ],
   exports: [
     AuthService,
@@ -75,7 +73,6 @@ import { PrismaService } from '../../common/services/prisma.service';
     JwtStrategy,
     RolesGuard,
     AuthThrottleLimiter,
-    PrismaService,
     REDIS_CLIENT,
   ],
 })

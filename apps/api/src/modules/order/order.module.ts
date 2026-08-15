@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { PrismaService } from '../../common/services/prisma.service';
 import { OrderController } from './order.controller';
 import { OrderService } from './order.service';
 import { OrderRepository } from './order.repository';
@@ -32,7 +31,6 @@ import { AddressRepository } from './address.repository';
     AddressController,
   ],
   providers: [
-    PrismaService,
     OrderService,
     OrderRepository,
     CartService,

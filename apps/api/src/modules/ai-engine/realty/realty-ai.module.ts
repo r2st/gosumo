@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { PrismaService } from '../../../common/services/prisma.service';
 import { RealtyLeadsModule } from '../../realty-leads/realty-leads.module';
 import { RealtyInventoryModule } from '../../realty-inventory/realty-inventory.module';
 import { RealtyIntelligenceModule } from '../../realty-intelligence/realty-intelligence.module';
@@ -50,7 +49,6 @@ import { RealtyMessageBridgeService } from './realty-message-bridge.service';
     LlmClientService,
     GuardrailsService,
     ContextLoaderService,
-    PrismaService,
   ],
   exports: [RealtyAiService, RealtyIntentClassifierService, BltcExtractorService, RealtyGuardrailsService],
 })
