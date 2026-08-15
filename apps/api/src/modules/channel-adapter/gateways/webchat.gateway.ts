@@ -28,6 +28,7 @@ import {
   verifyWebChatSession,
 } from "../../../common/utils/webchat-session.util";
 import { clientIp } from "../../../common/utils/client-ip.util";
+import { corsOptionsFor } from "../../../common/utils/cors.util";
 import { WebChatThrottle } from "./webchat-throttle";
 
 interface SessionContext {
@@ -37,9 +38,31 @@ interface SessionContext {
   conversationId: string;
 }
 
+/**
+ * Where the web-chat widget may be embedded, from `WEBCHAT_ALLOWED_ORIGINS`
+ * (comma-separated), defaulting to anywhere.
+ *
+ * Read from `process.env` rather than `ConfigService` because the
+ * `@WebSocketGateway` decorator below is evaluated when this class is defined,
+ * long before the DI container exists.
+ */
+export function webChatCorsOptions(
+  raw = process.env["WEBCHAT_ALLOWED_ORIGINS"] ?? "*",
+): { origin: string | string[]; credentials: boolean } {
+  return corsOptionsFor(raw);
+}
+
+/**
+ * The widget is embedded on customer sites, so unlike the REST API its default
+ * allow-list genuinely is "anywhere" — but that makes `credentials: true`
+ * exactly the combination browsers refuse (see `corsOptionsFor`). Pairing it
+ * with the wildcard did not loosen anything; it broke every credentialed
+ * handshake while still inviting every origin to attempt one. Credentials come
+ * back on the moment an operator names real origins.
+ */
 @WebSocketGateway({
   namespace: "/webchat",
-  cors: { origin: "*", credentials: true },
+  cors: webChatCorsOptions(),
 })
 export class WebChatGateway
   implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy

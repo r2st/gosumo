@@ -2,7 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Socket } from 'socket.io';
 import { ChannelType, MessageContentType } from '@gosumo/shared';
-import { WebChatGateway } from './webchat.gateway';
+import { WebChatGateway, webChatCorsOptions } from './webchat.gateway';
 import { PrismaService } from '../../../common/services/prisma.service';
 import { ChannelAdapterService } from '../channel-adapter.service';
 import {
@@ -82,6 +82,37 @@ function makeConfig(secret: string = SECRET): ConfigService {
     ),
   } as unknown as ConfigService;
 }
+
+describe('webChatCorsOptions', () => {
+  it('defaults to any origin with credentials OFF', () => {
+    // The widget is embedded on customer sites, so the wildcard is the honest
+    // default — but pairing it with credentials is the combination browsers
+    // refuse outright, which broke every credentialed handshake rather than
+    // permitting one.
+    expect(webChatCorsOptions(undefined)).toEqual({ origin: '*', credentials: false });
+  });
+
+  it('turns credentials back on once real origins are named', () => {
+    expect(webChatCorsOptions('https://shop.example, https://www.shop.example')).toEqual({
+      origin: ['https://shop.example', 'https://www.shop.example'],
+      credentials: true,
+    });
+  });
+
+  it('reads WEBCHAT_ALLOWED_ORIGINS when no argument is given', () => {
+    const previous = process.env['WEBCHAT_ALLOWED_ORIGINS'];
+    process.env['WEBCHAT_ALLOWED_ORIGINS'] = 'https://shop.example';
+    try {
+      expect(webChatCorsOptions()).toEqual({
+        origin: 'https://shop.example',
+        credentials: true,
+      });
+    } finally {
+      if (previous === undefined) delete process.env['WEBCHAT_ALLOWED_ORIGINS'];
+      else process.env['WEBCHAT_ALLOWED_ORIGINS'] = previous;
+    }
+  });
+});
 
 describe('WebChatGateway', () => {
   let gateway: WebChatGateway;

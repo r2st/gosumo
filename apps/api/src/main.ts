@@ -5,6 +5,10 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { assertChannelEncryptionKey } from './common/utils/encryption.util';
+import {
+  allowCredentials,
+  resolveCorsOrigin as parseCorsOrigin,
+} from './common/utils/cors.util';
 
 /** True when this process is running as production. */
 export function isProduction(): boolean {
@@ -16,22 +20,10 @@ export function isProduction(): boolean {
  * list; anything else is passed through, so an unset var still means `*`.
  */
 export function resolveCorsOrigin(raw = process.env['CORS_ORIGIN'] ?? '*'): string | string[] {
-  return raw.includes(',') ? raw.split(',').map((s) => s.trim()).filter(Boolean) : raw;
+  return parseCorsOrigin(raw);
 }
 
-/**
- * Whether credentialed cross-origin requests may be allowed.
- *
- * `Access-Control-Allow-Origin: *` together with
- * `Access-Control-Allow-Credentials: true` is the one combination the CORS
- * spec forbids outright — and advertising it invites any origin to try. The
- * wildcard is only ever a local-development convenience, so when it is in
- * effect credentials come off rather than the origin being narrowed, which
- * keeps a deployment that has not set `CORS_ORIGIN` working exactly as it did.
- */
-export function allowCredentials(origin: string | string[]): boolean {
-  return origin !== '*';
-}
+export { allowCredentials };
 
 /**
  * Swagger publishes every route, DTO and example the API has. That is the
