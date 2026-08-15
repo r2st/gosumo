@@ -5,7 +5,7 @@
  * not depend on anything external, readiness must actually fail (with a 503)
  * when a dependency is down, and neither may hang.
  */
-import { HttpStatus } from '@nestjs/common';
+import { HttpStatus, Logger } from '@nestjs/common';
 import type { Response } from 'express';
 import { PrismaService } from '../../common/services/prisma.service';
 import type { RedisClient } from '../auth/redis.provider';
@@ -515,6 +515,43 @@ describe('HealthService — vector store never gates readiness', () => {
     expect(body).not.toContain('10.0.0.4');
     expect(body).not.toContain('ECONNREFUSED');
     expect(report.dependencies.vector.error).toBe('unreachable');
+  });
+
+  it('does not log an ERROR when the vector store is down', async () => {
+    /**
+     * The level, pinned.
+     *
+     * This probe fails on every poll in a deployment with no Qdrant — the live
+     * production configuration — and it cannot make the instance unready. An
+     * ERROR per poll would therefore be a permanent false alarm, and a log that
+     * always contains errors is one nobody reads. The single WARN below is the
+     * line that says what the failure costs.
+     */
+    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const { service } = makeService({ isReachable: jest.fn().mockResolvedValue(false) });
+
+    await service.readiness();
+
+    expect(error).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Vector store unreachable'));
+
+    error.mockRestore();
+    warn.mockRestore();
+  });
+
+  it('still logs an ERROR for a dependency that does gate readiness', async () => {
+    // The exemption is scoped to the vector store, not widened into silence.
+    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const { service } = makeService({
+      ping: jest.fn().mockRejectedValue(new Error('ECONNREFUSED 127.0.0.1:6379')),
+    });
+
+    await service.readiness();
+
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('redis'));
+    jest.restoreAllMocks();
   });
 
   it('answers 200 from the controller with the vector store down', async () => {

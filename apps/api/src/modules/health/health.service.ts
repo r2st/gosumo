@@ -256,10 +256,21 @@ export class HealthService {
     // `isReachable()` resolves false rather than throwing, so it is wrapped to
     // look like the other probes: a false becomes the rejection `probe()`
     // reports as `unreachable`, and a hang is still cut off by its timeout.
-    return this.probe('vector', async () => {
-      const reachable = await this.qdrant!.isReachable();
-      if (!reachable) throw new Error('vector store did not answer');
-    });
+    //
+    // Logged at debug, not error. This probe fails on every poll in a
+    // deployment with no Qdrant — which is what production runs today — and it
+    // cannot make the instance unready, so an ERROR per poll would be a
+    // permanent false alarm. The one line worth an operator's attention is the
+    // WARN in `probeReadiness`, which says what the failure actually costs;
+    // this keeps the driver's own message reachable underneath it.
+    return this.probe(
+      'vector',
+      async () => {
+        const reachable = await this.qdrant!.isReachable();
+        if (!reachable) throw new Error('vector store did not answer');
+      },
+      'debug',
+    );
   }
 
   /**
@@ -291,6 +302,17 @@ export class HealthService {
   private async probe(
     name: string,
     fn: () => Promise<unknown>,
+    /**
+     * How loudly a failure of *this* dependency is worth saying.
+     *
+     * `error` is right for the dependencies that gate readiness: the instance
+     * is about to leave rotation and the driver's message is the first thing
+     * anyone will want. It is wrong for one that by design cannot — the vector
+     * store fails this probe on every poll in a deployment that simply has no
+     * Qdrant, and an ERROR that fires forever on a supported configuration is
+     * how a log stops being read.
+     */
+    level: 'error' | 'warn' | 'debug' = 'error',
   ): Promise<DependencyReport> {
     const startedAt = Date.now();
     let timer: NodeJS.Timeout | undefined;
@@ -314,7 +336,7 @@ export class HealthService {
     } catch (err) {
       // The detail an operator needs, on the side of the wire that is already
       // trusted with it.
-      this.logger.error(
+      this.logger[level](
         `Readiness probe "${name}" failed: ${err instanceof Error ? err.message : String(err)}`,
       );
       return {
