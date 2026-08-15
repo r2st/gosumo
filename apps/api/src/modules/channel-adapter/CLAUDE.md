@@ -50,6 +50,7 @@ pnpm --filter @gosumo/api test --testPathPattern=modules/channel-adapter
 - **Duplicate detection:** `external_id` + `source` in `webhook_events` has a unique constraint — duplicate webhook deliveries within 24h are silently skipped via this DB constraint
 - **Media re-upload:** always download media from channel CDN immediately and re-upload to GoSumo S3 — channel CDN URLs expire and must never be stored directly
 - **Web Chat** is a Socket.IO gateway, not an HTTP webhook endpoint — the same module, but different entry point
+- **Web Chat outbound goes through the outbox**, not straight to a socket. `WebChatAdapter` has no socket and `WebChatGateway` has no adapter, so replies pass through `webchatResponseMap` in `webchat.adapter.ts`. Write to it with `enqueueWebChatResponse()` — never `.set()` directly: the helper is what notifies the gateway (registered as the delivery sink in its `onModuleInit`) and what applies the three ceilings. Undeliverable replies are bounded per session (`WEBCHAT_OUTBOX_MAX_PER_SESSION`, newest kept), per process (`WEBCHAT_OUTBOX_MAX_SESSIONS`, coldest shed) and by age (`WEBCHAT_OUTBOX_TTL_MS`). A visitor reconnecting flushes their backlog on `chat:init`.
 - **WhatsApp rate limit:** 80 msg/sec per phone number — outbound sends are rate-limited via Redis; do not bypass
 - Adding a new channel = implement the `ChannelAdapter` interface from `@gosumo/shared` and register it in `channel-registry.ts`
 - **Outbound retry policy:** 3 attempts with exponential backoff (1s → 4s → 16s); emit `message.failed` after the third failure

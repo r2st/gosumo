@@ -1,11 +1,16 @@
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Socket } from 'socket.io';
-import { ChannelType } from '@gosumo/shared';
+import { ChannelType, MessageContentType } from '@gosumo/shared';
 import { WebChatGateway } from './webchat.gateway';
 import { PrismaService } from '../../../common/services/prisma.service';
 import { ChannelAdapterService } from '../channel-adapter.service';
-import { webchatResponseMap } from '../adapters/webchat.adapter';
+import {
+  WebChatAdapter,
+  enqueueWebChatResponse,
+  setWebChatDeliverySink,
+  webchatResponseMap,
+} from '../adapters/webchat.adapter';
 import {
   signWebChatSession,
   verifyWebChatSession,
@@ -850,6 +855,118 @@ describe('WebChatGateway', () => {
       gateway.deliverPendingMessages();
 
       expect(webchatResponseMap.get('offline-session')).toHaveLength(1);
+    });
+  });
+
+  // ─────────────────────────────────────────────
+  // Outbox delivery
+  //
+  // The gateway is the only thing in the process that can reach a visitor's
+  // socket, and `WebChatAdapter` is the only thing that produces replies.
+  // Nothing joined the two: the adapter's writes to `webchatResponseMap` were
+  // read by `deliverPendingMessages()`, which no caller anywhere invoked. Every
+  // AI reply to a web-chat visitor was therefore buffered, never sent, and
+  // never freed. These cover the join.
+  // ─────────────────────────────────────────────
+
+  describe('outbox delivery', () => {
+    afterEach(() => {
+      setWebChatDeliverySink(null);
+    });
+
+    it('delivers a reply the adapter sends to a live session, and keeps nothing', async () => {
+      const client = await initSession(gateway, prisma, 'socket-sink', 'sink-session');
+      gateway.onModuleInit();
+
+      const adapter = new WebChatAdapter({
+        get: jest.fn().mockReturnValue(''),
+      } as unknown as ConfigService);
+      await adapter.sendMessage({
+        channelAccountId: WIDGET_ID,
+        recipientExternalId: 'sink-session',
+        content: { type: MessageContentType.TEXT, text: 'three 2BHKs in Wakad' },
+      });
+
+      expect(client.emit).toHaveBeenCalledWith(
+        'chat:response',
+        expect.objectContaining({ text: 'three 2BHKs in Wakad' }),
+      );
+      expect(webchatResponseMap.has('sink-session')).toBe(false);
+    });
+
+    it('releases the sink on teardown so a dead gateway is not called again', async () => {
+      const client = await initSession(gateway, prisma, 'socket-teardown', 'teardown-session');
+      gateway.onModuleInit();
+      gateway.onModuleDestroy();
+
+      enqueueWebChatResponse('teardown-session', {
+        id: 'm1',
+        text: 'after shutdown',
+        timestamp: new Date(),
+      });
+
+      expect(client.emit).not.toHaveBeenCalled();
+      expect(webchatResponseMap.get('teardown-session')).toHaveLength(1);
+    });
+
+    it('flushes replies buffered while the visitor was between sockets', async () => {
+      // The reply lands with nobody connected — the sink fires and finds no
+      // socket, so the message waits.
+      gateway.onModuleInit();
+      enqueueWebChatResponse('reconnect-session', {
+        id: 'm1',
+        text: 'sorry for the wait',
+        timestamp: new Date('2026-08-13T13:00:00.000Z'),
+      });
+      expect(webchatResponseMap.get('reconnect-session')).toHaveLength(1);
+
+      // Reconnecting is the next moment it becomes deliverable; nothing else
+      // will push it, because the sink only fires on a new send.
+      const client = await initSession(gateway, prisma, 'socket-back', 'reconnect-session');
+
+      expect(client.emit).toHaveBeenCalledWith('chat:response', {
+        messageId: 'm1',
+        text: 'sorry for the wait',
+        timestamp: '2026-08-13T13:00:00.000Z',
+      });
+      expect(webchatResponseMap.has('reconnect-session')).toBe(false);
+    });
+  });
+
+  describe('flushSession', () => {
+    it('reports false, and holds the backlog, when the session has no socket', () => {
+      webchatResponseMap.set('no-socket', [
+        { id: 'm1', text: 'held', timestamp: new Date() },
+      ]);
+
+      expect(gateway.flushSession('no-socket')).toBe(false);
+      expect(webchatResponseMap.get('no-socket')).toHaveLength(1);
+    });
+
+    it('reports false for a session with nothing buffered', async () => {
+      await initSession(gateway, prisma, 'socket-nothing', 'nothing-session');
+
+      expect(gateway.flushSession('nothing-session')).toBe(false);
+    });
+
+    it('re-queues what did not go out when the socket fails part-way', async () => {
+      const client = await initSession(gateway, prisma, 'socket-partial', 'partial-session');
+      const emit = client.emit as unknown as jest.Mock;
+      emit.mockImplementationOnce(() => undefined).mockImplementationOnce(() => {
+        throw new Error('socket closed mid-emit');
+      });
+      const at = new Date('2026-08-13T14:00:00.000Z');
+      webchatResponseMap.set('partial-session', [
+        { id: 'a', text: 'first', timestamp: at },
+        { id: 'b', text: 'second', timestamp: at },
+        { id: 'c', text: 'third', timestamp: at },
+      ]);
+
+      expect(gateway.flushSession('partial-session')).toBe(true);
+
+      // Only the one that actually went out is dropped — replaying it would
+      // show the visitor the same message twice.
+      expect(webchatResponseMap.get('partial-session')?.map((m) => m.id)).toEqual(['b', 'c']);
     });
   });
 });

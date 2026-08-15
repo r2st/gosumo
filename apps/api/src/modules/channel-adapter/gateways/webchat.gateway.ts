@@ -7,7 +7,7 @@ import {
   ConnectedSocket,
   MessageBody,
 } from "@nestjs/websockets";
-import { Logger } from "@nestjs/common";
+import { Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Server, Socket } from "socket.io";
 import { EventEmitter2 } from "@nestjs/event-emitter";
@@ -19,7 +19,10 @@ import {
 import { generateId, generateCorrelationId } from "@gosumo/shared";
 import { PrismaService } from "../../../common/services/prisma.service";
 import { ChannelAdapterService } from "../channel-adapter.service";
-import { webchatResponseMap } from "../adapters/webchat.adapter";
+import {
+  setWebChatDeliverySink,
+  webchatResponseMap,
+} from "../adapters/webchat.adapter";
 import {
   signWebChatSession,
   verifyWebChatSession,
@@ -38,7 +41,9 @@ interface SessionContext {
   namespace: "/webchat",
   cors: { origin: "*", credentials: true },
 })
-export class WebChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class WebChatGateway
+  implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy
+{
   @WebSocketServer()
   server!: Server;
 
@@ -82,6 +87,73 @@ export class WebChatGateway implements OnGatewayConnection, OnGatewayDisconnect 
    */
   private sessionSecret(): string {
     return this.configService.get<string>("jwt.secret", "");
+  }
+
+  /**
+   * Become the outbox's delivery sink.
+   *
+   * `WebChatAdapter` writes every outbound reply into the shared buffer and has
+   * no way to reach a socket; this gateway holds the sockets and has no way to
+   * know a reply was written. Registering here is the join between them —
+   * without it the adapter's writes accumulated in a map nothing ever read, so
+   * web-chat visitors got no reply at all and the process kept every one.
+   */
+  onModuleInit(): void {
+    setWebChatDeliverySink((sessionId) => this.flushSession(sessionId));
+  }
+
+  /**
+   * Release the sink on teardown. It is module-global state, so a gateway that
+   * left itself registered would keep being called — holding this instance (and
+   * every socket it maps) alive past shutdown, and, in tests, delivering one
+   * suite's messages into another's mocks.
+   */
+  onModuleDestroy(): void {
+    setWebChatDeliverySink(null);
+  }
+
+  /**
+   * Deliver everything buffered for one session, if its socket is connected.
+   *
+   * Messages are removed only once emitted, so a session with no live socket
+   * keeps its backlog for the reconnect (bounded by the outbox's own TTL and
+   * size caps) rather than losing it here.
+   *
+   * @returns true when at least one message was delivered.
+   */
+  flushSession(sessionId: string): boolean {
+    const pending = webchatResponseMap.get(sessionId);
+    if (!pending || pending.length === 0) return false;
+
+    const socket = this.sessions.get(sessionId);
+    if (!socket) return false;
+
+    let delivered = 0;
+    try {
+      for (const msg of pending) {
+        socket.emit("chat:response", {
+          messageId: msg.id,
+          text: msg.text,
+          timestamp: msg.timestamp.toISOString(),
+        });
+        delivered += 1;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        "WebChat delivery to session " + sessionId + " failed after " + delivered +
+        " message(s): " + message,
+      );
+    }
+
+    // Drop exactly what went out. A partial failure leaves the rest queued for
+    // the next attempt instead of replaying what the visitor already has.
+    pending.splice(0, delivered);
+    if (pending.length === 0) {
+      webchatResponseMap.delete(sessionId);
+    }
+
+    return delivered > 0;
   }
 
   handleConnection(client: Socket): void {
@@ -232,6 +304,11 @@ export class WebChatGateway implements OnGatewayConnection, OnGatewayDisconnect 
       " client " + clientRecord.id +
       " conversation " + conversation.id,
     );
+
+    // A reply that landed while this visitor was between sockets is buffered,
+    // and nothing else will come along to push it: the sink only fires on a new
+    // send. Reconnecting is the moment it becomes deliverable.
+    this.flushSession(sessionId);
 
     return { sessionId: sessionToken, greeting };
   }
@@ -467,24 +544,16 @@ export class WebChatGateway implements OnGatewayConnection, OnGatewayDisconnect 
   }
 
   /**
-   * Poll and deliver pending messages from the webchat response map.
-   * This can be called periodically or triggered by events.
+   * Drain every session that currently has a live socket.
+   *
+   * Delivery is push-driven ({@link onModuleInit}) and reconnect-driven
+   * ({@link handleInit}), so this is a sweep rather than the mechanism: useful
+   * for an operator endpoint or a periodic safety net, and harmless to call
+   * when there is nothing to do.
    */
   deliverPendingMessages(): void {
-    for (const [sessionId, messages] of webchatResponseMap.entries()) {
-      if (messages.length === 0) continue;
-
-      const socket = this.sessions.get(sessionId);
-      if (socket) {
-        for (const msg of messages) {
-          socket.emit("chat:response", {
-            messageId: msg.id,
-            text: msg.text,
-            timestamp: msg.timestamp.toISOString(),
-          });
-        }
-        webchatResponseMap.delete(sessionId);
-      }
+    for (const sessionId of [...webchatResponseMap.keys()]) {
+      this.flushSession(sessionId);
     }
   }
 }
