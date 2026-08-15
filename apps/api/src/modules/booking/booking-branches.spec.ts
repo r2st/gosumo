@@ -122,7 +122,7 @@ describe('BookingService — branch coverage', () => {
   let repository: jest.Mocked<BookingRepository>;
   let eventEmitter: jest.Mocked<EventEmitter2>;
   let googleCalendar: jest.Mocked<GoogleCalendarService>;
-  let queue: { add: jest.Mock };
+  let queue: { add: jest.Mock; removeJobs: jest.Mock };
   let teamMembers: { findMany: jest.Mock };
   let tenantService: { assertTeamMember: jest.Mock };
 
@@ -166,7 +166,10 @@ describe('BookingService — branch coverage', () => {
       deleteEvent: jest.fn().mockResolvedValue(undefined),
     };
 
-    queue = { add: jest.fn().mockResolvedValue(undefined) };
+    queue = {
+      add: jest.fn().mockResolvedValue(undefined),
+      removeJobs: jest.fn().mockResolvedValue(undefined),
+    };
     teamMembers = { findMany: jest.fn().mockResolvedValue([]) };
     tenantService = { assertTeamMember: jest.fn().mockResolvedValue(undefined) };
 

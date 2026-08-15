@@ -1317,6 +1317,19 @@ export class BookingService {
       return;
     }
 
+    // Drop whatever is already scheduled for this booking before re-arming.
+    //
+    // The jobIds below are derived from the booking, so they are stable across
+    // reschedules — and Bull *silently ignores* an add whose jobId already
+    // exists (its addJob script returns the existing id and publishes a
+    // `duplicated` event, which nothing here listens for). Without this clear
+    // the re-arm was a no-op and the booking kept the reminders computed from
+    // its **original** start time: move a booking from Monday 10:00 to Friday
+    // 15:00 and the 24h reminder still pointed at Monday, so it fired against a
+    // time the client no longer had — or, once that moment had passed, never
+    // fired at all. Nothing surfaced it; `queue.add` resolves happily either way.
+    await this.clearReminders(bookingId);
+
     for (const minutesBefore of DEFAULT_REMINDER_OFFSETS_MINUTES) {
       const fireAt = booking.start_at.getTime() - minutesBefore * 60_000;
       const delay = fireAt - Date.now();
@@ -1330,6 +1343,26 @@ export class BookingService {
       });
     }
     this.logger.debug(`Scheduled reminders for booking ${bookingId}`);
+  }
+
+  /**
+   * Remove this booking's pending reminder jobs.
+   *
+   * Best-effort: a Redis hiccup here must not fail the reschedule that the
+   * client already sees as committed. The worst case is the stale-reminder
+   * behaviour this exists to prevent, which `fireReminder` still guards against
+   * by re-reading the booking before emitting.
+   */
+  private async clearReminders(bookingId: string): Promise<void> {
+    try {
+      await this.queue.removeJobs(`reminder:${bookingId}:*`);
+    } catch (err) {
+      this.logger.warn(
+        `Could not clear reminder jobs for booking ${bookingId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   private async scheduleAutoCancel(

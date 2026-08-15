@@ -118,7 +118,7 @@ describe('BookingService', () => {
   let repository: jest.Mocked<BookingRepository>;
   let eventEmitter: jest.Mocked<EventEmitter2>;
   let googleCalendar: jest.Mocked<GoogleCalendarService>;
-  let queue: { add: jest.Mock };
+  let queue: { add: jest.Mock; removeJobs: jest.Mock };
   let tenantService: { assertTeamMember: jest.Mock };
 
   beforeEach(async () => {
@@ -155,7 +155,10 @@ describe('BookingService', () => {
       deleteEvent: jest.fn(),
     };
 
-    queue = { add: jest.fn().mockResolvedValue(undefined) };
+    queue = {
+      add: jest.fn().mockResolvedValue(undefined),
+      removeJobs: jest.fn().mockResolvedValue(undefined),
+    };
     tenantService = { assertTeamMember: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -721,6 +724,52 @@ describe('BookingService', () => {
       expect(reminders.map((c) => c[1].minutesBefore).sort((a, b) => a - b)).toEqual([
         60, 1440,
       ]);
+    });
+
+    /**
+     * The jobIds are derived from the booking, so they survive a reschedule —
+     * and Bull's addJob script returns early when the id already exists rather
+     * than replacing the job. Re-arming without clearing first was therefore a
+     * silent no-op, leaving the reminders pointed at the booking's original
+     * start time.
+     */
+    it('clears the booking stale reminder jobs before re-arming them', async () => {
+      repository.findBookingById.mockResolvedValue(mockBooking() as never);
+
+      await service.scheduleReminders(BUSINESS_ID, BOOKING_ID);
+
+      expect(queue.removeJobs).toHaveBeenCalledWith(`reminder:${BOOKING_ID}:*`);
+      // The clear has to precede the adds, or it removes what it just scheduled.
+      expect(queue.removeJobs.mock.invocationCallOrder[0]).toBeLessThan(
+        queue.add.mock.invocationCallOrder[0]!,
+      );
+    });
+
+    it('does not clear reminders for a booking that no longer exists', async () => {
+      repository.findBookingById.mockResolvedValue(null as never);
+
+      await service.scheduleReminders(BUSINESS_ID, BOOKING_ID);
+
+      expect(queue.removeJobs).not.toHaveBeenCalled();
+      expect(queue.add).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The reschedule is already committed by the time reminders are re-armed, so
+     * a Redis failure here must not surface as a failed reschedule.
+     */
+    it('still schedules the new reminders when clearing the old ones fails', async () => {
+      repository.findBookingById.mockResolvedValue(mockBooking() as never);
+      queue.removeJobs.mockRejectedValue(new Error('redis unreachable'));
+
+      await expect(
+        service.scheduleReminders(BUSINESS_ID, BOOKING_ID),
+      ).resolves.toBeUndefined();
+
+      const reminders = queue.add.mock.calls.filter(
+        (c) => c[0] === BOOKING_JOBS.REMINDER,
+      );
+      expect(reminders).toHaveLength(2);
     });
 
     it('skips reminders that would fire in the past', async () => {

@@ -50,7 +50,10 @@ systemctl is-active gosumo-web || true
 
 echo ""
 echo "Health checks:"
-curl -sf http://localhost:3001/api/health 2>/dev/null && echo " API OK" || echo " API not responding yet (may need a few more seconds)"
+# `v1` is the global prefix set in main.ts; the health routes sit under it. The
+# old /api/health path 404s, so this check reported a failure on every deploy of
+# a perfectly healthy API — and a check that always cries wolf is worse than none.
+curl -sf http://localhost:3001/v1/health 2>/dev/null && echo " API OK" || echo " API not responding yet (may need a few more seconds)"
 curl -sf http://localhost:3002 2>/dev/null > /dev/null && echo " Web OK" || echo " Web not responding yet (may need a few more seconds)"
 
 # Check OPENROUTER_API_KEY
