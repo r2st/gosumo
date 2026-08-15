@@ -961,6 +961,47 @@ describe('WebChatGateway', () => {
     });
 
     it.each([
+      ['spaces', '   '],
+      ['a tab and a newline', '\t\n'],
+      ['a non-breaking space', ' '],
+      ['a zero-width space', '​'],
+      ['a byte-order mark', '﻿'],
+    ])('refuses %s, which is an empty message wearing a costume', async (_label, body) => {
+      // `text.length === 0` refused `""` and accepted every one of these. Each
+      // one is stored as a blank row, dropped again by the transcript loader,
+      // and in between drives an intent classification and a generation — two
+      // billed LLM calls over a message the model sees as empty. A widget that
+      // submits on Enter produces them by accident all day.
+      const client = await initSession(gateway, prisma, `blank-${_label}`, `b-${_label}`);
+      prisma.messages.create.mockResolvedValue({});
+      eventEmitter.emit.mockClear();
+
+      const result = await gateway.handleMessage(client, { text: body });
+
+      expect(result.received).toBe(false);
+      expect(prisma.messages.create).not.toHaveBeenCalled();
+      expect(
+        eventEmitter.emit.mock.calls.filter((c) => c[0] === 'message.received'),
+      ).toHaveLength(0);
+    });
+
+    it.each([
+      ['a lone emoji, which is a complete answer', '👍'],
+      ['a ZWJ emoji sequence, whose joiners must not read as blank', '👨‍👩‍👧‍👦'],
+      ['text padded with invisible characters', '​ hello ﻿'],
+      ['Devanagari', 'नमस्ते'],
+    ])('still accepts %s', async (_label, body) => {
+      const client = await initSession(gateway, prisma, `ok-${_label}`, `o-${_label}`);
+      prisma.messages.create.mockResolvedValue({});
+      prisma.conversations.update.mockResolvedValue({});
+
+      const result = await gateway.handleMessage(client, { text: body });
+
+      expect(result.received).toBe(true);
+      expect(prisma.messages.create).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
       ['null', null],
       ['undefined', undefined],
       ['a bare string', 'hello'],

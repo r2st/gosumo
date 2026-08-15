@@ -129,8 +129,10 @@ function makeHarness(): Harness {
   const contextHolder = { value: makeContext('') };
   const chunksHolder = { value: makeChunks(3) };
 
+  const hasActionableContent = jest.fn().mockResolvedValue(true);
   const contextLoader = {
     load: jest.fn().mockImplementation(() => Promise.resolve(contextHolder.value)),
+    hasActionableContent,
   } as unknown as ContextLoaderService;
 
   const ragRetrieve = jest.fn().mockImplementation(() => Promise.resolve(chunksHolder.value));

@@ -111,6 +111,39 @@ interface StoredInboundDelivery {
   webhookEventId: string | null;
 }
 
+/**
+ * The provider's own send time, reduced to something safe to store.
+ *
+ * `NormalizedMessage.timestamp` is typed `Date`, but it is built from whatever
+ * the provider put in the payload — Meta sends a unix-seconds *string*, Twilio
+ * omits it entirely — so an adapter fed a junk field produces `new Date(NaN)`,
+ * which Prisma rejects at write time. That would fail the whole message insert
+ * over a field nobody reads synchronously, turning a cosmetic ordering hint
+ * into lost customer messages, so an unusable value degrades to null and the
+ * row falls back to `created_at`.
+ *
+ * A timestamp far in the future is refused for the same reason it would be
+ * believed: it sorts above everything and would pin a message to the top of the
+ * thread forever. One hour of slack absorbs ordinary clock skew between the
+ * provider's clock and ours. Old timestamps are kept as-is — a genuinely late
+ * redelivery is the case this field exists to describe.
+ */
+export function normalizedSentAt(value: unknown, now: Date = new Date()): Date | null {
+  // `null` is refused before it reaches the Date constructor, which coerces it
+  // to 0 and hands back a perfectly valid 1970 — the one bad value that would
+  // pass the NaN check below and then sort the message to the top of every
+  // thread it appears in, forever.
+  if (value === null || value === undefined || value === '') return null;
+
+  const at = value instanceof Date ? value : new Date(value as string | number);
+  if (Number.isNaN(at.getTime())) return null;
+  if (at.getTime() > now.getTime() + SENT_AT_MAX_SKEW_MS) return null;
+  return at;
+}
+
+/** How far ahead of our own clock a provider timestamp may be and still be believed. */
+export const SENT_AT_MAX_SKEW_MS = 60 * 60 * 1000;
+
 /** Outcome of recording a delivery in `webhook_events`. */
 interface DeliveryRecord {
   duplicate: boolean;
@@ -648,6 +681,35 @@ export class ChannelAdapterService implements OnModuleInit {
             content: normalized.content as object,
             text_content: textContent,
             external_id: normalized.externalId,
+            // When the *sender* sent it, as the provider reported it — not when
+            // we happened to write the row. Every adapter parses this and it was
+            // then dropped, leaving `created_at` as the only time on the record,
+            // which is delivery order rather than send order. Those diverge
+            // exactly when it matters: Meta redelivers a webhook minutes after
+            // the fact, and a retried delivery then sorts *after* replies that
+            // were written while it was in flight. See
+            // `effectiveMessageTime` in the AI context loader, which is what
+            // reads this back.
+            sent_at: normalizedSentAt(normalized.timestamp),
+            // The customer's channel-side address, and deliberately nothing
+            // else. The AI pipeline resolves the reply recipient from here
+            // (`ContextLoaderService.extractSenderExternalId`), and until this
+            // was written that read returned null for every message the adapter
+            // stored — so `AiEngineService.deliver` bailed on the missing
+            // recipient and the generic assistant's replies were never sent at
+            // all. Realty tenants take the reply address off the event instead,
+            // which is why the floor was only missing under one of the two
+            // pipelines.
+            //
+            // `normalized.metadata` — the raw channel-specific extras — is
+            // pointedly *not* spread in here. It carries provider-shaped keys
+            // (Instagram story context, Meta signature headers, Twilio segment
+            // counts) whose meaning is channel-local, and one client can hold
+            // conversations on several channels. Anything downstream that reads
+            // a key off a message must be able to trust it means the same thing
+            // whichever channel the message arrived on, so a field earns its
+            // place here one at a time, by name.
+            metadata: { senderExternalId: normalized.sender.externalId },
           },
         });
         resolvedMessageId = stored.id;
@@ -886,6 +948,37 @@ export class ChannelAdapterService implements OnModuleInit {
     const traceId = correlationId ?? generateCorrelationId();
     const startMs = Date.now();
 
+    // The adapters have always declared their channel's ceiling and nothing has
+    // ever checked it, so an over-length body went to the provider and came
+    // back as a 400 whose text varies per channel — the one shape of failure
+    // that is both entirely predictable and expensive to diagnose. Refusing it
+    // here produces the same `message.failed` event with a reason that names
+    // the actual problem, and it does so without spending the API call.
+    //
+    // Refused rather than truncated: cutting a reply at 1000 characters ends it
+    // mid-sentence, and half an answer sent confidently is worse than an answer
+    // that visibly failed and can be retried by a human.
+    const overLimit = this.lengthOverrun(adapter, message);
+    if (overLimit) {
+      this.logger.error(`[${traceId}] Refusing to send ${channelType} message: ${overLimit}`);
+      const event: MessageFailedEvent = {
+        id: generateId(),
+        type: 'message.failed',
+        timestamp: new Date().toISOString(),
+        businessId,
+        correlationId: traceId,
+        messageId: message.correlationId ?? generateId(),
+        conversationId: '',
+        channelAccountId: message.channelAccountId,
+        channel: channelType,
+        recipientExternalId: message.recipientExternalId,
+        reason: overLimit,
+        attempts: 0,
+      };
+      this.eventEmitter.emit('message.failed', event);
+      return { success: false, error: overLimit, attempts: 0 };
+    }
+
     const result = await adapter.sendMessage(message);
 
     if (result.success) {
@@ -935,6 +1028,36 @@ export class ChannelAdapterService implements OnModuleInit {
     }
 
     return result;
+  }
+
+  /**
+   * Describe how an outbound body overruns its channel's declared ceiling, or
+   * `null` when it fits.
+   *
+   * Only text-bearing content is measured — a caption on an image is what the
+   * limit applies to there, and a payload with no text at all (a location, a
+   * bare document) has nothing this can bound. An adapter that declares no
+   * usable limit is left alone rather than given a made-up one.
+   */
+  private lengthOverrun(adapter: ChannelAdapter, message: OutboundMessage): string | null {
+    let limit: number;
+    try {
+      limit = adapter.getCapabilities().maxMessageLength;
+    } catch {
+      return null;
+    }
+    if (!Number.isFinite(limit) || limit <= 0) return null;
+
+    const content = message.content as { text?: unknown; caption?: unknown };
+    const body =
+      typeof content.text === 'string'
+        ? content.text
+        : typeof content.caption === 'string'
+          ? content.caption
+          : null;
+    if (body === null || body.length <= limit) return null;
+
+    return `message body is ${body.length} characters, over the ${adapter.channelType} limit of ${limit}`;
   }
 
   /**

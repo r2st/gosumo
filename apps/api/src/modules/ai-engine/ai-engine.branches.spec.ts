@@ -117,7 +117,8 @@ function parsedResponse(overrides: Partial<ParsedAiResponse> = {}): ParsedAiResp
 
 function makeHarness() {
   const load = jest.fn().mockResolvedValue(makeContext());
-  const contextLoader = { load } as unknown as ContextLoaderService;
+  const hasActionableContent = jest.fn().mockResolvedValue(true);
+  const contextLoader = { load, hasActionableContent } as unknown as ContextLoaderService;
 
   const classify = jest.fn().mockResolvedValue({
     intent: IntentType.BOOKING,

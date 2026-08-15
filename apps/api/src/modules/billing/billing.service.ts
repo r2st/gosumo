@@ -91,6 +91,63 @@ export interface UsageSummary {
  */
 export const BILLING_HISTORY_LIMIT = 12;
 
+/**
+ * Metadata key holding the day of the month the billing cycle is anchored to.
+ *
+ * The anchor cannot live in `billing_cycle_start` alone, because that column
+ * holds the *current* cycle's start and short months rewrite it. A tenant who
+ * signed up on the 31st has a February cycle that necessarily starts on the
+ * 28th, and rolling forward from that clamped date is what made the anchor
+ * drift: March started on the 28th too, and every month after it, so the
+ * boundary walked three days earlier and stayed there. Recording the day the
+ * tenant actually signed up keeps March 31 reachable from February 28.
+ */
+export const BILLING_ANCHOR_DAY_KEY = 'billingAnchorDay';
+
+/**
+ * The day of the month this subscription's cycles are anchored to.
+ *
+ * Falls back to the current cycle's own day for rows written before the anchor
+ * was recorded. That fallback preserves whatever day those rows are on now
+ * rather than inventing an original — a subscription that has already drifted
+ * cannot be un-drifted from the data that remains, and guessing would move a
+ * live tenant's billing boundary.
+ */
+export function readAnchorDay(sub: business_subscriptions): number {
+  const meta = (sub.metadata ?? {}) as Record<string, unknown>;
+  const stored = meta[BILLING_ANCHOR_DAY_KEY];
+  if (typeof stored === 'number' && Number.isInteger(stored) && stored >= 1 && stored <= 31) {
+    return stored;
+  }
+  return sub.billing_cycle_start.getUTCDate();
+}
+
+/**
+ * The start of the cycle following the one that began at `cycleStart`, landing
+ * on `anchorDay` and clamping to the month's length where it has to.
+ *
+ * Time of day is carried over unchanged. India runs no DST and the column is
+ * `timestamptz`, so adding a calendar month in UTC keeps the same wall-clock
+ * time in IST — the boundary a tenant sees does not wander across the day.
+ */
+export function cycleBoundaryAfter(cycleStart: Date, anchorDay: number): Date {
+  const year = cycleStart.getUTCFullYear();
+  const nextMonth = cycleStart.getUTCMonth() + 1;
+  // Day 0 of the month after the target is the target's last day.
+  const daysInNextMonth = new Date(Date.UTC(year, nextMonth + 1, 0)).getUTCDate();
+  return new Date(
+    Date.UTC(
+      year,
+      nextMonth,
+      Math.min(anchorDay, daysInNextMonth),
+      cycleStart.getUTCHours(),
+      cycleStart.getUTCMinutes(),
+      cycleStart.getUTCSeconds(),
+      cycleStart.getUTCMilliseconds(),
+    ),
+  );
+}
+
 /** Add `n` whole months to a date (UTC-safe, clamps day overflow to month end). */
 export function addMonths(date: Date, n: number): Date {
   const d = new Date(date.getTime());
@@ -153,6 +210,9 @@ export class BillingService {
         planPricePaise: def.pricePaise,
         overageRatePaise: OVERAGE_RATE_PAISE,
         billingCycleStart: now,
+        // Stamped at creation, when the signup day is still known. Every later
+        // read of it goes through `readAnchorDay`.
+        metadata: { [BILLING_ANCHOR_DAY_KEY]: now.getUTCDate() },
       });
     }
     return this.rolloverIfElapsed(sub, now);
@@ -166,11 +226,20 @@ export class BillingService {
     sub: business_subscriptions,
     now: Date,
   ): Promise<business_subscriptions> {
+    // Walked from the *anchor* day, not from each clamped result. Stepping
+    // `addMonths` off its own output loses the anchor the first time it passes
+    // a short month: Jan 31 → Feb 28 → Mar 28 → Apr 28, and the tenant's
+    // boundary has permanently moved three days earlier than the day they
+    // signed up on. `cycleBoundaryAfter` re-derives the day each time, so the
+    // same walk gives Jan 31 → Feb 28 → Mar 31 → Apr 30.
+    const anchorDay = readAnchorDay(sub);
     let cycleStart = sub.billing_cycle_start;
     let advanced = false;
-    while (addMonths(cycleStart, 1).getTime() <= now.getTime()) {
-      cycleStart = addMonths(cycleStart, 1);
+    let next = cycleBoundaryAfter(cycleStart, anchorDay);
+    while (next.getTime() <= now.getTime()) {
+      cycleStart = next;
       advanced = true;
+      next = cycleBoundaryAfter(cycleStart, anchorDay);
     }
     if (!advanced) return sub;
 
@@ -179,7 +248,7 @@ export class BillingService {
     // without a snapshot here the charge simply disappears the first time
     // anything reads the subscription after the cycle ends, leaving nothing to
     // invoice or reconcile against.
-    const metadata = this.closeCycleMetadata(sub);
+    const metadata = this.rolloverMetadata(sub, anchorDay);
 
     // Claim the rollover rather than just performing it. Every billing read
     // lands here, including the per-lead usage path, so when a cycle ends the
@@ -214,30 +283,42 @@ export class BillingService {
   }
 
   /**
-   * Append the closing cycle to the subscription's billing history, returning
-   * the new metadata — or `undefined` when the cycle saw no usage at all and
-   * there is nothing worth recording (a dormant tenant would otherwise
-   * accumulate an empty entry every month).
+   * The metadata to write alongside a rollover: the closing cycle's snapshot,
+   * plus the anchor day for subscriptions predating it.
    *
-   * Only one entry is ever appended per rollover: when a subscription has been
-   * idle across several months, the intermediate cycles are all zero and the
-   * counters belong entirely to the cycle that was actually open.
+   * Returns `undefined` when there is nothing to write at all — a dormant
+   * tenant whose anchor is already recorded would otherwise accumulate an
+   * identical write every month.
+   *
+   * Backfilling the anchor here is what makes the drift fix stick for existing
+   * rows. Without it `readAnchorDay` falls back to the current cycle start
+   * every time, and the cycle start is exactly the value a short month has
+   * already moved — so the anchor would be re-derived from the drifted date and
+   * the drift would resume on the next rollover.
    */
-  private closeCycleMetadata(
+  private rolloverMetadata(
     sub: business_subscriptions,
+    anchorDay: number,
   ): Prisma.InputJsonValue | undefined {
-    if (sub.leads_used_this_cycle <= 0 && sub.overage_leads_this_cycle <= 0) {
-      return undefined;
+    const meta = (sub.metadata ?? {}) as Record<string, unknown>;
+    const anchorMissing = meta[BILLING_ANCHOR_DAY_KEY] !== anchorDay;
+    const hadUsage = sub.leads_used_this_cycle > 0 || sub.overage_leads_this_cycle > 0;
+
+    if (!hadUsage) {
+      return anchorMissing
+        ? ({ ...meta, [BILLING_ANCHOR_DAY_KEY]: anchorDay } as Prisma.InputJsonValue)
+        : undefined;
     }
 
-    const meta = (sub.metadata ?? {}) as Record<string, unknown>;
     const prior = Array.isArray(meta['billingHistory'])
       ? (meta['billingHistory'] as ClosedCycle[])
       : [];
 
     const closed: ClosedCycle = {
       cycleStart: sub.billing_cycle_start.toISOString(),
-      cycleEnd: addMonths(sub.billing_cycle_start, 1).toISOString(),
+      // The same boundary the rollover walked to, so the invoice line and the
+      // new cycle's start agree on where one ended and the next began.
+      cycleEnd: cycleBoundaryAfter(sub.billing_cycle_start, anchorDay).toISOString(),
       plan: sub.plan,
       planPricePaise: sub.plan_price_paise,
       leadsUsed: sub.leads_used_this_cycle,
@@ -248,6 +329,7 @@ export class BillingService {
 
     const next: Record<string, unknown> = {
       ...meta,
+      [BILLING_ANCHOR_DAY_KEY]: anchorDay,
       billingHistory: [...prior, closed].slice(-BILLING_HISTORY_LIMIT),
     };
     return next as Prisma.InputJsonValue;
@@ -429,7 +511,11 @@ export class BillingService {
       seatLimit: sub.seat_limit,
       exchangeEnabled: def.exchangeEnabled,
       billingCycleStart: sub.billing_cycle_start,
-      billingCycleEnd: addMonths(sub.billing_cycle_start, 1),
+      // The date the rollover will actually use, not a month naively added.
+      // `addMonths` here would tell a tenant on a clamped February cycle that
+      // it ends on 28 March while the rollover ends it on the 31st — the
+      // billing page and the meter reset disagreeing by three days.
+      billingCycleEnd: cycleBoundaryAfter(sub.billing_cycle_start, readAnchorDay(sub)),
       leadsUsedThisCycle: sub.leads_used_this_cycle,
       overageLeadsThisCycle: sub.overage_leads_this_cycle,
       overageChargePaise: sub.overage_leads_this_cycle * sub.overage_rate_paise,

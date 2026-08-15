@@ -12,6 +12,7 @@ export interface CreateSubscriptionData {
   planPricePaise: number;
   overageRatePaise: number;
   billingCycleStart: Date;
+  metadata?: Prisma.InputJsonValue;
 }
 
 /** Partial subscription update — only provided fields are written. */
@@ -51,6 +52,7 @@ export class BillingRepository {
         plan_price_paise: data.planPricePaise,
         overage_rate_paise: data.overageRatePaise,
         billing_cycle_start: data.billingCycleStart,
+        ...(data.metadata !== undefined ? { metadata: data.metadata } : {}),
       },
     });
   }

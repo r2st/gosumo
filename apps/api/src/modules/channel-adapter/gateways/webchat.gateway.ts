@@ -28,6 +28,7 @@ import {
   verifyWebChatSession,
 } from "../../../common/utils/webchat-session.util";
 import { clientIp } from "../../../common/utils/client-ip.util";
+import { isBlankText } from "../../../common/utils/blank-text.util";
 import { corsOptionsFor } from "../../../common/utils/cors.util";
 import { ConversationLockService } from "../../../common/services/conversation-lock.service";
 import { isUniqueViolation } from "../../../common/utils/sequential-number.util";
@@ -639,9 +640,16 @@ export class WebChatGateway
     // whatever the LLM charges for it. Reject rather than truncate: silently
     // sending the AI a different message than the visitor typed is worse than
     // telling the widget the message did not go through.
-    if (typeof text !== "string" || text.length === 0) {
+    // Trimmed, not raw. `text.length === 0` refuses `""` and accepts `"   "`,
+    // and a whitespace-only turn is the same nothing wearing a costume: it is
+    // stored as a blank message, dropped again by the transcript loader (which
+    // filters empty turns), and in between it drives the full AI pipeline —
+    // an intent classification and a generation, both billed, both reasoning
+    // over an empty customer message. A widget that submits on Enter produces
+    // these by accident all day.
+    if (typeof text !== "string" || isBlankText(text)) {
       this.logger.warn(
-        "Rejected chat:message from socket " + client.id + " with a non-string or empty body",
+        "Rejected chat:message from socket " + client.id + " with a non-string or blank body",
       );
       return { received: false, messageId };
     }

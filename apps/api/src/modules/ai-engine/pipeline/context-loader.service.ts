@@ -8,6 +8,7 @@ import {
 } from '@gosumo/database';
 import { ChannelType, MessageContentType } from '@gosumo/shared';
 import { PrismaService } from '../../../common/services/prisma.service';
+import { isBlankText } from '../../../common/utils/blank-text.util';
 import { CONTEXT_MESSAGE_WINDOW } from '../ai-engine.constants';
 
 /**
@@ -34,6 +35,46 @@ export interface EnrichedContext {
 export interface TranscriptEntry {
   direction: 'INBOUND' | 'OUTBOUND';
   text: string;
+}
+
+/**
+ * When a message was *sent*, falling back to when we stored it.
+ *
+ * `created_at` is insert order, and insert order is not send order. A channel
+ * provider redelivers a webhook whenever our response was slow or non-200, so a
+ * message the buyer sent at 10:00 can be written at 10:04 — after the reply to
+ * the message they sent at 10:02. Ordering the model's history by `created_at`
+ * then hands it a transcript in which the answer precedes the question, and the
+ * model reasons over that as though it were the real sequence.
+ *
+ * `sent_at` is the provider's own time, written by the channel adapter. It is
+ * null for rows stored before that existed and for channels whose provider
+ * reports no time, so the fallback is not a rare path and must stay total.
+ */
+export function effectiveMessageTime(row: Pick<messages, 'sent_at' | 'created_at'>): number {
+  return (row.sent_at ?? row.created_at).getTime();
+}
+
+/**
+ * Put a window of messages back into send order, oldest first.
+ *
+ * The window itself is still selected by `created_at` — that is what the
+ * `(conversation_id, created_at)` index can answer, and a message delivered
+ * late enough to fall outside the window is not recoverable by sorting. This
+ * corrects the order *within* what was fetched, which covers the redelivery
+ * case the ordering actually breaks on.
+ *
+ * The tie-break on `id` is not decoration: providers report whole-second
+ * timestamps, so several messages in one burst share a `sent_at` exactly, and
+ * without it their relative order varies between two loads of the same
+ * conversation.
+ */
+export function inSendOrder<T extends Pick<messages, 'sent_at' | 'created_at' | 'id'>>(
+  rows: readonly T[],
+): T[] {
+  return rows
+    .slice()
+    .sort((a, b) => effectiveMessageTime(a) - effectiveMessageTime(b) || a.id.localeCompare(b.id));
 }
 
 /**
@@ -75,7 +116,9 @@ export class ContextLoaderService {
 
     const conversation = settled(conversationR, null);
     const triggerMessage = settled(triggerR, null);
-    const history = (settled(historyR, [] as messages[]) ?? []).slice().reverse();
+    // Selected newest-first by `created_at` so the index does the work, then put
+    // back into send order rather than merely reversed — see `inSendOrder`.
+    const history = inSendOrder(settled(historyR, [] as messages[]) ?? []);
     const business = settled(businessR, null);
     const businessRules = settled(rulesR, [] as business_rules[]) ?? [];
 
@@ -142,14 +185,54 @@ export class ContextLoaderService {
       return [];
     }
 
-    return rows
-      .slice()
-      .reverse()
+    return inSendOrder(rows)
       .map((row) => ({
         direction: row.direction === 'OUTBOUND' ? ('OUTBOUND' as const) : ('INBOUND' as const),
         text: this.extractText(row).trim(),
       }))
       .filter((turn) => turn.text.length > 0);
+  }
+
+  /**
+   * Whether a stored message carries anything the pipeline can reason about.
+   *
+   * False for exactly one case: a **TEXT** message whose text is blank once
+   * trimmed. A customer sends those by accident constantly — a stray space, a
+   * widget that submits on Enter, a WhatsApp message that is one invisible
+   * character — and each one used to run the full pipeline: an intent
+   * classification and a generation, two billed LLM calls, over an empty
+   * `<customer_message>`. Whatever the model invents from nothing is then sent
+   * to the customer as a reply to a message they did not knowingly send.
+   *
+   * Media is the reason this is not simply "is the text empty". An image or a
+   * voice note has no text and is very much a turn to answer, so only the TEXT
+   * type is judged on its text. The message is still stored and still appears
+   * in the operator's inbox either way — this decides whether the AI runs, not
+   * whether the customer was heard.
+   *
+   * A message that cannot be read at all is treated as actionable: refusing to
+   * process a turn because of a failed lookup is the more expensive mistake.
+   */
+  async hasActionableContent(businessId: string, messageId: string): Promise<boolean> {
+    let message: messages | null;
+    try {
+      message = await this.prisma.messages.findFirst({
+        where: { id: messageId, business_id: businessId },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Could not read message ${messageId} to check for content; processing it anyway: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return true;
+    }
+    if (!message) return true;
+    // `messages.type` is the Prisma `MessageType` enum and this is the shared
+    // `MessageContentType`; they carry the same string values but are distinct
+    // TS types, so the comparison is made on the value.
+    if (String(message.type) !== String(MessageContentType.TEXT)) return true;
+    return !isBlankText(this.extractText(message));
   }
 
   /**

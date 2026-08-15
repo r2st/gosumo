@@ -44,6 +44,16 @@ export interface ValidationResult {
 const VALID_URGENCY: Urgency[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 
 /**
+ * Length ceiling applied when the caller does not know the channel.
+ *
+ * 4096 is WhatsApp's limit specifically, and it was hardcoded here as though it
+ * were every channel's. It is the most permissive of the real ones bar email,
+ * so using it as the default keeps the old behaviour for callers with no
+ * channel in hand while letting the ones that do pass the true limit.
+ */
+export const DEFAULT_MAX_RESPONSE_CHARS = 4096;
+
+/**
  * ResponseParserService — turns the LLM's raw text into a strongly-typed,
  * sanitized {@link ParsedAiResponse}, then validates it before the pipeline
  * is allowed to act on it.
@@ -90,8 +100,11 @@ export class ResponseParserService {
   /**
    * Structural / safety validation applied before a response is dispatched.
    * Any failure forces the pipeline to escalate rather than send.
+   *
+   * @param maxChars The target channel's own ceiling. Defaults to
+   *   {@link DEFAULT_MAX_RESPONSE_CHARS} for callers that have no channel.
    */
-  validate(response: ParsedAiResponse): ValidationResult {
+  validate(response: ParsedAiResponse, maxChars: number = DEFAULT_MAX_RESPONSE_CHARS): ValidationResult {
     const failures: string[] = [];
 
     // A non-escalation decision must carry something to say.
@@ -109,9 +122,16 @@ export class ResponseParserService {
     if (response.piiDetected) {
       failures.push('model reported pii_detected');
     }
-    // Customer-facing text must be a sane length.
-    if (response.responseText && response.responseText.length > 4096) {
-      failures.push('response_text exceeds the maximum channel length');
+    // Customer-facing text must fit the channel it is going out on. This was
+    // pinned at 4096 — WhatsApp's limit — for every channel, so a 2000-character
+    // answer passed here and was then refused by Instagram (1000) or Twilio
+    // (1600) at send time, which surfaces as a delivery failure rather than as
+    // a response the pipeline could have escalated to a human who would have
+    // shortened it.
+    if (response.responseText && response.responseText.length > maxChars) {
+      failures.push(
+        `response_text is ${response.responseText.length} chars, over the ${maxChars}-char channel limit`,
+      );
     }
     // Every suggested action needs a type.
     for (const action of response.suggestedActions) {

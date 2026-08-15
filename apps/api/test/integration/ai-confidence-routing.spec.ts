@@ -221,6 +221,9 @@ function buildPipeline() {
 
   const contextLoader = {
     load: jest.fn(() => Promise.resolve(state.context)),
+    // The event path checks there is something to process before it spends a
+    // pipeline run; every message in these scenarios has real text.
+    hasActionableContent: jest.fn().mockResolvedValue(true),
   } as unknown as ContextLoaderService;
 
   const ragRetrieve = jest.fn(() => Promise.resolve(state.chunks));

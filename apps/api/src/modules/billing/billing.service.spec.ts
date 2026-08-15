@@ -406,9 +406,28 @@ describe('BillingService', () => {
       ]);
     });
 
-    it('records nothing for a dormant cycle that saw no usage at all', async () => {
+    it('records no history entry for a dormant cycle that saw no usage at all', async () => {
       repository.findByBusiness.mockResolvedValue(
         makeSub({ leads_used_this_cycle: 0, overage_leads_this_cycle: 0 }),
+      );
+      repository.claimCycleRollover.mockResolvedValue(rolled(makeSub()));
+
+      await service.getSubscription(BUSINESS_ID, new Date('2026-08-05T00:00:00Z'));
+
+      // The anchor day is still written — this subscription predates it, and
+      // leaving it unrecorded is what lets the cycle boundary drift off a short
+      // month (see `billing-cycle-anchor.spec.ts`). What a dormant cycle must
+      // not accumulate is an empty *history* entry every month.
+      expect(writtenMetadata()?.['billingHistory']).toBeUndefined();
+    });
+
+    it('writes nothing at all once the anchor is already on record', async () => {
+      repository.findByBusiness.mockResolvedValue(
+        makeSub({
+          leads_used_this_cycle: 0,
+          overage_leads_this_cycle: 0,
+          metadata: { billingAnchorDay: 1 },
+        }),
       );
       repository.claimCycleRollover.mockResolvedValue(rolled(makeSub()));
 

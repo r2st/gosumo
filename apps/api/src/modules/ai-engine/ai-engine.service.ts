@@ -35,7 +35,11 @@ import { IntentClassifierService } from './pipeline/intent-classifier.service';
 import { RagRetrieverService } from './rag/rag-retriever.service';
 import { PromptAssemblerService } from './pipeline/prompt-assembler.service';
 import { LlmClientService, LlmUnavailableError } from './pipeline/llm-client.service';
-import { ResponseParserService, ParsedAiResponse } from './pipeline/response-parser.service';
+import {
+  ResponseParserService,
+  ParsedAiResponse,
+  DEFAULT_MAX_RESPONSE_CHARS,
+} from './pipeline/response-parser.service';
 import {
   ConfidenceCalculatorService,
   ScoredConfidence,
@@ -297,7 +301,7 @@ export class AiEngineService {
         latencyMs: completion.latencyMs,
       };
 
-      const validation = this.responseParser.validate(parsed);
+      const validation = this.responseParser.validate(parsed, this.channelMaxChars(context));
       if (!validation.valid) {
         this.logger.warn(`[${traceId}] Response failed validation: ${validation.failures.join('; ')}`);
         return null;
@@ -911,6 +915,19 @@ export class AiEngineService {
     // survive into a callback.
     const { businessId, conversationId, messageId, correlationId } = event;
 
+    // A blank text message is not a turn. It is stored, it shows in the inbox,
+    // and it is dropped again by the transcript loader — but between those two
+    // it used to run the whole pipeline and answer an empty question at the
+    // price of two LLM calls. Checked here rather than inside `processMessage`
+    // so the public API keeps its "give me a decision for this message"
+    // contract; this is the event path deciding there is nothing to decide.
+    if (!(await this.contextLoader.hasActionableContent(businessId, messageId))) {
+      this.logger.debug(
+        `Skipping message ${messageId}: blank text message carries nothing to process`,
+      );
+      return;
+    }
+
     try {
       // One pipeline run at a time per conversation, in arrival order.
       // `emit` does not await listeners, so two messages sent a second apart
@@ -991,6 +1008,30 @@ export class AiEngineService {
       refundAmountPaise: amount,
       maxRefundAmountPaise: typeof max === 'number' ? max : undefined,
     };
+  }
+
+  /**
+   * The character ceiling of the channel this turn will be answered on.
+   *
+   * Every adapter has declared a `maxMessageLength` since the interface was
+   * written and nothing had ever read one — the pipeline validated against a
+   * hardcoded 4096 and the adapters handed their real limit straight to the
+   * provider. Instagram's is 1000 and Twilio's 1600, so on those two channels
+   * the check was more than twice as permissive as the thing it was protecting.
+   *
+   * Falls back to the default when the channel is unknown or its adapter is not
+   * registered (`getCapabilities` throws for an unregistered channel, and a
+   * missing adapter is a deployment problem that must not also become a failed
+   * generation).
+   */
+  private channelMaxChars(context: EnrichedContext): number {
+    if (!context.channel) return DEFAULT_MAX_RESPONSE_CHARS;
+    try {
+      const limit = this.channelAdapter.getCapabilities(context.channel).maxMessageLength;
+      return Number.isFinite(limit) && limit > 0 ? limit : DEFAULT_MAX_RESPONSE_CHARS;
+    } catch {
+      return DEFAULT_MAX_RESPONSE_CHARS;
+    }
   }
 
   /** Best-effort outbound delivery of a customer-facing message. */
