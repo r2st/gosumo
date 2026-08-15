@@ -7,7 +7,7 @@ import {
   ConnectedSocket,
   MessageBody,
 } from "@nestjs/websockets";
-import { Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { Logger, Optional, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Server, Socket } from "socket.io";
 import { EventEmitter2 } from "@nestjs/event-emitter";
@@ -29,6 +29,8 @@ import {
 } from "../../../common/utils/webchat-session.util";
 import { clientIp } from "../../../common/utils/client-ip.util";
 import { corsOptionsFor } from "../../../common/utils/cors.util";
+import { ConversationLockService } from "../../../common/services/conversation-lock.service";
+import { isUniqueViolation } from "../../../common/utils/sequential-number.util";
 import { WebChatThrottle } from "./webchat-throttle";
 
 interface SessionContext {
@@ -207,6 +209,9 @@ export class WebChatGateway
     private readonly channelAdapterService: ChannelAdapterService,
     private readonly configService: ConfigService,
     private readonly throttle: WebChatThrottle,
+    // Optional so the gateway is constructible in unit tests that do not build
+    // the global module — the same shape `ChannelAdapterService` uses.
+    @Optional() private readonly conversationLock?: ConversationLockService,
   ) {}
 
   /**
@@ -517,18 +522,38 @@ export class WebChatGateway
     // `channel_contacts.external_id`, the emitted events — keys on the raw id.
     const sessionToken = signWebChatSession(widgetId, secret, sessionId);
 
-    // Find or create a client for this webchat visitor
-    const clientRecord = await this.findOrCreateWebChatClient(
+    // Both calls below are find-or-create: a read that misses, then a write.
+    // A visitor can drive two of them at once without trying — the widget
+    // reconnects on every network blip and re-inits with the same token, and a
+    // second tab on the same page replays it too. Concurrently, both reads miss
+    // and both write, giving one visitor two clients and two conversations and
+    // splitting their history across threads the operator sees as separate
+    // people. Serialize per (widget, session), the same guarantee
+    // `handleInboundWebhook` takes per (channel account, sender).
+    //
+    // In-process only, like every other holder of this lock. The cross-process
+    // half is the `(channel_account_id, external_id)` unique constraint that
+    // `findOrCreateWebChatClient` now recovers from.
+    const sessionKey = ConversationLockService.conversationKey(
       channel.business_id,
-      sessionId,
-      widgetId,
+      `webchat:${widgetId}:${sessionId}`,
     );
 
-    // Find or create a conversation
-    const conversation = await this.findOrCreateConversation(
-      channel.business_id,
-      clientRecord.id,
-      widgetId,
+    const { clientRecord, conversation } = await this.withSessionLock(
+      sessionKey,
+      async () => {
+        const resolvedClient = await this.findOrCreateWebChatClient(
+          channel.business_id,
+          sessionId,
+          widgetId,
+        );
+        const resolvedConversation = await this.findOrCreateConversation(
+          channel.business_id,
+          resolvedClient.id,
+          widgetId,
+        );
+        return { clientRecord: resolvedClient, conversation: resolvedConversation };
+      },
     );
 
     // Store context for message handling
@@ -723,17 +748,81 @@ export class WebChatGateway
     return { received: true, messageId };
   }
 
+  /** Run `fn` under the session lock, or directly when no lock is wired. */
+  private async withSessionLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    if (!this.conversationLock) return fn();
+    return this.conversationLock.runExclusive(key, fn);
+  }
+
   /**
    * Find or create a client for a webchat visitor.
    * Uses the sessionId as the external identifier.
+   *
+   * The client row and its contact row are written together, and a lost race is
+   * recovered rather than surfaced. `channel_contacts` is unique on
+   * `(channel_account_id, external_id)`, so when two inits for one session get
+   * past the read the loser's contact insert raises P2002 — and because the
+   * client was inserted first and separately, that used to leave an orphan
+   * "Web Visitor" row behind for every collision *and* fail the visitor's init
+   * with nothing to retry. The transaction makes the pair atomic (the orphan
+   * rolls back with the contact), and the re-read turns the loser into the same
+   * reuse path it would have taken a moment later — the pattern
+   * `findOrCreateClientByIdentity` already uses for phone/email identities,
+   * which a webchat visitor has neither of.
    */
   private async findOrCreateWebChatClient(
     businessId: string,
     sessionId: string,
     channelAccountId: string,
   ) {
-    // Check if a client with this webchat session exists via channel_contacts
-    const existingContact = await this.prisma.channel_contacts.findFirst({
+    const existing = await this.findWebChatClient(businessId, sessionId);
+    if (existing) return existing;
+
+    const clientId = generateId();
+    try {
+      const client = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.clients.create({
+          data: {
+            id: clientId,
+            business_id: businessId,
+            name: "Web Visitor",
+          },
+        });
+
+        await tx.channel_contacts.create({
+          data: {
+            id: generateId(),
+            business_id: businessId,
+            client_id: clientId,
+            channel: ChannelType.WEB_CHAT,
+            channel_account_id: channelAccountId,
+            external_id: sessionId,
+          },
+        });
+
+        return created;
+      });
+
+      this.logger.log("Created webchat client " + clientId + " for session " + sessionId);
+      return client;
+    } catch (err) {
+      if (!isUniqueViolation(err)) throw err;
+
+      const raced = await this.findWebChatClient(businessId, sessionId);
+      // A P2002 with nothing to re-read means the violation was on some other
+      // constraint. Surfacing it beats returning a client that is not there.
+      if (!raced) throw err;
+
+      this.logger.debug(
+        "Reused webchat client " + raced.id + " for session " + sessionId + " after a concurrent init",
+      );
+      return raced;
+    }
+  }
+
+  /** The client behind this webchat session, or null if the session is new. */
+  private async findWebChatClient(businessId: string, sessionId: string) {
+    const contact = await this.prisma.channel_contacts.findFirst({
       where: {
         business_id: businessId,
         channel: ChannelType.WEB_CHAT,
@@ -741,35 +830,7 @@ export class WebChatGateway
       },
       include: { client: true },
     });
-
-    if (existingContact?.client) {
-      return existingContact.client;
-    }
-
-    // Create a new client and channel contact
-    const clientId = generateId();
-    const client = await this.prisma.clients.create({
-      data: {
-        id: clientId,
-        business_id: businessId,
-        name: "Web Visitor",
-      },
-    });
-
-    await this.prisma.channel_contacts.create({
-      data: {
-        id: generateId(),
-        business_id: businessId,
-        client_id: clientId,
-        channel: ChannelType.WEB_CHAT,
-        channel_account_id: channelAccountId,
-        external_id: sessionId,
-      },
-    });
-
-    this.logger.log("Created webchat client " + clientId + " for session " + sessionId);
-
-    return client;
+    return contact?.client ?? null;
   }
 
   /**

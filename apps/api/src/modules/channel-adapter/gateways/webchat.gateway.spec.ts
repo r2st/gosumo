@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { Prisma } from '@prisma/client';
 import { Socket } from 'socket.io';
 import { ChannelType, MessageContentType } from '@gosumo/shared';
 import {
@@ -25,6 +26,7 @@ import {
   verifyWebChatSession,
 } from '../../../common/utils/webchat-session.util';
 import { WebChatThrottle, WEBCHAT_THROTTLE_RULES } from './webchat-throttle';
+import { ConversationLockService } from '../../../common/services/conversation-lock.service';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
 const WIDGET_ID = '00000000-0000-4000-a000-000000000002';
@@ -51,16 +53,34 @@ type PrismaMock = {
   clients: { create: jest.Mock };
   conversations: { findFirst: jest.Mock; create: jest.Mock; update: jest.Mock };
   messages: { create: jest.Mock };
+  $transaction: jest.Mock;
 };
 
 function makePrisma(): PrismaMock {
-  return {
+  const prisma: PrismaMock = {
     channel_accounts: { findFirst: jest.fn() },
     channel_contacts: { findFirst: jest.fn(), create: jest.fn() },
     clients: { create: jest.fn() },
     conversations: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
     messages: { create: jest.fn() },
+    // The client+contact pair is written in one interactive transaction so a
+    // lost race rolls the orphan client back with it. The fake hands the same
+    // delegates to the callback, which is what a real `tx` is for these calls.
+    $transaction: jest.fn(),
   };
+  prisma.$transaction.mockImplementation(
+    async (fn: (tx: PrismaMock) => Promise<unknown>) => fn(prisma),
+  );
+  return prisma;
+}
+
+/** The P2002 Prisma raises when the loser of a find-or-create race inserts. */
+function uniqueViolation(): Error {
+  return new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+    code: 'P2002',
+    clientVersion: Prisma.prismaVersion.client,
+    meta: { target: ['channel_account_id', 'external_id'] },
+  });
 }
 
 function makeSocket(id = 'socket-1', query: Record<string, unknown> = {}): Socket {
@@ -1568,3 +1588,188 @@ async function initSession(
   await gateway.handleInit(client, { widgetId: WIDGET_ID, sessionId: token(sessionId) });
   return client;
 }
+
+// ─────────────────────────────────────────────
+// Concurrent init — one visitor, one thread
+// ─────────────────────────────────────────────
+
+/**
+ * `chat:init` is find-or-create twice over — the client, then the conversation
+ * — and a visitor drives two of them at once without meaning to: the widget
+ * re-inits with the same token on every reconnect, and a second tab replays it
+ * too. Concurrently both reads miss, both write, and one visitor becomes two
+ * clients on two threads that the operator sees as two different people.
+ *
+ * Two things close it, and both are tested here: the in-process lock, which
+ * serializes the pair, and the `(channel_account_id, external_id)` unique
+ * constraint recovery underneath it, which is what holds when the lock does not
+ * (a second instance, or a test that wires no lock).
+ */
+describe('WebChatGateway — concurrent init for one session', () => {
+  let gateway: WebChatGateway;
+  let prisma: PrismaMock;
+  let eventEmitter: { emit: jest.Mock };
+  let lock: ConversationLockService;
+
+  /** A store that behaves like the contact table's unique constraint. */
+  function wireStore(): { contacts: Map<string, { client: unknown }> } {
+    const contacts = new Map<string, { client: unknown }>();
+
+    prisma.channel_accounts.findFirst.mockResolvedValue({
+      id: WIDGET_ID,
+      business_id: BUSINESS_ID,
+      metadata: {},
+    });
+
+    prisma.channel_contacts.findFirst.mockImplementation(async ({ where }) => {
+      return contacts.get(where.external_id as string) ?? null;
+    });
+    prisma.clients.create.mockImplementation(async ({ data }) => ({ ...data }));
+    prisma.channel_contacts.create.mockImplementation(async ({ data }) => {
+      const key = data.external_id as string;
+      if (contacts.has(key)) throw uniqueViolation();
+      contacts.set(key, { client: { id: data.client_id, business_id: BUSINESS_ID } });
+      return data;
+    });
+
+    const conversations = new Map<string, { id: string }>();
+    prisma.conversations.findFirst.mockImplementation(async ({ where }) => {
+      return conversations.get(where.client_id as string) ?? null;
+    });
+    prisma.conversations.create.mockImplementation(async ({ data }) => {
+      conversations.set(data.client_id as string, { id: data.id as string });
+      return { ...data };
+    });
+
+    return { contacts };
+  }
+
+  beforeEach(() => {
+    prisma = makePrisma();
+    eventEmitter = { emit: jest.fn() };
+    lock = new ConversationLockService();
+    gateway = new WebChatGateway(
+      prisma as unknown as PrismaService,
+      eventEmitter as unknown as EventEmitter2,
+      {} as unknown as ChannelAdapterService,
+      makeConfig(),
+      new WebChatThrottle(),
+      lock,
+    );
+    webchatResponseMap.clear();
+  });
+
+  afterEach(() => {
+    webchatResponseMap.clear();
+  });
+
+  it('gives two simultaneous resumes of one session a single client and a single conversation', async () => {
+    wireStore();
+    const sessionId = 'session-shared';
+    const resume = { widgetId: WIDGET_ID, sessionId: token(sessionId) };
+
+    await Promise.all([
+      gateway.handleInit(makeSocket('socket-a'), resume),
+      gateway.handleInit(makeSocket('socket-b'), resume),
+    ]);
+
+    expect(prisma.clients.create).toHaveBeenCalledTimes(1);
+    expect(prisma.conversations.create).toHaveBeenCalledTimes(1);
+    // One thread means one `conversation.created`; two would fan a duplicate
+    // out across every module that listens for a new customer.
+    expect(
+      eventEmitter.emit.mock.calls.filter((c) => c[0] === 'conversation.created'),
+    ).toHaveLength(1);
+  });
+
+  it('still serializes when the two inits interleave inside the find-or-create', async () => {
+    wireStore();
+    // Make the contact read slow, which is the window the lock exists to close:
+    // without it both inits read "no contact" before either writes one.
+    const realFind = prisma.channel_contacts.findFirst.getMockImplementation()!;
+    prisma.channel_contacts.findFirst.mockImplementation(async (args) => {
+      await new Promise((r) => setTimeout(r, 5));
+      return realFind(args);
+    });
+    const resume = { widgetId: WIDGET_ID, sessionId: token('session-slow') };
+
+    await Promise.all([
+      gateway.handleInit(makeSocket('socket-a'), resume),
+      gateway.handleInit(makeSocket('socket-b'), resume),
+    ]);
+
+    expect(prisma.clients.create).toHaveBeenCalledTimes(1);
+    expect(prisma.conversations.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves distinct sessions untouched — the lock is per session, not global', async () => {
+    wireStore();
+
+    await Promise.all([
+      gateway.handleInit(makeSocket('socket-a'), {
+        widgetId: WIDGET_ID,
+        sessionId: token('session-one'),
+      }),
+      gateway.handleInit(makeSocket('socket-b'), {
+        widgetId: WIDGET_ID,
+        sessionId: token('session-two'),
+      }),
+    ]);
+
+    expect(prisma.clients.create).toHaveBeenCalledTimes(2);
+    expect(prisma.conversations.create).toHaveBeenCalledTimes(2);
+  });
+
+  it('recovers from a lost race at the unique constraint, with no orphan client left behind', async () => {
+    // No lock wired: this is the cross-process case, where the constraint is
+    // the only thing standing between two inits.
+    const unlocked = new WebChatGateway(
+      prisma as unknown as PrismaService,
+      eventEmitter as unknown as EventEmitter2,
+      {} as unknown as ChannelAdapterService,
+      makeConfig(),
+      new WebChatThrottle(),
+    );
+    const store = wireStore();
+    const sessionId = 'session-raced';
+    // The winner got there between our read and our write.
+    prisma.channel_contacts.findFirst
+      .mockResolvedValueOnce(null)
+      .mockImplementation(async () => store.contacts.get(sessionId) ?? null);
+    store.contacts.set(sessionId, {
+      client: { id: CLIENT_ID, business_id: BUSINESS_ID },
+    });
+
+    const result = await unlocked.handleInit(makeSocket('socket-late'), {
+      widgetId: WIDGET_ID,
+      sessionId: token(sessionId),
+    });
+
+    // The visitor is served, not 500'd, and lands on the winner's client.
+    expect(rawSessionId(result.sessionId)).toBe(sessionId);
+    expect(unlocked['sessionContext'].get(sessionId)?.clientId).toBe(CLIENT_ID);
+    // The client insert happened inside the transaction that then failed, so
+    // it rolled back with it rather than orphaning a "Web Visitor" row.
+    expect(prisma.$transaction).toHaveBeenCalled();
+  });
+
+  it('rethrows a unique violation it cannot resolve to a contact', async () => {
+    wireStore();
+    // P2002 on some *other* constraint: nothing to re-read, so returning a
+    // client id that is not there would be worse than the error.
+    prisma.channel_contacts.findFirst.mockResolvedValue(null);
+    prisma.channel_contacts.create.mockImplementation(async () => {
+      throw uniqueViolation();
+    });
+
+    // Surfaced, not swallowed into a session pointing at a client that does not
+    // exist — the visitor's widget retries an init it can see failed.
+    await expect(
+      gateway.handleInit(makeSocket('socket-x'), {
+        widgetId: WIDGET_ID,
+        sessionId: token('session-unresolvable'),
+      }),
+    ).rejects.toThrow('Unique constraint failed');
+    expect(gateway['sessionContext'].size).toBe(0);
+  });
+});

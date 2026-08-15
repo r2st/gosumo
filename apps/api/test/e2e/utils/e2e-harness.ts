@@ -104,6 +104,15 @@ export function makePrismaMock(
     } as never;
   }
 
+  // `$transaction` is not a model, but the WebChat gateway writes its client
+  // and channel_contact rows in one so a lost find-or-create race rolls the
+  // orphan client back. The stub runs the callback against these same
+  // delegates, which is what a real interactive `tx` gives those calls.
+  const withTx = base as Record<string, unknown>;
+  withTx['$transaction'] = jest.fn(
+    async (fn: (tx: unknown) => Promise<unknown>) => fn(base),
+  );
+
   return base;
 }
 
