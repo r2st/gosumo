@@ -63,6 +63,24 @@ export const WEBCHAT_THROTTLE_RULES = {
    * every session's messages; this is what bounds the total.
    */
   messageIp: { limit: 300, windowMs: 5 * MINUTE } as ThrottleWindow,
+
+  /**
+   * `chat:init` attempts per caller IP, charged before the widget is looked up.
+   *
+   * The `session` ceiling above is deliberately charged late — only once a
+   * widget has been validated and only for genuinely new sessions — so that a
+   * reconnect loop never burns it. That left the work *before* that point
+   * unrationed: every `chat:init` runs a `channel_accounts` query, and an
+   * unknown widgetId returns early having paid nothing. A single socket could
+   * therefore loop init with junk widgetIds and issue unbounded queries against
+   * a connection pool this deployment shares with another service, without ever
+   * opening a session or tripping any existing bucket.
+   *
+   * Sized well above any real reconnect pattern (Socket.IO backs off to ~5s
+   * between attempts, so a genuinely flaky visitor spends single digits here)
+   * and far below what makes looping the query worthwhile.
+   */
+  init: { limit: 240, windowMs: 5 * MINUTE } as ThrottleWindow,
 } as const;
 
 export type WebChatThrottleBucket = keyof typeof WEBCHAT_THROTTLE_RULES;

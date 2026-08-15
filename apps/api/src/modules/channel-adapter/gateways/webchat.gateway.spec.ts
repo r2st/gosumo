@@ -2,7 +2,11 @@ import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Socket } from 'socket.io';
 import { ChannelType, MessageContentType } from '@gosumo/shared';
-import { WebChatGateway, webChatCorsOptions } from './webchat.gateway';
+import {
+  WebChatGateway,
+  webChatCorsOptions,
+  WEBCHAT_MAX_MESSAGE_CHARS,
+} from './webchat.gateway';
 import { PrismaService } from '../../../common/services/prisma.service';
 import { ChannelAdapterService } from '../channel-adapter.service';
 import {
@@ -716,6 +720,73 @@ describe('WebChatGateway', () => {
   });
 
   // ─────────────────────────────────────────────
+  // Inbound payload validation
+  // ─────────────────────────────────────────────
+
+  /**
+   * `data` here is a parsed socket frame. The global `ValidationPipe` covers
+   * HTTP routes and never sees a Socket.IO event, so whatever the widget puts
+   * on the wire reaches Prisma and the AI pipeline exactly as sent.
+   */
+  describe('chat:message body validation', () => {
+    beforeEach(() => {
+      jest.spyOn(gateway['logger'], 'warn').mockImplementation();
+    });
+
+    it('refuses a message longer than the ceiling without storing or emitting it', async () => {
+      // The throttle bounds how *many* messages a session sends, which is the
+      // wrong dimension for the two costs that scale with size: the stored row
+      // and the per-token LLM call behind `message.received`.
+      const client = await initSession(gateway, prisma, 'socket-big', 'big-session');
+      prisma.messages.create.mockResolvedValue({});
+      eventEmitter.emit.mockClear();
+
+      const result = await gateway.handleMessage(client, {
+        text: 'x'.repeat(WEBCHAT_MAX_MESSAGE_CHARS + 1),
+      });
+
+      expect(result.received).toBe(false);
+      expect(prisma.messages.create).not.toHaveBeenCalled();
+      expect(
+        eventEmitter.emit.mock.calls.filter((c) => c[0] === 'message.received'),
+      ).toHaveLength(0);
+    });
+
+    it('accepts a message exactly at the ceiling', async () => {
+      // The boundary is inclusive; an off-by-one here silently truncates the
+      // longest legitimate turn a visitor can send.
+      const client = await initSession(gateway, prisma, 'socket-edge', 'edge-session');
+      prisma.messages.create.mockResolvedValue({});
+      prisma.conversations.update.mockResolvedValue({});
+
+      const result = await gateway.handleMessage(client, {
+        text: 'x'.repeat(WEBCHAT_MAX_MESSAGE_CHARS),
+      });
+
+      expect(result.received).toBe(true);
+      expect(prisma.messages.create).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['a number', 42],
+      ['an object', { toString: () => 'nope' }],
+      ['null', null],
+      ['undefined', undefined],
+      ['an empty string', ''],
+    ])('refuses %s as the message body', async (_label, body) => {
+      const client = await initSession(gateway, prisma, `socket-${_label}`, `s-${_label}`);
+      prisma.messages.create.mockResolvedValue({});
+
+      const result = await gateway.handleMessage(client, {
+        text: body as unknown as string,
+      });
+
+      expect(result.received).toBe(false);
+      expect(prisma.messages.create).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─────────────────────────────────────────────
   // Abuse ceilings
   // ─────────────────────────────────────────────
 
@@ -808,6 +879,52 @@ describe('WebChatGateway', () => {
       });
 
       expect(blocked.sessionId).toBe('');
+    });
+
+    it('stops a socket looping unknown widgetIds from querying the database forever', async () => {
+      // Every other ceiling on this gateway is charged *after* the widget has
+      // been resolved, and an unknown widgetId returns before any of them. So
+      // the `channel_accounts` lookup itself — against a pool this deployment
+      // shares with another service — was the one piece of work an anonymous
+      // socket could repeat without limit.
+      const { limit } = WEBCHAT_THROTTLE_RULES.init;
+      prisma.channel_accounts.findFirst.mockResolvedValue(null);
+
+      for (let i = 0; i < limit; i += 1) {
+        await gateway.handleInit(makeSocketFrom(`junk-${i}`, '9.9.9.9'), {
+          widgetId: 'no-such-widget-' + i,
+        });
+      }
+      expect(prisma.channel_accounts.findFirst).toHaveBeenCalledTimes(limit);
+
+      const blocked = await gateway.handleInit(makeSocketFrom('junk-over', '9.9.9.9'), {
+        widgetId: 'no-such-widget-over',
+      });
+
+      expect(blocked.sessionId).toBe('');
+      // The point of the bucket: no further query was issued.
+      expect(prisma.channel_accounts.findFirst).toHaveBeenCalledTimes(limit);
+    });
+
+    it('rations init per caller, so one looping socket does not lock the widget out', async () => {
+      const { limit } = WEBCHAT_THROTTLE_RULES.init;
+      prisma.channel_accounts.findFirst.mockResolvedValue(null);
+      for (let i = 0; i < limit + 1; i += 1) {
+        await gateway.handleInit(makeSocketFrom(`junk-${i}`, '9.9.9.9'), {
+          widgetId: 'no-such-widget',
+        });
+      }
+
+      prisma.channel_accounts.findFirst.mockResolvedValue({
+        id: WIDGET_ID,
+        business_id: BUSINESS_ID,
+        metadata: {},
+      });
+      const other = await gateway.handleInit(makeSocketFrom('other', '10.0.0.1'), {
+        widgetId: WIDGET_ID,
+      });
+
+      expect(other.sessionId).toBeTruthy();
     });
 
     it('caps the messages a single session can push into the AI pipeline', async () => {

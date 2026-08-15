@@ -39,6 +39,22 @@ interface SessionContext {
 }
 
 /**
+ * Longest visitor message the widget may submit.
+ *
+ * `WebChatThrottle` bounds how *many* messages a session sends, which is the
+ * right shape for row growth but not for the two costs that scale with
+ * size: every accepted message is stored verbatim and then handed to the AI
+ * pipeline as an outbound LLM call priced per token. Sixty short messages and
+ * sixty megabyte ones are the same event count and wildly different bills, so
+ * the count ceiling alone left the expensive dimension open.
+ *
+ * Set above any genuine web-chat turn (and above WhatsApp's own 4096-character
+ * body limit, so nothing a visitor could legitimately send on a sibling channel
+ * is refused here).
+ */
+export const WEBCHAT_MAX_MESSAGE_CHARS = 4096;
+
+/**
  * Where the web-chat widget may be embedded, from `WEBCHAT_ALLOWED_ORIGINS`
  * (comma-separated), defaulting to anywhere.
  *
@@ -220,6 +236,18 @@ export class WebChatGateway
   ): Promise<{ sessionId: string; greeting: string }> {
     const widgetId = data.widgetId;
 
+    // Charged before the lookup below, because the lookup is itself the cost
+    // being rationed: an unknown widgetId returns early, so every other ceiling
+    // on this gateway is charged too late to bound a socket that only ever
+    // submits junk. See the `init` rule for why this is a separate bucket from
+    // `session` rather than an earlier charge against it.
+    if (!this.throttle.consume("init", this.callerIp(client))) {
+      this.logger.warn(
+        "WebChat init rate limit reached — refusing to resolve widget " + widgetId,
+      );
+      return { sessionId: "", greeting: "Too many attempts. Please try again shortly." };
+    }
+
     // Validate widgetId against channel_accounts
     const channel = await this.prisma.channel_accounts.findFirst({
       where: {
@@ -365,6 +393,27 @@ export class WebChatGateway
     const text = data.text;
     const messageId = generateId();
     const correlationId = generateCorrelationId();
+
+    // `data` is parsed from a socket frame, so nothing upstream has checked
+    // that `text` is even a string — the global `ValidationPipe` covers HTTP
+    // routes, not Socket.IO events. A non-string reached the Prisma create and
+    // the AI pipeline as-is, and an oversized one was accepted in full at
+    // whatever the LLM charges for it. Reject rather than truncate: silently
+    // sending the AI a different message than the visitor typed is worse than
+    // telling the widget the message did not go through.
+    if (typeof text !== "string" || text.length === 0) {
+      this.logger.warn(
+        "Rejected chat:message from socket " + client.id + " with a non-string or empty body",
+      );
+      return { received: false, messageId };
+    }
+    if (text.length > WEBCHAT_MAX_MESSAGE_CHARS) {
+      this.logger.warn(
+        "Rejected chat:message from socket " + client.id + ": " + text.length +
+        " chars exceeds the " + WEBCHAT_MAX_MESSAGE_CHARS + "-char ceiling",
+      );
+      return { received: false, messageId };
+    }
 
     // The session comes from the socket, never from the body.
     //
