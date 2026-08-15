@@ -909,6 +909,112 @@ describe('ChannelAdapterService — inbound persistence', () => {
       expect(first.externalId).toBe('wamid.A');
       expect(db.messages.create).toHaveBeenCalledTimes(2);
     });
+
+    // ── Channel-account lookup is memoized per webhook ──────
+
+    /**
+     * The N+1 these pin: every message in a batch resolves the same
+     * `channel_accounts` row, and each was issuing its own query. One WhatsApp
+     * webhook carries the messages for one business phone number, so a
+     * 30-message burst spent 30 round trips answering the same question — on
+     * the busiest write path in the system, against a pool this box shares with
+     * another service.
+     */
+    it('resolves the channel account once for a whole batch', async () => {
+      const batch = [
+        makeNormalized({ externalId: 'wamid.A' }),
+        makeNormalized({ externalId: 'wamid.B' }),
+        makeNormalized({ externalId: 'wamid.C' }),
+      ];
+      service.registerAdapter(makeBatchAdapter(batch) as never);
+
+      await service.handleInboundWebhookBatch(ChannelType.WHATSAPP, REQ, BUSINESS_ID);
+
+      // Three messages stored, one account lookup.
+      expect(db.messages.create).toHaveBeenCalledTimes(3);
+      expect(db.channel_accounts.findFirst).toHaveBeenCalledTimes(1);
+    });
+
+    it('still resolves each distinct account in a mixed batch', async () => {
+      // Meta may put more than one `entry` in a payload, and they need not name
+      // the same phone number id. Hoisting a single lookup out of the loop
+      // would attribute the second account's messages to the first — i.e. write
+      // one tenant's messages under another. The memo is keyed, not hoisted.
+      const batch = [
+        makeNormalized({ externalId: 'wamid.A', channelAccountId: 'PHONE_NUMBER_ID_1' }),
+        makeNormalized({ externalId: 'wamid.B', channelAccountId: 'PHONE_NUMBER_ID_2' }),
+        makeNormalized({ externalId: 'wamid.C', channelAccountId: 'PHONE_NUMBER_ID_1' }),
+      ];
+      service.registerAdapter(makeBatchAdapter(batch) as never);
+
+      await service.handleInboundWebhookBatch(ChannelType.WHATSAPP, REQ, BUSINESS_ID);
+
+      expect(db.messages.create).toHaveBeenCalledTimes(3);
+      // Two distinct accounts, not one and not three.
+      expect(db.channel_accounts.findFirst).toHaveBeenCalledTimes(2);
+      const asked = db.channel_accounts.findFirst.mock.calls.map(
+        ([arg]) => (arg as { where: { external_id: string } }).where.external_id,
+      );
+      expect(new Set(asked)).toEqual(new Set(['PHONE_NUMBER_ID_1', 'PHONE_NUMBER_ID_2']));
+    });
+
+    it('memoizes the miss as well as the hit', async () => {
+      // A junk or deactivated account id returns null. Re-asking that once per
+      // message is the same N+1 wearing a different hat — and a payload of
+      // unknown ids is exactly what an abusive caller sends.
+      db.channel_accounts.findFirst.mockResolvedValue(null);
+      const batch = [
+        makeNormalized({ externalId: 'wamid.A' }),
+        makeNormalized({ externalId: 'wamid.B' }),
+        makeNormalized({ externalId: 'wamid.C' }),
+      ];
+      service.registerAdapter(makeBatchAdapter(batch) as never);
+
+      await service.handleInboundWebhookBatch(ChannelType.WHATSAPP, REQ, BUSINESS_ID);
+
+      expect(db.channel_accounts.findFirst).toHaveBeenCalledTimes(1);
+      expect(db.messages.create).not.toHaveBeenCalled();
+    });
+
+    it('does not carry a resolved account across separate webhooks', async () => {
+      // The memo is request-scoped on purpose. This row decides which tenant a
+      // message is written under, so a deactivation or a re-point must be seen
+      // by the very next webhook rather than surviving in a process-lifetime
+      // cache.
+      service.registerAdapter(makeBatchAdapter([makeNormalized({ externalId: 'wamid.A' })]) as never);
+      await service.handleInboundWebhookBatch(ChannelType.WHATSAPP, REQ, BUSINESS_ID);
+
+      service.registerAdapter(makeBatchAdapter([makeNormalized({ externalId: 'wamid.B' })]) as never);
+      await service.handleInboundWebhookBatch(ChannelType.WHATSAPP, REQ, BUSINESS_ID);
+
+      expect(db.channel_accounts.findFirst).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not memoize a failed lookup', async () => {
+      // A rejected lookup is dead-lettered and replayed. Caching the rejection
+      // would fail the replay for a reason that no longer exists.
+      db.channel_accounts.findFirst
+        .mockRejectedValueOnce(new Error('connection terminated'))
+        .mockResolvedValue({
+          id: ACCOUNT_ID,
+          business_id: RESOLVED_BUSINESS_ID,
+          channel: ChannelType.WHATSAPP,
+          external_id: 'PHONE_NUMBER_ID_1',
+          is_active: true,
+        });
+      const batch = [
+        makeNormalized({ externalId: 'wamid.A' }),
+        makeNormalized({ externalId: 'wamid.B' }),
+      ];
+      service.registerAdapter(makeBatchAdapter(batch) as never);
+
+      await service.handleInboundWebhookBatch(ChannelType.WHATSAPP, REQ, BUSINESS_ID);
+
+      // The second message asks again and succeeds, rather than inheriting the
+      // first one's error.
+      expect(db.channel_accounts.findFirst).toHaveBeenCalledTimes(2);
+      expect(db.messages.create).toHaveBeenCalledTimes(1);
+    });
   });
 });
 

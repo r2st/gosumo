@@ -39,6 +39,58 @@ interface BatchParsingAdapter {
   parseInboundAll(req: RawRequest): NormalizedMessage[];
 }
 
+/** The `channel_accounts` row an inbound message resolves to, or its absence. */
+type ResolvedChannelAccount = Prisma.channel_accountsGetPayload<object> | null;
+
+/**
+ * One webhook's worth of `channel_accounts` lookups, memoized.
+ *
+ * Every message in a batched payload resolves the same account, so a payload of
+ * N messages was issuing N identical queries on the hottest write path in the
+ * system. This collapses them to one per distinct (channel, external_id).
+ *
+ * Deliberately request-scoped rather than a service field: an account that is
+ * deactivated, or re-pointed at another tenant, must be seen by the next
+ * webhook. Caching across requests would keep serving the stale row — and this
+ * row is what decides which tenant the message is written under, which is the
+ * last thing that should go stale.
+ *
+ * A miss is cached too. `findFirst` returning null is the "unknown or inactive
+ * account" answer, and re-asking it once per message in a junk payload is the
+ * same N+1 wearing a different hat.
+ *
+ * The stored value is the in-flight promise, not its result, so messages are
+ * memoized even if the loop that drives them ever stops being sequential.
+ */
+class ChannelAccountMemo {
+  private readonly entries = new Map<string, Promise<ResolvedChannelAccount>>();
+
+  async resolve(
+    channelType: ChannelType,
+    externalId: string,
+    load: () => Promise<ResolvedChannelAccount>,
+  ): Promise<ResolvedChannelAccount> {
+    const key = `${channelType}:${externalId}`;
+    let pending = this.entries.get(key);
+    if (!pending) {
+      // A rejected lookup must not be memoized — the caller dead-letters and
+      // replays it, and a cached rejection would fail the replay for a reason
+      // that no longer exists.
+      pending = load().catch((err: unknown) => {
+        this.entries.delete(key);
+        throw err;
+      });
+      this.entries.set(key, pending);
+    }
+    return pending;
+  }
+
+  /** Distinct accounts resolved so far — asserted by the batch N+1 test. */
+  get size(): number {
+    return this.entries.size;
+  }
+}
+
 /**
  * What a dead-lettered inbound delivery stores so a replay can re-run exactly
  * the one message that failed.
@@ -225,9 +277,29 @@ export class ChannelAdapterService implements OnModuleInit {
     // Sequential on purpose: several messages from one sender share a client
     // and a conversation, and the find-or-create for both is a read followed by
     // a write. Running them concurrently races two creates for the same pair.
+    //
+    // The memo below is what keeps that loop from being an N+1. Every message
+    // resolves the same `channel_accounts` row — a WhatsApp webhook carries the
+    // messages for one business phone number, so all of them look up the same
+    // (channel, external_id) pair — and each was issuing its own query. On the
+    // busiest write path in the system, against a connection pool this box
+    // shares with another service, a 30-message campaign reply burst spent 30
+    // round trips answering one question. Scoped to this request so it cannot
+    // serve a channel account that was deactivated between webhooks, and keyed
+    // by external id rather than hoisted, because Meta may put more than one
+    // `entry` in a payload and they need not name the same account.
+    const accounts = new ChannelAccountMemo();
+
     const handled: NormalizedMessage[] = [];
     for (const normalized of parsed) {
-      await this.processInboundMessage(channelType, normalized, req, businessId, traceId);
+      await this.processInboundMessage(
+        channelType,
+        normalized,
+        req,
+        businessId,
+        traceId,
+        accounts,
+      );
       handled.push(normalized);
     }
     return handled;
@@ -296,6 +368,7 @@ export class ChannelAdapterService implements OnModuleInit {
     req: RawRequest,
     businessId: string,
     traceId: string,
+    accounts: ChannelAccountMemo = new ChannelAccountMemo(),
   ): Promise<void> {
     this.logger.log(
       `[${traceId}] Parsed inbound ${channelType} message ${normalized.externalId} ` +
@@ -345,7 +418,7 @@ export class ChannelAdapterService implements OnModuleInit {
 
     try {
       await this.withSenderLock(senderKey, async () => {
-        await this.persistAndAnnounce(channelType, normalized, businessId, traceId);
+        await this.persistAndAnnounce(channelType, normalized, businessId, traceId, accounts);
       });
       await this.markWebhookProcessed(webhookEventId, traceId);
     } catch (err) {
@@ -378,6 +451,7 @@ export class ChannelAdapterService implements OnModuleInit {
     normalized: NormalizedMessage,
     businessId: string,
     traceId: string,
+    accounts: ChannelAccountMemo = new ChannelAccountMemo(),
   ): Promise<void> {
     // Step 3: Resolve channel_account, client, conversation, and store message
     let resolvedBusinessId = businessId;
@@ -394,14 +468,21 @@ export class ChannelAdapterService implements OnModuleInit {
     let resolvedSenderPhone: string | undefined;
 
     try {
-      // Look up the channel_account by channel type and external_id
-      const channelAccount = await this.prisma.channel_accounts.findFirst({
-        where: {
-          channel: channelType,
-          external_id: normalized.channelAccountId,
-          is_active: true,
-        },
-      });
+      // Look up the channel_account by channel type and external_id, once per
+      // (channel, external_id) per webhook — see the memo in
+      // `handleInboundWebhookBatch`.
+      const channelAccount = await accounts.resolve(
+        channelType,
+        normalized.channelAccountId,
+        () =>
+          this.prisma.channel_accounts.findFirst({
+            where: {
+              channel: channelType,
+              external_id: normalized.channelAccountId,
+              is_active: true,
+            },
+          }),
+      );
 
       if (channelAccount) {
         resolvedBusinessId = channelAccount.business_id;
