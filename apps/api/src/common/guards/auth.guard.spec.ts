@@ -20,7 +20,7 @@
  *     case, it is the main path.
  */
 
-import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import { ExecutionContext, Logger, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
 import { JwtAuthGuard } from './auth.guard';
@@ -161,5 +161,79 @@ describe('JwtAuthGuard.handleRequest', () => {
     expect(() => guard().handleRequest(null, null as unknown as false, undefined)).toThrow(
       UnauthorizedException,
     );
+  });
+});
+
+/**
+ * Log level, not behaviour.
+ *
+ * Every case here still throws `UnauthorizedException` — the split only
+ * decides who gets paged-adjacent noise. Routine token lifecycle (absent
+ * token, expired token) is the overwhelming majority of auth failures in a
+ * refresh-token system, and at `warn` it drowned out the failures that
+ * actually indicate something wrong.
+ */
+describe('JwtAuthGuard.handleRequest — log levels', () => {
+  const guard = () => new JwtAuthGuard(makeReflector(undefined));
+  let warn: jest.SpyInstance;
+  let debug: jest.SpyInstance;
+
+  beforeEach(() => {
+    warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    debug = jest.spyOn(Logger.prototype, 'debug').mockImplementation();
+  });
+
+  afterEach(() => {
+    warn.mockRestore();
+    debug.mockRestore();
+  });
+
+  const attempt = (info?: { message?: string }, err: Error | null = null) => {
+    try {
+      guard().handleRequest(err, false, info);
+    } catch {
+      /* the throw is asserted elsewhere; this block is about the log */
+    }
+  };
+
+  it.each([
+    ['an absent token', { message: 'No auth token' }],
+    ['an expired token', { message: 'jwt expired' }],
+    ['a differently-worded expiry', { message: 'Token expired' }],
+  ])('logs %s at debug, not warn', (_label, info) => {
+    attempt(info);
+
+    expect(warn).not.toHaveBeenCalled();
+    expect(debug).toHaveBeenCalledWith(expect.stringContaining('JWT auth failed'));
+  });
+
+  it('logs a request with no token at all at debug', () => {
+    // `info` undefined — an unauthenticated probe of a protected URL.
+    attempt(undefined);
+
+    expect(warn).not.toHaveBeenCalled();
+    expect(debug).toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a bad signature', { message: 'invalid signature' }],
+    ['a malformed token', { message: 'jwt malformed' }],
+    ['an unexpected algorithm', { message: 'invalid algorithm' }],
+  ])('keeps %s at warn', (_label, info) => {
+    // Not something a well-behaved client produces, so a burst is worth
+    // someone's attention.
+    attempt(info);
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('JWT auth failed'));
+    expect(debug).not.toHaveBeenCalled();
+  });
+
+  it('keeps an explicit error at warn even when info says expired', () => {
+    // `err` set means the strategy rejected it for its own reason — a revoked
+    // session, say — which outranks the expiry wording.
+    attempt({ message: 'jwt expired' }, new Error('session revoked'));
+
+    expect(warn).toHaveBeenCalled();
+    expect(debug).not.toHaveBeenCalled();
   });
 });

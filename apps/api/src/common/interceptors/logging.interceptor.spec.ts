@@ -114,7 +114,7 @@ describe('LoggingInterceptor pass-through', () => {
     // A raw driver error has no `.status`; the interceptor defaults to 500
     // rather than logging `undefined`.
     const { context } = makeHarness();
-    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const debug = jest.spyOn(Logger.prototype, 'debug').mockImplementation();
 
     await expect(
       lastValueFrom(
@@ -124,13 +124,13 @@ describe('LoggingInterceptor pass-through', () => {
       ),
     ).rejects.toThrow('connection reset');
 
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('| 500 |'));
-    warn.mockRestore();
+    expect(debug).toHaveBeenCalledWith(expect.stringContaining('| 500 |'));
+    debug.mockRestore();
   });
 
   it('logs the status an HTTP error carries', async () => {
     const { context } = makeHarness();
-    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const debug = jest.spyOn(Logger.prototype, 'debug').mockImplementation();
 
     await expect(
       lastValueFrom(
@@ -140,8 +140,37 @@ describe('LoggingInterceptor pass-through', () => {
       ),
     ).rejects.toThrow('nope');
 
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('| 403 |'));
+    expect(debug).toHaveBeenCalledWith(expect.stringContaining('| 403 |'));
+    debug.mockRestore();
+  });
+
+  it('does not log a failed request at warn — the filter already does', async () => {
+    /**
+     * The point of the level change, pinned so it cannot drift back.
+     *
+     * `HttpExceptionFilter` emits a complete line for every failing request,
+     * with the same correlation id and status. This interceptor's error line is
+     * a duplicate of it, and at `warn` it meant the two most routine responses
+     * an API serves — a 404 on a bad URL, a 401 on an expired token — each
+     * raised a warning. Warnings that fire on routine traffic are warnings
+     * nobody reads.
+     */
+    const { context } = makeHarness();
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+
+    await expect(
+      lastValueFrom(
+        new LoggingInterceptor().intercept(context, {
+          handle: () => throwError(() => Object.assign(new Error('gone'), { status: 404 })),
+        }),
+      ),
+    ).rejects.toThrow('gone');
+
+    expect(warn).not.toHaveBeenCalled();
+    expect(error).not.toHaveBeenCalled();
     warn.mockRestore();
+    error.mockRestore();
   });
 
   it('tolerates a request with no user-agent', async () => {
