@@ -224,6 +224,49 @@ describe('WebChatGateway', () => {
       gateway.handleDisconnect(makeSocket('socket-unknown'));
       expect(gateway['sessions'].size).toBe(0);
     });
+
+    /**
+     * `socketToSession` maps one socket to exactly one session, so a socket that
+     * inits a second session silently overwrites the first mapping — and the
+     * disconnect that follows only ever tears down the last one. Everything
+     * named by the earlier init stayed in `sessions` and `sessionContext` for
+     * the life of the process, holding a dead socket and that visitor's
+     * businessId/conversationId. Nothing bounded it: resuming a session is
+     * deliberately not rate-limited, so a client replaying tokens it had already
+     * been issued grew both maps without ever opening a new session.
+     */
+    it('releases an earlier session when one socket inits a second one', async () => {
+      const client = await initSession(gateway, prisma, 'socket-multi', 'session-1');
+      await gateway.handleInit(client, {
+        widgetId: WIDGET_ID,
+        sessionId: token('session-2'),
+      });
+
+      gateway.handleDisconnect(client);
+
+      expect(gateway['sessions'].size).toBe(0);
+      expect(gateway['socketToSession'].size).toBe(0);
+      expect(gateway['sessionContext'].size).toBe(0);
+    });
+
+    /**
+     * Releasing the superseded session must not disturb a *different* socket
+     * that has since taken it over — the reconnect race above already moves a
+     * session between sockets, and the release has to lose to it.
+     */
+    it('does not release a session another socket has already taken over', async () => {
+      const first = await initSession(gateway, prisma, 'socket-a', 'session-1');
+      // session-1 moves to a new socket, as it does on every reconnect.
+      const second = await initSession(gateway, prisma, 'socket-b', 'session-1');
+      // The old socket is then reused for a different session.
+      await gateway.handleInit(first, {
+        widgetId: WIDGET_ID,
+        sessionId: token('session-2'),
+      });
+
+      expect(gateway['sessions'].get('session-1')).toBe(second);
+      expect(gateway['sessionContext'].has('session-1')).toBe(true);
+    });
   });
 
   // ─────────────────────────────────────────────

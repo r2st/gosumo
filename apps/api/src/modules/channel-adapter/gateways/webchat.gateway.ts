@@ -315,6 +315,27 @@ export class WebChatGateway
     if (previous && previous.id !== client.id) {
       this.socketToSession.delete(previous.id);
     }
+
+    // The mirror case: this socket already holds a *different* session, because
+    // it inited twice without reconnecting. `socketToSession` maps one socket to
+    // one session, so the line below overwrites that mapping — and the
+    // disconnect that eventually follows resolves only the newer session,
+    // leaving the older one (and its businessId/conversationId) in `sessions`
+    // and `sessionContext` for the life of the process. Nothing bounded that:
+    // resuming a session is deliberately not rate-limited, so a client replaying
+    // tokens it had already been issued grew both maps without ever opening a
+    // new session. Release it here — unless a newer socket has since taken it
+    // over, which is the reconnect race above and has to win.
+    const superseded = this.socketToSession.get(client.id);
+    if (superseded && superseded !== sessionId && this.sessions.get(superseded) === client) {
+      this.sessions.delete(superseded);
+      this.sessionContext.delete(superseded);
+      this.logger.log(
+        "WebChat socket " + client.id + " re-inited as session " + sessionId +
+        " — released its previous session " + superseded,
+      );
+    }
+
     this.sessions.set(sessionId, client);
     this.socketToSession.set(client.id, sessionId);
 
