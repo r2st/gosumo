@@ -13,6 +13,10 @@ jest.mock('@nestjs/core', () => {
   const app = {
     setGlobalPrefix: jest.fn(),
     enableCors: jest.fn(),
+    use: jest.fn(),
+    getHttpAdapter: jest.fn().mockReturnValue({
+      getInstance: jest.fn().mockReturnValue({ disable: jest.fn() }),
+    }),
     useGlobalPipes: jest.fn(),
     useGlobalFilters: jest.fn(),
     useGlobalInterceptors: jest.fn(),
@@ -71,6 +75,18 @@ describe('bootstrap (main.ts)', () => {
       AppModule,
       expect.objectContaining({ rawBody: true }),
     );
+  });
+
+  it('installs the security headers as middleware, not as an interceptor', async () => {
+    // Middleware runs before the global JwtAuthGuard; an interceptor runs
+    // after it. Getting this wrong sends every 401 — one of the most-served
+    // responses here — with no nosniff and no CSP.
+    await import('./main');
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const app = await (NestFactory.create as jest.Mock).mock.results[0]?.value;
+    expect(app.use).toHaveBeenCalledWith(expect.any(Function));
+    expect(app.getHttpAdapter().getInstance().disable).toHaveBeenCalledWith('x-powered-by');
   });
 
   it('enables shutdown hooks before it starts listening', async () => {

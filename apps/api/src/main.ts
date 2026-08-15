@@ -9,6 +9,7 @@ import {
   allowCredentials,
   resolveCorsOrigin as parseCorsOrigin,
 } from './common/utils/cors.util';
+import { securityHeaders } from './common/middleware/security-headers.middleware';
 
 /** True when this process is running as production. */
 export function isProduction(): boolean {
@@ -151,6 +152,15 @@ async function bootstrap() {
 
   // Global prefix
   app.setGlobalPrefix('v1');
+
+  // Security headers, before anything else so a response that never reaches a
+  // controller — a 401 from the global guard, a 404 — still carries them.
+  // HSTS only in production: TLS terminates at Caddy there, whereas sending it
+  // over plain http in development pins the browser to an https port that does
+  // not exist, and the fix for that is clearing browser state.
+  app.use(securityHeaders({ hsts: isProduction() }));
+  // Express's default advertisement of what is running here. Free to remove.
+  app.getHttpAdapter().getInstance().disable?.('x-powered-by');
 
   // CORS
   const corsOrigin = resolveCorsOrigin();
