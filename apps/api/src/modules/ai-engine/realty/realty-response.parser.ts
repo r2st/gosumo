@@ -36,7 +36,7 @@ export class RealtyResponseParserService {
     if (!json) return null;
 
     return {
-      responseText: typeof json.response_text === 'string' ? json.response_text : null,
+      responseText: this.coerceText(json.response_text),
       confidence: this.clampScore(json.confidence),
       intent: this.coerceIntent(json.intent, fallbackIntent),
       bltcUpdates: this.coerceBltc(json.bltc_updates),
@@ -44,6 +44,25 @@ export class RealtyResponseParserService {
       actions: this.coerceActions(json.actions),
       escalationReason: typeof json.escalation_reason === 'string' ? json.escalation_reason : null,
     };
+  }
+
+  /**
+   * The reply text, or `null` when the model produced nothing to say.
+   *
+   * A blank or whitespace-only `response_text` is a real and frequent model
+   * output — it is what a model emits when it decides mid-generation that it
+   * should not answer. It has to arrive here as `null`, because every consumer
+   * treats "nothing to say" as a `null` check:
+   * `responseText ?? nextQuestion ?? CONFIRMING_FALLBACK` keeps `""` (`??`
+   * only catches nullish), so the fallback that exists to guarantee the buyer
+   * always gets a reply is skipped. The AUTO band then either sends a
+   * whitespace message or — for `""` — matches no delivery branch at all: no
+   * send, no draft queued for a human, no escalation reason. The buyer is left
+   * on read and nothing in the system records that a turn went missing.
+   */
+  private coerceText(value: unknown): string | null {
+    if (typeof value !== 'string') return null;
+    return value.trim().length > 0 ? value : null;
   }
 
   private clampScore(v: unknown): number {
