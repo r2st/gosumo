@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConsentType } from '@prisma/client';
 import { ComplianceRepository } from './compliance.repository';
 import { buildFirstContactNotice, withFirstContactNotice } from './dpdpa.util';
+import { maskPhone } from '../../common/utils/log-redact.util';
 
 /** Provenance marker recorded on the consent ledger once the notice is delivered. */
 const NOTICE_SOURCE = 'first_contact_notice';
@@ -50,7 +51,7 @@ export class ComplianceNoticeService {
         source: NOTICE_SOURCE,
         granted: true,
       });
-      this.logger.debug(`Prepended first-contact notice for ${phone} (business ${businessId})`);
+      this.logger.debug(`Prepended first-contact notice for ${maskPhone(phone)} (business ${businessId})`);
       return decorated;
     } catch (err) {
       this.logger.error(

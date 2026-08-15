@@ -19,6 +19,7 @@ import { IvrDedupTracker } from './ivr/ivr-dedup.util';
 import type { NormalizedIvrCall } from './ivr/ivr-callback.parser';
 import type { IvrCallbackResult } from './dto';
 import { WebhookDlqService } from '../webhook-log/webhook-dlq.service';
+import { maskPhone } from '../../common/utils/log-redact.util';
 import {
   REALTY_INGEST_EVENT_TYPES,
   REALTY_INGEST_SOURCES,
@@ -181,7 +182,7 @@ export class RealtyIvrService implements OnModuleInit {
   ): Promise<IvrCallbackResult | null> {
     const phone = normalizeIndianPhone(call.phone);
     if (!phone) {
-      this.logger.warn(`IVR callback for ${businessId} had an unusable phone: "${call.phone}"`);
+      this.logger.warn(`IVR callback for ${businessId} had an unusable phone: "${maskPhone(call.phone)}"`);
       return null;
     }
 
@@ -204,7 +205,7 @@ export class RealtyIvrService implements OnModuleInit {
     if (shouldGreet) {
       whatsappTriggered = await this.sendGreeting(businessId, phone, call);
     } else {
-      this.logger.debug(`IVR greeting suppressed for ${phone} (repeat within window)`);
+      this.logger.debug(`IVR greeting suppressed for ${maskPhone(phone)} (repeat within window)`);
     }
 
     this.logger.log(
@@ -250,7 +251,7 @@ export class RealtyIvrService implements OnModuleInit {
     try {
       const send = await this.channelAdapter.sendMessage(ChannelType.WHATSAPP, message, businessId);
       if (!send.success) {
-        this.logger.warn(`IVR greeting to ${phone} failed: ${send.error ?? 'unknown error'}`);
+        this.logger.warn(`IVR greeting to ${maskPhone(phone)} failed: ${send.error ?? 'unknown error'}`);
       }
       return send.success;
     } catch (err) {

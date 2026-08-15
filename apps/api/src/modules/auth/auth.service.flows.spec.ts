@@ -801,7 +801,13 @@ describe('AuthService — refresh, reset, throttling, sessions', () => {
       const lines = log.mock.calls.map((c) => String(c[0]));
       expect(lines.join('\n')).not.toContain('token=');
       expect(lines.join('\n')).not.toContain('reset-password');
-      expect(lines.some((l) => l.includes('test@example.com'))).toBe(true);
+
+      // The line still exists and is still attributable — but to a masked
+      // subject. The domain survives so "a burst of resets, all @somecorp.com"
+      // stays visible; the local part, which is what names the person, does
+      // not. See `common/utils/log-redact.util.ts`.
+      expect(lines.some((l) => l.includes('t***@example.com'))).toBe(true);
+      expect(lines.join('\n')).not.toContain('test@example.com');
       log.mockRestore();
     });
 

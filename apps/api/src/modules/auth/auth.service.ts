@@ -15,6 +15,7 @@ import * as bcrypt from 'bcryptjs';
 import { AuthRepository, TeamMemberWithBusiness } from './auth.repository';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { maskEmail } from '../../common/utils/log-redact.util';
 import { AuthTokensDto } from './dto/auth-tokens.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
@@ -124,7 +125,7 @@ export class AuthService {
       slug,
     );
 
-    this.logger.log(`New registration: ${email} for business '${businessName}'`);
+    this.logger.log(`New registration: ${maskEmail(email)} for business '${businessName}'`);
 
     return this.issueTokensForNewSession(teamMember, meta);
   }
@@ -177,7 +178,7 @@ export class AuthService {
         this.logger.warn(`Failed to update last login for ${teamMember.id}: ${err.message}`);
       });
 
-    this.logger.log(`Login: ${email}`);
+    this.logger.log(`Login: ${maskEmail(email)}`);
 
     return this.issueTokensForNewSession(teamMember, meta);
   }
@@ -208,7 +209,7 @@ export class AuthService {
           profile.googleId,
           profile.avatarUrl,
         );
-        this.logger.log(`Linked Google account to existing user ${profile.email}`);
+        this.logger.log(`Linked Google account to existing user ${maskEmail(profile.email)}`);
       }
     }
 
@@ -224,7 +225,7 @@ export class AuthService {
         profile.googleId,
         profile.avatarUrl,
       );
-      this.logger.log(`New Google registration: ${profile.email}`);
+      this.logger.log(`New Google registration: ${maskEmail(profile.email)}`);
     }
 
     if (teamMember.status === 'SUSPENDED') {
@@ -406,7 +407,7 @@ export class AuthService {
     const email = normalizeEmail(rawEmail);
     const teamMember = await this.authRepository.findTeamMemberByEmail(email);
     if (!teamMember || !teamMember.password_hash) {
-      this.logger.debug(`Password reset requested for unknown/OAuth email ${email} — no-op`);
+      this.logger.debug(`Password reset requested for unknown/OAuth email ${maskEmail(email)} — no-op`);
       return;
     }
 
@@ -431,7 +432,7 @@ export class AuthService {
     // ever touching the mailbox. Production gets the fact that a reset was
     // requested and nothing that can be redeemed.
     if (this.configService.get<string>('app.env', 'development') === 'production') {
-      this.logger.log(`Password reset requested for ${email} — link dispatched`);
+      this.logger.log(`Password reset requested for ${maskEmail(email)} — link dispatched`);
       return;
     }
 
