@@ -25,6 +25,7 @@ import type {
   PaymentSuccessEvent,
   PaymentFailedEvent,
   PaymentRefundEvent,
+  PaymentDisputeEvent,
   OrderCreatedEvent,
 } from '@gosumo/shared';
 import {
@@ -96,6 +97,20 @@ interface RazorpayWebhookPayload {
         payment_id: string;
         amount: number;
         status: string;
+        /** Present on `refund.failed`; Razorpay's own words for the rejection. */
+        error_description?: string;
+      };
+    };
+    dispute?: {
+      entity: {
+        id: string;
+        payment_id: string;
+        amount: number;
+        currency?: string;
+        /** `open` | `under_review` | `won` | `lost` | `closed` */
+        status: string;
+        reason_code?: string;
+        reason_description?: string;
       };
     };
   };
@@ -121,6 +136,19 @@ interface StripeWebhookEvent {
       payment_method_types?: string[];
       last_payment_error?: { message?: string; code?: string };
       metadata?: Record<string, string>;
+      /**
+       * `charge.refunded` delivers a *Charge*, whose refunds ride along in this
+       * list — the Refund objects themselves are not the event subject. A
+       * charge refunded twice carries both, which is why the handler settles
+       * every entry rather than the first.
+       */
+      refunds?: { data?: Array<{ id: string; status?: string; amount?: number }> };
+      /** `charge` on a Dispute; `charge`/`payment_intent` on a Refund. */
+      charge?: string | null;
+      /** Present on a failed Refund. */
+      failure_reason?: string;
+      /** Present on a Dispute. */
+      reason?: string;
     };
   };
 }
@@ -445,6 +473,19 @@ export class PaymentService implements OnModuleInit {
       case 'refund.processed':
         await this.handleRefundProcessed(webhookData);
         break;
+      case 'refund.failed':
+        await this.handleRefundFailed(webhookData);
+        break;
+      // Razorpay's dispute lifecycle. `payment.dispute.created` is money being
+      // pulled back; the rest say how the challenge ended. All four are
+      // recorded — a dispute nobody saw is one nobody answered, and the
+      // response windows are days long.
+      case 'payment.dispute.created':
+      case 'payment.dispute.won':
+      case 'payment.dispute.lost':
+      case 'payment.dispute.closed':
+        await this.handleRazorpayDispute(webhookData);
+        break;
       default:
         this.logger.debug(`Unhandled Razorpay event type: ${webhookData.event}`);
     }
@@ -529,7 +570,13 @@ export class PaymentService implements OnModuleInit {
         break;
       case 'charge.refunded':
       case 'refund.updated':
-        this.logger.log(`Stripe refund event: ${stripeEvent.type} (${stripeEvent.id})`);
+      case 'refund.failed':
+        await this.handleStripeRefundEvent(stripeEvent);
+        break;
+      case 'charge.dispute.created':
+      case 'charge.dispute.closed':
+      case 'charge.dispute.updated':
+        await this.handleStripeDispute(stripeEvent);
         break;
       default:
         this.logger.debug(`Unhandled Stripe event type: ${stripeEvent.type}`);
@@ -600,6 +647,16 @@ export class PaymentService implements OnModuleInit {
       if (refundId) {
         const byRefund = await this.repository.findRefundByGatewayId(refundId);
         if (byRefund) return byRefund.business_id;
+      }
+
+      // A dispute payload names no payment entity of its own — the disputed
+      // payment id lives on the dispute. Without this a failed chargeback event
+      // dead-letters into the platform bucket, which is the one queue no
+      // tenant's operator is looking at.
+      const disputedPaymentId = data.payload?.dispute?.entity?.payment_id;
+      if (disputedPaymentId) {
+        const byDispute = await this.repository.findPaymentByGatewayId(disputedPaymentId);
+        if (byDispute) return byDispute.business_id;
       }
     } catch (err) {
       this.logger.debug(
@@ -1457,27 +1514,140 @@ export class PaymentService implements OnModuleInit {
       return;
     }
 
-    const refund = await this.repository.findRefundByGatewayId(refundEntity.id);
+    await this.completeRefund(
+      refundEntity.id,
+      webhookData.payload as unknown as Record<string, unknown>,
+      'Razorpay refund.processed',
+    );
+  }
 
-    if (!refund) {
+  /**
+   * Razorpay `refund.failed` → mark our refund FAILED, giving its reserved
+   * balance back to the payment.
+   *
+   * Unhandled, this event was the quiet half of the refund ledger. A refund the
+   * gateway rejected stayed INITIATED forever, and INITIATED is inside
+   * `sumCommittedRefundsForPayment`'s committed set — so the money it was
+   * holding was subtracted from the refundable balance permanently. The
+   * customer was never paid, and the next attempt to pay them was refused as
+   * exceeding the balance, with a message describing an amount that had in
+   * fact been returned to nobody.
+   */
+  private async handleRefundFailed(
+    webhookData: RazorpayWebhookPayload,
+  ): Promise<void> {
+    const refundEntity = webhookData.payload.refund?.entity;
+
+    if (!refundEntity) {
+      this.logger.warn('refund.failed webhook missing refund entity');
+      return;
+    }
+
+    await this.failRefund(
+      refundEntity.id,
+      webhookData.payload as unknown as Record<string, unknown>,
+      refundEntity.error_description ?? 'Gateway reported the refund as failed',
+      'Razorpay refund.failed',
+    );
+  }
+
+  /**
+   * Stripe's refund events → the same two outcomes as Razorpay's.
+   *
+   * These were a bare `logger.log` and nothing else, which meant a Stripe
+   * refund never finished: `initiateRefund` moved the row to INITIATED after
+   * calling Stripe, and no code path anywhere took it further. The refund sat
+   * INITIATED for the life of the record, the parent payment never reached
+   * REFUNDED or PARTIALLY_REFUNDED, `payment.refund.completed` never fired (so
+   * nothing downstream — order status, the customer's confirmation — ever ran),
+   * and every report that reads `sumCompletedRefundsForPayment` showed zero
+   * refunded against money Stripe had already returned.
+   *
+   * Three event types land here because Stripe describes one refund three ways:
+   * `refund.updated` and `refund.failed` deliver the Refund itself, while
+   * `charge.refunded` delivers the *Charge* with its refunds nested. Settling
+   * is claimed rather than checked, so the two that overlap do not both emit.
+   */
+  private async handleStripeRefundEvent(event: StripeWebhookEvent): Promise<void> {
+    const object = event.data.object;
+    const payload = event as unknown as Record<string, unknown>;
+
+    // A Charge carries its refunds in a list; a Refund is itself the subject.
+    const refunds: Array<{ id: string; status?: string }> =
+      object.object === 'charge'
+        ? (object.refunds?.data ?? [])
+        : [{ id: object.id, status: object.status }];
+
+    if (refunds.length === 0) {
       this.logger.warn(
-        `No refund found for gateway refund ${refundEntity.id} (payment ${refundEntity.payment_id})`,
+        `Stripe ${event.type} (${event.id}) carried no refund to settle`,
       );
       return;
     }
 
-    if (refund.status === RefundStatus.COMPLETED) {
+    for (const entry of refunds) {
+      // Stripe's Refund statuses: pending / requires_action / succeeded /
+      // failed / canceled. Only the terminal ones settle; `pending` is the
+      // state the row is already in, and acting on it would claim the
+      // settlement before the money moved.
+      if (entry.status === 'succeeded') {
+        await this.completeRefund(entry.id, payload, `Stripe ${event.type}`);
+      } else if (entry.status === 'failed' || entry.status === 'canceled') {
+        await this.failRefund(
+          entry.id,
+          payload,
+          object.failure_reason ?? `Stripe reported the refund as ${entry.status}`,
+          `Stripe ${event.type}`,
+        );
+      } else {
+        this.logger.debug(
+          `Stripe refund ${entry.id} is ${entry.status ?? 'unknown'} — nothing to settle yet`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Settle one refund as COMPLETED and roll the parent payment to REFUNDED
+   * (fully) or PARTIALLY_REFUNDED, mirroring what `getPaymentSummaryForOrder` /
+   * `getPaymentStats` expect to find.
+   *
+   * Shared by both gateways: the ledger consequences of a returned rupee do not
+   * depend on who returned it, and the Razorpay path was the only one that had
+   * them.
+   */
+  private async completeRefund(
+    gatewayRefundId: string,
+    gatewayResponse: Record<string, unknown>,
+    source: string,
+  ): Promise<void> {
+    const existing = await this.repository.findRefundByGatewayId(gatewayRefundId);
+
+    if (!existing) {
+      this.logger.warn(
+        `No refund found for gateway refund ${gatewayRefundId} (${source})`,
+      );
+      return;
+    }
+
+    // Claimed, not checked. See `claimRefundSettlement` — Stripe sends two
+    // events for one refund and both reach here.
+    const { refund, claimed } = await this.repository.claimRefundSettlement(
+      existing.business_id,
+      existing.id,
+      {
+        status: RefundStatus.COMPLETED,
+        gatewayResponse,
+        completedAt: new Date(),
+      },
+    );
+
+    if (!claimed || !refund) {
       this.logger.debug(
-        `Refund ${refund.id} already COMPLETED — skipping refund.processed webhook`,
+        `Refund ${existing.id} was already settled — skipping ${source}`,
       );
       return;
     }
-
-    await this.repository.updateRefundStatus(refund.business_id, refund.id, {
-      status: RefundStatus.COMPLETED,
-      gatewayResponse: webhookData.payload as unknown as Record<string, unknown>,
-      completedAt: new Date(),
-    });
 
     const payment = await this.repository.getPayment(refund.business_id, refund.payment_id);
     if (payment) {
@@ -1517,8 +1687,222 @@ export class PaymentService implements OnModuleInit {
     this.eventEmitter.emit('payment.refund.completed', event);
 
     this.logger.log(
-      `Refund ${refund.id} marked COMPLETED via Razorpay refund.processed webhook (gateway: ${refundEntity.id})`,
+      `Refund ${refund.id} marked COMPLETED via ${source} (gateway: ${gatewayRefundId})`,
     );
+  }
+
+  /**
+   * Settle one refund as FAILED, releasing the balance it reserved.
+   *
+   * No domain event fires: nothing downstream acts on a refund that did not
+   * happen, and `payment.refund.completed` would be a lie. The log line is at
+   * WARN because a human has to decide what to do next — the customer was told
+   * money was coming back and it is not.
+   */
+  private async failRefund(
+    gatewayRefundId: string,
+    gatewayResponse: Record<string, unknown>,
+    reason: string,
+    source: string,
+  ): Promise<void> {
+    const existing = await this.repository.findRefundByGatewayId(gatewayRefundId);
+
+    if (!existing) {
+      this.logger.warn(
+        `No refund found for gateway refund ${gatewayRefundId} (${source})`,
+      );
+      return;
+    }
+
+    const { claimed } = await this.repository.claimRefundSettlement(
+      existing.business_id,
+      existing.id,
+      {
+        status: RefundStatus.FAILED,
+        gatewayResponse,
+        failedAt: new Date(),
+      },
+    );
+
+    if (!claimed) {
+      this.logger.debug(
+        `Refund ${existing.id} was already settled — skipping ${source}`,
+      );
+      return;
+    }
+
+    this.logger.warn(
+      `Refund ${existing.id} marked FAILED via ${source} (gateway: ${gatewayRefundId}): ${reason} — ` +
+        `the customer has not been paid and the balance is refundable again`,
+    );
+  }
+
+  // ─────────────────────────────────────────────
+  // Disputes (chargebacks)
+  // ─────────────────────────────────────────────
+
+  /**
+   * Razorpay's dispute lifecycle → a record on the payment plus a domain event.
+   *
+   * The whole lifecycle lands here because every stage of it is news: `created`
+   * starts a clock (Razorpay's evidence window is measured in days and closes
+   * silently), and `won`/`lost`/`closed` decide whether the money came back.
+   */
+  private async handleRazorpayDispute(
+    webhookData: RazorpayWebhookPayload,
+  ): Promise<void> {
+    const dispute = webhookData.payload.dispute?.entity;
+
+    if (!dispute) {
+      this.logger.warn(`${webhookData.event} webhook missing dispute entity`);
+      return;
+    }
+
+    const payment = await this.repository.findPaymentByGatewayId(dispute.payment_id);
+    if (!payment) {
+      this.logger.warn(
+        `No payment found for disputed Razorpay payment ${dispute.payment_id} (dispute ${dispute.id})`,
+      );
+      return;
+    }
+
+    await this.recordDispute(payment, {
+      gatewayDisputeId: dispute.id,
+      gatewayStatus: dispute.status,
+      amountPaise: dispute.amount,
+      currency: dispute.currency ?? payment.currency,
+      reason: dispute.reason_description ?? dispute.reason_code,
+      eventType: webhookData.event,
+      resolution: this.disputeResolution(webhookData.event, dispute.status),
+      payload: webhookData.payload as unknown as Record<string, unknown>,
+    });
+  }
+
+  /**
+   * Stripe's dispute lifecycle. `data.object` is a Dispute, whose `charge` is
+   * the id we stored as `gateway_payment_id` for a Stripe payment only when the
+   * PaymentIntent was recorded — so the charge is tried first and the
+   * PaymentIntent second.
+   */
+  private async handleStripeDispute(event: StripeWebhookEvent): Promise<void> {
+    const dispute = event.data.object;
+
+    const chargeOrIntent = dispute.charge ?? dispute.payment_intent ?? null;
+    if (!chargeOrIntent) {
+      this.logger.warn(
+        `Stripe ${event.type} (${event.id}) named no charge or PaymentIntent`,
+      );
+      return;
+    }
+
+    const payment = await this.repository.findPaymentByGatewayId(chargeOrIntent);
+    if (!payment) {
+      this.logger.warn(
+        `No payment found for disputed Stripe charge ${chargeOrIntent} (dispute ${dispute.id})`,
+      );
+      return;
+    }
+
+    await this.recordDispute(payment, {
+      gatewayDisputeId: dispute.id,
+      gatewayStatus: dispute.status ?? 'unknown',
+      // Stripe amounts are already in the currency's minor unit.
+      amountPaise: dispute.amount ?? 0,
+      currency: (dispute.currency ?? payment.currency).toUpperCase(),
+      reason: dispute.reason,
+      eventType: event.type,
+      resolution: this.disputeResolution(event.type, dispute.status),
+      payload: event as unknown as Record<string, unknown>,
+    });
+  }
+
+  /**
+   * Map a gateway's dispute vocabulary onto our three outcomes, or `undefined`
+   * while the dispute is still open.
+   *
+   * Both the event name and the status are consulted because the two gateways
+   * split the information differently: Razorpay puts the outcome in the event
+   * (`payment.dispute.lost`), Stripe puts it in the status of a generic
+   * `charge.dispute.closed`.
+   */
+  private disputeResolution(
+    eventType: string,
+    status: string | undefined,
+  ): 'WON' | 'LOST' | 'CLOSED' | undefined {
+    const haystack = `${eventType} ${status ?? ''}`.toLowerCase();
+    if (haystack.includes('won')) return 'WON';
+    if (haystack.includes('lost')) return 'LOST';
+    if (haystack.includes('closed')) return 'CLOSED';
+    return undefined;
+  }
+
+  /**
+   * Persist one dispute against its payment and announce it.
+   *
+   * The payment's own `status` is deliberately left alone. A dispute is not a
+   * refund: the money may yet come back, `PaymentStatus` has no term for
+   * "contested", and overwriting SUCCESS here would corrupt every revenue
+   * figure that reads it while telling the operator nothing they could act on.
+   * The record goes to `metadata.disputes` and the event carries the detail.
+   */
+  private async recordDispute(
+    payment: payments,
+    dispute: {
+      gatewayDisputeId: string;
+      gatewayStatus: string;
+      amountPaise: number;
+      currency: string;
+      reason?: string;
+      eventType: string;
+      resolution?: 'WON' | 'LOST' | 'CLOSED';
+      payload: Record<string, unknown>;
+    },
+  ): Promise<void> {
+    await this.repository.recordPaymentDispute(
+      payment.business_id,
+      payment.id,
+      dispute.gatewayDisputeId,
+      {
+        status: dispute.gatewayStatus,
+        amountPaise: dispute.amountPaise,
+        currency: dispute.currency,
+        reason: dispute.reason ?? null,
+        resolution: dispute.resolution ?? null,
+        eventType: dispute.eventType,
+        observedAt: new Date().toISOString(),
+      },
+    );
+
+    const event: PaymentDisputeEvent = {
+      type: dispute.resolution ? 'payment.dispute.resolved' : 'payment.disputed',
+      id: generateId(),
+      timestamp: new Date().toISOString(),
+      businessId: payment.business_id,
+      correlationId: generateCorrelationId(),
+      paymentId: payment.id,
+      orderId: payment.order_id ?? undefined,
+      clientId: payment.client_id,
+      amountPaise: dispute.amountPaise,
+      currency: dispute.currency,
+      gatewayDisputeId: dispute.gatewayDisputeId,
+      gatewayStatus: dispute.gatewayStatus,
+      ...(dispute.resolution ? { resolution: dispute.resolution } : {}),
+      ...(dispute.reason ? { reason: dispute.reason } : {}),
+    };
+
+    this.eventEmitter.emit(event.type, event);
+
+    // WARN, not LOG: an open dispute has a response deadline nobody is
+    // otherwise told about, and a lost one is money that left the business.
+    // A won or merely-closed one is the routine end of that same story.
+    const line =
+      `Payment ${payment.id} dispute ${dispute.gatewayDisputeId} — ${dispute.eventType} ` +
+      `(gateway status: ${dispute.gatewayStatus}, ${dispute.amountPaise} minor units ${dispute.currency})`;
+    if (dispute.resolution === 'WON' || dispute.resolution === 'CLOSED') {
+      this.logger.log(line);
+    } else {
+      this.logger.warn(line);
+    }
   }
 
   // ─────────────────────────────────────────────
@@ -1556,17 +1940,26 @@ export class PaymentService implements OnModuleInit {
     const refundId = entities.refund?.entity?.id;
     const paymentId = entities.payment?.entity?.id;
     const linkId = entities.payment_link?.entity?.id;
+    const disputeId = entities.dispute?.entity?.id;
 
-    const subject =
-      event.split('.')[0] === 'refund'
+    // Disputes are the one family whose subject is not named by the leading
+    // namespace: Razorpay calls them `payment.dispute.*`, so the rule below
+    // would key them on the *payment*. Two disputes against one payment — a
+    // partial chargeback followed by another — then collide, and the second is
+    // discarded unprocessed for the life of the row. Match the sub-namespace
+    // first.
+    const namespace = event.split('.')[0];
+    const subject = event.startsWith('payment.dispute.')
+      ? disputeId
+      : namespace === 'refund'
         ? refundId
-        : event.split('.')[0] === 'payment_link'
+        : namespace === 'payment_link'
           ? linkId
-          : event.split('.')[0] === 'payment'
+          : namespace === 'payment'
             ? paymentId
             : undefined;
 
-    const entityId = subject ?? refundId ?? paymentId ?? linkId;
+    const entityId = subject ?? disputeId ?? refundId ?? paymentId ?? linkId;
     if (entityId) return `${event}_${entityId}`;
 
     // No entity we recognise. A constant here (this was `'unknown'`) is worse

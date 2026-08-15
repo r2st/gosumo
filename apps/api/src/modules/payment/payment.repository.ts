@@ -695,6 +695,124 @@ export class PaymentRepository {
     });
   }
 
+  /**
+   * Claim a refund's *settlement* — the one-way move out of INITIATED /
+   * PROCESSING into a terminal state — and report whether this call is the one
+   * that made it.
+   *
+   * The sibling of {@link claimPaymentSuccess}, and for the same reason. Two
+   * distinct webhooks settle one refund, and both arrive:
+   *
+   *   - Stripe sends `charge.refunded` *and* `refund.updated` for a single
+   *     refund. They are different Stripe event ids, so `webhook_events` does
+   *     not collapse them, and both dispatch here.
+   *   - A DLQ replay re-runs processing for an event whose idempotency row was
+   *     written on the first (failed) attempt, so it deliberately skips that
+   *     ledger — and may land beside the gateway's own redelivery.
+   *
+   * Reading the row, checking `status !== COMPLETED`, then writing lets every
+   * one of them pass the check and emit `payment.refund.completed` again for
+   * money returned once. Under READ COMMITTED the losers block on the row lock,
+   * re-evaluate the predicate after the winner commits, and match nothing.
+   *
+   * The predicate also enforces the direction: a refund the gateway already
+   * settled can never be walked back to FAILED by a late failure event, which
+   * would hand its reserved balance back and let the same money be refunded
+   * twice.
+   */
+  async claimRefundSettlement(
+    businessId: string,
+    refundId: string,
+    data: {
+      status: string;
+      gatewayRefundId?: string;
+      gatewayResponse?: Record<string, unknown>;
+      completedAt?: Date;
+      failedAt?: Date;
+    },
+  ): Promise<{ refund: refunds | null; claimed: boolean }> {
+    const updateData: Record<string, unknown> = {
+      status: data.status,
+    };
+    if (data.gatewayRefundId !== undefined) {
+      updateData['gateway_refund_id'] = data.gatewayRefundId;
+    }
+    if (data.gatewayResponse !== undefined) {
+      updateData['gateway_response'] = data.gatewayResponse as Prisma.InputJsonValue;
+    }
+    if (data.completedAt !== undefined) {
+      updateData['completed_at'] = data.completedAt;
+    }
+    if (data.failedAt !== undefined) {
+      updateData['failed_at'] = data.failedAt;
+    }
+
+    const result = await this.prisma.refunds.updateMany({
+      where: {
+        id: refundId,
+        business_id: businessId,
+        // Only an unsettled refund may be settled. REJECTED is terminal too —
+        // it is the approval path's "no", and a gateway event must not revive
+        // a refund a human declined.
+        status: {
+          notIn: [RefundStatus.COMPLETED, RefundStatus.FAILED, RefundStatus.REJECTED],
+        },
+      },
+      data: updateData,
+    });
+
+    const refund = await this.prisma.refunds.findFirst({
+      where: { id: refundId, business_id: businessId },
+    });
+
+    return { refund, claimed: result.count > 0 };
+  }
+
+  /**
+   * Record a chargeback against a payment, under the gateway's dispute id.
+   *
+   * Disputes have no table of their own — they are a gateway lifecycle we
+   * observe rather than state we author — so they live in `payments.metadata`
+   * beneath a `disputes` object keyed by gateway dispute id. Keying on the id
+   * is what makes redelivery and the open→resolved lifecycle both land as an
+   * overwrite of one entry rather than an ever-growing list.
+   *
+   * Written as a JSONB merge in Postgres rather than read-modify-write in
+   * Node: two dispute events for one payment (`created` then `closed`, or two
+   * disputes on one payment) race, and the loser of a read-modify-write erases
+   * the winner's entry entirely. The `CASE … jsonb_typeof` guards keep the
+   * merge total — a `metadata` that is somehow not an object degrades to an
+   * empty one instead of failing the whole statement, which on this path would
+   * mean the *dispute* is what goes unrecorded.
+   *
+   * @returns true when a row in this tenant matched.
+   */
+  async recordPaymentDispute(
+    businessId: string,
+    paymentId: string,
+    disputeId: string,
+    record: Record<string, unknown>,
+  ): Promise<boolean> {
+    const affected = await this.prisma.$executeRaw`
+      UPDATE payments
+      SET metadata =
+            (CASE WHEN jsonb_typeof(metadata) = 'object' THEN metadata ELSE '{}'::jsonb END)
+            || jsonb_build_object(
+                 'disputes',
+                 (CASE
+                    WHEN jsonb_typeof(metadata -> 'disputes') = 'object' THEN metadata -> 'disputes'
+                    ELSE '{}'::jsonb
+                  END)
+                 || jsonb_build_object(${disputeId}::text, ${JSON.stringify(record)}::jsonb)
+               ),
+          updated_at = now()
+      WHERE id = ${paymentId}::uuid
+        AND business_id = ${businessId}::uuid
+    `;
+
+    return affected > 0;
+  }
+
   // ─────────────────────────────────────────────
   // Aggregations
   // ─────────────────────────────────────────────

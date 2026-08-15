@@ -388,6 +388,37 @@ export interface PaymentRefundEvent extends BaseEvent {
   reason?: string;
 }
 
+/**
+ * A cardholder has asked their bank to reverse a payment, or that challenge has
+ * been settled.
+ *
+ * Distinct from a refund: a refund is money *we* chose to return and is
+ * recorded in `refunds`; a dispute is money being pulled back by a third party
+ * on a timetable we do not control, and the only reason we learn of it is the
+ * gateway webhook. Both gateways emit a lifecycle (opened → won/lost/closed),
+ * so `resolution` carries which end it reached and `gatewayStatus` keeps the
+ * provider's own word for it verbatim.
+ */
+export interface PaymentDisputeEvent extends BaseEvent {
+  readonly type: 'payment.disputed' | 'payment.dispute.resolved';
+  paymentId: string;
+  orderId?: string;
+  clientId: string;
+  /** Disputed amount in paise */
+  amountPaise: number;
+  currency: string;
+  /** The gateway's own id for the dispute (`disp_…`, `dp_…`). */
+  gatewayDisputeId: string;
+  /** The gateway's status string, unmapped — provider vocabularies differ. */
+  gatewayStatus: string;
+  /**
+   * How the dispute ended, for `payment.dispute.resolved`. Absent while the
+   * dispute is still open.
+   */
+  resolution?: 'WON' | 'LOST' | 'CLOSED';
+  reason?: string;
+}
+
 // ─────────────────────────────────────────────
 // INVOICE EVENTS
 // ─────────────────────────────────────────────

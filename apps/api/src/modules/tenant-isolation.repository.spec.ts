@@ -372,6 +372,15 @@ const CASES: Case[] = [
     run: (r: PaymentRepository, b, id) => r.updateInvoiceStatus(b, id, { status: 'PAID' }),
   },
   {
+    // The conditional settlement claim. Its WHERE carries both the tenant and
+    // the "not already terminal" predicate; dropping the tenant half would make
+    // one gateway webhook able to settle another business's refund by id.
+    name: 'PaymentRepository.claimRefundSettlement',
+    repo: PaymentRepository,
+    run: (r: PaymentRepository, b, id) =>
+      r.claimRefundSettlement(b, id, { status: 'COMPLETED' }),
+  },
+  {
     name: 'RealtyDlqRepository.update',
     repo: RealtyDlqRepository,
     run: (r: RealtyDlqRepository, b, id) => r.update(b, id, { attempts: 2 }),

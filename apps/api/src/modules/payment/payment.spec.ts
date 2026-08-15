@@ -155,6 +155,13 @@ describe('PaymentService', () => {
       // The gateway path stamps the gateway ids onto the reserved row and
       // returns it, so this has to hand back a refund rather than undefined.
       updateRefundStatus: jest.fn().mockResolvedValue(createMockRefund()),
+      // Settling a refund is claimed for the same reason settling a payment is
+      // — Stripe sends two events for one refund, and a DLQ replay skips the
+      // idempotency ledger. `claimed` says whether this caller moved the row.
+      claimRefundSettlement: jest
+        .fn()
+        .mockResolvedValue({ refund: createMockRefund(), claimed: true }),
+      recordPaymentDispute: jest.fn().mockResolvedValue(true),
       findRefundByGatewayId: jest.fn(),
       sumCompletedRefundsForPayment: jest.fn(),
       sumCommittedRefundsForPayment: jest.fn(),
@@ -483,7 +490,7 @@ describe('PaymentService', () => {
 
       await service.handleRazorpayWebhook(refundPayload, 'valid_sig');
 
-      expect(repository.updateRefundStatus).toHaveBeenCalledWith(
+      expect(repository.claimRefundSettlement).toHaveBeenCalledWith(
         BUSINESS_ID,
         REFUND_ID,
         expect.objectContaining({ status: 'COMPLETED' }),
@@ -561,11 +568,22 @@ describe('PaymentService', () => {
       repository.findRefundByGatewayId.mockResolvedValue(
         createMockRefund({ gateway_refund_id: 'rfnd_done', status: 'COMPLETED' }) as never,
       );
+      // What the real repository does for a row already in a terminal state:
+      // the conditional UPDATE matches nothing, so this caller did not settle
+      // it. The service reads `claimed`, not the status it fetched — a status
+      // read before the write is exactly the race the claim replaced.
+      repository.claimRefundSettlement.mockResolvedValue({
+        refund: createMockRefund({ status: 'COMPLETED' }),
+        claimed: false,
+      } as never);
 
       await service.handleRazorpayWebhook(refundPayload, 'valid_sig');
 
-      expect(repository.updateRefundStatus).not.toHaveBeenCalled();
       expect(repository.updatePaymentStatus).not.toHaveBeenCalled();
+      expect(eventEmitter.emit).not.toHaveBeenCalledWith(
+        'payment.refund.completed',
+        expect.anything(),
+      );
     });
 
     it('should log and skip refund.processed when no matching refund record exists', async () => {
@@ -2812,9 +2830,10 @@ describe('PaymentService', () => {
       repository.findRefundByGatewayId.mockResolvedValue(
         createMockRefund({ order_id: null, reason: null }) as never,
       );
-      repository.updateRefundStatus.mockResolvedValue(
-        createMockRefund({ order_id: null, reason: null, status: 'COMPLETED' }) as never,
-      );
+      repository.claimRefundSettlement.mockResolvedValue({
+        refund: createMockRefund({ order_id: null, reason: null, status: 'COMPLETED' }),
+        claimed: true,
+      } as never);
       // A refund whose payment row has since been purged: the event still has
       // to go out, with clientId blank rather than the field missing.
       repository.getPayment.mockResolvedValue(null as never);

@@ -42,6 +42,8 @@ type PrismaMock = {
     findMany: jest.Mock;
     count: jest.Mock;
     update: jest.Mock;
+    /** `claimRefundSettlement` settles conditionally, like `claimPaymentSuccess`. */
+    updateMany: jest.Mock;
     aggregate: jest.Mock;
   };
   invoices: {
@@ -54,6 +56,8 @@ type PrismaMock = {
   webhook_events: { create: jest.Mock; update: jest.Mock };
   /** `reserveRefund` locks the payment row with a raw `SELECT … FOR UPDATE`. */
   $queryRaw: jest.Mock;
+  /** `recordPaymentDispute` merges JSONB in Postgres rather than in Node. */
+  $executeRaw: jest.Mock;
   /** Runs its callback against the same mock, standing in for the tx client. */
   $transaction: jest.Mock;
 };
@@ -79,6 +83,7 @@ describe('PaymentRepository', () => {
         findMany: jest.fn().mockResolvedValue([]),
         count: jest.fn().mockResolvedValue(0),
         update: jest.fn().mockResolvedValue({ id: REFUND_ID }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         aggregate: jest
           .fn()
           .mockResolvedValue({ _count: { _all: 0 }, _sum: { amount: null } }),
@@ -96,6 +101,7 @@ describe('PaymentRepository', () => {
       },
       // Default: the payment exists and is a ₹500 capture.
       $queryRaw: jest.fn().mockResolvedValue([{ amount: decimal(500) }]),
+      $executeRaw: jest.fn().mockResolvedValue(1),
       $transaction: jest.fn(),
     };
     // The interactive form hands the callback a transaction client. Passing the
@@ -893,6 +899,195 @@ describe('PaymentRepository', () => {
         rejected_at: rejectedAt,
         rejection_reason: 'policy',
       });
+    });
+  });
+
+  // ─────────────────────────────────────────────
+  // claimRefundSettlement
+  // ─────────────────────────────────────────────
+
+  describe('claimRefundSettlement', () => {
+    const SETTLED_AT = new Date('2026-08-15T09:00:00.000Z');
+
+    beforeEach(() => {
+      prisma.refunds.findFirst.mockResolvedValue({ id: REFUND_ID });
+    });
+
+    it('scopes the claim to the tenant and to an unsettled refund', async () => {
+      await repository.claimRefundSettlement(BUSINESS_ID, REFUND_ID, {
+        status: 'COMPLETED',
+        completedAt: SETTLED_AT,
+      });
+
+      expect(prisma.refunds.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: REFUND_ID,
+          business_id: BUSINESS_ID,
+          status: { notIn: ['COMPLETED', 'FAILED', 'REJECTED'] },
+        },
+        data: { status: 'COMPLETED', completed_at: SETTLED_AT },
+      });
+    });
+
+    /**
+     * The predicate is the whole point. A refund the gateway already settled
+     * must not be walked back by a late failure event — that would hand its
+     * reserved balance back to the payment and let the same money be refunded
+     * a second time.
+     */
+    it('excludes every terminal state, in both directions', async () => {
+      await repository.claimRefundSettlement(BUSINESS_ID, REFUND_ID, { status: 'FAILED' });
+
+      const where = (
+        prisma.refunds.updateMany.mock.calls[0]![0] as { where: Record<string, unknown> }
+      ).where;
+      expect(where['status']).toEqual({ notIn: ['COMPLETED', 'FAILED', 'REJECTED'] });
+    });
+
+    it('reports the claim when it moved the row', async () => {
+      prisma.refunds.updateMany.mockResolvedValue({ count: 1 });
+
+      const result = await repository.claimRefundSettlement(BUSINESS_ID, REFUND_ID, {
+        status: 'COMPLETED',
+      });
+
+      expect(result.claimed).toBe(true);
+      expect(result.refund).toBeTruthy();
+    });
+
+    it('reports no claim when another delivery got there first', async () => {
+      // Stripe sends `charge.refunded` and `refund.updated` for one refund.
+      prisma.refunds.updateMany.mockResolvedValue({ count: 0 });
+
+      const result = await repository.claimRefundSettlement(BUSINESS_ID, REFUND_ID, {
+        status: 'COMPLETED',
+      });
+
+      expect(result.claimed).toBe(false);
+      // The row still comes back — the loser needs the settled state, it just
+      // must not emit for it.
+      expect(result.refund).toBeTruthy();
+    });
+
+    it('reads back within the tenant, so a lost claim cannot leak another business row', async () => {
+      await repository.claimRefundSettlement(BUSINESS_ID, REFUND_ID, { status: 'COMPLETED' });
+
+      expect(prisma.refunds.findFirst).toHaveBeenCalledWith({
+        where: { id: REFUND_ID, business_id: BUSINESS_ID },
+      });
+    });
+
+    it('returns a null refund rather than throwing when the row is not this tenant', async () => {
+      // Unlike `updateRefundStatus`, this runs on the webhook path where a
+      // throw becomes a 500 to the gateway and a retry storm. The caller reads
+      // `claimed` and logs.
+      prisma.refunds.updateMany.mockResolvedValue({ count: 0 });
+      prisma.refunds.findFirst.mockResolvedValue(null);
+
+      const result = await repository.claimRefundSettlement(OTHER_BUSINESS_ID, REFUND_ID, {
+        status: 'COMPLETED',
+      });
+
+      expect(result).toEqual({ refund: null, claimed: false });
+    });
+
+    it('writes only the fields it was given', async () => {
+      await repository.claimRefundSettlement(BUSINESS_ID, REFUND_ID, { status: 'FAILED' });
+
+      const data = (
+        prisma.refunds.updateMany.mock.calls[0]![0] as { data: Record<string, unknown> }
+      ).data;
+      expect(data).toEqual({ status: 'FAILED' });
+      expect('completed_at' in data).toBe(false);
+      expect('failed_at' in data).toBe(false);
+    });
+
+    it('maps every supplied field onto its column', async () => {
+      const failedAt = new Date('2026-08-16T09:00:00.000Z');
+
+      await repository.claimRefundSettlement(BUSINESS_ID, REFUND_ID, {
+        status: 'FAILED',
+        gatewayRefundId: 'rfnd_1',
+        gatewayResponse: { error: 'bank refused' },
+        failedAt,
+      });
+
+      expect(
+        (prisma.refunds.updateMany.mock.calls[0]![0] as { data: Record<string, unknown> }).data,
+      ).toEqual({
+        status: 'FAILED',
+        gateway_refund_id: 'rfnd_1',
+        gateway_response: { error: 'bank refused' },
+        failed_at: failedAt,
+      });
+    });
+  });
+
+  // ─────────────────────────────────────────────
+  // recordPaymentDispute
+  // ─────────────────────────────────────────────
+
+  describe('recordPaymentDispute', () => {
+    /** The statement text, with the tagged-template parameters collapsed out. */
+    function sql(): string {
+      const strings = prisma.$executeRaw.mock.calls[0]![0] as string[];
+      return strings.join(' ? ').replace(/\s+/g, ' ');
+    }
+
+    /** The interpolated values, in order. */
+    function params(): unknown[] {
+      return prisma.$executeRaw.mock.calls[0]!.slice(1);
+    }
+
+    it('scopes the write to the tenant as well as the payment', async () => {
+      await repository.recordPaymentDispute(BUSINESS_ID, PAYMENT_ID, 'disp_1', { status: 'open' });
+
+      expect(sql()).toContain('business_id');
+      expect(params()).toEqual([
+        'disp_1',
+        JSON.stringify({ status: 'open' }),
+        PAYMENT_ID,
+        BUSINESS_ID,
+      ]);
+    });
+
+    it('merges rather than replaces, so a second dispute does not erase the first', async () => {
+      await repository.recordPaymentDispute(BUSINESS_ID, PAYMENT_ID, 'disp_2', { status: 'lost' });
+
+      // Read-modify-write in Node loses one of two concurrent dispute events.
+      // The merge happens in Postgres, under `disputes`, keyed by dispute id.
+      expect(sql()).toContain("'disputes'");
+      expect(sql()).toContain('||');
+      expect(sql()).not.toMatch(/SET metadata = \$?\d*\s*jsonb_build_object\(\s*'disputes'/);
+    });
+
+    it('degrades to an empty object rather than failing when metadata is not one', async () => {
+      await repository.recordPaymentDispute(BUSINESS_ID, PAYMENT_ID, 'disp_1', {});
+
+      // On this path a statement that errors means the *dispute* is what goes
+      // unrecorded, which is the one thing worse than a malformed metadata blob.
+      expect(sql()).toContain("jsonb_typeof(metadata) = 'object'");
+      expect(sql()).toContain("jsonb_typeof(metadata -> 'disputes') = 'object'");
+    });
+
+    it('reports whether a row in this tenant matched', async () => {
+      prisma.$executeRaw.mockResolvedValue(1);
+      await expect(
+        repository.recordPaymentDispute(BUSINESS_ID, PAYMENT_ID, 'disp_1', {}),
+      ).resolves.toBe(true);
+
+      prisma.$executeRaw.mockResolvedValue(0);
+      await expect(
+        repository.recordPaymentDispute(OTHER_BUSINESS_ID, PAYMENT_ID, 'disp_1', {}),
+      ).resolves.toBe(false);
+    });
+
+    it('passes the dispute id as a parameter, never as SQL text', async () => {
+      // The id comes off an unauthenticated webhook body.
+      await repository.recordPaymentDispute(BUSINESS_ID, PAYMENT_ID, "'; DROP TABLE payments; --", {});
+
+      expect(sql()).not.toContain('DROP TABLE');
+      expect(params()[0]).toBe("'; DROP TABLE payments; --");
     });
   });
 
