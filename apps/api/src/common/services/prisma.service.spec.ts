@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { PrismaClient } from '@prisma/client';
 import {
   PrismaService,
   withConnectionLimit,
@@ -81,6 +82,41 @@ describe('PrismaService', () => {
     expect(
       (service as unknown as { onModuleDestroy?: unknown }).onModuleDestroy,
     ).toBeUndefined();
+  });
+
+  /**
+   * Both middlewares are installed by the constructor, which is the only place
+   * they *can* be installed and still cover every injection site: this class is
+   * the one Prisma client the app has, and every module resolves it by type.
+   * A `$use` added anywhere else guards only the callers that happen to import
+   * whatever added it.
+   *
+   * The order is the assertion that matters. Timing is registered first, so it
+   * wraps the scope and measures the query the engine actually ran. Reversed,
+   * it would still log a plausible number that excluded the part this app added.
+   */
+  it('installs the timing middleware outside the soft-delete scope', () => {
+    const use = jest
+      .spyOn(PrismaClient.prototype, '$use')
+      .mockImplementation(() => undefined);
+
+    new PrismaService();
+
+    expect(use).toHaveBeenCalledTimes(2);
+
+    // Both are anonymous async functions, so they are told apart by what they
+    // do: only the scope rewrites `args`.
+    const [timing, scope] = use.mock.calls.map((call) => call[0]);
+    const timingParams = { model: 'clients', action: 'findMany', args: {} };
+    const scopeParams = { model: 'clients', action: 'findMany', args: {} };
+
+    return Promise.all([
+      timing?.(timingParams as never, (async () => null) as never),
+      scope?.(scopeParams as never, (async () => null) as never),
+    ]).then(() => {
+      expect(timingParams.args).toEqual({});
+      expect(scopeParams.args).toEqual({ where: { deleted_at: null } });
+    });
   });
 });
 

@@ -6,6 +6,9 @@ import {
 } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
+import { createQueryTimingMiddleware } from './query-timing.middleware';
+import { createSoftDeleteMiddleware } from './soft-delete.middleware';
+
 /**
  * Connections this process will open at most, when DATABASE_URL does not say.
  *
@@ -80,6 +83,14 @@ export class PrismaService
   constructor() {
     const url = withConnectionLimit(process.env['DATABASE_URL'], configuredLimit());
     super(url ? { datasources: { db: { url } } } : {});
+
+    // Order is the contract. `$use` wraps in registration order, so the first
+    // registered is the outermost link: timing has to see the query as the
+    // caller issued it *and* as the scope rewrote it, which means it must be
+    // outside the rewrite. Swapping these two lines would still work and would
+    // still report a number — just not the number the caller waited for.
+    this.$use(createQueryTimingMiddleware());
+    this.$use(createSoftDeleteMiddleware());
   }
 
   async onModuleInit(): Promise<void> {
