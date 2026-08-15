@@ -18,7 +18,13 @@ import {
 } from './realty-intelligence.constants';
 
 function makeProcessor() {
-  const queue = { add: jest.fn().mockResolvedValue(undefined) };
+  const queue = {
+    add: jest.fn().mockResolvedValue(undefined),
+    getRepeatableJobs: jest
+      .fn<Promise<{ key: string; id: string; cron: string }[]>, []>()
+      .mockResolvedValue([]),
+    removeRepeatableByKey: jest.fn().mockResolvedValue(undefined),
+  };
   const service = {
     generateNightlyAggregates: jest.fn().mockResolvedValue({
       aggregateCount: 12,
@@ -73,6 +79,42 @@ describe('RealtyIntelligenceProcessor', () => {
       expect(queue.add.mock.calls[0]![2]).toMatchObject({
         jobId: NIGHTLY_AGGREGATES_JOB_ID,
       });
+    });
+
+    // The stable job id above only covers the case where the cron is unchanged.
+    // Bull keys a repeatable by (name, cron, jobId), so editing the schedule
+    // registers a second one and the old time keeps firing indefinitely — the
+    // nightly rebuild then runs twice a day, each pass rewriting the corridor
+    // aggregates the other just wrote.
+    it('removes a prior schedule registered under a different cron', async () => {
+      const { processor, queue } = makeProcessor();
+      queue.getRepeatableJobs.mockResolvedValue([
+        { key: 'stale-key', id: NIGHTLY_AGGREGATES_JOB_ID, cron: '0 4 * * *' },
+      ]);
+
+      await processor.onModuleInit();
+
+      expect(queue.removeRepeatableByKey).toHaveBeenCalledWith('stale-key');
+      expect(queue.add).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves the current schedule and other jobs registered', async () => {
+      const { processor, queue } = makeProcessor();
+      queue.getRepeatableJobs.mockResolvedValue([
+        { key: 'current-key', id: NIGHTLY_AGGREGATES_JOB_ID, cron: NIGHTLY_AGGREGATES_CRON },
+        { key: 'unrelated', id: 'some-other-job', cron: '0 4 * * *' },
+      ]);
+
+      await processor.onModuleInit();
+
+      expect(queue.removeRepeatableByKey).not.toHaveBeenCalled();
+    });
+
+    it('still boots when the stale-schedule cleanup fails', async () => {
+      const { processor, queue } = makeProcessor();
+      queue.getRepeatableJobs.mockRejectedValue(new Error('ECONNREFUSED'));
+
+      await expect(processor.onModuleInit()).resolves.toBeUndefined();
     });
 
     it('does not throw when the queue is unreachable at boot', async () => {

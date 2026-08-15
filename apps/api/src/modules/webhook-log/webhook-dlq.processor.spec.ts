@@ -26,7 +26,11 @@ const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
 const ENTRY_ID = '00000000-0000-4000-b000-000000000001';
 
 function build() {
-  const queue = { add: jest.fn(async () => ({ id: 'job-1' })) };
+  const queue = {
+    add: jest.fn(async () => ({ id: 'job-1' })),
+    getRepeatableJobs: jest.fn(async () => [] as { key: string; id: string; cron: string }[]),
+    removeRepeatableByKey: jest.fn(async () => undefined),
+  };
   const dlq = {
     runRetry: jest.fn(async () => ({ status: 'REPLAYED' as const, entry: {} })),
     sweepDue: jest.fn(async () => 0),
@@ -54,6 +58,42 @@ describe('WebhookDlqProcessor.onModuleInit', () => {
   it('boots even when the queue refuses the registration', async () => {
     const { processor, queue } = build();
     queue.add.mockRejectedValueOnce(new Error('redis down'));
+
+    await expect(processor.onModuleInit()).resolves.toBeUndefined();
+  });
+
+  // A stable jobId only dedupes an *unchanged* schedule: Bull keys a repeatable
+  // by (name, cron, jobId), so editing the cron registers a second one beside
+  // the first and the old schedule fires forever. Two live sweeps means
+  // `sweepDue()` runs twice and re-enqueues the same due entries — duplicate
+  // delivery attempts against a budget the DB row already bounds.
+  it('removes a prior sweep left behind under a different cron', async () => {
+    const { processor, queue } = build();
+    queue.getRepeatableJobs.mockResolvedValue([
+      { key: 'stale-key', id: WEBHOOK_DLQ_SWEEP_JOB_ID, cron: '0 0 * * *' },
+    ]);
+
+    await processor.onModuleInit();
+
+    expect(queue.removeRepeatableByKey).toHaveBeenCalledWith('stale-key');
+    expect(queue.add).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the current schedule and unrelated repeatables alone', async () => {
+    const { processor, queue } = build();
+    queue.getRepeatableJobs.mockResolvedValue([
+      { key: 'current-key', id: WEBHOOK_DLQ_SWEEP_JOB_ID, cron: WEBHOOK_DLQ_SWEEP_CRON },
+      { key: 'someone-elses', id: 'another-job', cron: '0 3 * * *' },
+    ]);
+
+    await processor.onModuleInit();
+
+    expect(queue.removeRepeatableByKey).not.toHaveBeenCalled();
+  });
+
+  it('still boots when the stale-schedule cleanup itself fails', async () => {
+    const { processor, queue } = build();
+    queue.getRepeatableJobs.mockRejectedValue(new Error('redis down'));
 
     await expect(processor.onModuleInit()).resolves.toBeUndefined();
   });

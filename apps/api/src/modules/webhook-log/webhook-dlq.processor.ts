@@ -42,6 +42,25 @@ export class WebhookDlqProcessor implements OnModuleInit {
   /** Register the recovery sweep once, under a stable id so deploys don't stack it. */
   async onModuleInit(): Promise<void> {
     try {
+      // A stable jobId alone only dedupes an *unchanged* schedule. Bull keys a
+      // repeatable by (name, cron, jobId), so editing the cron registers a
+      // second repeatable beside the first and the old schedule keeps firing
+      // forever — nothing ever removes it, and it survives every later deploy.
+      // Two live sweeps means `sweepDue()` runs twice, and each run re-enqueues
+      // the same due entries: duplicate delivery attempts against endpoints
+      // that already have a bounded attempt budget in the DB row. Clear any
+      // prior repeatable carrying this id under a different cron first, which
+      // is what the module-level registrations (compliance, realty-ingestion,
+      // realty-integrations) already do.
+      const existing = await this.queue.getRepeatableJobs();
+      await Promise.all(
+        existing
+          .filter(
+            (job) =>
+              job.id === WEBHOOK_DLQ_SWEEP_JOB_ID && job.cron !== WEBHOOK_DLQ_SWEEP_CRON,
+          )
+          .map((job) => this.queue.removeRepeatableByKey(job.key)),
+      );
       await this.queue.add(
         WEBHOOK_DLQ_JOBS.SWEEP,
         {},
