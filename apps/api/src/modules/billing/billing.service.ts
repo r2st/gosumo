@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
-import { RealtyPlan } from '@prisma/client';
+import { Prisma, RealtyPlan } from '@prisma/client';
 import type { business_subscriptions } from '@prisma/client';
 import {
   generateId,
@@ -50,6 +50,21 @@ export interface UsageMeter {
   unit: string;
 }
 
+/**
+ * A billing cycle that has closed, snapshotted at rollover. The live counters
+ * reset to zero, so this is the only surviving record of what the cycle owed.
+ */
+export interface ClosedCycle {
+  cycleStart: string;
+  cycleEnd: string;
+  plan: RealtyPlan;
+  planPricePaise: number;
+  leadsUsed: number;
+  overageLeads: number;
+  overageRatePaise: number;
+  overageChargePaise: number;
+}
+
 export interface UsageSummary {
   plan: RealtyPlan;
   planLabel: string;
@@ -65,7 +80,16 @@ export interface UsageSummary {
   overageChargePaise: number;
   seatsUsed: number;
   meters: UsageMeter[];
+  /** Closed cycles, oldest first — what each one owed after its counters reset. */
+  billingHistory: ClosedCycle[];
 }
+
+/**
+ * How many closed cycles to keep on the subscription's metadata. A year of
+ * history covers any realistic reconciliation window and keeps the JSONB column
+ * from growing without bound over the life of the tenant.
+ */
+export const BILLING_HISTORY_LIMIT = 12;
 
 /** Add `n` whole months to a date (UTC-safe, clamps day overflow to month end). */
 export function addMonths(date: Date, n: number): Date {
@@ -150,6 +174,13 @@ export class BillingService {
     }
     if (!advanced) return sub;
 
+    // The counters are about to be zeroed. Overage accrued in the cycle being
+    // closed is real money owed, and nothing else in the system records it — so
+    // without a snapshot here the charge simply disappears the first time
+    // anything reads the subscription after the cycle ends, leaving nothing to
+    // invoice or reconcile against.
+    const metadata = this.closeCycleMetadata(sub);
+
     this.logger.log(
       `Billing cycle rolled over for business ${sub.business_id} → ${cycleStart.toISOString()}`,
     );
@@ -157,7 +188,56 @@ export class BillingService {
       billingCycleStart: cycleStart,
       leadsUsedThisCycle: 0,
       overageLeadsThisCycle: 0,
+      ...(metadata !== undefined ? { metadata } : {}),
     });
+  }
+
+  /**
+   * Append the closing cycle to the subscription's billing history, returning
+   * the new metadata — or `undefined` when the cycle saw no usage at all and
+   * there is nothing worth recording (a dormant tenant would otherwise
+   * accumulate an empty entry every month).
+   *
+   * Only one entry is ever appended per rollover: when a subscription has been
+   * idle across several months, the intermediate cycles are all zero and the
+   * counters belong entirely to the cycle that was actually open.
+   */
+  private closeCycleMetadata(
+    sub: business_subscriptions,
+  ): Prisma.InputJsonValue | undefined {
+    if (sub.leads_used_this_cycle <= 0 && sub.overage_leads_this_cycle <= 0) {
+      return undefined;
+    }
+
+    const meta = (sub.metadata ?? {}) as Record<string, unknown>;
+    const prior = Array.isArray(meta['billingHistory'])
+      ? (meta['billingHistory'] as ClosedCycle[])
+      : [];
+
+    const closed: ClosedCycle = {
+      cycleStart: sub.billing_cycle_start.toISOString(),
+      cycleEnd: addMonths(sub.billing_cycle_start, 1).toISOString(),
+      plan: sub.plan,
+      planPricePaise: sub.plan_price_paise,
+      leadsUsed: sub.leads_used_this_cycle,
+      overageLeads: sub.overage_leads_this_cycle,
+      overageRatePaise: sub.overage_rate_paise,
+      overageChargePaise: sub.overage_leads_this_cycle * sub.overage_rate_paise,
+    };
+
+    const next: Record<string, unknown> = {
+      ...meta,
+      billingHistory: [...prior, closed].slice(-BILLING_HISTORY_LIMIT),
+    };
+    return next as Prisma.InputJsonValue;
+  }
+
+  /** Closed-cycle history held on the subscription's metadata (oldest first). */
+  private readBillingHistory(sub: business_subscriptions): ClosedCycle[] {
+    const meta = (sub.metadata ?? {}) as Record<string, unknown>;
+    return Array.isArray(meta['billingHistory'])
+      ? (meta['billingHistory'] as ClosedCycle[])
+      : [];
   }
 
   // ─────────────────────────────────────────────
@@ -349,6 +429,7 @@ export class BillingService {
           unit: 'seats',
         },
       ],
+      billingHistory: this.readBillingHistory(sub),
     };
   }
 

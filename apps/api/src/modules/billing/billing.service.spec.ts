@@ -22,7 +22,7 @@ import { RealtyPlan } from '@prisma/client';
 import type { business_subscriptions } from '@prisma/client';
 import type { RealtyLeadCreatedEvent } from '@gosumo/shared';
 
-import { BillingService, addMonths } from './billing.service';
+import { BillingService, addMonths, BILLING_HISTORY_LIMIT } from './billing.service';
 import { BillingRepository } from './billing.repository';
 import { RealtyOperationsAuditService } from '../realty-hardening/realty-operations-audit.service';
 import { OVERAGE_RATE_PAISE, PLAN_DEFINITIONS } from './billing.constants';
@@ -178,11 +178,14 @@ describe('BillingService', () => {
         new Date('2026-08-05T00:00:00Z'),
       );
 
-      expect(repository.update).toHaveBeenCalledWith(BUSINESS_ID, {
-        billingCycleStart: new Date('2026-08-01T00:00:00Z'),
-        leadsUsedThisCycle: 0,
-        overageLeadsThisCycle: 0,
-      });
+      expect(repository.update).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        expect.objectContaining({
+          billingCycleStart: new Date('2026-08-01T00:00:00Z'),
+          leadsUsedThisCycle: 0,
+          overageLeadsThisCycle: 0,
+        }),
+      );
       expect(result.leads_used_this_cycle).toBe(0);
     });
 
@@ -203,6 +206,142 @@ describe('BillingService', () => {
           overageLeadsThisCycle: 0,
         }),
       );
+    });
+  });
+
+  // ── Closed-cycle snapshot ──
+  //
+  // Rollover zeroes the counters, and nothing else in the system records what
+  // the closing cycle owed. Without a snapshot the overage charge is gone the
+  // first time anything reads the subscription after the cycle ends.
+  describe('billing history on rollover', () => {
+    /** The `metadata` written by the single `repository.update` call. */
+    function writtenMetadata(): Record<string, unknown> | undefined {
+      const [, patch] = repository.update.mock.calls[0] as [string, Record<string, unknown>];
+      return patch['metadata'] as Record<string, unknown> | undefined;
+    }
+
+    it('snapshots the closing cycle so its overage charge survives the reset', async () => {
+      repository.findByBusiness.mockResolvedValue(
+        makeSub({ leads_used_this_cycle: 312, overage_leads_this_cycle: 12 }),
+      );
+      repository.update.mockResolvedValue(makeSub());
+
+      await service.getSubscription(BUSINESS_ID, new Date('2026-08-05T00:00:00Z'));
+
+      expect(writtenMetadata()?.['billingHistory']).toEqual([
+        {
+          cycleStart: '2026-07-01T00:00:00.000Z',
+          cycleEnd: '2026-08-01T00:00:00.000Z',
+          plan: RealtyPlan.SOLO,
+          planPricePaise: 399900,
+          leadsUsed: 312,
+          overageLeads: 12,
+          overageRatePaise: OVERAGE_RATE_PAISE,
+          // 12 leads × ₹8 = ₹96. This is the number that used to vanish.
+          overageChargePaise: 9600,
+        },
+      ]);
+    });
+
+    it('appends to the history already on the subscription', async () => {
+      const earlier = {
+        cycleStart: '2026-06-01T00:00:00.000Z',
+        cycleEnd: '2026-07-01T00:00:00.000Z',
+        plan: RealtyPlan.SOLO,
+        planPricePaise: 399900,
+        leadsUsed: 300,
+        overageLeads: 0,
+        overageRatePaise: OVERAGE_RATE_PAISE,
+        overageChargePaise: 0,
+      };
+      repository.findByBusiness.mockResolvedValue(
+        makeSub({
+          leads_used_this_cycle: 305,
+          overage_leads_this_cycle: 5,
+          metadata: { hardCap: false, billingHistory: [earlier] } as never,
+        }),
+      );
+      repository.update.mockResolvedValue(makeSub());
+
+      await service.getSubscription(BUSINESS_ID, new Date('2026-08-05T00:00:00Z'));
+
+      const history = writtenMetadata()?.['billingHistory'] as unknown[];
+      expect(history).toHaveLength(2);
+      expect(history[0]).toEqual(earlier);
+      // Unrelated metadata keys are carried through, not clobbered.
+      expect(writtenMetadata()?.['hardCap']).toBe(false);
+    });
+
+    it('keeps only the most recent cycles so the JSONB column stays bounded', async () => {
+      const priorCycles = Array.from({ length: BILLING_HISTORY_LIMIT + 4 }, (_, i) => ({
+        cycleStart: `20${10 + i}-01-01T00:00:00.000Z`,
+        cycleEnd: `20${10 + i}-02-01T00:00:00.000Z`,
+        plan: RealtyPlan.SOLO,
+        planPricePaise: 399900,
+        leadsUsed: i,
+        overageLeads: 0,
+        overageRatePaise: OVERAGE_RATE_PAISE,
+        overageChargePaise: 0,
+      }));
+      repository.findByBusiness.mockResolvedValue(
+        makeSub({
+          leads_used_this_cycle: 7,
+          metadata: { billingHistory: priorCycles } as never,
+        }),
+      );
+      repository.update.mockResolvedValue(makeSub());
+
+      await service.getSubscription(BUSINESS_ID, new Date('2026-08-05T00:00:00Z'));
+
+      const history = writtenMetadata()?.['billingHistory'] as Array<{ leadsUsed: number }>;
+      expect(history).toHaveLength(BILLING_HISTORY_LIMIT);
+      // The oldest entries are the ones dropped; the new cycle is last.
+      expect(history.map((c) => c.leadsUsed)).toEqual([
+        ...Array.from({ length: BILLING_HISTORY_LIMIT - 1 }, (_, i) => i + 5),
+        7,
+      ]);
+    });
+
+    it('records nothing for a dormant cycle that saw no usage at all', async () => {
+      repository.findByBusiness.mockResolvedValue(
+        makeSub({ leads_used_this_cycle: 0, overage_leads_this_cycle: 0 }),
+      );
+      repository.update.mockResolvedValue(makeSub());
+
+      await service.getSubscription(BUSINESS_ID, new Date('2026-08-05T00:00:00Z'));
+
+      expect(writtenMetadata()).toBeUndefined();
+    });
+
+    it('surfaces the history on the usage summary', async () => {
+      const closed = {
+        cycleStart: '2026-06-01T00:00:00.000Z',
+        cycleEnd: '2026-07-01T00:00:00.000Z',
+        plan: RealtyPlan.SOLO,
+        planPricePaise: 399900,
+        leadsUsed: 310,
+        overageLeads: 10,
+        overageRatePaise: OVERAGE_RATE_PAISE,
+        overageChargePaise: 8000,
+      };
+      repository.findByBusiness.mockResolvedValue(
+        makeSub({ metadata: { billingHistory: [closed] } as never }),
+      );
+      repository.countSeats.mockResolvedValue(1);
+
+      const summary = await service.getUsageSummary(BUSINESS_ID, CYCLE_START);
+
+      expect(summary.billingHistory).toEqual([closed]);
+    });
+
+    it('reports an empty history when the subscription has never rolled over', async () => {
+      repository.findByBusiness.mockResolvedValue(makeSub());
+      repository.countSeats.mockResolvedValue(1);
+
+      const summary = await service.getUsageSummary(BUSINESS_ID, CYCLE_START);
+
+      expect(summary.billingHistory).toEqual([]);
     });
   });
 
