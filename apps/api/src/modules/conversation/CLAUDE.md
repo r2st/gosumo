@@ -30,9 +30,16 @@ getConversationStats(businessId, query): Promise<ConversationStatsDto>
 
 **Listens to:**
 - `message.received` — find or create conversation, update `last_message_at`
-- `task.resolved` — transition conversation from ESCALATED → OPEN or RESOLVED
+- `ai.escalated` — the AI's own escalation moves the conversation to ESCALATED. Without this the status was only ever set by the manual REST endpoint, so an AI escalation never reached the inbox's "Escalated" filter and the `task.resolved` return path below could not fire
+- `task.created` — a `REVIEW_RESPONSE` / `CLARIFY_INTENT` task moves the conversation to PENDING_HUMAN (escalation task types are left to `ai.escalated`, which sets the stronger status)
+- `task.resolved` — ESCALATED **or** PENDING_HUMAN → OPEN, but only once no other task on that conversation is still open. Emitted on every HITL resolution path (resolve / approve / reject / edit-and-send), so a rejected draft has a way back
 - `ai.response.approved` — transition from PENDING_HUMAN → OPEN
 - `team.member.removed` — release every live conversation that member held back to the unassigned queue (RESOLVED ones keep their assignee as a record of who handled it)
+
+**Why the status matters beyond the inbox:** `AiEngineService` refuses to send
+anything to the customer while a conversation is ESCALATED or PENDING_HUMAN,
+downgrading an auto-executable reply to a review task. These two statuses are
+what stop the AI answering over the person holding the thread.
 
 ## Tables Owned
 

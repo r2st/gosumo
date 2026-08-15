@@ -21,6 +21,7 @@ import {
   ConversationAssignedEvent,
   ConversationResolvedEvent,
   ConversationEscalatedEvent,
+  TaskCreatedEvent,
   TaskResolvedEvent,
   TeamMemberRemovedEvent,
   AIResponseApprovedEvent,
@@ -50,6 +51,14 @@ import {
   type EscalationReason,
   type SnoozeWakeJobData,
 } from './conversation.constants';
+
+/**
+ * HITL task types that mean "an AI draft is waiting for a person to look at
+ * it" — as opposed to an escalation, which `ai.escalated` handles with the
+ * stronger ESCALATED status. Compared as strings because the enum lives in
+ * `@gosumo/database` and this module does not otherwise depend on it.
+ */
+const REVIEW_TASK_TYPES: readonly string[] = ['REVIEW_RESPONSE', 'CLARIFY_INTENT'];
 
 // ─────────────────────────────────────────────
 // State machine: valid status transitions
@@ -1137,7 +1146,68 @@ export class ConversationService {
   }
 
   /**
-   * task.resolved → an escalated conversation returns to OPEN for follow-up.
+   * task.created → a queued AI draft means the next move is a person's.
+   *
+   * The mirror of {@link handleAiEscalated}, and broken the same way: nothing
+   * set PENDING_HUMAN, so `handleAiResponseApproved` below — the documented
+   * PENDING_HUMAN → OPEN return — was unreachable, and a second message
+   * arriving while a draft sat in the queue could be auto-answered, leaving
+   * the reviewer holding a reply that now contradicts what the customer was
+   * already told.
+   *
+   * Only the two review task types. An escalation task arrives here too, and
+   * `ai.escalated` already gives that one the stronger ESCALATED status.
+   */
+  @OnEvent('task.created')
+  async handleTaskCreated(event: TaskCreatedEvent): Promise<void> {
+    if (!REVIEW_TASK_TYPES.includes(event.taskType as string)) return;
+    if (!event.businessId || !event.conversationId) return;
+    try {
+      const conversation = await this.repository.findById(
+        event.businessId,
+        event.conversationId,
+      );
+      if (!conversation) return;
+
+      const current = conversation.status as ConversationStatus;
+      // ESCALATED outranks PENDING_HUMAN — a conversation already handed to a
+      // person must not be quietly demoted to "a draft is waiting".
+      if (current === ConversationStatus.ESCALATED) return;
+      if (current === ConversationStatus.PENDING_HUMAN) return;
+      if (!this.canTransition(current, ConversationStatus.PENDING_HUMAN)) return;
+
+      await this.repository.updateStatus(
+        event.businessId,
+        conversation.id,
+        ConversationStatus.PENDING_HUMAN,
+      );
+      this.emitStatusChanged(
+        event.businessId,
+        conversation.id,
+        conversation.client_id,
+        current,
+        ConversationStatus.PENDING_HUMAN,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to handle task.created for conversation ${event.conversationId}: ${this.errMsg(error)}`,
+      );
+    }
+  }
+
+  /**
+   * task.resolved → a conversation a human was holding returns to OPEN.
+   *
+   * Emitted on every resolution path HITL has — plain resolve, approve, reject,
+   * and edit-and-send — so this is the one exit that covers all of them. A
+   * rejected draft in particular has no other way back: without it the
+   * conversation would sit in PENDING_HUMAN forever and the AI would never
+   * answer that customer again.
+   *
+   * Held back while *another* task on the same conversation is still open. The
+   * status is what re-arms the AI, so returning to OPEN on the first of two
+   * resolutions would put it back to answering over a person who still has
+   * work queued — which is the whole thing these statuses exist to prevent.
    */
   @OnEvent('task.resolved')
   async handleTaskResolved(event: TaskResolvedEvent): Promise<void> {
@@ -1147,7 +1217,22 @@ export class ConversationService {
         event.conversationId,
       );
       if (!conversation) return;
-      if (conversation.status !== ConversationStatus.ESCALATED) return;
+
+      const current = conversation.status as ConversationStatus;
+      if (
+        current !== ConversationStatus.ESCALATED &&
+        current !== ConversationStatus.PENDING_HUMAN
+      ) {
+        return;
+      }
+
+      const stillOpen = await this.countOpenTasks(event.businessId, conversation.id);
+      if (stillOpen > 0) {
+        this.logger.debug(
+          `Conversation ${conversation.id} stays ${current}: ${stillOpen} task(s) still open`,
+        );
+        return;
+      }
 
       await this.repository.updateStatus(
         event.businessId,
@@ -1158,7 +1243,7 @@ export class ConversationService {
         event.businessId,
         conversation.id,
         conversation.client_id,
-        ConversationStatus.ESCALATED,
+        current,
         ConversationStatus.OPEN,
         event.resolvedByMemberId,
       );

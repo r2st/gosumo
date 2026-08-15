@@ -812,6 +812,89 @@ describe('ConversationService — lifecycle & features', () => {
     });
   });
 
+  describe('handleTaskCreated', () => {
+    function taskCreated(taskType: string) {
+      return {
+        type: 'task.created' as const,
+        id: 'evt',
+        timestamp: new Date().toISOString(),
+        businessId: BUSINESS_ID,
+        correlationId: 'corr',
+        taskId: 'task-1',
+        conversationId: CONVERSATION_ID,
+        taskType,
+        priority: 'MEDIUM',
+        dueAt: new Date().toISOString(),
+      } as unknown as Parameters<typeof service.handleTaskCreated>[0];
+    }
+
+    it.each(['REVIEW_RESPONSE', 'CLARIFY_INTENT'])(
+      'moves the conversation to PENDING_HUMAN for a %s task',
+      async (taskType) => {
+        repository.findById.mockResolvedValue(makeConversation({ status: ConversationStatus.OPEN }));
+        repository.updateStatus.mockResolvedValue(makeConversation());
+
+        await service.handleTaskCreated(taskCreated(taskType));
+
+        expect(repository.updateStatus).toHaveBeenCalledWith(
+          BUSINESS_ID,
+          CONVERSATION_ID,
+          ConversationStatus.PENDING_HUMAN,
+        );
+      },
+    );
+
+    it.each(['HANDLE_COMPLAINT', 'APPROVE_REFUND', 'CUSTOM'])(
+      'leaves a %s task to the ai.escalated path',
+      async (taskType) => {
+        await service.handleTaskCreated(taskCreated(taskType));
+
+        expect(repository.findById).not.toHaveBeenCalled();
+      },
+    );
+
+    it('does not demote a conversation already ESCALATED', async () => {
+      // A person is holding this one. "A draft is waiting" is the weaker claim
+      // and must not overwrite it.
+      repository.findById.mockResolvedValue(
+        makeConversation({ status: ConversationStatus.ESCALATED }),
+      );
+
+      await service.handleTaskCreated(taskCreated('REVIEW_RESPONSE'));
+
+      expect(repository.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when it is already PENDING_HUMAN', async () => {
+      repository.findById.mockResolvedValue(
+        makeConversation({ status: ConversationStatus.PENDING_HUMAN }),
+      );
+
+      await service.handleTaskCreated(taskCreated('REVIEW_RESPONSE'));
+
+      expect(repository.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('skips a status PENDING_HUMAN cannot be reached from', async () => {
+      repository.findById.mockResolvedValue(
+        makeConversation({ status: ConversationStatus.RESOLVED }),
+      );
+
+      await service.handleTaskCreated(taskCreated('REVIEW_RESPONSE'));
+
+      expect(repository.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('swallows a write failure — the task itself is already filed', async () => {
+      repository.findById.mockResolvedValue(makeConversation({ status: ConversationStatus.OPEN }));
+      repository.updateStatus.mockRejectedValue(new Error('db down'));
+
+      await expect(
+        service.handleTaskCreated(taskCreated('REVIEW_RESPONSE')),
+      ).resolves.toBeUndefined();
+    });
+  });
+
   describe('handleTaskResolved', () => {
     it('returns an ESCALATED conversation to OPEN', async () => {
       repository.findById.mockResolvedValue(
@@ -861,6 +944,69 @@ describe('ConversationService — lifecycle & features', () => {
 
       await service.handleTaskResolved(event);
       expect(repository.updateStatus).not.toHaveBeenCalled();
+    });
+
+    function resolved(): TaskResolvedEvent {
+      return {
+        type: 'task.resolved',
+        id: 'evt',
+        timestamp: new Date().toISOString(),
+        businessId: BUSINESS_ID,
+        correlationId: 'corr',
+        taskId: 'task-1',
+        conversationId: CONVERSATION_ID,
+        resolvedByMemberId: AGENT_A,
+        resolutionDurationSeconds: 120,
+        slaBreach: false,
+      };
+    }
+
+    it('returns a PENDING_HUMAN conversation to OPEN as well', async () => {
+      // A rejected draft has no other way back: without this the conversation
+      // sits in PENDING_HUMAN forever and the AI never answers again.
+      repository.findById.mockResolvedValue(
+        makeConversation({ status: ConversationStatus.PENDING_HUMAN }),
+      );
+      repository.updateStatus.mockResolvedValue(makeConversation());
+      prisma.tasks.count.mockResolvedValue(0);
+
+      await service.handleTaskResolved(resolved());
+
+      expect(repository.updateStatus).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        CONVERSATION_ID,
+        ConversationStatus.OPEN,
+      );
+    });
+
+    it('holds the status while another task on the conversation is still open', async () => {
+      // The status is what re-arms the AI. Returning to OPEN on the first of
+      // two resolutions would put it back to answering over a person who still
+      // has work queued.
+      repository.findById.mockResolvedValue(
+        makeConversation({ status: ConversationStatus.ESCALATED }),
+      );
+      prisma.tasks.count.mockResolvedValue(1);
+
+      await service.handleTaskResolved(resolved());
+
+      expect(repository.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('releases once the last open task is resolved', async () => {
+      repository.findById.mockResolvedValue(
+        makeConversation({ status: ConversationStatus.ESCALATED }),
+      );
+      repository.updateStatus.mockResolvedValue(makeConversation());
+      prisma.tasks.count.mockResolvedValue(0);
+
+      await service.handleTaskResolved(resolved());
+
+      expect(repository.updateStatus).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        CONVERSATION_ID,
+        ConversationStatus.OPEN,
+      );
     });
   });
 
