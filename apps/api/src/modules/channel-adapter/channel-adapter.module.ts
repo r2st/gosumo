@@ -10,6 +10,8 @@ import { WebChatAdapter } from './adapters/webchat.adapter';
 import { EmailAdapter } from './adapters/email.adapter';
 import { WebChatGateway } from './gateways/webchat.gateway';
 import { WebChatThrottle } from './gateways/webchat-throttle';
+import { ChannelHealthController } from './channel-health.controller';
+import { ChannelHealthService } from './channel-health.service';
 import { ChannelsModule } from '../channels/channels.module';
 import { WebhookLogModule } from '../webhook-log/webhook-log.module';
 
@@ -39,7 +41,7 @@ import { WebhookLogModule } from '../webhook-log/webhook-log.module';
     // only retry there was — comes back and is discarded as a duplicate.
     WebhookLogModule,
   ],
-  controllers: [ChannelAdapterController, WebChatWidgetController],
+  controllers: [ChannelAdapterController, WebChatWidgetController, ChannelHealthController],
   providers: [
     ChannelAdapterService,
     WhatsAppAdapter,
@@ -49,8 +51,11 @@ import { WebhookLogModule } from '../webhook-log/webhook-log.module';
     EmailAdapter,
     WebChatGateway,
     WebChatThrottle,
+    ChannelHealthService,
   ],
-  exports: [ChannelAdapterService],
+  // `ChannelHealthService` is exported so the health module can publish which
+  // channel is degraded without importing the adapters themselves.
+  exports: [ChannelAdapterService, ChannelHealthService],
 })
 export class ChannelAdapterModule implements OnModuleInit {
   constructor(

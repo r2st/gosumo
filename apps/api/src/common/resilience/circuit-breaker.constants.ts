@@ -91,3 +91,38 @@ export const SENDGRID_BREAKER: BreakerSettings = {
   failureThreshold: 6,
   cooldownMs: 30_000,
 };
+
+/**
+ * Inbound replay, per channel.
+ *
+ * The breakers above all guard a *call out*. This one guards a call *in* — the
+ * dead-letter replay of a webhook whose first processing threw — and it exists
+ * for a queue, not for a provider.
+ *
+ * `webhook-dlq` is one Bull queue shared by every channel and both payment
+ * gateways. A channel whose inbound path is systematically broken (a parser
+ * that throws on a payload shape, a tenant whose `channel_accounts` row is
+ * gone, a schema drift) produces a dead letter per message and then fails every
+ * retry of every one of them. Those failures are not free: each holds a worker
+ * slot for a database round trip, and there are only so many slots. A captured
+ * Razorpay payment then waits behind ten thousand doomed WhatsApp replays —
+ * one adapter's fault becoming every module's outage, which is the specific
+ * thing channel isolation is supposed to prevent.
+ *
+ * Open, the replays cost microseconds instead, the queue drains, and the
+ * entries are deferred rather than failed — see `ReplayDeferredError`, which is
+ * what keeps a channel outage from spending their retry budgets.
+ *
+ * Threshold 5, and **every** failure counts (not just outage-shaped ones): a
+ * deterministic parser bug is precisely the case worth fast-failing, and it is
+ * not retryable by the taxonomy's definition. The half-open probe is what makes
+ * that safe — one replay is admitted per cooldown, so a fixed channel closes
+ * the breaker on its own without an operator.
+ */
+export function channelInboundBreaker(channel: string): BreakerSettings {
+  return {
+    name: `Channel:${channel}:inbound`,
+    failureThreshold: 5,
+    cooldownMs: 30_000,
+  };
+}

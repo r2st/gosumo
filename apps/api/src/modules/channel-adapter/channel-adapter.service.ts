@@ -27,8 +27,12 @@ import {
 import { generateId, generateCorrelationId, normalizeIndianPhone, PayloadParseError } from '@gosumo/shared';
 import { PrismaService } from '../../common/services/prisma.service';
 import { findOrCreateClientByIdentity } from '../../common/utils/client-identity.util';
-import { WebhookDlqService } from '../webhook-log/webhook-dlq.service';
+import { ReplayDeferredError, WebhookDlqService } from '../webhook-log/webhook-dlq.service';
 import { ConversationLockService } from '../../common/services/conversation-lock.service';
+import { CircuitBreakerRegistry } from '../../common/resilience/circuit-breaker.registry';
+import { CircuitOpenError } from '../../common/resilience/circuit-breaker';
+import { channelInboundBreaker } from '../../common/resilience/circuit-breaker.constants';
+import { ChannelHealthService, type ChannelHealthSnapshot } from './channel-health.service';
 
 /**
  * Adapters whose provider batches several messages into one webhook implement
@@ -201,6 +205,19 @@ export class ChannelAdapterService implements OnModuleInit {
     @Optional() private readonly webhookDlq?: WebhookDlqService,
     /** Optional for the same reason; without it turns are not serialized. */
     @Optional() private readonly conversationLock?: ConversationLockService,
+    /**
+     * Optional for the same reason again. Absent, nothing is tracked and every
+     * path behaves exactly as it did — this observes, it never decides.
+     */
+    @Optional() private readonly channelHealth?: ChannelHealthService,
+    /**
+     * Supplies the per-channel inbound breaker used by the DLQ replay path.
+     * Optional because a breaker is process-global state and a unit suite that
+     * drives five consecutive failures to assert the retry schedule is
+     * indistinguishable, to a shared breaker, from a real outage — the same
+     * reasoning `BaseChannelAdapter` documents for its own.
+     */
+    @Optional() private readonly breakers?: CircuitBreakerRegistry,
   ) {}
 
   /**
@@ -297,11 +314,25 @@ export class ChannelAdapterService implements OnModuleInit {
       this.logger.warn(
         `[${traceId}] Invalid webhook signature for channel ${channelType}`,
       );
-      throw new UnauthorizedException('Webhook signature verification failed');
+      // Counted. A misconfigured secret rejects *every* delivery on one channel
+      // while the process looks entirely healthy from the outside — we answer
+      // the provider, no outbound call is made, so no circuit breaker ever
+      // sees it. A run of these is the signal that says which channel.
+      const rejected = new UnauthorizedException('Webhook signature verification failed');
+      this.channelHealth?.recordInboundFailure(channelType, rejected);
+      throw rejected;
     }
 
     // Step 2: Parse
-    const parsed = this.parseInboundBatch(adapter, req, traceId);
+    let parsed: NormalizedMessage[];
+    try {
+      parsed = this.parseInboundBatch(adapter, req, traceId);
+    } catch (err) {
+      // Same reasoning: a parser that throws on a payload shape the provider
+      // has started sending fails silently and completely.
+      this.channelHealth?.recordInboundFailure(channelType, err);
+      throw err;
+    }
 
     if (parsed.length > 1) {
       this.logger.log(`[${traceId}] ${channelType} webhook carried ${parsed.length} messages`);
@@ -453,8 +484,10 @@ export class ChannelAdapterService implements OnModuleInit {
       await this.withSenderLock(senderKey, async () => {
         await this.persistAndAnnounce(channelType, normalized, businessId, traceId, accounts);
       });
+      this.channelHealth?.recordInboundSuccess(channelType);
       await this.markWebhookProcessed(webhookEventId, traceId);
     } catch (err) {
+      this.channelHealth?.recordInboundFailure(channelType, err);
       await this.deadLetterInbound(
         channelType,
         normalized,
@@ -896,6 +929,14 @@ export class ChannelAdapterService implements OnModuleInit {
    * since the capture, then re-runs only the message the entry was captured
    * for. Throws on failure, which is how the DLQ decides to reschedule or
    * discard.
+   *
+   * Runs under a per-channel breaker. `webhook-dlq` is one queue shared by
+   * every channel and both payment gateways, so a channel whose inbound path is
+   * broken produces a dead letter per message and then spends a worker slot per
+   * doomed retry — and a captured payment queues behind ten thousand of them.
+   * Once the breaker opens the refusals cost microseconds, the queue drains,
+   * and the entries come back as {@link ReplayDeferredError} so the outage
+   * cannot spend their retry budgets.
    */
   private async replayInboundDelivery(payload: Record<string, unknown>): Promise<void> {
     const stored = payload as unknown as StoredInboundDelivery;
@@ -904,6 +945,37 @@ export class ChannelAdapterService implements OnModuleInit {
       throw new Error('Dead-lettered inbound delivery is missing its channel or tenant');
     }
 
+    const breaker = this.breakers?.get({
+      ...channelInboundBreaker(stored.channelType),
+      // Every failure counts, not just outage-shaped ones. A parser that throws
+      // deterministically is exactly what should stop being retried in a shared
+      // queue, and the taxonomy calls that non-retryable — the opposite verdict
+      // to the one this breaker needs.
+      isOutage: () => true,
+    });
+
+    const attempt = () => this.runInboundReplay(stored);
+
+    try {
+      await (breaker ? breaker.run(attempt) : attempt());
+      this.channelHealth?.recordInboundSuccess(stored.channelType);
+    } catch (err) {
+      if (err instanceof CircuitOpenError) {
+        // Not counted: nothing was attempted, so this is not evidence about the
+        // channel. Counting refusals would drive the health grade from the
+        // mitigation rather than from the fault, and would keep the channel
+        // reading "failing" for as long as the breaker kept it cheap.
+        throw new ReplayDeferredError(
+          `${stored.channelType} inbound circuit is open — not attempting this replay`,
+        );
+      }
+      this.channelHealth?.recordInboundFailure(stored.channelType, err);
+      throw err;
+    }
+  }
+
+  /** The replay itself, with no breaker or accounting around it. */
+  private async runInboundReplay(stored: StoredInboundDelivery): Promise<void> {
     const traceId = generateCorrelationId();
     const adapter = this.getAdapter(stored.channelType);
     const req: RawRequest = { headers: stored.headers ?? {}, body: stored.body };
@@ -961,6 +1033,10 @@ export class ChannelAdapterService implements OnModuleInit {
     const overLimit = this.lengthOverrun(adapter, message);
     if (overLimit) {
       this.logger.error(`[${traceId}] Refusing to send ${channelType} message: ${overLimit}`);
+      // Not recorded against the channel's health. This send never left the
+      // process and says nothing about whether the provider is up — charging it
+      // would let one caller's over-long body grade a working channel as
+      // failing, and hide a real outage behind a caller's bug.
       const event: MessageFailedEvent = {
         id: generateId(),
         type: 'message.failed',
@@ -982,6 +1058,7 @@ export class ChannelAdapterService implements OnModuleInit {
     const result = await adapter.sendMessage(message);
 
     if (result.success) {
+      this.channelHealth?.recordOutboundSuccess(channelType);
       this.logger.log(
         `[${traceId}] Message sent via ${channelType} to ${message.recipientExternalId} ` +
           `(externalId: ${result.externalMessageId})`,
@@ -1004,6 +1081,10 @@ export class ChannelAdapterService implements OnModuleInit {
 
       this.eventEmitter.emit('message.sent', event);
     } else {
+      this.channelHealth?.recordOutboundFailure(
+        channelType,
+        result.error ?? 'Unknown error',
+      );
       this.logger.error(
         `[${traceId}] Failed to send ${channelType} message to ` +
           `${message.recipientExternalId}: ${result.error}`,
@@ -1077,6 +1158,7 @@ export class ChannelAdapterService implements OnModuleInit {
     const result = await adapter.sendTemplate(template);
 
     if (result.success) {
+      this.channelHealth?.recordOutboundSuccess(channelType);
       this.logger.log(
         `[${traceId}] Template "${template.templateName}" sent via ${channelType} ` +
           `to ${template.recipientExternalId}`,
@@ -1099,6 +1181,10 @@ export class ChannelAdapterService implements OnModuleInit {
 
       this.eventEmitter.emit('message.sent', event);
     } else {
+      this.channelHealth?.recordOutboundFailure(
+        channelType,
+        result.error ?? 'Unknown error',
+      );
       const event: MessageFailedEvent = {
         id: generateId(),
         type: 'message.failed',
@@ -1135,11 +1221,16 @@ export class ChannelAdapterService implements OnModuleInit {
     const result = await adapter.sendInteractive(interactive);
 
     if (result.success) {
+      this.channelHealth?.recordOutboundSuccess(channelType);
       this.logger.log(
         `[${traceId}] Interactive message sent via ${channelType} ` +
           `to ${interactive.recipientExternalId}`,
       );
     } else {
+      this.channelHealth?.recordOutboundFailure(
+        channelType,
+        result.error ?? 'Unknown error',
+      );
       this.logger.error(
         `[${traceId}] Failed to send interactive message via ${channelType}: ${result.error}`,
       );
@@ -1178,11 +1269,25 @@ export class ChannelAdapterService implements OnModuleInit {
 
   /**
    * Return capabilities for all registered channels.
+   *
+   * One adapter that throws is skipped, not fatal. This is the map the AI
+   * engine reads to choose a response format, and it is asked for *all*
+   * channels: letting a misconfigured Instagram adapter's throw propagate would
+   * stop WhatsApp replies being formatted — one channel's fault taking out
+   * every channel, in a method whose whole job is to describe them
+   * independently.
    */
   getAllCapabilities(): Record<string, ChannelCapabilities> {
     const result: Record<string, ChannelCapabilities> = {};
     for (const [channelType, adapter] of this.registry) {
-      result[channelType] = adapter.getCapabilities();
+      try {
+        result[channelType] = adapter.getCapabilities();
+      } catch (err) {
+        this.logger.error(
+          `Could not read capabilities for ${channelType}, omitting it: ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
     return result;
   }
@@ -1191,11 +1296,25 @@ export class ChannelAdapterService implements OnModuleInit {
   // Health / status
   // ─────────────────────────────────────────────
 
+  /**
+   * Per-channel health, or an empty list when no tracker is wired.
+   *
+   * Carries the last error message, so it belongs behind authentication — see
+   * {@link ChannelHealthService.publicSnapshots} for what the public readiness
+   * probe gets instead.
+   */
+  getChannelHealth(): ChannelHealthSnapshot[] {
+    return this.channelHealth?.snapshots() ?? [];
+  }
+
   getStatus(): Record<string, unknown> {
     return {
       module: 'ChannelAdapter',
       registeredChannels: this.getRegisteredChannels(),
       adapterCount: this.registry.size,
+      // "Five adapters are registered" is also true of a process where
+      // Instagram has rejected every webhook for an hour.
+      channels: this.getChannelHealth(),
     };
   }
 }
