@@ -358,7 +358,7 @@ describe('CadenceEngineService', () => {
     it('onInboundReply resolves the lead by phone and stops reply-sensitive steps', async () => {
       leadsService.findLeadByPhone.mockResolvedValue(makeLead());
       const stopSpy = jest.spyOn(engine, 'stopForLead').mockResolvedValue(1);
-      await engine.onInboundReply({ businessId: BUSINESS_ID, senderExternalId: PHONE } as never);
+      await engine.onInboundReply({ businessId: BUSINESS_ID, senderExternalId: PHONE, senderPhone: PHONE } as never);
       expect(leadsService.findLeadByPhone).toHaveBeenCalledWith(BUSINESS_ID, PHONE);
       expect(stopSpy).toHaveBeenCalledWith(BUSINESS_ID, LEAD_ID, CadenceStopOn.REPLY, 'buyer_replied');
     });
@@ -366,7 +366,37 @@ describe('CadenceEngineService', () => {
     it('onInboundReply no-ops for an unseen phone', async () => {
       leadsService.findLeadByPhone.mockResolvedValue(null);
       const stopSpy = jest.spyOn(engine, 'stopForLead').mockResolvedValue(0);
-      await engine.onInboundReply({ businessId: BUSINESS_ID, senderExternalId: PHONE } as never);
+      await engine.onInboundReply({ businessId: BUSINESS_ID, senderExternalId: PHONE, senderPhone: PHONE } as never);
+      expect(stopSpy).not.toHaveBeenCalled();
+    });
+
+    it('onInboundReply looks up the E.164 phone, not the raw channel address', async () => {
+      leadsService.findLeadByPhone.mockResolvedValue(makeLead());
+      const stopSpy = jest.spyOn(engine, 'stopForLead').mockResolvedValue(1);
+
+      // WhatsApp delivers `919876543210`; the lead is stored `+919876543210`.
+      // Looking up the raw form found nothing, so the stop never fired and the
+      // buyer kept receiving follow-ups after they had already replied.
+      await engine.onInboundReply({
+        businessId: BUSINESS_ID,
+        senderExternalId: '919876543210',
+        senderPhone: PHONE,
+      } as never);
+
+      expect(leadsService.findLeadByPhone).toHaveBeenCalledWith(BUSINESS_ID, PHONE);
+      expect(stopSpy).toHaveBeenCalled();
+    });
+
+    it('onInboundReply ignores a channel with no phone identity', async () => {
+      const stopSpy = jest.spyOn(engine, 'stopForLead').mockResolvedValue(0);
+
+      await engine.onInboundReply({
+        businessId: BUSINESS_ID,
+        senderExternalId: 'a3f1c0de-1111-4222-8333-444455556666',
+        senderPhone: undefined,
+      } as never);
+
+      expect(leadsService.findLeadByPhone).not.toHaveBeenCalled();
       expect(stopSpy).not.toHaveBeenCalled();
     });
   });

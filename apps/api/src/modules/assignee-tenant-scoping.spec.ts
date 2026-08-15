@@ -188,6 +188,8 @@ describe('RealtyLeadsService refuses a cross-tenant agent', () => {
 
     const repository = {
       findByPhone: jest.fn().mockResolvedValue(null),
+      findByPhoneIncludingDeleted: jest.fn().mockResolvedValue(null),
+      revive: jest.fn(),
       findById: jest.fn().mockResolvedValue(lead),
       create: jest.fn().mockResolvedValue(lead),
       update: jest.fn().mockResolvedValue(lead),

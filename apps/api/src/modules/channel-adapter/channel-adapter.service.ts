@@ -389,6 +389,9 @@ export class ChannelAdapterService implements OnModuleInit {
     // `uuid_generate_v4()` on the database side. They are never equal, so
     // publishing the former is publishing an id nothing can be joined on.
     let resolvedMessageId = normalized.id;
+    // The sender's E.164 phone, for the consumers that match on a person rather
+    // than on a channel address. Hoisted out of the try so it reaches the emit.
+    let resolvedSenderPhone: string | undefined;
 
     try {
       // Look up the channel_account by channel type and external_id
@@ -424,6 +427,13 @@ export class ChannelAdapterService implements OnModuleInit {
         const senderPhone = isPhoneChannel
           ? normalizeIndianPhone(senderExternalId) ?? senderExternalId
           : undefined;
+        // Publish it too. Computing this only for `clients.phone` was the bug:
+        // the event carried the raw `wa_id`, so every *other* E.164-keyed
+        // consumer — lead capture, cadence stop-on-reply, the voice router —
+        // matched `919876543210` against rows written `+919876543210` and found
+        // nothing. Non-phone channels stay undefined rather than falling back to
+        // the channel id, which is not a phone number in any format.
+        resolvedSenderPhone = senderPhone;
 
         let channelContact = await this.prisma.channel_contacts.findFirst({
           where: {
@@ -595,6 +605,7 @@ export class ChannelAdapterService implements OnModuleInit {
       channelAccountId: resolvedChannelAccountId,
       channel: normalized.channel,
       senderExternalId: normalized.sender.externalId,
+      ...(resolvedSenderPhone ? { senderPhone: resolvedSenderPhone } : {}),
       clientId: resolvedClientId,
     };
 

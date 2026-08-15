@@ -556,6 +556,62 @@ describe('ChannelAdapterService — inbound persistence', () => {
     });
 
     /**
+     * The adapter has always normalized the sender's number — but only into
+     * `clients.phone`, never onto the event. So every consumer keyed on a
+     * person's phone read `senderExternalId`, which is the raw `wa_id`, and
+     * matched `919876543210` against rows written `+919876543210`. Nothing
+     * errored; the lookups just returned nothing. That is one buyer becoming two
+     * leads, a cadence that keeps sending after they replied, and a consent
+     * lookup that misses.
+     */
+    it('carries the sender phone in E.164 alongside the raw channel address', async () => {
+      await inbound(makeNormalized());
+
+      const [, event] = emitter.emit.mock.calls.find(
+        ([name]) => name === 'message.received',
+      ) as [string, { senderExternalId: string; senderPhone?: string }];
+
+      // Both, and different: the raw id is the reply address, the E.164 is the
+      // identity. Collapsing them either way breaks the other consumer.
+      expect(event.senderExternalId).toBe(WA_ID);
+      expect(event.senderPhone).toBe(E164);
+    });
+
+    it('omits the phone on a channel that has no phone identity', async () => {
+      // A Web Chat session id or an Instagram handle is not a phone number in
+      // any format. Publishing one as `senderPhone` would put a UUID into
+      // `realty_leads.whatsapp_phone` — a VARCHAR(20) column declared E.164.
+      await inbound(
+        makeNormalized({
+          channel: ChannelType.WEB_CHAT,
+          sender: { externalId: 'a3f1c0de-1111-4222-8333-444455556666' },
+        } as Partial<NormalizedMessage>),
+        ChannelType.WEB_CHAT,
+      );
+
+      const [, event] = emitter.emit.mock.calls.find(
+        ([name]) => name === 'message.received',
+      ) as [string, { senderPhone?: string }];
+
+      expect(event.senderPhone).toBeUndefined();
+    });
+
+    it('falls back to the raw id for a phone channel whose number will not normalize', async () => {
+      // A non-Indian mobile does not normalize, and dropping the identity
+      // entirely would stop capturing that buyer. Keeping the raw value matches
+      // what `clients.phone` already stores for them.
+      await inbound(
+        makeNormalized({ sender: { externalId: '14155552671' } } as Partial<NormalizedMessage>),
+      );
+
+      const [, event] = emitter.emit.mock.calls.find(
+        ([name]) => name === 'message.received',
+      ) as [string, { senderPhone?: string }];
+
+      expect(event.senderPhone).toBe('14155552671');
+    });
+
+    /**
      * The whole point of `messageId` is that `ai-engine` looks the row up with
      * it (`ContextLoaderService.load` → `messages.findFirst({ id: messageId })`)
      * to read the customer's text. `normalized.id` is a UUID the adapter mints

@@ -98,6 +98,8 @@ describe('RealtyLeadsService — ingest and partial update', () => {
       create: jest.fn(),
       findById: jest.fn(),
       findByPhone: jest.fn(),
+      findByPhoneIncludingDeleted: jest.fn(),
+      revive: jest.fn(),
       update: jest.fn(),
       softDelete: jest.fn(),
       list: jest.fn(),
@@ -144,13 +146,13 @@ describe('RealtyLeadsService — ingest and partial update', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
 
       expect(repository.create).not.toHaveBeenCalled();
-      expect(repository.findByPhone).not.toHaveBeenCalled();
+      expect(repository.findByPhoneIncludingDeleted).not.toHaveBeenCalled();
     });
 
     it('normalizes a local 10-digit number before looking for a match', async () => {
       // A portal sends "9876543210", WhatsApp sends "+919876543210". Without
       // normalization on the lookup they are two different buyers.
-      repository.findByPhone.mockResolvedValue(makeLead() as never);
+      repository.findByPhoneIncludingDeleted.mockResolvedValue(makeLead() as never);
       repository.update.mockResolvedValue(makeLead() as never);
 
       await service.ingestLead(BUSINESS_ID, {
@@ -158,13 +160,13 @@ describe('RealtyLeadsService — ingest and partial update', () => {
         source: LeadSource.PORTAL,
       });
 
-      expect(repository.findByPhone).toHaveBeenCalledWith(BUSINESS_ID, PHONE);
+      expect(repository.findByPhoneIncludingDeleted).toHaveBeenCalledWith(BUSINESS_ID, PHONE);
     });
   });
 
   describe('ingestLead — merging into a known buyer', () => {
     it('updates rather than creates when the phone is already known', async () => {
-      repository.findByPhone.mockResolvedValue(makeLead() as never);
+      repository.findByPhoneIncludingDeleted.mockResolvedValue(makeLead() as never);
       repository.update.mockResolvedValue(makeLead() as never);
 
       const result = await service.ingestLead(BUSINESS_ID, {
@@ -178,7 +180,7 @@ describe('RealtyLeadsService — ingest and partial update', () => {
     });
 
     it('fills identity fields that are blank on the existing lead', async () => {
-      repository.findByPhone.mockResolvedValue(makeLead() as never);
+      repository.findByPhoneIncludingDeleted.mockResolvedValue(makeLead() as never);
       repository.update.mockResolvedValue(makeLead() as never);
 
       await service.ingestLead(BUSINESS_ID, {
@@ -203,7 +205,7 @@ describe('RealtyLeadsService — ingest and partial update', () => {
     it('never clobbers an identity field the lead already has', async () => {
       // The merge is additive by design: a portal enquiry that spells the name
       // differently must not overwrite what the buyer told us directly.
-      repository.findByPhone.mockResolvedValue(
+      repository.findByPhoneIncludingDeleted.mockResolvedValue(
         makeLead({
           name: 'Rahul Mehta',
           email: 'known@example.com',
@@ -235,7 +237,7 @@ describe('RealtyLeadsService — ingest and partial update', () => {
     it('leaves blank fields alone when the candidate has nothing to offer', async () => {
       // The other half of each conditional: a candidate missing a field must
       // not write `undefined` over a column.
-      repository.findByPhone.mockResolvedValue(makeLead() as never);
+      repository.findByPhoneIncludingDeleted.mockResolvedValue(makeLead() as never);
       repository.update.mockResolvedValue(makeLead() as never);
 
       await service.ingestLead(BUSINESS_ID, {
@@ -253,7 +255,7 @@ describe('RealtyLeadsService — ingest and partial update', () => {
     });
 
     it('appends provenance to the existing ingest history', async () => {
-      repository.findByPhone.mockResolvedValue(
+      repository.findByPhoneIncludingDeleted.mockResolvedValue(
         makeLead({
           metadata: {
             ingestHistory: [{ source: 'CTWA', at: '2026-07-01T10:00:00.000Z' }],
@@ -287,7 +289,7 @@ describe('RealtyLeadsService — ingest and partial update', () => {
       // `readIngestHistory` has to cope with metadata that is `{}`, or holds a
       // non-array under `ingestHistory` — both are real states for rows written
       // before ingest provenance existed.
-      repository.findByPhone.mockResolvedValue(
+      repository.findByPhoneIncludingDeleted.mockResolvedValue(
         makeLead({ metadata: { ingestHistory: 'not-an-array' } }) as never,
       );
       repository.update.mockResolvedValue(makeLead() as never);
@@ -302,7 +304,7 @@ describe('RealtyLeadsService — ingest and partial update', () => {
     });
 
     it('omits lastListingRef when the candidate carries no listing', async () => {
-      repository.findByPhone.mockResolvedValue(makeLead() as never);
+      repository.findByPhoneIncludingDeleted.mockResolvedValue(makeLead() as never);
       repository.update.mockResolvedValue(makeLead() as never);
 
       await service.ingestLead(BUSINESS_ID, {
@@ -314,7 +316,7 @@ describe('RealtyLeadsService — ingest and partial update', () => {
     });
 
     it('carries the raw provider payload into the provenance entry', async () => {
-      repository.findByPhone.mockResolvedValue(makeLead() as never);
+      repository.findByPhoneIncludingDeleted.mockResolvedValue(makeLead() as never);
       repository.update.mockResolvedValue(makeLead() as never);
 
       await service.ingestLead(BUSINESS_ID, {
@@ -329,7 +331,7 @@ describe('RealtyLeadsService — ingest and partial update', () => {
     });
 
     it('omits the raw key entirely when the candidate has no payload', async () => {
-      repository.findByPhone.mockResolvedValue(makeLead() as never);
+      repository.findByPhoneIncludingDeleted.mockResolvedValue(makeLead() as never);
       repository.update.mockResolvedValue(makeLead() as never);
 
       await service.ingestLead(BUSINESS_ID, {
@@ -345,7 +347,7 @@ describe('RealtyLeadsService — ingest and partial update', () => {
 
   describe('ingestLead — capturing an unseen buyer', () => {
     it('creates the lead and reports merged: false', async () => {
-      repository.findByPhone.mockResolvedValue(null);
+      repository.findByPhoneIncludingDeleted.mockResolvedValue(null);
       repository.create.mockResolvedValue(makeLead() as never);
 
       const result = await service.ingestLead(BUSINESS_ID, {
@@ -368,7 +370,7 @@ describe('RealtyLeadsService — ingest and partial update', () => {
     });
 
     it('writes a first provenance entry only when a raw payload came with it', async () => {
-      repository.findByPhone.mockResolvedValue(null);
+      repository.findByPhoneIncludingDeleted.mockResolvedValue(null);
       repository.create.mockResolvedValue(makeLead() as never);
 
       await service.ingestLead(BUSINESS_ID, {
@@ -386,7 +388,7 @@ describe('RealtyLeadsService — ingest and partial update', () => {
     it('skips the follow-up write when there is no raw payload to store', async () => {
       // A second round-trip per CSV row would be pure cost — the created row
       // already carries source/subSource/listingRef.
-      repository.findByPhone.mockResolvedValue(null);
+      repository.findByPhoneIncludingDeleted.mockResolvedValue(null);
       repository.create.mockResolvedValue(makeLead() as never);
 
       await service.ingestLead(BUSINESS_ID, {
@@ -400,7 +402,7 @@ describe('RealtyLeadsService — ingest and partial update', () => {
 
   describe('ingestLead — the ingested event', () => {
     it('reports merged: true with the normalized phone', async () => {
-      repository.findByPhone.mockResolvedValue(makeLead() as never);
+      repository.findByPhoneIncludingDeleted.mockResolvedValue(makeLead() as never);
       repository.update.mockResolvedValue(makeLead() as never);
 
       await service.ingestLead(BUSINESS_ID, {
@@ -426,7 +428,7 @@ describe('RealtyLeadsService — ingest and partial update', () => {
     });
 
     it('reports merged: false on a fresh capture', async () => {
-      repository.findByPhone.mockResolvedValue(null);
+      repository.findByPhoneIncludingDeleted.mockResolvedValue(null);
       repository.create.mockResolvedValue(makeLead() as never);
 
       await service.ingestLead(BUSINESS_ID, {

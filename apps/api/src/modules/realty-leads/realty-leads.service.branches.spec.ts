@@ -95,6 +95,8 @@ describe('RealtyLeadsService (remaining branches)', () => {
       create: jest.fn(),
       findById: jest.fn().mockResolvedValue(makeLead()),
       findByPhone: jest.fn(),
+      findByPhoneIncludingDeleted: jest.fn(),
+      revive: jest.fn(),
       update: jest.fn().mockResolvedValue(makeLead()),
       softDelete: jest.fn().mockResolvedValue(undefined),
       list: jest.fn(),
@@ -523,7 +525,7 @@ describe('RealtyLeadsService (remaining branches)', () => {
 
   describe('ensureLeadByPhone', () => {
     it('rethrows the conflict when the re-read still finds nothing', async () => {
-      repository.findByPhone
+      repository.findByPhoneIncludingDeleted
         .mockResolvedValueOnce(null as never) // own lookup
         .mockResolvedValueOnce(null as never) // createLead's dedup lookup
         .mockResolvedValueOnce(null as never); // post-conflict re-read: still nothing
@@ -537,7 +539,7 @@ describe('RealtyLeadsService (remaining branches)', () => {
     });
 
     it('rethrows a non-conflict failure without a second lookup', async () => {
-      repository.findByPhone
+      repository.findByPhoneIncludingDeleted
         .mockResolvedValueOnce(null as never)
         .mockResolvedValueOnce(null as never);
       repository.create.mockRejectedValue(new Error('database is down'));
@@ -546,7 +548,7 @@ describe('RealtyLeadsService (remaining branches)', () => {
         'database is down',
       );
       // Only the two lookups that precede the create — no recovery re-read.
-      expect(repository.findByPhone).toHaveBeenCalledTimes(2);
+      expect(repository.findByPhoneIncludingDeleted).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -560,10 +562,11 @@ describe('RealtyLeadsService (remaining branches)', () => {
       conversationId: CONV_ID,
       clientId: null,
       senderExternalId: PHONE,
+      senderPhone: PHONE,
     } as unknown as MessageReceivedEvent;
 
     it('captures a lead for a phone the desk has not seen', async () => {
-      repository.findByPhone.mockResolvedValue(null as never);
+      repository.findByPhoneIncludingDeleted.mockResolvedValue(null as never);
       repository.create.mockResolvedValue(makeLead() as never);
 
       await service.handleMessageReceived(event);
@@ -574,7 +577,7 @@ describe('RealtyLeadsService (remaining branches)', () => {
     });
 
     it('swallows an ingest failure so the message pipeline keeps running', async () => {
-      repository.findByPhone.mockRejectedValue(new Error('database is down'));
+      repository.findByPhoneIncludingDeleted.mockRejectedValue(new Error('database is down'));
 
       // A lead we failed to capture is bad; a message we failed to *deliver*
       // because lead capture threw is worse — this listener must never
@@ -586,7 +589,7 @@ describe('RealtyLeadsService (remaining branches)', () => {
       // A driver-level rejection can be a bare string or a plain object. If the
       // handler assumed `.message`, the log line would read "undefined" and the
       // failure would be untraceable.
-      repository.findByPhone.mockRejectedValue('ECONNRESET' as never);
+      repository.findByPhoneIncludingDeleted.mockRejectedValue('ECONNRESET' as never);
       const logged = jest.spyOn(service['logger'], 'error').mockImplementation(() => undefined);
 
       await expect(service.handleMessageReceived(event)).resolves.toBeUndefined();
@@ -595,13 +598,13 @@ describe('RealtyLeadsService (remaining branches)', () => {
       logged.mockRestore();
     });
 
-    it('ignores a message with no sender identifier', async () => {
+    it('ignores a message with no phone identity', async () => {
       await service.handleMessageReceived({
         ...event,
-        senderExternalId: '',
+        senderPhone: undefined,
       } as unknown as MessageReceivedEvent);
 
-      expect(repository.findByPhone).not.toHaveBeenCalled();
+      expect(repository.findByPhoneIncludingDeleted).not.toHaveBeenCalled();
       expect(repository.create).not.toHaveBeenCalled();
     });
   });

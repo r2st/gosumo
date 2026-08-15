@@ -22,7 +22,33 @@ export interface MessageReceivedEvent extends BaseEvent {
     conversationId: string;
     channelAccountId: string;
     channel: ChannelType;
+    /**
+     * The channel's own id for the sender, exactly as it arrived — a WhatsApp
+     * `wa_id` (`919876543210`, no `+`), an Instagram-scoped user id, an email
+     * address, a Web Chat session id.
+     *
+     * This is a routing address, not an identity: it is what an outbound reply is
+     * addressed to, so it must never be rewritten into a canonical form. Anything
+     * matching a *person* wants {@link senderPhone} instead.
+     */
     senderExternalId: string;
+    /**
+     * The sender's phone in E.164 (`+919876543210`), when the channel carries a
+     * phone identity at all and it normalizes — otherwise absent.
+     *
+     * Every store keyed on a person's phone (`clients.phone`,
+     * `realty_leads.whatsapp_phone`, consent and DND records) holds E.164, per the
+     * package rule that inbound numbers are normalized on arrival. A `wa_id` is
+     * not E.164, so a consumer that matched on `senderExternalId` looked up
+     * `919876543210` against rows written as `+919876543210` and silently found
+     * nothing: duplicate leads for one buyer, cadences that never stopped when the
+     * buyer replied, consent lookups that missed.
+     *
+     * Absent for Web Chat, Instagram and Email — they have no phone identity, and
+     * a session id or handle forced into a phone column is not a fallback, it is
+     * corruption. Consumers must skip rather than substitute `senderExternalId`.
+     */
+    senderPhone?: string;
     clientId: string;
 }
 /** Emitted after a message is successfully sent to the channel */

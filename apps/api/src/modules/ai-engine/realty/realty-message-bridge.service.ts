@@ -110,7 +110,19 @@ export class RealtyMessageBridgeService {
     }
 
     // 2) Resolve the lead by E.164 phone (find-or-create, race-safe).
-    const lead = await this.leads.ensureLeadByPhone(event.businessId, event.senderExternalId, {
+    //
+    // `senderPhone`, not `senderExternalId` — the comment above has always said
+    // E.164, but the raw channel id was what got passed: a WhatsApp `wa_id`
+    // carries no `+`, so this created a *second* lead for a buyer already
+    // ingested from a portal as `+91…`, splitting one person's history in two.
+    // The raw id is still the right thing to reply *to* — see `send` below.
+    if (!event.senderPhone) {
+      this.logger.debug(
+        `[${traceId}] No phone identity on a ${event.channel} message — skipping realty turn`,
+      );
+      return;
+    }
+    const lead = await this.leads.ensureLeadByPhone(event.businessId, event.senderPhone, {
       conversationId: event.conversationId,
       clientId: event.clientId,
       source: LeadSource.CTWA,

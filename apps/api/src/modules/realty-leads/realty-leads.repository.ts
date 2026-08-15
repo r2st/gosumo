@@ -144,6 +144,39 @@ export class RealtyLeadsRepository {
     });
   }
 
+  /**
+   * The lead holding this phone within the business, **including a soft-deleted
+   * one** — the lookup identity resolution has to use before inserting.
+   *
+   * `uq_realty_leads_business_phone` covers `(business_id, whatsapp_phone)` with
+   * no `WHERE deleted_at IS NULL` predicate, so a tombstone still owns its phone
+   * number as far as Postgres is concerned. {@link findByPhone} filters deleted
+   * rows out, which means it reports "free" for a value the very next insert
+   * cannot use: the create fails with P2002 and the buyer is never captured
+   * again. Soft-deleting a lead would otherwise burn that phone number for the
+   * tenant permanently, since nothing in this module un-deletes one.
+   *
+   * At most one row can ever match — that is what the unique constraint buys —
+   * so there is no ordering to choose between a live row and a tombstone here,
+   * unlike the two-identifier client lookup in `client-identity.util.ts`.
+   */
+  async findByPhoneIncludingDeleted(
+    businessId: string,
+    whatsappPhone: string,
+  ): Promise<realty_leads | null> {
+    return this.prisma.realty_leads.findFirst({
+      where: { business_id: businessId, whatsapp_phone: whatsappPhone },
+    });
+  }
+
+  /** Clear a lead's tombstone, bringing it back into every scoped query. */
+  async revive(businessId: string, leadId: string): Promise<realty_leads> {
+    return this.prisma.realty_leads.update({
+      where: { id: leadId, business_id: businessId },
+      data: { deleted_at: null },
+    });
+  }
+
   async update(
     businessId: string,
     leadId: string,

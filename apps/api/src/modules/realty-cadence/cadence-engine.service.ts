@@ -379,7 +379,10 @@ export class CadenceEngineService {
   /** An inbound reply hands the conversation back — stop reply-sensitive steps. */
   @OnEvent('message.received')
   async onInboundReply(event: MessageReceivedEvent): Promise<void> {
-    const phone = event.senderExternalId;
+    // E.164, not the channel id: leads are stored `+91…` and WhatsApp delivers
+    // `91…`, so matching on the raw id found no lead and the cadence kept
+    // sending follow-ups to a buyer who had already replied.
+    const phone = event.senderPhone;
     if (!phone) return;
     await this.safe(async () => {
       const lead = await this.leadsService.findLeadByPhone(event.businessId, phone);

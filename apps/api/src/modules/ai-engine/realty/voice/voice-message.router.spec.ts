@@ -24,7 +24,10 @@ function event(overrides: Partial<MessageReceivedEvent> = {}): MessageReceivedEv
     conversationId: 'conv_1',
     channelAccountId: 'acc_1',
     channel: 'WHATSAPP',
+    // The channel address is the raw wa_id; the phone identity is E.164. Keeping
+    // them different here is the point — matching on the former found no lead.
     senderExternalId: '919876543210',
+    senderPhone: '+919876543210',
     clientId: 'client_1',
     ...overrides,
   } as MessageReceivedEvent;
@@ -140,9 +143,11 @@ describe('VoiceMessageRouter', () => {
     expect(prisma.messages.findFirst).not.toHaveBeenCalled();
   });
 
-  it('returns early when the event has no sender', async () => {
-    // Without a sender there is no phone to resolve a lead by.
-    await router.onMessageReceived(event({ senderExternalId: '' }));
+  it('returns early when the event carries no phone identity', async () => {
+    // Web Chat and Instagram have a sender but no phone. The lead lookup below
+    // is keyed on E.164, so there is nothing here to resolve a lead by — and
+    // substituting the session id would search for a lead under a UUID.
+    await router.onMessageReceived(event({ senderPhone: undefined }));
     expect(prisma.messages.findFirst).not.toHaveBeenCalled();
   });
 

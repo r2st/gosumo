@@ -37,7 +37,10 @@ export class VoiceMessageRouter {
 
   @OnEvent('message.received')
   async onMessageReceived(event: MessageReceivedEvent): Promise<void> {
-    if (!event.conversationId || !event.businessId || !event.senderExternalId) return;
+    // `senderPhone` is what the lead lookup below needs; a channel that carries
+    // no phone identity (Web Chat, Instagram) has no realty lead to attach a
+    // voice note to.
+    if (!event.conversationId || !event.businessId || !event.senderPhone) return;
     try {
       await this.handle(event);
     } catch (err) {
@@ -50,6 +53,11 @@ export class VoiceMessageRouter {
   }
 
   private async handle(event: MessageReceivedEvent): Promise<void> {
+    // Re-checked rather than asserted: the caller's guard does not narrow across
+    // the call boundary, and a `!` here would be a promise the type cannot keep.
+    const senderPhone = event.senderPhone;
+    if (!senderPhone) return;
+
     // The inbound message was just stored; it is the latest inbound on the convo.
     const message = await this.prisma.messages.findFirst({
       where: {
@@ -68,7 +76,9 @@ export class VoiceMessageRouter {
     const meta = (message.metadata ?? {}) as Record<string, unknown>;
     if (typeof meta['transcription'] === 'string') return;
 
-    const lead = await this.leads.findLeadByPhone(event.businessId, event.senderExternalId);
+    // Matched on the E.164 phone the lead is actually stored under — the raw
+    // channel id never matched one, so every voice note was skipped here.
+    const lead = await this.leads.findLeadByPhone(event.businessId, senderPhone);
     if (!lead) {
       this.logger.debug(`Voice note from ${event.senderExternalId} has no lead yet — skipping`);
       return;

@@ -34,7 +34,8 @@ setMatchedUnits(businessId, leadId, unitIds)               // called by realty-i
 ## Key gotchas
 
 - **Money at the boundary:** budget stored as `Decimal(14,2)` rupees; exposed/accepted as integer paise (`budgetMinPaise`/`budgetMaxPaise`).
-- **Phone is the join key:** E.164 `whatsapp_phone` is unique per business; `createLead` rejects duplicates.
+- **Phone is the join key:** E.164 `whatsapp_phone` is unique per business; `createLead` rejects duplicates. Identity resolution goes through `findByPhoneIncludingDeleted`, **not** `findByPhone` — `uq_realty_leads_business_phone` has no `WHERE deleted_at IS NULL` predicate, so a soft-deleted lead still owns its number and a tombstone-blind lookup reports a phone free that the next insert cannot use. A tombstone found this way is revived; a lost insert race is recovered by re-claiming on P2002. `findLeadByPhone` (cadence, voice, compliance) deliberately still excludes deleted rows.
+- **Auto-capture keys on `event.senderPhone`, never `senderExternalId`.** The latter is the channel's routing address — a WhatsApp `wa_id` has no `+`, and a Web Chat sender id is a UUID. Both produce a lead that no E.164 lookup will ever match.
 - **Opt-out is absolute:** `setOptOut` clears `next_followup_at` and emits so cadence engines halt.
 - **Soft delete only** (`deleted_at`).
 

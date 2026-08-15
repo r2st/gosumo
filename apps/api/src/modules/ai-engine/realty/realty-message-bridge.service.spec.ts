@@ -26,6 +26,7 @@ function makeEvent(over: Partial<MessageReceivedEvent> = {}): MessageReceivedEve
     channelAccountId: 'acc1',
     channel: 'WHATSAPP',
     senderExternalId: PHONE,
+    senderPhone: PHONE,
     clientId: 'cl1',
     ...over,
   } as MessageReceivedEvent;

@@ -112,6 +112,44 @@ describe('RealtyLeadsRepository', () => {
     });
   });
 
+  describe('findByPhoneIncludingDeleted', () => {
+    it('does not filter out tombstones', async () => {
+      await repository.findByPhoneIncludingDeleted(BUSINESS_ID, '+919812345678');
+
+      const where = prisma.realty_leads.findFirst.mock.calls[0]![0].where;
+      expect(where).toEqual({
+        business_id: BUSINESS_ID,
+        whatsapp_phone: '+919812345678',
+      });
+      // The point of the method. `uq_realty_leads_business_phone` spans deleted
+      // rows, so a lookup that excluded them would report a phone number free
+      // that the very next insert cannot use — and the buyer behind it would
+      // never be captured again.
+      expect(where).not.toHaveProperty('deleted_at');
+    });
+
+    it('stays scoped to the business', async () => {
+      await repository.findByPhoneIncludingDeleted(BUSINESS_ID, '+919812345678');
+
+      // Widening the lookup past `deleted_at` must not widen it past the tenant:
+      // phone numbers are unique per business, not globally.
+      expect(prisma.realty_leads.findFirst.mock.calls[0]![0].where).toMatchObject({
+        business_id: BUSINESS_ID,
+      });
+    });
+  });
+
+  describe('revive', () => {
+    it('clears the tombstone, scoped to the business', async () => {
+      await repository.revive(BUSINESS_ID, LEAD_ID);
+
+      expect(prisma.realty_leads.update).toHaveBeenCalledWith({
+        where: { id: LEAD_ID, business_id: BUSINESS_ID },
+        data: { deleted_at: null },
+      });
+    });
+  });
+
   describe('update', () => {
     it('writes nothing for an empty patch', async () => {
       await repository.update(BUSINESS_ID, LEAD_ID, {});

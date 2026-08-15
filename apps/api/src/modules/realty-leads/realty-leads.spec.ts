@@ -92,6 +92,8 @@ describe('RealtyLeadsService', () => {
       create: jest.fn(),
       findById: jest.fn(),
       findByPhone: jest.fn(),
+      findByPhoneIncludingDeleted: jest.fn(),
+      revive: jest.fn(),
       update: jest.fn(),
       softDelete: jest.fn(),
       list: jest.fn(),
@@ -127,7 +129,7 @@ describe('RealtyLeadsService', () => {
   // ── Capture ──
   describe('createLead', () => {
     it('captures a lead and emits realty.lead.created', async () => {
-      repository.findByPhone.mockResolvedValue(null);
+      repository.findByPhoneIncludingDeleted.mockResolvedValue(null);
       repository.create.mockResolvedValue(makeLead() as never);
 
       const result = await service.createLead(BUSINESS_ID, {
@@ -147,7 +149,7 @@ describe('RealtyLeadsService', () => {
     });
 
     it('rejects a duplicate phone (one buyer, one history)', async () => {
-      repository.findByPhone.mockResolvedValue(makeLead() as never);
+      repository.findByPhoneIncludingDeleted.mockResolvedValue(makeLead() as never);
       await expect(
         service.createLead(BUSINESS_ID, { whatsappPhone: PHONE, source: LeadSource.PORTAL }),
       ).rejects.toBeInstanceOf(ConflictException);
@@ -568,11 +570,12 @@ describe('RealtyLeadsService', () => {
       channelAccountId: 'ca-1',
       channel: 'WHATSAPP' as never,
       senderExternalId: PHONE,
+      senderPhone: PHONE,
       clientId: 'client-1',
     };
 
     it('creates a lead for an unseen phone', async () => {
-      repository.findByPhone.mockResolvedValue(null);
+      repository.findByPhoneIncludingDeleted.mockResolvedValue(null);
       repository.create.mockResolvedValue(makeLead() as never);
 
       await service.handleMessageReceived(event);
@@ -583,7 +586,7 @@ describe('RealtyLeadsService', () => {
     });
 
     it('only touches an existing lead (no duplicate create)', async () => {
-      repository.findByPhone.mockResolvedValue(makeLead() as never);
+      repository.findByPhoneIncludingDeleted.mockResolvedValue(makeLead() as never);
       repository.update.mockResolvedValue(makeLead() as never);
 
       await service.handleMessageReceived(event);
@@ -600,7 +603,7 @@ describe('RealtyLeadsService', () => {
   // ── Find-or-create by phone (shared capture path) ──
   describe('ensureLeadByPhone', () => {
     it('creates the lead with the channel phone identifier as delivered', async () => {
-      repository.findByPhone.mockResolvedValue(null);
+      repository.findByPhoneIncludingDeleted.mockResolvedValue(null);
       repository.create.mockResolvedValue(makeLead() as never);
 
       const result = await service.ensureLeadByPhone(BUSINESS_ID, PHONE, {
@@ -608,7 +611,7 @@ describe('RealtyLeadsService', () => {
         conversationId: CONV_ID,
       });
 
-      expect(repository.findByPhone).toHaveBeenCalledWith(BUSINESS_ID, PHONE);
+      expect(repository.findByPhoneIncludingDeleted).toHaveBeenCalledWith(BUSINESS_ID, PHONE);
       expect(repository.create).toHaveBeenCalledWith(
         expect.objectContaining({ whatsappPhone: PHONE, source: 'CTWA' }),
       );
@@ -616,7 +619,7 @@ describe('RealtyLeadsService', () => {
     });
 
     it('touches an existing lead instead of creating a duplicate', async () => {
-      repository.findByPhone.mockResolvedValue(makeLead() as never);
+      repository.findByPhoneIncludingDeleted.mockResolvedValue(makeLead() as never);
       repository.update.mockResolvedValue(makeLead() as never);
 
       await service.ensureLeadByPhone(BUSINESS_ID, PHONE, { conversationId: CONV_ID });
@@ -633,23 +636,31 @@ describe('RealtyLeadsService', () => {
       const result = await service.ensureLeadByPhone(BUSINESS_ID, '   ');
 
       expect(result).toBeNull();
-      expect(repository.findByPhone).not.toHaveBeenCalled();
+      expect(repository.findByPhoneIncludingDeleted).not.toHaveBeenCalled();
       expect(repository.create).not.toHaveBeenCalled();
     });
 
     it('re-reads instead of failing when it loses a create race', async () => {
       // No lead on first look, but a concurrent capture wins the create.
-      repository.findByPhone
+      repository.findByPhoneIncludingDeleted
         .mockResolvedValueOnce(null) // ensureLeadByPhone's own lookup
         .mockResolvedValueOnce(null) // createLead's internal dedup lookup
         .mockResolvedValueOnce(makeLead() as never); // post-conflict re-read
       repository.create.mockRejectedValue(
         new ConflictException('A lead with phone already exists'),
       );
+      repository.update.mockResolvedValue(makeLead() as never);
 
       const result = await service.ensureLeadByPhone(BUSINESS_ID, PHONE);
 
       expect(result?.id).toBe(LEAD_ID);
+      // The recovered lead is touched like any other reuse — losing the race is
+      // not a reason to drop this message's activity from the lead.
+      expect(repository.update).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        LEAD_ID,
+        expect.objectContaining({ lastActivityAt: expect.any(Date) }),
+      );
     });
   });
 });

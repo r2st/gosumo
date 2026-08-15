@@ -29,6 +29,7 @@ import type {
   RealtyLeadIngestedEvent,
   MessageReceivedEvent,
 } from '@gosumo/shared';
+import { isUniqueViolation } from '../../common/utils/sequential-number.util';
 import { TenantService } from '../tenant/tenant.service';
 import { RealtyLeadsRepository } from './realty-leads.repository';
 import type { UpdateLeadData } from './realty-leads.repository';
@@ -157,29 +158,28 @@ export class RealtyLeadsService {
 
   async createLead(businessId: string, dto: CreateLeadDto): Promise<LeadResponseDto> {
     // One buyer, one history: merge on E.164 phone (blueprint §15).
-    const existing = await this.repository.findByPhone(businessId, dto.whatsappPhone);
+    //
+    // Tombstones count. The unique constraint has no `deleted_at` predicate, so
+    // a soft-deleted lead still holds this phone and the insert below would fail
+    // on it — previously as a raw P2002, i.e. a 500 on a request whose real
+    // answer is "that number is taken". Say so, and name the row, so an operator
+    // can restore it rather than guess.
+    const existing = await this.repository.findByPhoneIncludingDeleted(
+      businessId,
+      dto.whatsappPhone,
+    );
     if (existing) {
       throw new ConflictException(
-        `A lead with phone ${dto.whatsappPhone} already exists (${existing.id})`,
+        existing.deleted_at
+          ? `Phone ${dto.whatsappPhone} belongs to a deleted lead (${existing.id}); ` +
+            'restore that lead instead of creating a duplicate'
+          : `A lead with phone ${dto.whatsappPhone} already exists (${existing.id})`,
       );
     }
 
     await this.assertAgent(businessId, dto.assignedAgentId);
 
-    const lead = await this.repository.create({
-      businessId,
-      whatsappPhone: dto.whatsappPhone,
-      source: dto.source,
-      name: dto.name,
-      email: dto.email,
-      altPhone: dto.altPhone,
-      languagePref: dto.languagePref,
-      subSource: dto.subSource,
-      listingRef: dto.listingRef,
-      assignedAgentId: dto.assignedAgentId,
-      conversationId: dto.conversationId,
-      clientId: dto.clientId,
-    });
+    const lead = await this.createRow(businessId, dto);
 
     this.emit<RealtyLeadCreatedEvent>('realty.lead.created', {
       ...this.baseEvent(businessId),
@@ -218,71 +218,59 @@ export class RealtyLeadsService {
       );
     }
 
-    const existing = await this.repository.findByPhone(businessId, phone);
+    // Tombstone-aware, and reviving: a portal or Meta lead for a phone whose
+    // lead was deleted must land somewhere, and the constraint will not let it
+    // land on a new row.
+    const existing = await this.claimLeadByPhone(businessId, phone);
     let leadId: string;
     let merged: boolean;
 
     if (existing) {
       merged = true;
       leadId = existing.id;
-      const provenance = {
-        source: candidate.source,
-        subSource: candidate.subSource,
-        listingRef: candidate.listingRef,
-        at: new Date().toISOString(),
-        ...(candidate.raw ? { raw: candidate.raw } : {}),
-      };
-      const ingestHistory = [
-        ...this.readIngestHistory(existing.metadata),
-        provenance,
-      ];
-      const data: UpdateLeadData = {
-        lastActivityAt: new Date(),
-        metadata: {
-          ...(existing.metadata as Record<string, unknown>),
-          ingestHistory,
-          ...(candidate.listingRef ? { lastListingRef: candidate.listingRef } : {}),
-        } as Prisma.InputJsonValue,
-      };
-      // Fill only missing identity fields — never clobber known values.
-      if (!existing.name && candidate.name) data.name = candidate.name;
-      if (!existing.email && candidate.email) data.email = candidate.email;
-      if (!existing.alt_phone && candidate.altPhone) data.altPhone = candidate.altPhone;
-      if (!existing.conversation_id && candidate.conversationId) {
-        data.conversationId = candidate.conversationId;
-      }
-      if (!existing.client_id && candidate.clientId) data.clientId = candidate.clientId;
-      await this.repository.update(businessId, leadId, data);
-      this.logger.log(`Merged ingest (${candidate.source}) into lead ${leadId}`);
+      await this.mergeIngest(businessId, existing, candidate);
     } else {
-      merged = false;
-      const created = await this.createLead(businessId, {
-        whatsappPhone: phone,
-        source: candidate.source as LeadSource,
-        name: candidate.name,
-        email: candidate.email,
-        altPhone: candidate.altPhone,
-        languagePref: candidate.languagePref,
-        subSource: candidate.subSource,
-        listingRef: candidate.listingRef,
-        conversationId: candidate.conversationId,
-        clientId: candidate.clientId,
-      });
-      leadId = created.id;
-      if (candidate.raw) {
-        await this.repository.update(businessId, leadId, {
-          metadata: {
-            ingestHistory: [
-              {
-                source: candidate.source,
-                subSource: candidate.subSource,
-                listingRef: candidate.listingRef,
-                at: new Date().toISOString(),
-                raw: candidate.raw,
-              },
-            ],
-          } as Prisma.InputJsonValue,
+      try {
+        merged = false;
+        const created = await this.createLead(businessId, {
+          whatsappPhone: phone,
+          source: candidate.source as LeadSource,
+          name: candidate.name,
+          email: candidate.email,
+          altPhone: candidate.altPhone,
+          languagePref: candidate.languagePref,
+          subSource: candidate.subSource,
+          listingRef: candidate.listingRef,
+          conversationId: candidate.conversationId,
+          clientId: candidate.clientId,
         });
+        leadId = created.id;
+        if (candidate.raw) {
+          await this.repository.update(businessId, leadId, {
+            metadata: {
+              ingestHistory: [
+                {
+                  source: candidate.source,
+                  subSource: candidate.subSource,
+                  listingRef: candidate.listingRef,
+                  at: new Date().toISOString(),
+                  raw: candidate.raw,
+                },
+              ],
+            } as Prisma.InputJsonValue,
+          });
+        }
+      } catch (err) {
+        // Lost the phone to a concurrent capture — a portal push and a CTWA
+        // message for the same buyer landing together is routine. Merge into
+        // the winner instead of failing the ingest and dropping its provenance.
+        if (!(err instanceof ConflictException) && !isUniqueViolation(err)) throw err;
+
+        const raced = await this.claimLeadByPhone(businessId, phone);
+        if (!raced) throw err;
+        merged = true;
+        leadId = raced.id;
+        await this.mergeIngest(businessId, raced, candidate);
       }
     }
 
@@ -675,14 +663,8 @@ export class RealtyLeadsService {
       return null;
     }
 
-    const existing = await this.repository.findByPhone(businessId, phone);
-    if (existing) {
-      const updated = await this.repository.update(businessId, existing.id, {
-        conversationId: existing.conversation_id ?? opts.conversationId,
-        lastActivityAt: new Date(),
-      });
-      return this.mapResponse(updated);
-    }
+    const existing = await this.claimLeadByPhone(businessId, phone);
+    if (existing) return this.touch(businessId, existing, opts.conversationId);
 
     try {
       return await this.createLead(businessId, {
@@ -692,13 +674,36 @@ export class RealtyLeadsService {
         clientId: opts.clientId,
       });
     } catch (err) {
-      // Lost a create race (a concurrent listener captured the same phone first).
-      if (err instanceof ConflictException) {
-        const again = await this.repository.findByPhone(businessId, phone);
-        if (again) return this.mapResponse(again);
-      }
-      throw err;
+      // Lost a create race: two messages from the same new buyer arrive together,
+      // both see a free phone, and one loses the insert. Re-claiming turns the
+      // loser into the same reuse path the second message would have taken a
+      // moment later. `isUniqueViolation` is checked alongside the mapped
+      // exception so a P2002 raised anywhere but `createRow` is still recovered.
+      if (!(err instanceof ConflictException) && !isUniqueViolation(err)) throw err;
+
+      const raced = await this.claimLeadByPhone(businessId, phone);
+      // Nothing to re-claim means the conflict was not this phone. Surfacing it
+      // beats returning a lead that is not there.
+      if (!raced) throw err;
+      return this.touch(businessId, raced, opts.conversationId);
     }
+  }
+
+  /**
+   * Mark a lead active for an inbound message, attaching the conversation if it
+   * did not have one. An existing `conversation_id` is never reassigned — the
+   * lead's history lives on the first conversation that captured it.
+   */
+  private async touch(
+    businessId: string,
+    lead: realty_leads,
+    conversationId?: string,
+  ): Promise<LeadResponseDto> {
+    const updated = await this.repository.update(businessId, lead.id, {
+      conversationId: lead.conversation_id ?? conversationId,
+      lastActivityAt: new Date(),
+    });
+    return this.mapResponse(updated);
   }
 
   /**
@@ -707,7 +712,13 @@ export class RealtyLeadsService {
    */
   @OnEvent('message.received')
   async handleMessageReceived(event: MessageReceivedEvent): Promise<void> {
-    const phone = event.senderExternalId;
+    // `senderPhone`, never `senderExternalId`. A lead is keyed on an E.164
+    // phone, and the channel id is only that on no channel at all: WhatsApp
+    // delivers a `wa_id` with no `+` (which produced a second lead for a buyer
+    // the portal had already ingested as `+91…`), and Web Chat delivers a
+    // session UUID — 36 characters into a VARCHAR(20), i.e. an error on every
+    // inbound message. A channel with no phone identity has no lead to capture.
+    const phone = event.senderPhone;
     if (!phone) return;
     try {
       await this.ensureLeadByPhone(event.businessId, phone, {
@@ -724,6 +735,116 @@ export class RealtyLeadsService {
   // ─────────────────────────────────────────────
   // PRIVATE HELPERS
   // ─────────────────────────────────────────────
+
+  /**
+   * Fold an ingest candidate into the lead that already owns its phone —
+   * appending provenance and filling only identity fields that are still empty.
+   *
+   * Attribution on an existing lead is never mutated (blueprint §15): the source
+   * that first captured the buyer is what the attribution reporting is built on.
+   */
+  private async mergeIngest(
+    businessId: string,
+    existing: realty_leads,
+    candidate: LeadIngestCandidate,
+  ): Promise<void> {
+    const provenance = {
+      source: candidate.source,
+      subSource: candidate.subSource,
+      listingRef: candidate.listingRef,
+      at: new Date().toISOString(),
+      ...(candidate.raw ? { raw: candidate.raw } : {}),
+    };
+    const ingestHistory = [...this.readIngestHistory(existing.metadata), provenance];
+    const data: UpdateLeadData = {
+      lastActivityAt: new Date(),
+      metadata: {
+        ...(existing.metadata as Record<string, unknown>),
+        ingestHistory,
+        ...(candidate.listingRef ? { lastListingRef: candidate.listingRef } : {}),
+      } as Prisma.InputJsonValue,
+    };
+    // Fill only missing identity fields — never clobber known values.
+    if (!existing.name && candidate.name) data.name = candidate.name;
+    if (!existing.email && candidate.email) data.email = candidate.email;
+    if (!existing.alt_phone && candidate.altPhone) data.altPhone = candidate.altPhone;
+    if (!existing.conversation_id && candidate.conversationId) {
+      data.conversationId = candidate.conversationId;
+    }
+    if (!existing.client_id && candidate.clientId) data.clientId = candidate.clientId;
+
+    await this.repository.update(businessId, existing.id, data);
+    this.logger.log(`Merged ingest (${candidate.source}) into lead ${existing.id}`);
+  }
+
+  /**
+   * Insert the lead row, reporting a lost phone race as a conflict.
+   *
+   * `createLead`'s pre-check is a read followed by a write, so it cannot be the
+   * thing that guarantees one lead per phone — two callers both read "free" and
+   * one of them loses the insert. Only the unique constraint decides, and it
+   * reports its verdict as a Prisma P2002. Translating that here is what makes
+   * the loss recoverable: `ensureLeadByPhone` re-claims on a `ConflictException`
+   * and the API returns 409 instead of 500. Left untranslated, the recovery
+   * branch that exists for exactly this case never ran.
+   */
+  private async createRow(
+    businessId: string,
+    dto: CreateLeadDto,
+  ): Promise<realty_leads> {
+    try {
+      return await this.repository.create({
+        businessId,
+        whatsappPhone: dto.whatsappPhone,
+        source: dto.source,
+        name: dto.name,
+        email: dto.email,
+        altPhone: dto.altPhone,
+        languagePref: dto.languagePref,
+        subSource: dto.subSource,
+        listingRef: dto.listingRef,
+        assignedAgentId: dto.assignedAgentId,
+        conversationId: dto.conversationId,
+        clientId: dto.clientId,
+      });
+    } catch (err) {
+      // Narrowed to the phone constraint: a P2002 on anything else is a
+      // different bug, and reporting it as "duplicate phone" would hide it.
+      if (!isUniqueViolation(err, 'whatsapp_phone')) throw err;
+      throw new ConflictException(
+        `A lead with phone ${dto.whatsappPhone} already exists`,
+      );
+    }
+  }
+
+  /**
+   * The lead holding `phone`, reviving it if it was soft-deleted — or `null`
+   * when the number is genuinely free.
+   *
+   * Reviving is the honest resolution rather than a convenience. Nothing in this
+   * module clears `deleted_at`, and the unique constraint spans tombstones, so a
+   * deleted lead makes its phone number permanently unusable for the tenant: the
+   * buyer messages, `findByPhone` sees nothing, the insert hits the constraint,
+   * and they are never captured again. The alternative to bringing the row back
+   * is dropping the person on the floor forever.
+   *
+   * Only identity resolution uses this. `findLeadByPhone` — what cadence, voice
+   * and compliance call — still excludes tombstones, because a deleted lead
+   * should not receive follow-ups.
+   */
+  private async claimLeadByPhone(
+    businessId: string,
+    phone: string,
+  ): Promise<realty_leads | null> {
+    const match = await this.repository.findByPhoneIncludingDeleted(businessId, phone);
+    if (!match) return null;
+    if (match.deleted_at === null) return match;
+
+    this.logger.log(
+      `Reviving soft-deleted lead ${match.id} — its phone is back in contact`,
+    );
+    return this.repository.revive(businessId, match.id);
+  }
 
   private async mustFind(businessId: string, leadId: string): Promise<realty_leads> {
     const lead = await this.repository.findById(businessId, leadId);
