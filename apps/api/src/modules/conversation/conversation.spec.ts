@@ -101,6 +101,7 @@ function createMockRepository() {
     create: jest.fn(),
     update: jest.fn(),
     updateStatus: jest.fn(),
+    transitionStatus: jest.fn(),
     list: jest.fn(),
     updateLastMessageAt: jest.fn(),
     assign: jest.fn(),
@@ -266,7 +267,7 @@ describe('ConversationService', () => {
       const conversation = makeConversation({ status: ConversationStatus.OPEN });
       const updated = makeConversation({ status: ConversationStatus.RESOLVED, resolved_at: new Date() });
       repository.findById.mockResolvedValue(conversation);
-      repository.updateStatus.mockResolvedValue(updated);
+      repository.transitionStatus.mockResolvedValue(updated);
 
       const result = await service.updateStatus(
         BUSINESS_ID,
@@ -275,10 +276,12 @@ describe('ConversationService', () => {
       );
 
       expect(result).toEqual(updated);
-      expect(repository.updateStatus).toHaveBeenCalledWith(
+      expect(repository.transitionStatus).toHaveBeenCalledWith(
         BUSINESS_ID,
         CONVERSATION_ID,
+        ConversationStatus.OPEN,
         ConversationStatus.RESOLVED,
+        {},
       );
       expect(eventEmitter.emit).toHaveBeenCalledWith(
         'conversation.status.changed',
@@ -294,7 +297,7 @@ describe('ConversationService', () => {
       const conversation = makeConversation({ status: ConversationStatus.OPEN });
       const updated = makeConversation({ status: ConversationStatus.PENDING_HUMAN });
       repository.findById.mockResolvedValue(conversation);
-      repository.updateStatus.mockResolvedValue(updated);
+      repository.transitionStatus.mockResolvedValue(updated);
 
       const result = await service.updateStatus(
         BUSINESS_ID,
@@ -303,10 +306,12 @@ describe('ConversationService', () => {
       );
 
       expect(result).toEqual(updated);
-      expect(repository.updateStatus).toHaveBeenCalledWith(
+      expect(repository.transitionStatus).toHaveBeenCalledWith(
         BUSINESS_ID,
         CONVERSATION_ID,
+        ConversationStatus.OPEN,
         ConversationStatus.PENDING_HUMAN,
+        {},
       );
     });
 
@@ -314,7 +319,7 @@ describe('ConversationService', () => {
       const conversation = makeConversation({ status: ConversationStatus.RESOLVED });
       const updated = makeConversation({ status: ConversationStatus.OPEN });
       repository.findById.mockResolvedValue(conversation);
-      repository.updateStatus.mockResolvedValue(updated);
+      repository.transitionStatus.mockResolvedValue(updated);
 
       const result = await service.updateStatus(
         BUSINESS_ID,
@@ -323,10 +328,12 @@ describe('ConversationService', () => {
       );
 
       expect(result).toEqual(updated);
-      expect(repository.updateStatus).toHaveBeenCalledWith(
+      expect(repository.transitionStatus).toHaveBeenCalledWith(
         BUSINESS_ID,
         CONVERSATION_ID,
+        ConversationStatus.RESOLVED,
         ConversationStatus.OPEN,
+        {},
       );
     });
 
@@ -342,7 +349,7 @@ describe('ConversationService', () => {
         ),
       ).rejects.toThrow(BadRequestException);
 
-      expect(repository.updateStatus).not.toHaveBeenCalled();
+      expect(repository.transitionStatus).not.toHaveBeenCalled();
     });
 
     it('should throw BadRequestException for invalid SNOOZED → RESOLVED transition', async () => {
@@ -357,7 +364,7 @@ describe('ConversationService', () => {
         ),
       ).rejects.toThrow(BadRequestException);
 
-      expect(repository.updateStatus).not.toHaveBeenCalled();
+      expect(repository.transitionStatus).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException for missing conversation', async () => {
@@ -379,7 +386,7 @@ describe('ConversationService', () => {
         resolved_at: new Date(),
       });
       repository.findById.mockResolvedValue(conversation);
-      repository.updateStatus.mockResolvedValue(updated);
+      repository.transitionStatus.mockResolvedValue(updated);
 
       await service.updateStatus(
         BUSINESS_ID,
@@ -387,12 +394,14 @@ describe('ConversationService', () => {
         ConversationStatus.RESOLVED,
       );
 
-      // The repository.updateStatus handles setting resolved_at internally;
-      // verify it was called with the RESOLVED status
-      expect(repository.updateStatus).toHaveBeenCalledWith(
+      // repository.transitionStatus sets resolved_at internally; verify it was
+      // asked for RESOLVED, and asked conditionally on the status just read.
+      expect(repository.transitionStatus).toHaveBeenCalledWith(
         BUSINESS_ID,
         CONVERSATION_ID,
+        ConversationStatus.OPEN,
         ConversationStatus.RESOLVED,
+        {},
       );
     });
   });
@@ -666,7 +675,7 @@ describe('ConversationService', () => {
     it('should schedule a delayed snooze-wake job with the correct delay and a deterministic jobId', async () => {
       const conversation = makeConversation({ status: ConversationStatus.OPEN });
       repository.findById.mockResolvedValue(conversation);
-      repository.update.mockResolvedValue(
+      repository.transitionStatus.mockResolvedValue(
         makeConversation({ status: ConversationStatus.SNOOZED }),
       );
 

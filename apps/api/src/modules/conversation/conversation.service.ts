@@ -4,11 +4,13 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  Optional,
 } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { InjectQueue } from '@nestjs/bull';
 import type { Queue } from 'bull';
 import type { conversations } from '@prisma/client';
+import { AuditAction } from '@gosumo/database';
 import {
   ConversationStatus,
   ChannelType,
@@ -27,12 +29,14 @@ import {
   AIResponseApprovedEvent,
 } from '@gosumo/shared';
 import { PrismaService } from '../../common/services/prisma.service';
-import { MESSAGE_ORDER_NEWEST_FIRST } from '../../common/utils/message-order';
+import { AuditLogService } from '../../common/services/audit-log.service';
+import { MESSAGE_ORDER_IN_CONVERSATION_NEWEST_FIRST } from '../../common/utils/message-order';
 import { TenantService } from '../tenant/tenant.service';
 import {
   ConversationRepository,
   ConversationListFilters,
   PaginatedConversations,
+  UpdateConversationData,
 } from './conversation.repository';
 import { ListConversationsQueryDto } from './dto';
 import {
@@ -59,6 +63,22 @@ import {
  * `@gosumo/database` and this module does not otherwise depend on it.
  */
 const REVIEW_TASK_TYPES: readonly string[] = ['REVIEW_RESPONSE', 'CLARIFY_INTENT'];
+
+/**
+ * How each target status reads on the audit trail.
+ *
+ * `AuditAction` is a small closed enum shared across the platform, so the two
+ * transitions it has a word for get that word and the rest are UPDATE. Reading
+ * "UPDATE conversation" and having to open `resource_after` to learn it was an
+ * escalation is exactly the friction the enum exists to remove.
+ */
+const AUDIT_ACTION_FOR_STATUS: Record<ConversationStatus, AuditAction> = {
+  [ConversationStatus.OPEN]: AuditAction.UPDATE,
+  [ConversationStatus.PENDING_HUMAN]: AuditAction.UPDATE,
+  [ConversationStatus.SNOOZED]: AuditAction.UPDATE,
+  [ConversationStatus.ESCALATED]: AuditAction.ESCALATE,
+  [ConversationStatus.RESOLVED]: AuditAction.RESOLVE,
+};
 
 // ─────────────────────────────────────────────
 // State machine: valid status transitions
@@ -158,6 +178,12 @@ export class ConversationService {
     private readonly eventEmitter: EventEmitter2,
     private readonly tenantService: TenantService,
     @InjectQueue(CONVERSATION_QUEUE) private readonly queue: Queue<SnoozeWakeJobData>,
+    /**
+     * Optional — the append-only trail every status transition is recorded on.
+     * Wired in `ConversationModule`; absent in unit tests that construct the
+     * service positionally, which then behave exactly as before minus the row.
+     */
+    @Optional() private readonly audit?: AuditLogService,
   ) {}
 
   /**
@@ -340,26 +366,14 @@ export class ConversationService {
     const currentStatus = conversation.status as ConversationStatus;
     this.assertTransition(currentStatus, newStatus);
 
-    const updated = await this.repository.updateStatus(
+    return this.commitTransition({
       businessId,
       id,
-      newStatus,
-    );
-
-    this.emitStatusChanged(
-      businessId,
-      id,
-      conversation.client_id,
-      currentStatus,
-      newStatus,
+      clientId: conversation.client_id,
+      from: currentStatus,
+      to: newStatus,
       actorId,
-    );
-
-    this.logger.log(
-      `Conversation ${id} status changed: ${currentStatus} → ${newStatus}`,
-    );
-
-    return updated;
+    });
   }
 
   /**
@@ -383,21 +397,20 @@ export class ConversationService {
     }
 
     const resolvedAt = new Date();
-    const updated = await this.repository.update(businessId, id, {
-      status: ConversationStatus.RESOLVED,
-      resolvedAt,
-      csatScore: options.csatScore,
-      csatSubmittedAt: options.csatScore != null ? resolvedAt : undefined,
-    });
-
-    this.emitStatusChanged(
+    const updated = await this.commitTransition({
       businessId,
       id,
-      conversation.client_id,
-      currentStatus,
-      ConversationStatus.RESOLVED,
-      options.actorId,
-    );
+      clientId: conversation.client_id,
+      from: currentStatus,
+      to: ConversationStatus.RESOLVED,
+      actorId: options.actorId,
+      extra: {
+        resolvedAt,
+        csatScore: options.csatScore,
+        csatSubmittedAt: options.csatScore != null ? resolvedAt : undefined,
+      },
+      description: `Conversation resolved by ${options.resolvedBy ?? RESOLVED_BY.HUMAN}`,
+    });
 
     const resolutionDurationSeconds = conversation.first_message_at
       ? Math.round(
@@ -478,19 +491,16 @@ export class ConversationService {
       );
     }
 
-    const updated = await this.repository.update(businessId, id, {
-      status: ConversationStatus.SNOOZED,
-      snoozedUntil: snoozeUntil,
-    });
-
-    this.emitStatusChanged(
+    const updated = await this.commitTransition({
       businessId,
       id,
-      conversation.client_id,
-      currentStatus,
-      ConversationStatus.SNOOZED,
+      clientId: conversation.client_id,
+      from: currentStatus,
+      to: ConversationStatus.SNOOZED,
       actorId,
-    );
+      extra: { snoozedUntil: snoozeUntil },
+      description: `Conversation snoozed until ${snoozeUntil.toISOString()}`,
+    });
 
     // Schedule the wake-up: a delayed job is the only thing that reopens a
     // SNOOZED conversation when the customer never replies before the
@@ -530,19 +540,16 @@ export class ConversationService {
     const currentStatus = conversation.status as ConversationStatus;
     this.assertTransition(currentStatus, ConversationStatus.ESCALATED);
 
-    const updated = await this.repository.update(businessId, id, {
-      status: ConversationStatus.ESCALATED,
-      assignedTo: options.assignedToMemberId ?? undefined,
-    });
-
-    this.emitStatusChanged(
+    const updated = await this.commitTransition({
       businessId,
       id,
-      conversation.client_id,
-      currentStatus,
-      ConversationStatus.ESCALATED,
-      options.actorId,
-    );
+      clientId: conversation.client_id,
+      from: currentStatus,
+      to: ConversationStatus.ESCALATED,
+      actorId: options.actorId,
+      extra: { assignedTo: options.assignedToMemberId ?? undefined },
+      description: `Conversation escalated: ${options.reason ?? ESCALATION_REASON.MANUAL}`,
+    });
 
     const escalatedEvent: ConversationEscalatedEvent = {
       type: 'conversation.escalated',
@@ -894,8 +901,9 @@ export class ConversationService {
       // CONTEXT_WINDOW_SIZE. The tie-break is what makes that selection
       // deterministic: without it, a tie straddling the twentieth row lets the
       // database choose which of two simultaneous messages the AI is shown, and
-      // it can choose differently on the retry. See MESSAGE_ORDER_NEWEST_FIRST.
-      orderBy: MESSAGE_ORDER_NEWEST_FIRST,
+      // it can choose differently on the retry. Scoped to one conversation, so
+      // it sorts on `sequence`. See MESSAGE_ORDER_IN_CONVERSATION_NEWEST_FIRST.
+      orderBy: MESSAGE_ORDER_IN_CONVERSATION_NEWEST_FIRST,
       take: CONTEXT_WINDOW_SIZE,
       select: {
         id: true,
@@ -1176,12 +1184,12 @@ export class ConversationService {
       if (current === ConversationStatus.PENDING_HUMAN) return;
       if (!this.canTransition(current, ConversationStatus.PENDING_HUMAN)) return;
 
-      await this.repository.updateStatus(
-        event.businessId,
-        conversation.id,
-        ConversationStatus.PENDING_HUMAN,
-      );
-      this.emitStatusChanged(
+      // Conditional on `current`: between the read above and this write the
+      // customer may have replied (reopening it) or `ai.escalated` may have
+      // landed, and PENDING_HUMAN must not overwrite either. A lost race here
+      // is the ordinary case rather than an error, so it is logged and dropped
+      // — the conversation is in a *later* state, which is the correct one.
+      await this.applyHandlerTransition(
         event.businessId,
         conversation.id,
         conversation.client_id,
@@ -1234,12 +1242,7 @@ export class ConversationService {
         return;
       }
 
-      await this.repository.updateStatus(
-        event.businessId,
-        conversation.id,
-        ConversationStatus.OPEN,
-      );
-      this.emitStatusChanged(
+      await this.applyHandlerTransition(
         event.businessId,
         conversation.id,
         conversation.client_id,
@@ -1270,12 +1273,7 @@ export class ConversationService {
       if (!conversation) return;
       if (conversation.status !== ConversationStatus.PENDING_HUMAN) return;
 
-      await this.repository.updateStatus(
-        event.businessId,
-        conversation.id,
-        ConversationStatus.OPEN,
-      );
-      this.emitStatusChanged(
+      await this.applyHandlerTransition(
         event.businessId,
         conversation.id,
         conversation.client_id,
@@ -1326,6 +1324,120 @@ export class ConversationService {
       throw new BadRequestException(
         `Invalid status transition: ${current} → ${next}`,
       );
+    }
+  }
+
+  /**
+   * Apply a validated transition, then announce and record it.
+   *
+   * The single place a conversation's status changes, so that three things
+   * cannot drift apart: the write is conditional on the status the caller
+   * validated against, the `conversation.status.changed` event fires only when
+   * the write actually landed, and the audit row describes a change that
+   * happened.
+   *
+   * `assertTransition` answers "is this move legal", which is a question about
+   * the machine. This answers "is this move still available", which is a
+   * question about the row, and only the database can answer it — see
+   * `ConversationRepository.transitionStatus`. A caller that loses gets a
+   * `ConflictException` naming the status that beat it, because the honest
+   * response to "resolve this" when someone else escalated it a moment ago is
+   * to say so, not to silently overwrite them or to silently do nothing.
+   */
+  private async commitTransition(options: {
+    businessId: string;
+    id: string;
+    clientId: string;
+    from: ConversationStatus;
+    to: ConversationStatus;
+    actorId?: string;
+    /** Columns that belong to this transition (snooze deadline, CSAT, assignee). */
+    extra?: Omit<UpdateConversationData, 'status'>;
+    /** Recorded on the audit row; defaults by target status. */
+    auditAction?: AuditAction;
+    description?: string;
+  }): Promise<conversations> {
+    const { businessId, id, clientId, from, to, actorId } = options;
+
+    const updated = await this.repository.transitionStatus(
+      businessId,
+      id,
+      from,
+      to,
+      options.extra ?? {},
+    );
+
+    if (!updated) {
+      // Re-read for the message only. The status we report is a snapshot too,
+      // but an operator reading "expected OPEN, found ESCALATED" can act on it,
+      // where a bare 409 sends them to the logs.
+      const current = await this.repository.findById(businessId, id);
+      throw new ConflictException(
+        `Conversation ${id} is no longer ${from}` +
+          (current ? ` (now ${current.status})` : ' (no longer available)') +
+          `; the ${from} → ${to} transition was not applied`,
+      );
+    }
+
+    this.emitStatusChanged(businessId, id, clientId, from, to, actorId);
+
+    // Append-only, best-effort, and after the write — a row describing a change
+    // that did not happen is worse than a missing one.
+    void this.audit?.record({
+      businessId,
+      actorType: actorId ? 'TEAM_MEMBER' : 'SYSTEM',
+      actorId: actorId ?? null,
+      action: options.auditAction ?? AUDIT_ACTION_FOR_STATUS[to],
+      resourceType: 'conversation',
+      resourceId: id,
+      before: { status: from },
+      after: { status: to },
+      description:
+        options.description ?? `Conversation status ${from} → ${to}`,
+    });
+
+    this.logger.log(`Conversation ${id} status changed: ${from} → ${to}`);
+
+    return updated;
+  }
+
+  /**
+   * The event-listener form of {@link commitTransition}: losing the race is a
+   * normal outcome, not an error.
+   *
+   * These handlers relabel a conversation to reflect something that has already
+   * happened elsewhere (a task was queued, a draft was approved). If the row
+   * moved on between the read and the write, the state it moved to is newer
+   * than the one this handler wanted to write, so the right thing is to leave
+   * it alone. Every listener here is already documented as best-effort and
+   * non-throwing; this keeps that true without making it silent.
+   */
+  private async applyHandlerTransition(
+    businessId: string,
+    conversationId: string,
+    clientId: string,
+    from: ConversationStatus,
+    to: ConversationStatus,
+    actorId?: string,
+  ): Promise<void> {
+    try {
+      await this.commitTransition({
+        businessId,
+        id: conversationId,
+        clientId,
+        from,
+        to,
+        actorId,
+      });
+    } catch (error) {
+      if (error instanceof ConflictException) {
+        this.logger.debug(
+          `Conversation ${conversationId} left as-is: it is no longer ${from}, ` +
+            `so the ${from} → ${to} relabel no longer applies`,
+        );
+        return;
+      }
+      throw error;
     }
   }
 

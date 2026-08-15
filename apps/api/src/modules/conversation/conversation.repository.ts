@@ -4,7 +4,7 @@ import { ConversationStatus, ChannelType, ResourceNotFoundError } from '@gosumo/
 import { Prisma } from '@prisma/client';
 import type { conversations } from '@prisma/client';
 import { escapeLikeTerm } from '../../common/utils/search-pattern.util';
-import { MESSAGE_ORDER_NEWEST_FIRST } from '../../common/utils/message-order';
+import { MESSAGE_ORDER_IN_CONVERSATION_NEWEST_FIRST } from '../../common/utils/message-order';
 import { SNOOZE_WAKE_BATCH_SIZE } from './conversation.constants';
 
 // ─────────────────────────────────────────────
@@ -84,9 +84,10 @@ const CONVERSATION_LIST_INCLUDE = {
   messages: {
     // `take: 1` is the tightest LIMIT there is, so an untied sort decides the
     // inbox preview by coin flip when the last two messages are simultaneous —
-    // and can show a different one on the next poll. See
-    // MESSAGE_ORDER_NEWEST_FIRST.
-    orderBy: MESSAGE_ORDER_NEWEST_FIRST,
+    // and can show a different one on the next poll. A nested include is
+    // per-conversation by construction, so this sorts on `sequence`. See
+    // MESSAGE_ORDER_IN_CONVERSATION_NEWEST_FIRST.
+    orderBy: MESSAGE_ORDER_IN_CONVERSATION_NEWEST_FIRST,
     take: 1,
   },
 } as const;
@@ -172,8 +173,96 @@ export class ConversationRepository {
   }
 
   /**
+   * Move a conversation from one status to another, and only from that one.
+   *
+   * ## The race
+   *
+   * Every lifecycle method used to read the conversation, check the transition
+   * against `VALID_TRANSITIONS` in the service, and then write the new status
+   * unconditionally. The check and the write are separate statements over a row
+   * nothing is holding, so two callers arriving together both read `OPEN`, both
+   * find their transition legal, and both write — and the second silently
+   * overwrites the first. The state machine is enforced against a snapshot that
+   * is already stale by the time it is consulted.
+   *
+   * It is not a theoretical window either. The pairs that collide are the ones
+   * the product produces constantly: an agent clicking Resolve while
+   * `ai.escalated` lands, `task.created` labelling a conversation PENDING_HUMAN
+   * while the customer's reply reopens it, two agents on the same inbox. The
+   * losing outcome is a conversation sitting in ESCALATED with no open task, or
+   * RESOLVED while a person is still working it — states the machine exists to
+   * make unreachable, reached anyway.
+   *
+   * ## The fix
+   *
+   * `expectedStatus` goes into the WHERE clause, so the guard and the write are
+   * one statement and Postgres decides the winner. `updateMany` is used rather
+   * than `update` because it compiles to exactly that conditional UPDATE;
+   * `update` with extra filters is Prisma's `extendedWhereUnique`, which does
+   * not guarantee it stays one statement, and a read-then-write underneath this
+   * API would reintroduce the race while looking correct.
+   *
+   * Returns `null` when the row was not in `expectedStatus` — the caller lost,
+   * and the transition it validated no longer applies. That is a conflict to
+   * report, not a state to force.
+   */
+  async transitionStatus(
+    businessId: string,
+    conversationId: string,
+    expectedStatus: ConversationStatus,
+    status: ConversationStatus,
+    extra: Omit<UpdateConversationData, 'status'> = {},
+  ): Promise<conversations | null> {
+    const data: Prisma.conversationsUpdateManyMutationInput = { status };
+
+    if (status === ConversationStatus.RESOLVED) {
+      data.resolved_at = extra.resolvedAt ?? new Date();
+    } else if (status === ConversationStatus.OPEN) {
+      // Reopening clears the prior resolution timestamp.
+      data.resolved_at = null;
+    } else if (extra.resolvedAt !== undefined) {
+      data.resolved_at = extra.resolvedAt;
+    }
+
+    if (extra.assignedTo !== undefined) data.assigned_to = extra.assignedTo;
+    if (extra.snoozedUntil !== undefined) data.snoozed_until = extra.snoozedUntil;
+    if (extra.csatScore !== undefined) data.csat_score = extra.csatScore;
+    if (extra.csatSubmittedAt !== undefined) {
+      data.csat_submitted_at = extra.csatSubmittedAt;
+    }
+
+    const { count } = await this.prisma.conversations.updateMany({
+      where: {
+        id: conversationId,
+        business_id: businessId,
+        deleted_at: null,
+        status: expectedStatus,
+      },
+      data,
+    });
+
+    // Lost the race, or the row is gone. Either way this caller did not make
+    // the change and must not be told it did.
+    if (count === 0) return null;
+
+    // Read back separately because `updateMany` cannot return rows. This read
+    // may already reflect a *later* transition by someone else, which is fine
+    // and is the honest answer: `count` is what says the write landed, and the
+    // row is what the conversation looks like now.
+    return this.prisma.conversations.findFirst({
+      where: { id: conversationId, business_id: businessId },
+      include: CONVERSATION_INCLUDE,
+    });
+  }
+
+  /**
    * Update conversation status. Sets resolved_at when transitioning to
    * RESOLVED and clears it when leaving RESOLVED (reopen).
+   *
+   * Unconditional: it writes whatever the caller asks for regardless of where
+   * the row currently is. Prefer {@link transitionStatus} for anything driven
+   * by the state machine — this remains only for the callers that genuinely
+   * have no expected prior state.
    */
   async updateStatus(
     businessId: string,

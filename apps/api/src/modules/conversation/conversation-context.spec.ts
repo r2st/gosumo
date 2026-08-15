@@ -24,7 +24,7 @@ import {
 import { ConversationService } from './conversation.service';
 import { ConversationRepository } from './conversation.repository';
 import { PrismaService } from '../../common/services/prisma.service';
-import { MESSAGE_ORDER_NEWEST_FIRST } from '../../common/utils/message-order';
+import { MESSAGE_ORDER_IN_CONVERSATION_NEWEST_FIRST } from '../../common/utils/message-order';
 import { TenantService } from '../tenant/tenant.service';
 import { CONVERSATION_QUEUE } from './conversation.constants';
 
@@ -72,6 +72,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
     findLatestByClientAndChannel: jest.Mock;
     create: jest.Mock;
     updateStatus: jest.Mock;
+    transitionStatus: jest.Mock;
     update: jest.Mock;
     list: jest.Mock;
     updateLastMessageAt: jest.Mock;
@@ -100,6 +101,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
       findLatestByClientAndChannel: jest.fn(),
       create: jest.fn(),
       updateStatus: jest.fn(),
+      transitionStatus: jest.fn(),
       update: jest.fn(),
       list: jest.fn(),
       updateLastMessageAt: jest.fn(),
@@ -181,7 +183,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
       expect(prisma.messages.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { conversation_id: CONVERSATION_ID, business_id: BUSINESS_ID },
-          orderBy: MESSAGE_ORDER_NEWEST_FIRST,
+          orderBy: MESSAGE_ORDER_IN_CONVERSATION_NEWEST_FIRST,
         }),
       );
     });
@@ -225,7 +227,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
     it('resolves the conversation as a human action', async () => {
       repository.findById.mockResolvedValue(makeConversation());
       prisma.tasks.count.mockResolvedValue(0);
-      repository.update.mockResolvedValue(
+      repository.transitionStatus.mockResolvedValue(
         makeConversation({ status: ConversationStatus.RESOLVED }),
       );
 
@@ -235,10 +237,12 @@ describe('ConversationService — context, notes and handler resilience', () => 
         AGENT_A,
       );
 
-      expect(repository.update).toHaveBeenCalledWith(
+      expect(repository.transitionStatus).toHaveBeenCalledWith(
         BUSINESS_ID,
         CONVERSATION_ID,
-        expect.objectContaining({ status: ConversationStatus.RESOLVED }),
+        ConversationStatus.OPEN,
+        ConversationStatus.RESOLVED,
+        expect.any(Object),
       );
       expect((result as { status: string }).status).toBe(
         ConversationStatus.RESOLVED,
@@ -253,7 +257,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
     it('closes without an actor id', async () => {
       repository.findById.mockResolvedValue(makeConversation());
       prisma.tasks.count.mockResolvedValue(0);
-      repository.update.mockResolvedValue(
+      repository.transitionStatus.mockResolvedValue(
         makeConversation({ status: ConversationStatus.RESOLVED }),
       );
 
@@ -547,13 +551,13 @@ describe('ConversationService — context, notes and handler resilience', () => 
     it('stamps csat_submitted_at only when a CSAT score is supplied', async () => {
       repository.findById.mockResolvedValue(makeConversation());
       prisma.tasks.count.mockResolvedValue(0);
-      repository.update.mockResolvedValue(makeConversation());
+      repository.transitionStatus.mockResolvedValue(makeConversation());
 
       await service.resolveConversation(BUSINESS_ID, CONVERSATION_ID, {
         csatScore: 5,
       });
 
-      const payload = repository.update.mock.calls[0]?.[2] as Record<
+      const payload = repository.transitionStatus.mock.calls[0]?.[4] as Record<
         string,
         unknown
       >;
@@ -568,11 +572,11 @@ describe('ConversationService — context, notes and handler resilience', () => 
     it('leaves csat_submitted_at unset when no score is supplied', async () => {
       repository.findById.mockResolvedValue(makeConversation());
       prisma.tasks.count.mockResolvedValue(0);
-      repository.update.mockResolvedValue(makeConversation());
+      repository.transitionStatus.mockResolvedValue(makeConversation());
 
       await service.resolveConversation(BUSINESS_ID, CONVERSATION_ID, {});
 
-      const payload = repository.update.mock.calls[0]?.[2] as Record<
+      const payload = repository.transitionStatus.mock.calls[0]?.[4] as Record<
         string,
         unknown
       >;
@@ -584,7 +588,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
         makeConversation({ first_message_at: null }),
       );
       prisma.tasks.count.mockResolvedValue(0);
-      repository.update.mockResolvedValue(makeConversation());
+      repository.transitionStatus.mockResolvedValue(makeConversation());
 
       await service.resolveConversation(BUSINESS_ID, CONVERSATION_ID, {});
 
@@ -598,7 +602,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
   describe('escalateConversation options', () => {
     it('defaults the reason to MANUAL and the task id to empty', async () => {
       repository.findById.mockResolvedValue(makeConversation());
-      repository.update.mockResolvedValue(
+      repository.transitionStatus.mockResolvedValue(
         makeConversation({ status: ConversationStatus.ESCALATED }),
       );
 
@@ -609,16 +613,18 @@ describe('ConversationService — context, notes and handler resilience', () => 
         expect.objectContaining({ reason: 'MANUAL', taskId: '' }),
       );
       // No assignee supplied — the update must not clear an existing one.
-      expect(repository.update).toHaveBeenCalledWith(
+      expect(repository.transitionStatus).toHaveBeenCalledWith(
         BUSINESS_ID,
         CONVERSATION_ID,
+        ConversationStatus.OPEN,
+        ConversationStatus.ESCALATED,
         expect.objectContaining({ assignedTo: undefined }),
       );
     });
 
     it('carries an explicit assignee, task id and reason onto the event', async () => {
       repository.findById.mockResolvedValue(makeConversation());
-      repository.update.mockResolvedValue(
+      repository.transitionStatus.mockResolvedValue(
         makeConversation({ status: ConversationStatus.ESCALATED }),
       );
 
@@ -760,7 +766,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
       repository.findById.mockResolvedValue(
         makeConversation({ status: ConversationStatus.OPEN }),
       );
-      repository.updateStatus.mockResolvedValue(makeConversation());
+      repository.transitionStatus.mockResolvedValue(makeConversation());
 
       await expect(
         service.updateStatus(BUSINESS_ID, CONVERSATION_ID, ConversationStatus.OPEN),

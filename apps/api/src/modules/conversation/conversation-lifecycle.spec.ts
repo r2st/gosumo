@@ -78,6 +78,11 @@ function createMockRepository() {
     findLatestByClientAndChannel: jest.fn(),
     create: jest.fn(),
     updateStatus: jest.fn(),
+    // Defaults to "the transition landed". A `transitionStatus` returning
+    // undefined means "someone else got there first", which the service
+    // correctly turns into a ConflictException — so an unset mock fails every
+    // test on this path for a reason that has nothing to do with the test.
+    transitionStatus: jest.fn().mockResolvedValue(makeConversation()),
     update: jest.fn(),
     list: jest.fn(),
     updateLastMessageAt: jest.fn(),
@@ -143,7 +148,7 @@ describe('ConversationService — lifecycle & features', () => {
         status: ConversationStatus.RESOLVED,
         resolved_at: new Date(),
       });
-      repository.update.mockResolvedValue(resolved);
+      repository.transitionStatus.mockResolvedValue(resolved);
 
       const result = await service.resolveConversation(
         BUSINESS_ID,
@@ -152,13 +157,12 @@ describe('ConversationService — lifecycle & features', () => {
       );
 
       expect(result).toEqual(resolved);
-      expect(repository.update).toHaveBeenCalledWith(
+      expect(repository.transitionStatus).toHaveBeenCalledWith(
         BUSINESS_ID,
         CONVERSATION_ID,
-        expect.objectContaining({
-          status: ConversationStatus.RESOLVED,
-          csatScore: 5,
-        }),
+        ConversationStatus.OPEN,
+        ConversationStatus.RESOLVED,
+        expect.objectContaining({ csatScore: 5 }),
       );
       expect(eventEmitter.emit).toHaveBeenCalledWith(
         'conversation.status.changed',
@@ -181,7 +185,7 @@ describe('ConversationService — lifecycle & features', () => {
       await expect(
         service.resolveConversation(BUSINESS_ID, CONVERSATION_ID),
       ).rejects.toThrow(ConflictException);
-      expect(repository.update).not.toHaveBeenCalled();
+      expect(repository.transitionStatus).not.toHaveBeenCalled();
     });
 
     it('throws NotFound for a missing conversation', async () => {
@@ -198,7 +202,7 @@ describe('ConversationService — lifecycle & features', () => {
         makeConversation({ status: ConversationStatus.RESOLVED }),
       );
       const reopened = makeConversation({ status: ConversationStatus.OPEN });
-      repository.updateStatus.mockResolvedValue(reopened);
+      repository.transitionStatus.mockResolvedValue(reopened);
 
       const result = await service.reopenConversation(
         BUSINESS_ID,
@@ -207,10 +211,12 @@ describe('ConversationService — lifecycle & features', () => {
       );
 
       expect(result).toEqual(reopened);
-      expect(repository.updateStatus).toHaveBeenCalledWith(
+      expect(repository.transitionStatus).toHaveBeenCalledWith(
         BUSINESS_ID,
         CONVERSATION_ID,
+        ConversationStatus.RESOLVED,
         ConversationStatus.OPEN,
+        {},
       );
     });
   });
@@ -221,7 +227,7 @@ describe('ConversationService — lifecycle & features', () => {
     it('snoozes an OPEN conversation until a valid future time', async () => {
       repository.findById.mockResolvedValue(makeConversation());
       const snoozed = makeConversation({ status: ConversationStatus.SNOOZED });
-      repository.update.mockResolvedValue(snoozed);
+      repository.transitionStatus.mockResolvedValue(snoozed);
 
       const until = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
       const result = await service.snoozeConversation(
@@ -231,13 +237,12 @@ describe('ConversationService — lifecycle & features', () => {
       );
 
       expect(result).toEqual(snoozed);
-      expect(repository.update).toHaveBeenCalledWith(
+      expect(repository.transitionStatus).toHaveBeenCalledWith(
         BUSINESS_ID,
         CONVERSATION_ID,
-        expect.objectContaining({
-          status: ConversationStatus.SNOOZED,
-          snoozedUntil: until,
-        }),
+        ConversationStatus.OPEN,
+        ConversationStatus.SNOOZED,
+        expect.objectContaining({ snoozedUntil: until }),
       );
     });
 
@@ -273,7 +278,7 @@ describe('ConversationService — lifecycle & features', () => {
         status: ConversationStatus.ESCALATED,
         assigned_to: AGENT_A,
       });
-      repository.update.mockResolvedValue(escalated);
+      repository.transitionStatus.mockResolvedValue(escalated);
 
       const result = await service.escalateConversation(
         BUSINESS_ID,
@@ -305,21 +310,21 @@ describe('ConversationService — lifecycle & features', () => {
         }),
       ).rejects.toThrow(BadRequestException);
 
-      expect(repository.update).not.toHaveBeenCalled();
+      expect(repository.transitionStatus).not.toHaveBeenCalled();
       expect(eventEmitter.emit).not.toHaveBeenCalled();
     });
 
     /** Escalating without a target is the common case and must stay open. */
     it('does not consult the tenant guard when no target is supplied', async () => {
       repository.findById.mockResolvedValue(makeConversation());
-      repository.update.mockResolvedValue(
+      repository.transitionStatus.mockResolvedValue(
         makeConversation({ status: ConversationStatus.ESCALATED }),
       );
 
       await service.escalateConversation(BUSINESS_ID, CONVERSATION_ID, {});
 
       expect(tenantService.assertAssignableTeamMember).not.toHaveBeenCalled();
-      expect(repository.update).toHaveBeenCalled();
+      expect(repository.transitionStatus).toHaveBeenCalled();
     });
   });
 
@@ -694,16 +699,18 @@ describe('ConversationService — lifecycle & features', () => {
 
     it('moves an OPEN conversation to ESCALATED so the inbox shows it', async () => {
       repository.findById.mockResolvedValue(makeConversation({ status: ConversationStatus.OPEN }));
-      repository.update.mockResolvedValue(
+      repository.transitionStatus.mockResolvedValue(
         makeConversation({ status: ConversationStatus.ESCALATED }),
       );
 
       await service.handleAiEscalated(aiEscalated);
 
-      expect(repository.update).toHaveBeenCalledWith(
+      expect(repository.transitionStatus).toHaveBeenCalledWith(
         BUSINESS_ID,
         CONVERSATION_ID,
-        expect.objectContaining({ status: ConversationStatus.ESCALATED }),
+        ConversationStatus.OPEN,
+        ConversationStatus.ESCALATED,
+        expect.any(Object),
       );
       expect(eventEmitter.emit).toHaveBeenCalledWith(
         'conversation.escalated',
@@ -715,22 +722,24 @@ describe('ConversationService — lifecycle & features', () => {
       repository.findById.mockResolvedValue(
         makeConversation({ status: ConversationStatus.SNOOZED }),
       );
-      repository.update.mockResolvedValue(
+      repository.transitionStatus.mockResolvedValue(
         makeConversation({ status: ConversationStatus.ESCALATED }),
       );
 
       await service.handleAiEscalated(aiEscalated);
 
-      expect(repository.update).toHaveBeenCalledWith(
+      expect(repository.transitionStatus).toHaveBeenCalledWith(
         BUSINESS_ID,
         CONVERSATION_ID,
-        expect.objectContaining({ status: ConversationStatus.ESCALATED }),
+        ConversationStatus.SNOOZED,
+        ConversationStatus.ESCALATED,
+        expect.any(Object),
       );
     });
 
     it('falls back to LOW_CONFIDENCE when the event carries no reason', async () => {
       repository.findById.mockResolvedValue(makeConversation({ status: ConversationStatus.OPEN }));
-      repository.update.mockResolvedValue(
+      repository.transitionStatus.mockResolvedValue(
         makeConversation({ status: ConversationStatus.ESCALATED }),
       );
 
@@ -752,7 +761,7 @@ describe('ConversationService — lifecycle & features', () => {
 
       await service.handleAiEscalated(aiEscalated);
 
-      expect(repository.update).not.toHaveBeenCalled();
+      expect(repository.transitionStatus).not.toHaveBeenCalled();
     });
 
     it('skips a status ESCALATED cannot be reached from instead of throwing', async () => {
@@ -761,12 +770,12 @@ describe('ConversationService — lifecycle & features', () => {
       );
 
       await expect(service.handleAiEscalated(aiEscalated)).resolves.toBeUndefined();
-      expect(repository.update).not.toHaveBeenCalled();
+      expect(repository.transitionStatus).not.toHaveBeenCalled();
     });
 
     it('swallows a write failure — the HITL task is already filed', async () => {
       repository.findById.mockResolvedValue(makeConversation({ status: ConversationStatus.OPEN }));
-      repository.update.mockRejectedValue(new Error('db down'));
+      repository.transitionStatus.mockRejectedValue(new Error('db down'));
 
       await expect(service.handleAiEscalated(aiEscalated)).resolves.toBeUndefined();
     });
@@ -790,7 +799,7 @@ describe('ConversationService — lifecycle & features', () => {
       repository.findById.mockResolvedValue(
         makeConversation({ status: ConversationStatus.ESCALATED }),
       );
-      repository.updateStatus.mockResolvedValue(makeConversation());
+      repository.transitionStatus.mockResolvedValue(makeConversation());
       await service.handleTaskResolved({
         type: 'task.resolved',
         id: 'evt',
@@ -804,10 +813,12 @@ describe('ConversationService — lifecycle & features', () => {
         slaBreach: false,
       });
 
-      expect(repository.updateStatus).toHaveBeenCalledWith(
+      expect(repository.transitionStatus).toHaveBeenCalledWith(
         BUSINESS_ID,
         CONVERSATION_ID,
+        ConversationStatus.ESCALATED,
         ConversationStatus.OPEN,
+        {},
       );
     });
   });
@@ -832,14 +843,16 @@ describe('ConversationService — lifecycle & features', () => {
       'moves the conversation to PENDING_HUMAN for a %s task',
       async (taskType) => {
         repository.findById.mockResolvedValue(makeConversation({ status: ConversationStatus.OPEN }));
-        repository.updateStatus.mockResolvedValue(makeConversation());
+        repository.transitionStatus.mockResolvedValue(makeConversation());
 
         await service.handleTaskCreated(taskCreated(taskType));
 
-        expect(repository.updateStatus).toHaveBeenCalledWith(
+        expect(repository.transitionStatus).toHaveBeenCalledWith(
           BUSINESS_ID,
           CONVERSATION_ID,
+          ConversationStatus.OPEN,
           ConversationStatus.PENDING_HUMAN,
+          {},
         );
       },
     );
@@ -862,7 +875,7 @@ describe('ConversationService — lifecycle & features', () => {
 
       await service.handleTaskCreated(taskCreated('REVIEW_RESPONSE'));
 
-      expect(repository.updateStatus).not.toHaveBeenCalled();
+      expect(repository.transitionStatus).not.toHaveBeenCalled();
     });
 
     it('is a no-op when it is already PENDING_HUMAN', async () => {
@@ -872,7 +885,7 @@ describe('ConversationService — lifecycle & features', () => {
 
       await service.handleTaskCreated(taskCreated('REVIEW_RESPONSE'));
 
-      expect(repository.updateStatus).not.toHaveBeenCalled();
+      expect(repository.transitionStatus).not.toHaveBeenCalled();
     });
 
     it('skips a status PENDING_HUMAN cannot be reached from', async () => {
@@ -882,12 +895,12 @@ describe('ConversationService — lifecycle & features', () => {
 
       await service.handleTaskCreated(taskCreated('REVIEW_RESPONSE'));
 
-      expect(repository.updateStatus).not.toHaveBeenCalled();
+      expect(repository.transitionStatus).not.toHaveBeenCalled();
     });
 
     it('swallows a write failure — the task itself is already filed', async () => {
       repository.findById.mockResolvedValue(makeConversation({ status: ConversationStatus.OPEN }));
-      repository.updateStatus.mockRejectedValue(new Error('db down'));
+      repository.transitionStatus.mockRejectedValue(new Error('db down'));
 
       await expect(
         service.handleTaskCreated(taskCreated('REVIEW_RESPONSE')),
@@ -900,7 +913,7 @@ describe('ConversationService — lifecycle & features', () => {
       repository.findById.mockResolvedValue(
         makeConversation({ status: ConversationStatus.ESCALATED }),
       );
-      repository.updateStatus.mockResolvedValue(makeConversation());
+      repository.transitionStatus.mockResolvedValue(makeConversation());
 
       const event: TaskResolvedEvent = {
         type: 'task.resolved',
@@ -917,10 +930,12 @@ describe('ConversationService — lifecycle & features', () => {
 
       await service.handleTaskResolved(event);
 
-      expect(repository.updateStatus).toHaveBeenCalledWith(
+      expect(repository.transitionStatus).toHaveBeenCalledWith(
         BUSINESS_ID,
         CONVERSATION_ID,
+        ConversationStatus.ESCALATED,
         ConversationStatus.OPEN,
+        {},
       );
     });
 
@@ -943,7 +958,7 @@ describe('ConversationService — lifecycle & features', () => {
       };
 
       await service.handleTaskResolved(event);
-      expect(repository.updateStatus).not.toHaveBeenCalled();
+      expect(repository.transitionStatus).not.toHaveBeenCalled();
     });
 
     function resolved(): TaskResolvedEvent {
@@ -967,15 +982,17 @@ describe('ConversationService — lifecycle & features', () => {
       repository.findById.mockResolvedValue(
         makeConversation({ status: ConversationStatus.PENDING_HUMAN }),
       );
-      repository.updateStatus.mockResolvedValue(makeConversation());
+      repository.transitionStatus.mockResolvedValue(makeConversation());
       prisma.tasks.count.mockResolvedValue(0);
 
       await service.handleTaskResolved(resolved());
 
-      expect(repository.updateStatus).toHaveBeenCalledWith(
+      expect(repository.transitionStatus).toHaveBeenCalledWith(
         BUSINESS_ID,
         CONVERSATION_ID,
+        ConversationStatus.PENDING_HUMAN,
         ConversationStatus.OPEN,
+        {},
       );
     });
 
@@ -990,22 +1007,24 @@ describe('ConversationService — lifecycle & features', () => {
 
       await service.handleTaskResolved(resolved());
 
-      expect(repository.updateStatus).not.toHaveBeenCalled();
+      expect(repository.transitionStatus).not.toHaveBeenCalled();
     });
 
     it('releases once the last open task is resolved', async () => {
       repository.findById.mockResolvedValue(
         makeConversation({ status: ConversationStatus.ESCALATED }),
       );
-      repository.updateStatus.mockResolvedValue(makeConversation());
+      repository.transitionStatus.mockResolvedValue(makeConversation());
       prisma.tasks.count.mockResolvedValue(0);
 
       await service.handleTaskResolved(resolved());
 
-      expect(repository.updateStatus).toHaveBeenCalledWith(
+      expect(repository.transitionStatus).toHaveBeenCalledWith(
         BUSINESS_ID,
         CONVERSATION_ID,
+        ConversationStatus.ESCALATED,
         ConversationStatus.OPEN,
+        {},
       );
     });
   });
@@ -1015,7 +1034,7 @@ describe('ConversationService — lifecycle & features', () => {
       repository.findById.mockResolvedValue(
         makeConversation({ status: ConversationStatus.PENDING_HUMAN }),
       );
-      repository.updateStatus.mockResolvedValue(makeConversation());
+      repository.transitionStatus.mockResolvedValue(makeConversation());
 
       const event: AIResponseApprovedEvent = {
         type: 'ai.response.approved',
@@ -1032,10 +1051,12 @@ describe('ConversationService — lifecycle & features', () => {
 
       await service.handleAiResponseApproved(event);
 
-      expect(repository.updateStatus).toHaveBeenCalledWith(
+      expect(repository.transitionStatus).toHaveBeenCalledWith(
         BUSINESS_ID,
         CONVERSATION_ID,
+        ConversationStatus.PENDING_HUMAN,
         ConversationStatus.OPEN,
+        {},
       );
     });
   });

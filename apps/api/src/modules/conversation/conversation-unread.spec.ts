@@ -88,6 +88,7 @@ describe('ConversationService — unread counter', () => {
     findLatestByClientAndChannel: jest.Mock;
     create: jest.Mock;
     updateStatus: jest.Mock;
+    transitionStatus: jest.Mock;
     updateLastMessageAt: jest.Mock;
     incrementHumanMessageCount: jest.Mock;
     markRead: jest.Mock;
@@ -99,6 +100,7 @@ describe('ConversationService — unread counter', () => {
       findLatestByClientAndChannel: jest.fn().mockResolvedValue(makeConversation()),
       create: jest.fn().mockResolvedValue(makeConversation()),
       updateStatus: jest.fn().mockResolvedValue(makeConversation()),
+      transitionStatus: jest.fn().mockResolvedValue(makeConversation()),
       updateLastMessageAt: jest.fn().mockResolvedValue(makeConversation()),
       incrementHumanMessageCount: jest.fn().mockResolvedValue(makeConversation()),
       markRead: jest.fn().mockResolvedValue(0),

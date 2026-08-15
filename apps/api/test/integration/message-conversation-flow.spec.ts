@@ -155,6 +155,31 @@ class FakeConversationRepository {
     return next;
   }
 
+  /**
+   * Compare-and-swap, same contract as the real repository: the write only
+   * lands if the row is still in `expectedStatus`, and a caller that lost gets
+   * `null` rather than a silent overwrite. Modelling the losing branch here is
+   * the point — a fake that always succeeds cannot tell the two apart.
+   */
+  async transitionStatus(
+    businessId: string,
+    id: string,
+    expectedStatus: ConversationStatus,
+    status: ConversationStatus,
+    extra: Omit<UpdateConversationData, 'status'> = {},
+  ): Promise<conversations | null> {
+    const row = await this.findById(businessId, id);
+    if (!row || row.status !== expectedStatus) return null;
+
+    const data: UpdateConversationData = { ...extra, status };
+    if (status === ConversationStatus.RESOLVED) {
+      data.resolvedAt = extra.resolvedAt ?? new Date();
+    } else if (status === ConversationStatus.OPEN) {
+      data.resolvedAt = null;
+    }
+    return this.update(businessId, id, data);
+  }
+
   async update(
     businessId: string,
     id: string,

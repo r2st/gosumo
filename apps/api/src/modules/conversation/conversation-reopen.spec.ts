@@ -151,6 +151,40 @@ function createStore() {
       }),
     ),
 
+    // The conditional write the service now uses. Modelled faithfully: the
+    // update only lands when the row is still in `expected`, which is what lets
+    // this suite exercise a lost race rather than assume one cannot happen.
+    transitionStatus: jest.fn(
+      async (
+        businessId: string,
+        id: string,
+        expected: ConversationStatus,
+        status: ConversationStatus,
+        extra: UpdateArgs = {},
+      ) => {
+        const row = rows.find(
+          (r) => r.id === id && r.business_id === businessId && !r.deleted_at,
+        );
+        if (!row || row.status !== expected) return null;
+
+        row.status = status;
+        if (status === ConversationStatus.RESOLVED) {
+          row.resolved_at = extra.resolvedAt ?? new Date();
+        } else if (status === ConversationStatus.OPEN) {
+          row.resolved_at = null;
+        } else if (extra.resolvedAt !== undefined) {
+          row.resolved_at = extra.resolvedAt;
+        }
+        if (extra.assignedTo !== undefined) row.assigned_to = extra.assignedTo;
+        if (extra.snoozedUntil !== undefined) row.snoozed_until = extra.snoozedUntil;
+        if (extra.csatScore !== undefined) row.csat_score = extra.csatScore;
+        if (extra.csatSubmittedAt !== undefined) {
+          row.csat_submitted_at = extra.csatSubmittedAt;
+        }
+        return row;
+      },
+    ),
+
     updateStatus: jest.fn(
       async (businessId: string, id: string, status: ConversationStatus) => {
         const row = rows.find(
