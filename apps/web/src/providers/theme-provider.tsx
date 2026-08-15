@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { writePreferenceCookie } from '@/lib/preference-cookie';
 
 export type Theme = 'light' | 'dark';
 
@@ -58,7 +59,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       /* ignore persistence failures (private mode, etc.) */
     }
     // Mirror to a cookie too so the preference is available to any SSR pass.
-    document.cookie = `${THEME_STORAGE_KEY}=${next}; path=/; max-age=31536000; samesite=lax`;
+    writePreferenceCookie(THEME_STORAGE_KEY, next);
   }, []);
 
   const toggleTheme = useCallback(() => {

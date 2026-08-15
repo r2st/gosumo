@@ -42,6 +42,37 @@ export const DOCS_CONTENT_SECURITY_POLICY =
   "script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
   "img-src 'self' data: https:; font-src 'self' data:";
 
+/**
+ * Browser features this origin never uses, switched off for itself and for
+ * anything it embeds.
+ *
+ * The CSP above already stops an API response from *becoming* a page that
+ * could ask for them, so on its own this is belt-and-braces. It earns its
+ * place on the one path where the CSP is deliberately relaxed: `/v1/docs`
+ * serves real HTML with `script-src 'unsafe-inline'`, and this is what stops
+ * script that gets in there from reaching a camera or a payment handler.
+ *
+ * An empty allow-list — `camera=()` — is the deny form. Features are named
+ * rather than wildcarded because there is no wildcard: a policy only governs
+ * the features it lists, so anything omitted keeps the browser default.
+ */
+export const PERMISSIONS_POLICY = [
+  'accelerometer=()',
+  'autoplay=()',
+  'camera=()',
+  'display-capture=()',
+  'encrypted-media=()',
+  'fullscreen=()',
+  'geolocation=()',
+  'gyroscope=()',
+  'magnetometer=()',
+  'microphone=()',
+  'midi=()',
+  'payment=()',
+  'usb=()',
+  'xr-spatial-tracking=()',
+].join(', ');
+
 /** One year, the value HSTS preload requires. */
 const HSTS_MAX_AGE_SECONDS = 31_536_000;
 
@@ -78,6 +109,7 @@ export function securityHeaders(options: SecurityHeadersOptions = {}) {
     // Resource ids live in these paths; they should not travel to whatever a
     // response links onward to.
     res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('Permissions-Policy', PERMISSIONS_POLICY);
 
     if (options.hsts) {
       res.setHeader(

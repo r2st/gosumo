@@ -62,6 +62,7 @@ import {
   UNCAUGHT_EXCEPTION_EXIT_CODE,
   allowCredentials,
   applyBodyLimits,
+  MAX_URLENCODED_PARAMETERS,
   configureHttpServerLifecycle,
   installProcessSafetyNets,
   isProduction,
@@ -70,6 +71,7 @@ import {
   runStartupChecks,
   swaggerEnabled,
 } from './main';
+import { MAX_BODY_DEPTH } from './common/middleware/body-shape-guard.middleware';
 
 describe('bootstrap (main.ts)', () => {
   it('creates the Nest app with rawBody enabled for webhook HMAC validation', async () => {
@@ -134,6 +136,19 @@ describe('bootstrap (main.ts)', () => {
     expect(headersAt).toBeLessThan(parserAt!);
   });
 
+  it('installs the body shape guard after the parsers, not before', async () => {
+    // It inspects `req.body`, so registering it ahead of the parsers gives it
+    // `undefined` on every request — a guard that passes everything and looks
+    // installed. Ordering is the only thing that makes it do anything.
+    const app = await (NestFactory.create as jest.Mock).mock.results[0]?.value;
+
+    const parserAt = (app.useBodyParser as jest.Mock).mock.invocationCallOrder[0];
+    const useOrder = (app.use as jest.Mock).mock.invocationCallOrder;
+    const guardAt = useOrder[useOrder.length - 1];
+
+    expect(guardAt).toBeGreaterThan(parserAt!);
+  });
+
   describe('applyBodyLimits', () => {
     it('passes extended: true to urlencoded, matching Nest own registration', () => {
       // The only intended difference from the default setup is the ceiling —
@@ -144,7 +159,26 @@ describe('bootstrap (main.ts)', () => {
       expect(app.useBodyParser).toHaveBeenCalledWith('urlencoded', {
         limit: MAX_REQUEST_BODY_BYTES,
         extended: true,
+        parameterLimit: MAX_URLENCODED_PARAMETERS,
+        depth: MAX_BODY_DEPTH,
       });
+    });
+
+    it('bounds qs nesting on the urlencoded parser too', () => {
+      // `extended: true` is `qs`, which builds nested objects out of bracket
+      // syntax — `a[b][c][d]…` reaches arbitrary depth in a few hundred bytes,
+      // well inside the byte cap. Without `depth` the JSON path is guarded and
+      // the form path is not, which is the same body accepted or rejected
+      // depending only on its Content-Type.
+      const app = { useBodyParser: jest.fn() };
+      applyBodyLimits(app);
+
+      const [, options] = app.useBodyParser.mock.calls.find(
+        ([kind]) => kind === 'urlencoded',
+      ) as [string, Record<string, unknown>];
+
+      expect(options['depth']).toBe(MAX_BODY_DEPTH);
+      expect(options['parameterLimit']).toBe(MAX_URLENCODED_PARAMETERS);
     });
 
     it('honours an explicit limit', () => {

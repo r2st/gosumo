@@ -8,6 +8,49 @@ onlyBuiltDependencies:
   - msgpackr-extract
   - prisma
 enablePrePostScripts: true
+
+# Transitive dependencies pinned forward off a published high/critical advisory.
+#
+# Every entry here is a package nothing in this repo depends on directly — they
+# arrive under @nestjs/*, next, jest and the CLI toolchains, so the only way to
+# move them is from the root. `pnpm audit` reported 42 high and 1 critical
+# before this block; these are the ones it can actually fix.
+#
+# Two rules the list follows:
+#
+#  - **Range-scoped keys where two majors coexist.** `js-yaml` is in the tree
+#    twice — 4.x under @nestjs/swagger and 3.x under jest's coverage plumbing —
+#    and each has its own advisory with its own fix. A bare `"js-yaml": "^4.3.1"`
+#    would drag jest's 3.x consumers onto an API that renamed `safeLoad`, so the
+#    key names the range it applies to and each line is patched inside its own
+#    major. Same for brace-expansion, minimatch and picomatch.
+#  - **Never across a major.** Everything resolves to the lowest patched
+#    version within the major already in the tree. The exception is `multer`,
+#    whose only fix is 2.x: @nestjs/platform-express asks for 1.4.x, and the
+#    1.x line is end-of-life with no backport. Nothing in this codebase mounts
+#    `FileInterceptor` or otherwise loads multer at runtime — it is present
+#    purely because platform-express declares it — so the bump changes an
+#    unreachable code path. If file upload is ever added, verify against
+#    multer 2's changed `limits` defaults before wiring it up.
+#
+# Re-check with `pnpm audit` after any dependency change; an override that the
+# upstream package has caught up with is dead weight and should be dropped.
+overrides:
+  brace-expansion@^1.0.0: ^1.1.18
+  brace-expansion@^2.0.0: ^2.1.4
+  fast-uri@^3.0.0: ^3.1.5
+  glob@^10.0.0: ^10.5.0
+  js-yaml@^3.0.0: ^3.15.1
+  js-yaml@^4.0.0: ^4.3.1
+  lodash: ^4.18.1
+  minimatch@^9.0.0: ^9.0.9
+  multer: ^2.2.0
+  nanoid@^3.0.0: ^3.3.18
+  picomatch@^4.0.0: ^4.0.5
+  postcss@^8.0.0: ^8.5.26
+  socket.io-parser: ^4.2.7
+  tmp: ^0.2.7
+  undici@^7.0.0: ^7.29.0
 allowBuilds:
   '@nestjs/core': true
   '@prisma/client': true

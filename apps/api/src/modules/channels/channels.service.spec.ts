@@ -16,7 +16,7 @@ import { NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChannelType } from '@gosumo/shared';
 
-import { ChannelsService } from './channels.service';
+import { ChannelsService, providerFailureMessage } from './channels.service';
 import { decryptJson, encryptJson } from '../../common/utils/encryption.util';
 import type { PrismaService } from '../../common/services/prisma.service';
 import type { ConnectChannelDto } from './dto';
@@ -745,7 +745,7 @@ describe('ChannelsService', () => {
       expect(fetchMock.mock.calls[0][0]).toContain('/v19.0/pn-stored');
     });
 
-    it('surfaces a WhatsApp API error with its status and body', async () => {
+    it('reports a WhatsApp credential rejection as a credential problem', async () => {
       prisma.channel_accounts.findFirst.mockResolvedValue(
         row({ channel: ChannelType.WHATSAPP }),
       );
@@ -760,8 +760,9 @@ describe('ChannelsService', () => {
       const result = await service.testConnection(BUSINESS_ID, CHANNEL_ID);
 
       expect(result.success).toBe(false);
+      expect(result.message).toContain('WhatsApp');
       expect(result.message).toContain('401');
-      expect(result.message).toContain('invalid token');
+      expect(result.message).toContain('reconnect');
     });
 
     it('verifies Instagram against the Graph API', async () => {
@@ -813,7 +814,8 @@ describe('ChannelsService', () => {
       const result = await service.testConnection(BUSINESS_ID, CHANNEL_ID);
 
       expect(result.success).toBe(false);
-      expect(result.message).toContain('Instagram API error 400');
+      expect(result.message).toContain('Instagram');
+      expect(result.message).toContain('400');
     });
 
     it('verifies SMS with basic auth against Twilio', async () => {
@@ -853,7 +855,8 @@ describe('ChannelsService', () => {
       const result = await service.testConnection(BUSINESS_ID, CHANNEL_ID);
 
       expect(result.success).toBe(false);
-      expect(result.message).toContain('Twilio API error 403');
+      expect(result.message).toContain('Twilio');
+      expect(result.message).toContain('403');
     });
 
     it('reports web chat healthy without any network call', async () => {
@@ -937,10 +940,63 @@ describe('ChannelsService', () => {
       const result = await service.testConnection(BUSINESS_ID, CHANNEL_ID);
 
       expect(result.success).toBe(false);
-      expect(result.message).toContain('ECONNREFUSED');
+      expect(result.message).toBe(
+        'Connection test failed — the provider could not be reached',
+      );
     });
 
-    it('stringifies a non-Error rejection', async () => {
+    it('does not put a transport error message in the response body', async () => {
+      // `fetch` builds its message out of the request URL, and for Twilio that
+      // URL contains the account SID. This response is a 200, so the exception
+      // filter — the thing that normally strips detail like this — never runs.
+      prisma.channel_accounts.findFirst.mockResolvedValue(
+        row({
+          channel: ChannelType.SMS,
+          credentials: encryptJson({ accountSid: 'ACsecret1', authToken: 'sec' }),
+        }),
+      );
+      mockFetch(
+        jest
+          .fn()
+          .mockRejectedValue(
+            new Error(
+              'request to https://api.twilio.com/2010-04-01/Accounts/ACsecret1.json failed',
+            ),
+          ),
+      );
+
+      const result = await service.testConnection(BUSINESS_ID, CHANNEL_ID);
+
+      expect(result.success).toBe(false);
+      expect(result.message).not.toContain('ACsecret1');
+      expect(result.message).not.toContain('api.twilio.com');
+    });
+
+    it('does not echo the provider error body back to the caller', async () => {
+      // Meta returns fbtrace_id and app-scoped ids on a token error; Twilio
+      // echoes the request URI. Neither belongs in a dashboard toast.
+      prisma.channel_accounts.findFirst.mockResolvedValue(
+        row({ channel: ChannelType.WHATSAPP }),
+      );
+      mockFetch(
+        jest.fn().mockResolvedValue({
+          ok: false,
+          status: 400,
+          text: () =>
+            Promise.resolve(
+              '{"error":{"message":"Invalid OAuth access token","fbtrace_id":"AbCdEf123"}}',
+            ),
+        }),
+      );
+
+      const result = await service.testConnection(BUSINESS_ID, CHANNEL_ID);
+
+      expect(result.message).not.toContain('fbtrace_id');
+      expect(result.message).not.toContain('AbCdEf123');
+      expect(result.message).not.toContain('OAuth');
+    });
+
+    it('stringifies a non-Error rejection without surfacing it', async () => {
       prisma.channel_accounts.findFirst.mockResolvedValue(
         row({ channel: ChannelType.WHATSAPP }),
       );
@@ -949,7 +1005,25 @@ describe('ChannelsService', () => {
       const result = await service.testConnection(BUSINESS_ID, CHANNEL_ID);
 
       expect(result.success).toBe(false);
-      expect(result.message).toContain('socket hang up');
+      expect(result.message).not.toContain('socket hang up');
+    });
+
+    it('still answers when the provider body cannot be read', async () => {
+      prisma.channel_accounts.findFirst.mockResolvedValue(
+        row({ channel: ChannelType.WHATSAPP }),
+      );
+      mockFetch(
+        jest.fn().mockResolvedValue({
+          ok: false,
+          status: 502,
+          text: () => Promise.reject(new Error('stream closed')),
+        }),
+      );
+
+      const result = await service.testConnection(BUSINESS_ID, CHANNEL_ID);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('502');
     });
 
     it('reports a latency for every outcome', async () => {
@@ -1224,5 +1298,53 @@ describe('ChannelsService', () => {
       expect(result.connectedAt).toBe('');
       expect(result.updatedAt).toBe('');
     });
+  });
+});
+
+// ─────────────────────────────────────────────
+// providerFailureMessage
+// ─────────────────────────────────────────────
+
+describe('providerFailureMessage', () => {
+  it('names the provider so an operator knows which button failed', () => {
+    expect(providerFailureMessage('Twilio', 500)).toContain('Twilio');
+  });
+
+  it.each([401, 403])('points %s at the stored credentials', (status) => {
+    const message = providerFailureMessage('WhatsApp', status);
+
+    expect(message).toContain('credentials');
+    expect(message).toContain('reconnect');
+  });
+
+  it('points 404 at the configured account id, not the credentials', () => {
+    const message = providerFailureMessage('Instagram', 404);
+
+    expect(message).toContain('does not recognise');
+    expect(message).not.toContain('credentials');
+  });
+
+  it('marks 429 as retryable rather than as a misconfiguration', () => {
+    expect(providerFailureMessage('Twilio', 429)).toContain('rate-limiting');
+  });
+
+  it.each([500, 502, 503])('attributes %s upstream so nobody re-enters keys', (status) => {
+    expect(providerFailureMessage('WhatsApp', status)).toContain('upstream');
+  });
+
+  it('falls back to a bare rejection for an unclassified status', () => {
+    expect(providerFailureMessage('WhatsApp', 418)).toBe(
+      'WhatsApp rejected the request (HTTP 418)',
+    );
+  });
+
+  it('carries nothing but the provider name and the status', () => {
+    // The guard on the whole point of this function: whatever the provider
+    // said is not an input, so it cannot come out the other side.
+    for (const status of [400, 401, 403, 404, 429, 500]) {
+      expect(providerFailureMessage('Twilio', status)).toMatch(
+        /^Twilio [\w -]+\(HTTP \d{3}\)( — [\w ,-]+)?$/,
+      );
+    }
   });
 });

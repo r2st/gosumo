@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { LANG_STORAGE_KEY, translate, type UiLang } from '@/lib/i18n';
+import { writePreferenceCookie } from '@/lib/preference-cookie';
 
 interface LanguageContextValue {
   /** Current dashboard UI language. */
@@ -43,7 +44,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
       /* ignore persistence failures (private mode, etc.) */
     }
     // Mirror to a cookie so an SSR pass can read the preference too.
-    document.cookie = `${LANG_STORAGE_KEY}=${next}; path=/; max-age=31536000; samesite=lax`;
+    writePreferenceCookie(LANG_STORAGE_KEY, next);
   }, []);
 
   const toggleLang = useCallback(() => {

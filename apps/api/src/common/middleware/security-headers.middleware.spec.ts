@@ -3,6 +3,7 @@ import {
   API_CONTENT_SECURITY_POLICY,
   DOCS_CONTENT_SECURITY_POLICY,
   isDocsPath,
+  PERMISSIONS_POLICY,
   securityHeaders,
 } from './security-headers.middleware';
 
@@ -50,6 +51,33 @@ describe('securityHeaders', () => {
 
   it('calls next so the request still gets served', () => {
     expect(run('/v1/conversations').nextCalled).toBe(true);
+  });
+
+  describe('Permissions-Policy', () => {
+    it('is sent on every response', () => {
+      expect(run('/v1/conversations').headers['Permissions-Policy']).toBe(
+        PERMISSIONS_POLICY,
+      );
+    });
+
+    it.each(['camera', 'microphone', 'geolocation', 'payment', 'usb'])(
+      'denies %s outright',
+      (feature) => {
+        expect(PERMISSIONS_POLICY).toContain(`${feature}=()`);
+      },
+    );
+
+    it('uses the empty allow-list form throughout — a wildcard here grants', () => {
+      for (const directive of PERMISSIONS_POLICY.split(', ')) {
+        expect(directive).toMatch(/^[a-z-]+=\(\)$/);
+      }
+    });
+
+    it('covers the docs path too, where the CSP is deliberately relaxed', () => {
+      // `/v1/docs` runs inline script by necessity. This is what is left
+      // standing between script that gets in there and a device API.
+      expect(run('/v1/docs').headers['Permissions-Policy']).toBe(PERMISSIONS_POLICY);
+    });
   });
 
   describe('Swagger UI', () => {

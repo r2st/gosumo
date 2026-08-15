@@ -37,6 +37,50 @@ export interface ChannelResponse {
  */
 const CONNECTION_TEST_TIMEOUT_MS = 5_000;
 
+/**
+ * Turn a failed provider call into something safe to put in a 200 body.
+ *
+ * `testConnection` answers `{ success: false, message }` with HTTP 200, so it
+ * routes around the one place that decides what a client may see: the global
+ * `HttpExceptionFilter` strips driver text and upstream detail out of *errors*
+ * and never sees a success-shaped response. What went out instead was the
+ * provider's raw body, verbatim — and those bodies are not neutral:
+ *
+ *  - Twilio's error JSON echoes the request URI, which carries the account SID
+ *    (`/2010-04-01/Accounts/AC…json`), and links to a `more_info` page keyed by
+ *    the account.
+ *  - Meta's carries `fbtrace_id` plus, on a token error, the token type and the
+ *    app-scoped id the token belongs to.
+ *  - Any of them can be several KB of nested JSON rendered straight into a
+ *    dashboard toast.
+ *
+ * The `catch` arm was worse than the status arms: a transport failure yields
+ * `err.message`, which for `fetch` is the full request URL — the same SID, on
+ * the path where nobody was looking. That is a credential fragment reaching
+ * the browser of anyone who can press the button, and it is written to the
+ * dashboard's own logs on the way.
+ *
+ * What the operator needs from this button is which provider, and whether the
+ * failure is theirs (bad credentials) or transient. The status code carries
+ * both, so that is what is returned; the body still goes to the server log
+ * with the correlation id for whoever has to actually debug it.
+ */
+export function providerFailureMessage(service: string, status: number): string {
+  if (status === 401 || status === 403) {
+    return `${service} rejected the stored credentials (HTTP ${status}) — reconnect the channel`;
+  }
+  if (status === 404) {
+    return `${service} does not recognise this account (HTTP ${status}) — check the configured id`;
+  }
+  if (status === 429) {
+    return `${service} is rate-limiting this account (HTTP ${status}) — try again shortly`;
+  }
+  if (status >= 500) {
+    return `${service} is unavailable (HTTP ${status}) — this is upstream, try again shortly`;
+  }
+  return `${service} rejected the request (HTTP ${status})`;
+}
+
 @Injectable()
 export class ChannelsService {
   private readonly logger = new Logger(ChannelsService.name);
@@ -168,12 +212,7 @@ export class ChannelsService {
             { service: "WhatsApp", timeoutMs: CONNECTION_TEST_TIMEOUT_MS },
           );
           if (!resp.ok) {
-            const errBody = await resp.text();
-            return {
-              success: false,
-              message: `WhatsApp API error ${resp.status}: ${errBody}`,
-              latencyMs: Date.now() - startMs,
-            };
+            return this.providerFailure("WhatsApp", resp, record.id, startMs);
           }
           return { success: true, message: "WhatsApp connection verified", latencyMs: Date.now() - startMs };
         }
@@ -187,12 +226,7 @@ export class ChannelsService {
             { service: "Instagram", timeoutMs: CONNECTION_TEST_TIMEOUT_MS },
           );
           if (!resp.ok) {
-            const errBody = await resp.text();
-            return {
-              success: false,
-              message: `Instagram API error ${resp.status}: ${errBody}`,
-              latencyMs: Date.now() - startMs,
-            };
+            return this.providerFailure("Instagram", resp, record.id, startMs);
           }
           return { success: true, message: "Instagram connection verified", latencyMs: Date.now() - startMs };
         }
@@ -210,12 +244,7 @@ export class ChannelsService {
             { service: "Twilio", timeoutMs: CONNECTION_TEST_TIMEOUT_MS },
           );
           if (!resp.ok) {
-            const errBody = await resp.text();
-            return {
-              success: false,
-              message: `Twilio API error ${resp.status}: ${errBody}`,
-              latencyMs: Date.now() - startMs,
-            };
+            return this.providerFailure("Twilio", resp, record.id, startMs);
           }
           return { success: true, message: "Twilio SMS connection verified", latencyMs: Date.now() - startMs };
         }
@@ -235,12 +264,49 @@ export class ChannelsService {
           return { success: false, message: `Unknown channel type: ${record.channel}`, latencyMs: Date.now() - startMs };
       }
     } catch (err) {
+      // A transport failure, not an answer. `err.message` from `fetch` embeds
+      // the request URL — for Twilio that is the account SID — so it goes to
+      // the log and the caller gets the fact of the failure only.
+      this.logger.warn(
+        `Connection test for channel ${record.id} (${record.channel}) failed: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      );
       return {
         success: false,
-        message: `Connection test failed: ${err instanceof Error ? err.message : String(err)}`,
+        message: "Connection test failed — the provider could not be reached",
         latencyMs: Date.now() - startMs,
       };
     }
+  }
+
+  /**
+   * Log the provider's real answer, return the sanitised one.
+   *
+   * The body is read (rather than left undrained) so the response is consumed
+   * and the detail reaches the log with the channel id to join it back to a
+   * tenant; see {@link providerFailureMessage} for why none of it is returned.
+   */
+  private async providerFailure(
+    service: string,
+    resp: { status: number; text(): Promise<string> },
+    channelId: string,
+    startMs: number,
+  ) {
+    let body = "";
+    try {
+      body = await resp.text();
+    } catch {
+      // Nothing readable on the wire. The status is the whole finding then.
+    }
+    this.logger.warn(
+      `${service} connection test for channel ${channelId} failed ` +
+        `(HTTP ${resp.status}): ${body.slice(0, 500)}`,
+    );
+    return {
+      success: false,
+      message: providerFailureMessage(service, resp.status),
+      latencyMs: Date.now() - startMs,
+    };
   }
 
   /**

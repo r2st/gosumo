@@ -12,6 +12,10 @@ import {
 } from './common/utils/cors.util';
 import { correlationId } from './common/middleware/correlation-id.middleware';
 import { securityHeaders } from './common/middleware/security-headers.middleware';
+import {
+  bodyShapeGuard,
+  MAX_BODY_DEPTH,
+} from './common/middleware/body-shape-guard.middleware';
 
 /** True when this process is running as production. */
 export function isProduction(): boolean {
@@ -174,17 +178,36 @@ export interface BodyParserConfigurableApp {
 }
 
 /**
+ * Most form fields accepted in a single urlencoded body.
+ *
+ * body-parser's default is 1,000, which is fine; it is named here because the
+ * `extended: true` parser underneath is `qs`, and `qs` will happily build a
+ * deeply nested object out of bracket syntax — `a[b][c][d]…` — long before the
+ * byte cap is reached. `depth` is the bound on that, and it is the urlencoded
+ * counterpart to what {@link bodyShapeGuard} does for JSON. Set to the same
+ * value so a body is not accepted on one content type and rejected on the
+ * other.
+ */
+export const MAX_URLENCODED_PARAMETERS = 1_000;
+
+/**
  * Install the JSON and urlencoded parsers at {@link MAX_REQUEST_BODY_BYTES}.
  *
  * `extended: true` mirrors what Nest's own registration passes, so the only
- * difference from the default setup is the ceiling.
+ * difference from the default setup is the ceiling and the two `qs` bounds
+ * above.
  */
 export function applyBodyLimits(
   app: BodyParserConfigurableApp,
   limit: number = MAX_REQUEST_BODY_BYTES,
 ): void {
   app.useBodyParser('json', { limit });
-  app.useBodyParser('urlencoded', { limit, extended: true });
+  app.useBodyParser('urlencoded', {
+    limit,
+    extended: true,
+    parameterLimit: MAX_URLENCODED_PARAMETERS,
+    depth: MAX_BODY_DEPTH,
+  });
 }
 
 /** The bits of `http.Server` this file touches — kept narrow so it is mockable. */
@@ -289,6 +312,12 @@ async function bootstrap() {
   // inherit `rawBody: true` from the factory options, which the webhook HMAC
   // checks depend on.
   applyBodyLimits(app);
+
+  // Shape ceiling, after the parsers (there has to be a parsed body to look
+  // at) and before the router. The byte cap above does not bound nesting or
+  // key count, and both are cheap enough to express inside 1 MB to overflow
+  // the stack of whatever walks the body next — see the middleware's own note.
+  app.use(bodyShapeGuard());
 
   // CORS
   const corsOrigin = resolveCorsOrigin();
