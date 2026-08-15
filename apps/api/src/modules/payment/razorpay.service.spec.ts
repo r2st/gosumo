@@ -15,6 +15,7 @@
 import { createHmac } from 'crypto';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { CircuitBreakerRegistry } from '../../common/resilience/circuit-breaker.registry';
 import { ExternalServiceError } from '@gosumo/shared';
 
 import { RazorpayService } from './razorpay.service';
@@ -39,7 +40,10 @@ describe('RazorpayService', () => {
       get: jest.fn((key: string, fallback: string) => values[key] ?? fallback),
     };
 
-    const service = new RazorpayService(config as unknown as ConfigService);
+    const service = new RazorpayService(
+      config as unknown as ConfigService,
+      new CircuitBreakerRegistry(),
+    );
 
     return {
       service,
@@ -58,7 +62,10 @@ describe('RazorpayService', () => {
       get: jest.fn((key: string, fallback: string) => values[key] ?? fallback),
     };
 
-    new RazorpayService(config as unknown as ConfigService);
+    new RazorpayService(
+      config as unknown as ConfigService,
+      new CircuitBreakerRegistry(),
+    );
 
     return warn;
   }

@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
   ChannelType,
@@ -14,6 +14,8 @@ import {
 } from "@gosumo/shared";
 import { generateId, ExternalServiceError } from "@gosumo/shared";
 import { BaseChannelAdapter } from "./base.adapter";
+import { CircuitBreakerRegistry } from "../../../common/resilience/circuit-breaker.registry";
+import { SENDGRID_BREAKER } from "../../../common/resilience/circuit-breaker.constants";
 import {
   isProductionEnv,
   verifySharedSecretSignature,
@@ -31,8 +33,12 @@ export class EmailAdapter extends BaseChannelAdapter {
   /** Fail-closed switch: an unverifiable webhook is rejected in production. */
   private readonly isProduction: boolean;
 
-  constructor(private readonly configService: ConfigService) {
-    super("EmailAdapter");
+  /** `@Optional()` for the same reason as the WhatsApp adapter's registry. */
+  constructor(
+    private readonly configService: ConfigService,
+    @Optional() registry?: CircuitBreakerRegistry,
+  ) {
+    super("EmailAdapter", { breaker: registry?.get(SENDGRID_BREAKER) });
     this.apiKey = this.configService.get<string>("sendgrid.apiKey", "");
     this.fromEmail = this.configService.get<string>("sendgrid.fromEmail", "");
     this.fromName = this.configService.get<string>("sendgrid.fromName", "GoSumo");

@@ -1,7 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ExternalServiceError, type GoSumoErrorOptions } from '@gosumo/shared';
 import { fetchWithTimeout } from '../../../common/utils/http-timeout.util';
+import {
+  CircuitBreaker,
+  defaultIsOutage,
+} from '../../../common/resilience/circuit-breaker';
+import { CircuitBreakerRegistry } from '../../../common/resilience/circuit-breaker.registry';
 import {
   LLM_MAX_TOKENS,
   LLM_TIMEOUT_MS,
@@ -73,21 +78,50 @@ export class LlmClientService {
   private readonly defaultApiUrl = 'https://openrouter.ai/api/v1/chat/completions';
   private readonly maxAttempts = 2;
 
-  /** Consecutive outage-shaped failures. Reset by any successful completion. */
-  private consecutiveFailures = 0;
-  /** When the breaker opened, or null while it is closed. */
-  private openedAtMs: number | null = null;
-  /** True while the single post-cooldown probe is in flight. */
-  private probing = false;
+  /**
+   * The shared breaker (`common/resilience/`), configured with this client's
+   * two departures from the default behaviour:
+   *
+   *  - **`openError`.** Everywhere else an open circuit is a "later"
+   *    (`retryable: true`) so a BullMQ attempt re-runs after the cooldown. Here
+   *    it is a "never": the callers all treat an unavailable LLM as a reason to
+   *    escalate to a human, and re-queuing the turn would delay that escalation
+   *    rather than fix it. `LlmUnavailableError` is terminal by construction.
+   *  - **`isOutage`.** The default classifier trusts the taxonomy's `retryable`
+   *    flag, which `LlmUnavailableError` sets to false for *every* failure —
+   *    including the exhausted-retries case that is exactly what should open
+   *    the breaker. {@link isOutageFailure} reads the provider status instead.
+   *
+   * `@Optional()` on the registry so a spec gets a private breaker: a
+   * process-wide one shared across a describe block would carry a deliberately
+   * tripped circuit into the next test.
+   */
+  private readonly breaker: CircuitBreaker;
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    @Optional() registry?: CircuitBreakerRegistry,
+  ) {
+    const options = {
+      name: 'OpenRouter',
+      failureThreshold: LLM_BREAKER_FAILURE_THRESHOLD,
+      cooldownMs: LLM_BREAKER_COOLDOWN_MS,
+      isOutage: (error: unknown) => this.isOutageFailure(error),
+      openError: (name: string, openForMs: number, consecutiveFailures: number) =>
+        new LlmUnavailableError(
+          `${name} circuit is open after repeated failures; not attempting a call`,
+          { context: { openForMs, consecutiveFailures } },
+        ),
+    };
+    this.breaker = registry ? registry.get(options) : new CircuitBreaker(options);
+  }
 
   /**
    * Whether the breaker is currently rejecting calls. Exposed for the health
    * probe and for tests; callers route on the thrown error, not on this.
    */
   get circuitOpen(): boolean {
-    return this.openedAtMs !== null;
+    return this.breaker.isOpen;
   }
 
   /**
@@ -104,8 +138,21 @@ export class LlmClientService {
     // Fail fast while the provider is known to be down. The callers all treat
     // an unavailable LLM as a reason to escalate or fall back, so this changes
     // when they find out, not what they do about it.
-    this.assertCircuitClosed();
+    //
+    // The breaker wraps the *whole* retry loop, not each attempt: the two
+    // attempts of one turn are one piece of evidence about the provider, and
+    // counting them separately would halve the effective threshold.
+    return this.breaker.run(() => this.completeWithRetries(request, apiKey));
+  }
 
+  /**
+   * The two-attempt completion itself, with no breaker state of its own — the
+   * breaker observes this method's outcome from the outside.
+   */
+  private async completeWithRetries(
+    request: LlmCompletionRequest,
+    apiKey: string,
+  ): Promise<LlmCompletionResult> {
     const model = request.model ?? DEFAULT_MODEL;
     const body = {
       model,
@@ -126,13 +173,10 @@ export class LlmClientService {
 
         if (!response.ok) {
           const errText = await this.safeText(response);
-          // 4xx are non-retryable (bad request, auth) — fail fast.
+          // 4xx are non-retryable (bad request, auth) — fail fast. Whether one
+          // counts against the breaker is decided by `isOutageFailure` from
+          // the status carried on the error, not here.
           if (response.status < 500) {
-            // A rejected prompt is this caller's problem, not an outage: one
-            // oversized request must not open the breaker on every tenant.
-            // Rate limiting and request timeout are the exceptions — those are
-            // the provider saying "not now" to everyone.
-            if (this.isOutageStatus(response.status)) this.recordFailure();
             throw new LlmUnavailableError(`API error ${response.status}`, {
               status: response.status,
               context: { body: errText },
@@ -150,8 +194,6 @@ export class LlmClientService {
           .map((choice) => choice.message?.content ?? '')
           .join('')
           .trim();
-
-        this.recordSuccess();
 
         return {
           text,
@@ -181,9 +223,8 @@ export class LlmClientService {
     }
 
     // Every attempt was a transport failure, a timeout, or a 5xx — the shape of
-    // an outage rather than a bad request.
-    this.recordFailure();
-
+    // an outage rather than a bad request. Deliberately carries no `status`,
+    // which is how `isOutageFailure` recognises it.
     throw new LlmUnavailableError(
       lastError?.message ?? 'OpenRouter completion failed after all retries',
     );
@@ -218,71 +259,28 @@ export class LlmClientService {
   // ─────────────────────────────────────────────
 
   /**
-   * Throw immediately if the breaker is open, unless the cooldown has elapsed
-   * and this call is the one probe allowed through to test recovery.
+   * Whether a failure escaping {@link completeWithRetries} is evidence that
+   * OpenRouter is down, rather than evidence about this one request.
    *
-   * Exactly one probe runs at a time. Letting every waiting turn probe at once
-   * would put the full stalled load back on a provider that has just come back,
-   * which is how a recovering dependency gets knocked over again.
+   * The taxonomy cannot answer this: every failure here is an
+   * `LlmUnavailableError`, which is terminal by construction (`retryable:
+   * false`) because the client has already spent its own retries. So the
+   * status on the error is what decides, and its *absence* is the strongest
+   * signal there is — the exhausted-retries throw carries no status precisely
+   * because nothing ever answered.
+   *
+   *   - no status  → two attempts, both transport failures / timeouts / 5xx.
+   *   - 408 / 429  → the provider saying "not now" to everyone. Hammering a
+   *                  rate-limited endpoint is what keeps it rate-limited.
+   *   - other 4xx  → this caller's request is wrong. One oversized prompt must
+   *                  never take the AI pipeline down for every tenant.
    */
-  private assertCircuitClosed(): void {
-    if (this.openedAtMs === null) return;
+  private isOutageFailure(error: unknown): boolean {
+    if (!(error instanceof LlmUnavailableError)) return defaultIsOutage(error);
 
-    const elapsed = Date.now() - this.openedAtMs;
-    if (elapsed >= LLM_BREAKER_COOLDOWN_MS && !this.probing) {
-      this.probing = true;
-      this.logger.log('OpenRouter circuit half-open — probing with one call');
-      return;
-    }
-
-    throw new LlmUnavailableError(
-      'OpenRouter circuit is open after repeated failures; not attempting a call',
-      { context: { openForMs: elapsed, consecutiveFailures: this.consecutiveFailures } },
-    );
-  }
-
-  /** A completion came back. Close the breaker and forget the failure run. */
-  private recordSuccess(): void {
-    if (this.openedAtMs !== null) {
-      this.logger.log('OpenRouter recovered — circuit closed');
-    }
-    this.consecutiveFailures = 0;
-    this.openedAtMs = null;
-    this.probing = false;
-  }
-
-  /**
-   * An outage-shaped failure. Opens the breaker at the threshold, and re-opens
-   * it (restarting the cooldown) when the half-open probe fails.
-   */
-  private recordFailure(): void {
-    this.consecutiveFailures += 1;
-
-    // A failed probe means the provider is still down: restart the clock
-    // rather than leaving the breaker open-but-elapsed, which would let the
-    // next call through immediately.
-    if (this.probing) {
-      this.probing = false;
-      this.openedAtMs = Date.now();
-      this.logger.warn('OpenRouter probe failed — circuit re-opened');
-      return;
-    }
-
-    if (this.openedAtMs === null && this.consecutiveFailures >= LLM_BREAKER_FAILURE_THRESHOLD) {
-      this.openedAtMs = Date.now();
-      this.logger.error(
-        `OpenRouter circuit opened after ${this.consecutiveFailures} consecutive failures; ` +
-          `failing fast for ${LLM_BREAKER_COOLDOWN_MS}ms`,
-      );
-    }
-  }
-
-  /**
-   * Whether a client-error status reflects the provider being unavailable to
-   * everyone rather than something wrong with this particular request.
-   */
-  private isOutageStatus(status: number): boolean {
-    return status === 408 || status === 429;
+    const status = error.context?.['status'];
+    if (typeof status !== 'number') return true;
+    return status >= 500 || status === 408 || status === 429;
   }
 
   // ─────────────────────────────────────────────

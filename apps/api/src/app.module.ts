@@ -6,6 +6,7 @@ import appConfig from './config/app.config';
 import { QueueTelemetryModule } from './common/queue/queue-telemetry.module';
 import { ConversationLockModule } from './common/services/conversation-lock.module';
 import { PrismaModule } from './common/services/prisma.module';
+import { ResilienceModule } from './common/resilience/resilience.module';
 import { JOB_TIMEOUT_MS } from './common/queue/queue.constants';
 
 // Feature modules
@@ -113,6 +114,12 @@ import { HealthModule } from './modules/health/health.module';
     // it — a feature module must never provide its own, which would give it a
     // private connection pool. See PrismaModule.
     PrismaModule,
+
+    // The circuit breakers guarding every external dependency. Global, and
+    // imported before the feature modules that resolve breakers from it —
+    // two registries means two independent breakers per provider, and
+    // neither would protect the other. See ResilienceModule.
+    ResilienceModule,
 
     // Health probes — first so /v1/health stays answerable even while a
     // later module is still warming up.

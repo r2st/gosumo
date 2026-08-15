@@ -4,6 +4,9 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import { ExternalServiceError } from '@gosumo/shared';
 
 import { fetchWithTimeout } from '../../common/utils/http-timeout.util';
+import { CircuitBreaker } from '../../common/resilience/circuit-breaker';
+import { CircuitBreakerRegistry } from '../../common/resilience/circuit-breaker.registry';
+import { RAZORPAY_BREAKER } from '../../common/resilience/circuit-breaker.constants';
 
 // ─────────────────────────────────────────────
 // Interfaces
@@ -96,7 +99,22 @@ export class RazorpayService implements IRazorpayGateway {
   private readonly webhookSecret: string;
   private readonly baseUrl = 'https://api.razorpay.com/v1';
 
-  constructor(private readonly configService: ConfigService) {
+  /**
+   * Shared with every other holder of a `RazorpayService`.
+   *
+   * This class is provided by both `PaymentModule` and
+   * `RealtyIntegrationsModule`, so there are two *instances* — but the registry
+   * is global, so they resolve one breaker between them. Two independent
+   * breakers would each need the full threshold before opening, and neither
+   * would ever protect the calls made through the other.
+   */
+  private readonly breaker: CircuitBreaker;
+
+  constructor(
+    private readonly configService: ConfigService,
+    registry: CircuitBreakerRegistry,
+  ) {
+    this.breaker = registry.get(RAZORPAY_BREAKER);
     this.keyId = this.configService.get<string>('RAZORPAY_KEY_ID', '');
     this.keySecret = this.configService.get<string>('RAZORPAY_KEY_SECRET', '');
     this.webhookSecret = this.configService.get<string>('RAZORPAY_WEBHOOK_SECRET', '');
@@ -245,8 +263,22 @@ export class RazorpayService implements IRazorpayGateway {
   /**
    * Make an authenticated HTTP request to Razorpay API.
    * Uses HTTP Basic Auth with key_id:key_secret.
+   *
+   * Every Razorpay call in the process funnels through here, which is what
+   * makes one breaker around this method a breaker on the dependency rather
+   * than on one endpoint. The parse and the status check are *inside* the
+   * breaker on purpose: `fetch` resolving says only that headers arrived, and
+   * a gateway returning `503` is the outage this exists to detect.
    */
   private async makeRequest<T>(
+    method: string,
+    path: string,
+    body?: Record<string, unknown>,
+  ): Promise<T> {
+    return this.breaker.run(() => this.sendRequest<T>(method, path, body));
+  }
+
+  private async sendRequest<T>(
     method: string,
     path: string,
     body?: Record<string, unknown>,

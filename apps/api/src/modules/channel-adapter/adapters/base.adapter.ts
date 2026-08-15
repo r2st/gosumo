@@ -12,6 +12,7 @@ import {
   isRetryableError,
   UnsupportedOperationError,
 } from '@gosumo/shared';
+import { CircuitBreaker, CircuitOpenError } from '../../../common/resilience/circuit-breaker';
 
 /**
  * Abstract base class for all channel adapters.
@@ -37,13 +38,31 @@ export abstract class BaseChannelAdapter implements ChannelAdapter {
   /** Initial delay in ms before the first retry */
   protected readonly retryDelayMs: number;
 
+  /**
+   * Guards the provider this adapter talks to, when one was supplied.
+   *
+   * Optional because a breaker is process-global stateful and a unit test is
+   * not. A spec that drives three consecutive failures to assert the backoff
+   * is indistinguishable, to a shared breaker, from a real outage — so with a
+   * registry wired in by default, two such specs in a row would leave the
+   * breaker open and every later spec in the file would fail on a call that
+   * never happened. Adapters constructed without a registry therefore run
+   * unguarded; the DI path (see each adapter's constructor) always has one.
+   */
+  protected readonly breaker?: CircuitBreaker;
+
   constructor(
     loggerContext: string,
-    options: { maxAttempts?: number; retryDelayMs?: number } = {},
+    options: {
+      maxAttempts?: number;
+      retryDelayMs?: number;
+      breaker?: CircuitBreaker;
+    } = {},
   ) {
     this.logger = new Logger(loggerContext);
     this.maxAttempts = options.maxAttempts ?? 3;
     this.retryDelayMs = options.retryDelayMs ?? 500;
+    this.breaker = options.breaker;
   }
 
   // ─────────────────────────────────────────────
@@ -113,6 +132,27 @@ export abstract class BaseChannelAdapter implements ChannelAdapter {
    * treated as retryable — a caller that asked for retries should not lose
    * them to an error we could not classify.
    *
+   * ## Where the breaker sits
+   *
+   * Around **each attempt**, not around the loop. This is the site of the
+   * amplification: a provider that accepts connections and then stalls costs
+   * one `fetchWithTimeout` deadline *per attempt*, so a single send against a
+   * dead Meta edge parks a BullMQ worker for 30s with two backoff sleeps in
+   * between. Wrapping the loop would leave that first 30s intact on every
+   * send until the threshold was reached; wrapping the attempt means the
+   * second and third attempts of the send that trips the breaker already cost
+   * nothing.
+   *
+   * The consequence is that the threshold in `circuit-breaker.constants.ts`
+   * counts **attempts, not sends** — which is why the channel thresholds are
+   * set to two full attempt budgets rather than to a number of messages.
+   *
+   * An open breaker ends the loop immediately rather than sleeping through
+   * the remaining backoffs: retrying in-process against a breaker that will
+   * not admit a call for another 30s is pure latency. The send is already
+   * durable — BullMQ retries it, and `message.failed` is emitted — so "later"
+   * is a decision the queue makes, not this loop.
+   *
    * @param operation - The async function to execute
    * @param label     - Human-readable label for logging (e.g. "sendMessage")
    */
@@ -124,7 +164,7 @@ export abstract class BaseChannelAdapter implements ChannelAdapter {
 
     for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
       try {
-        const result = await operation();
+        const result = await (this.breaker ? this.breaker.run(operation) : operation());
 
         if (result.success) {
           if (attempt > 1) {
@@ -138,6 +178,18 @@ export abstract class BaseChannelAdapter implements ChannelAdapter {
         return { ...result, attempts: attempt };
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
+
+        // The breaker refused the call. Nothing about the next 500ms changes
+        // that verdict, so surface it now rather than sleeping through the
+        // rest of the budget to be told the same thing.
+        if (err instanceof CircuitOpenError) {
+          this.logger.warn(`${label} short-circuited: ${lastError.message}`);
+          return {
+            success: false,
+            attempts: attempt,
+            error: lastError.message,
+          };
+        }
 
         // A thrown error used to burn the whole attempt budget regardless of
         // what it was, so a "this channel can't send locations" failure slept

@@ -4,6 +4,9 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import { ExternalServiceError } from '@gosumo/shared';
 
 import { fetchWithTimeout } from '../../common/utils/http-timeout.util';
+import { CircuitBreaker } from '../../common/resilience/circuit-breaker';
+import { CircuitBreakerRegistry } from '../../common/resilience/circuit-breaker.registry';
+import { STRIPE_BREAKER } from '../../common/resilience/circuit-breaker.constants';
 
 // ─────────────────────────────────────────────
 // Interfaces
@@ -93,7 +96,14 @@ export class StripeService implements IStripeGateway {
   private readonly webhookSecret: string;
   private readonly baseUrl = 'https://api.stripe.com/v1';
 
-  constructor(private readonly configService: ConfigService) {
+  /** Guards every call to the Stripe REST API. See `common/resilience/`. */
+  private readonly breaker: CircuitBreaker;
+
+  constructor(
+    private readonly configService: ConfigService,
+    registry: CircuitBreakerRegistry,
+  ) {
+    this.breaker = registry.get(STRIPE_BREAKER);
     this.secretKey = this.configService.get<string>('STRIPE_SECRET_KEY', '');
     this.webhookSecret = this.configService.get<string>('STRIPE_WEBHOOK_SECRET', '');
 
@@ -286,6 +296,14 @@ export class StripeService implements IStripeGateway {
    * Auth is HTTP Basic with the secret key as the username.
    */
   private async makeRequest<T>(
+    method: string,
+    path: string,
+    params?: Record<string, string>,
+  ): Promise<T> {
+    return this.breaker.run(() => this.sendRequest<T>(method, path, params));
+  }
+
+  private async sendRequest<T>(
     method: string,
     path: string,
     params?: Record<string, string>,

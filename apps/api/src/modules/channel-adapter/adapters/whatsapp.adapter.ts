@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import {
@@ -15,6 +15,8 @@ import {
 } from '@gosumo/shared';
 import { generateId } from '@gosumo/shared';
 import { BaseChannelAdapter } from './base.adapter';
+import { CircuitBreakerRegistry } from '../../../common/resilience/circuit-breaker.registry';
+import { WHATSAPP_BREAKER } from '../../../common/resilience/circuit-breaker.constants';
 import { allowUnverifiedWebhook, isProductionEnv } from '../../../common/utils/webhook-verification.util';
 import { MEDIA_HTTP_TIMEOUT_MS, fetchWithTimeout } from '../../../common/utils/http-timeout.util';
 import { readBodyWithLimit } from '../../../common/utils/media-download.util';
@@ -217,8 +219,20 @@ export class WhatsAppAdapter extends BaseChannelAdapter {
   private readonly accessToken: string;
   private readonly phoneNumberId: string;
 
-  constructor(private readonly configService: ConfigService) {
-    super('WhatsAppAdapter', { maxAttempts: 3, retryDelayMs: 500 });
+  /**
+   * `@Optional()` so a spec can build an unguarded adapter — see
+   * `BaseChannelAdapter.breaker` for why a shared, stateful breaker and unit
+   * tests do not mix. Nest always supplies it: `ResilienceModule` is global.
+   */
+  constructor(
+    private readonly configService: ConfigService,
+    @Optional() registry?: CircuitBreakerRegistry,
+  ) {
+    super('WhatsAppAdapter', {
+      maxAttempts: 3,
+      retryDelayMs: 500,
+      breaker: registry?.get(WHATSAPP_BREAKER),
+    });
 
     this.metaBaseUrl = 'https://graph.facebook.com/v19.0';
     this.appSecret = this.configService.get<string>('whatsapp.appSecret', '');

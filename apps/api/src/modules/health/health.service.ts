@@ -6,6 +6,8 @@ import {
   type QueueDepthBreach,
 } from '../../common/queue/queue-telemetry.service';
 import { QdrantClient } from '../ai-engine/rag/qdrant.client';
+import { CircuitBreakerRegistry } from '../../common/resilience/circuit-breaker.registry';
+import type { CircuitSnapshot } from '../../common/resilience/circuit-breaker';
 
 /** How long a dependency probe may hang before it is called a failure. */
 const PROBE_TIMEOUT_MS = 2_000;
@@ -86,6 +88,24 @@ export interface ReadinessReport {
    * pulling it out of rotation would remove one of the workers draining it.
    */
   queueBacklog?: QueueDepthBreach[];
+  /**
+   * Every circuit breaker that is not closed — the dependency's name, how long
+   * it has been open, and how many consecutive failures opened it.
+   *
+   * Empty in normal operation, so its *presence* is the alert. This is the
+   * single most useful line during an incident: it turns "payments are
+   * failing" into "Razorpay has been open for 40s", names the fault as
+   * external, and says it is already contained — without anyone opening a log.
+   *
+   * Reported **without** changing `status`, for the same reason as
+   * `queueBacklog`. An open breaker means one dependency is unavailable and
+   * the API is degrading around it exactly as designed; every route that does
+   * not touch that dependency still works. Returning 503 here would pull a
+   * working instance out of rotation over a third party's outage — and since
+   * every instance would open its breaker at the same time, it would take the
+   * whole API down to report that Stripe was down.
+   */
+  openCircuits?: CircuitSnapshot[];
 }
 
 /**
@@ -129,6 +149,11 @@ export class HealthService {
      * — which changes no status, by design.
      */
     @Optional() private readonly qdrant?: QdrantClient,
+    /**
+     * Optional for the same reason as the two above. Absent means no breakers
+     * are reported, not that none are open.
+     */
+    @Optional() private readonly breakers?: CircuitBreakerRegistry,
   ) {}
 
   /** Cheap liveness signal — deliberately touches no dependency. */
@@ -232,11 +257,30 @@ export class HealthService {
       );
     }
 
+    // Read, never probed: a breaker's state is already in memory, and calling
+    // the dependency to find out whether it is down is the thing the breaker
+    // exists to stop.
+    const openCircuits = this.breakers?.openCircuits() ?? [];
+
+    if (openCircuits.length > 0) {
+      // WARN, not ERROR: an open breaker is the mitigation working. The
+      // failures that opened it were already logged at ERROR by the breaker
+      // itself, and this line repeats every probe interval — an ERROR per poll
+      // for a contained, ongoing condition is the noise that trains people to
+      // ignore the level.
+      this.logger.warn(
+        `Circuit breakers open — ${openCircuits
+          .map((c) => `${c.name}: ${c.state} for ${c.openForMs ?? 0}ms`)
+          .join(', ')}`,
+      );
+    }
+
     return {
       status,
       timestamp: new Date().toISOString(),
       dependencies: { database, redis, vector },
       queueBacklog,
+      openCircuits,
     };
   }
 

@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import * as crypto from "crypto";
 import {
@@ -15,6 +15,8 @@ import {
 } from "@gosumo/shared";
 import { generateId, ExternalServiceError } from "@gosumo/shared";
 import { BaseChannelAdapter } from "./base.adapter";
+import { CircuitBreakerRegistry } from "../../../common/resilience/circuit-breaker.registry";
+import { TWILIO_BREAKER } from "../../../common/resilience/circuit-breaker.constants";
 import { allowUnverifiedWebhook, isProductionEnv } from "../../../common/utils/webhook-verification.util";
 import { fetchWithTimeout } from "../../../common/utils/http-timeout.util";
 
@@ -28,8 +30,16 @@ export class SmsAdapter extends BaseChannelAdapter {
   /** Fail-closed switch: an unverifiable webhook is rejected in production. */
   private readonly isProduction: boolean;
 
-  constructor(private readonly configService: ConfigService) {
-    super("SmsAdapter", { maxAttempts: 3, retryDelayMs: 500 });
+  /** `@Optional()` for the same reason as the WhatsApp adapter's registry. */
+  constructor(
+    private readonly configService: ConfigService,
+    @Optional() registry?: CircuitBreakerRegistry,
+  ) {
+    super("SmsAdapter", {
+      maxAttempts: 3,
+      retryDelayMs: 500,
+      breaker: registry?.get(TWILIO_BREAKER),
+    });
 
     this.accountSid = this.configService.get<string>("twilio.accountSid", "");
     this.authToken = this.configService.get<string>("twilio.authToken", "");

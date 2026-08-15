@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import {
@@ -15,6 +15,8 @@ import {
 } from '@gosumo/shared';
 import { generateId } from '@gosumo/shared';
 import { BaseChannelAdapter } from './base.adapter';
+import { CircuitBreakerRegistry } from '../../../common/resilience/circuit-breaker.registry';
+import { INSTAGRAM_BREAKER } from '../../../common/resilience/circuit-breaker.constants';
 import { allowUnverifiedWebhook, isProductionEnv } from '../../../common/utils/webhook-verification.util';
 import { MEDIA_HTTP_TIMEOUT_MS, fetchWithTimeout } from '../../../common/utils/http-timeout.util';
 import {
@@ -167,8 +169,16 @@ export class InstagramAdapter extends BaseChannelAdapter {
   private readonly pageId: string;
   private readonly verifyToken: string;
 
-  constructor(private readonly configService: ConfigService) {
-    super('InstagramAdapter', { maxAttempts: 3, retryDelayMs: 500 });
+  /** `@Optional()` for the same reason as the WhatsApp adapter's registry. */
+  constructor(
+    private readonly configService: ConfigService,
+    @Optional() registry?: CircuitBreakerRegistry,
+  ) {
+    super('InstagramAdapter', {
+      maxAttempts: 3,
+      retryDelayMs: 500,
+      breaker: registry?.get(INSTAGRAM_BREAKER),
+    });
 
     this.metaBaseUrl = 'https://graph.facebook.com/v19.0';
     this.appSecret = this.configService.get<string>('instagram.appSecret', '');

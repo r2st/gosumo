@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { createHmac } from 'crypto';
 import { ExternalServiceError } from '@gosumo/shared';
 import { StripeService } from './stripe.service';
+import { CircuitBreakerRegistry } from '../../common/resilience/circuit-breaker.registry';
 
 const SECRET_KEY = 'sk_test_dummy';
 const WEBHOOK_SECRET = 'whsec_test_dummy';
@@ -30,8 +31,15 @@ async function buildService(
     }),
   };
 
+  // A fresh registry per service, so the breaker one test trips does not
+  // reject the next test's calls. In the app the registry is global and one
+  // breaker is shared — see `common/resilience/resilience.module.ts`.
   const module: TestingModule = await Test.createTestingModule({
-    providers: [StripeService, { provide: ConfigService, useValue: mockConfig }],
+    providers: [
+      StripeService,
+      { provide: ConfigService, useValue: mockConfig },
+      { provide: CircuitBreakerRegistry, useFactory: () => new CircuitBreakerRegistry() },
+    ],
   }).compile();
 
   return module.get<StripeService>(StripeService);
