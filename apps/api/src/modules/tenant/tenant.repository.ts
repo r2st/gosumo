@@ -109,6 +109,55 @@ export class TenantRepository {
     });
   }
 
+  /**
+   * Merge `patch` into `profile.settings` in the database, and return the
+   * resulting settings object.
+   *
+   * Read-modify-write on a JSONB column loses concurrent writes, and this one
+   * column is written by more than the settings screen. `PATCH /business/settings`
+   * read the whole `profile`, spread the patch over `profile.settings` in
+   * process, and wrote the whole `profile` back — so a save that overlapped
+   * with any other writer of `profile` silently discarded whichever landed
+   * first. That is not a theoretical window: `suspendBusiness` and
+   * `activateBusiness` write `profile.suspendedAt` / `suspendedReason` the same
+   * way, so an ops suspension racing a manager's settings save could restore
+   * the profile the suspension had just marked — leaving a business flagged
+   * inactive with no record of why. Two managers on the settings screen is the
+   * ordinary case: one saves office hours, the other saves a greeting a moment
+   * later, and the office hours are gone with nothing in any log.
+   *
+   * Doing the merge in Postgres removes the window entirely rather than
+   * narrowing it. `||` merges at the top level of `settings`, which is the same
+   * shallow merge the in-process spread performed — `officeHours` is replaced
+   * wholesale, not deep-merged, exactly as before. Keys the patch does not
+   * mention are untouched, and so are the *other* keys of `profile`, which is
+   * the part read-modify-write could not promise.
+   *
+   * `updated_at` is set explicitly: Prisma's `@updatedAt` is applied by the
+   * client, so a raw statement bypasses it and would leave the column stale.
+   */
+  async mergeProfileSettings(
+    businessId: string,
+    patch: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | null> {
+    const rows = await this.prisma.$queryRaw<Array<{ settings: unknown }>>`
+      UPDATE businesses
+         SET profile = jsonb_set(
+               COALESCE(profile, '{}'::jsonb),
+               '{settings}',
+               COALESCE(profile -> 'settings', '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb,
+               true
+             ),
+             updated_at = NOW()
+       WHERE id = ${businessId}::uuid AND deleted_at IS NULL
+      RETURNING profile -> 'settings' AS settings
+    `;
+
+    const row = rows[0];
+    if (!row) return null;
+    return (row.settings ?? {}) as Record<string, unknown>;
+  }
+
   // ─────────────────────────────────────────────
   // Channel Accounts
   // ─────────────────────────────────────────────

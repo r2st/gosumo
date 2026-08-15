@@ -298,6 +298,45 @@ export class TenantService {
     return updated;
   }
 
+  /**
+   * Apply a partial update to `profile.settings` and return the merged result.
+   *
+   * The merge happens in Postgres — see
+   * {@link TenantRepository.mergeProfileSettings} for why a read-modify-write
+   * here loses concurrent writes to the same JSONB column.
+   *
+   * Emits `business.settings.updated` with the keys that actually moved, so a
+   * downstream cache invalidates only on a change it cares about.
+   */
+  async updateProfileSettings(
+    businessId: string,
+    patch: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const changedFields = Object.keys(patch);
+    if (changedFields.length === 0) {
+      const business = await this.getBusinessById(businessId);
+      const profile = this.toRecord(business.profile);
+      return this.toRecord(profile['settings']);
+    }
+
+    const merged = await this.repository.mergeProfileSettings(businessId, patch);
+    if (!merged) {
+      throw new NotFoundException(`Business not found: ${businessId}`);
+    }
+
+    this.eventEmitter.emit('business.settings.updated', {
+      businessId,
+      changedFields,
+      timestamp: new Date().toISOString(),
+    });
+
+    this.logger.log(
+      `Business ${businessId} settings updated: ${changedFields.join(', ')}`,
+    );
+
+    return merged;
+  }
+
   // ─────────────────────────────────────────────
   // AI Configuration
   // ─────────────────────────────────────────────

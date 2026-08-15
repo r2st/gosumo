@@ -13,12 +13,20 @@ function makeBiz(overrides: Record<string, unknown> = {}) {
 
 describe('BusinessController', () => {
   let controller: BusinessController;
-  let tenantService: { getBusinessById: jest.Mock; updateBusiness: jest.Mock };
+  let tenantService: {
+    getBusinessById: jest.Mock;
+    updateBusiness: jest.Mock;
+    updateProfileSettings: jest.Mock;
+  };
   let subscriptionService: { getSubscription: jest.Mock };
   let prisma: { businesses: { findUniqueOrThrow: jest.Mock; update: jest.Mock } };
 
   beforeEach(async () => {
-    tenantService = { getBusinessById: jest.fn(), updateBusiness: jest.fn() };
+    tenantService = {
+      getBusinessById: jest.fn(),
+      updateBusiness: jest.fn(),
+      updateProfileSettings: jest.fn(),
+    };
     subscriptionService = { getSubscription: jest.fn() };
     prisma = { businesses: { findUniqueOrThrow: jest.fn(), update: jest.fn() } };
 
@@ -78,17 +86,24 @@ describe('BusinessController', () => {
   });
 
   describe('updateSettings', () => {
-    it('should merge new settings into existing profile.settings', async () => {
-      prisma.businesses.findUniqueOrThrow.mockResolvedValue(
-        makeBiz({ profile: { settings: { defaultGreeting: 'Hi' }, companyBio: 'We rock' } }),
-      );
-      prisma.businesses.update.mockResolvedValue({});
-      const result = await controller.updateSettings(BIZ_ID, { officeHoursEnabled: true });
-      expect(result).toEqual({ defaultGreeting: 'Hi', officeHoursEnabled: true });
-      expect(prisma.businesses.update).toHaveBeenCalledWith({
-        where: { id: BIZ_ID },
-        data: { profile: expect.objectContaining({ companyBio: 'We rock', settings: { defaultGreeting: 'Hi', officeHoursEnabled: true } }) },
+    it('should hand the patch to the service and return the merged settings', async () => {
+      // The merge itself moved into Postgres — read-modify-write here lost
+      // every concurrent write to `profile`, including the suspension marker
+      // `suspendBusiness` writes to the same column. See
+      // `business-settings-merge.spec.ts`.
+      tenantService.updateProfileSettings.mockResolvedValue({
+        defaultGreeting: 'Hi',
+        officeHoursEnabled: true,
       });
+
+      const result = await controller.updateSettings(BIZ_ID, { officeHoursEnabled: true });
+
+      expect(result).toEqual({ defaultGreeting: 'Hi', officeHoursEnabled: true });
+      expect(tenantService.updateProfileSettings).toHaveBeenCalledWith(BIZ_ID, {
+        officeHoursEnabled: true,
+      });
+      expect(prisma.businesses.findUniqueOrThrow).not.toHaveBeenCalled();
+      expect(prisma.businesses.update).not.toHaveBeenCalled();
     });
   });
 

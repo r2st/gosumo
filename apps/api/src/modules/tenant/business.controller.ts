@@ -1,6 +1,5 @@
 import { Controller, Get, Patch, Body, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
-import { Prisma } from '@prisma/client';
 import { TenantService } from './tenant.service';
 import { SubscriptionService } from './services/subscription.service';
 import { PrismaService } from '../../common/services/prisma.service';
@@ -60,15 +59,16 @@ export class BusinessController {
   @ApiOperation({ summary: 'Update combined business settings' })
   @ApiResponse({ status: 200, description: 'The updated business settings' })
   async updateSettings(@TenantId() businessId: string, @Body() dto: UpdateBusinessSettingsDto) {
-    const biz = await this.prisma.businesses.findUniqueOrThrow({ where: { id: businessId } });
-    const profile = (biz.profile ?? {}) as Record<string, unknown>;
-    const settings = (profile['settings'] ?? {}) as Record<string, unknown>;
-    const merged = { ...settings, ...dto };
-    await this.prisma.businesses.update({
-      where: { id: businessId },
-      data: { profile: { ...profile, settings: merged } as Prisma.InputJsonValue },
-    });
-    return merged;
+    // The merge is done in Postgres rather than here. Reading `profile`,
+    // spreading the patch over it and writing the whole column back loses every
+    // concurrent write to that column — a second manager's save, or the
+    // `suspendedAt` marker `suspendBusiness` writes the same way. See
+    // `TenantRepository.mergeProfileSettings`.
+    //
+    // `dto` is the ValidationPipe's output with `whitelist: true`, so it holds
+    // only declared, supplied keys — spreading it into a `Record` cannot
+    // smuggle an undeclared key into the settings object.
+    return this.tenantService.updateProfileSettings(businessId, { ...dto });
   }
 
   @Get('subscription')
