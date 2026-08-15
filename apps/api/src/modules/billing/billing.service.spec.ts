@@ -78,6 +78,16 @@ describe('addMonths', () => {
 });
 
 describe('BillingService', () => {
+  /**
+   * A won rollover claim. `claimCycleRollover` reports whether *this* caller is
+   * the one that rolled the cycle — every billing read tries, and only one may
+   * append the closing snapshot.
+   */
+  const rolled = (subscription: ReturnType<typeof makeSub>) => ({
+    subscription,
+    claimed: true,
+  });
+
   let service: BillingService;
   let repository: jest.Mocked<BillingRepository>;
   let eventEmitter: jest.Mocked<EventEmitter2>;
@@ -88,6 +98,7 @@ describe('BillingService', () => {
       findByBusiness: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      claimCycleRollover: jest.fn(),
       incrementUsage: jest.fn(),
       countSeats: jest.fn(),
     };
@@ -157,7 +168,7 @@ describe('BillingService', () => {
         new Date('2026-07-20T00:00:00Z'),
       );
 
-      expect(repository.update).not.toHaveBeenCalled();
+      expect(repository.claimCycleRollover).not.toHaveBeenCalled();
       expect(result.leads_used_this_cycle).toBe(42);
     });
 
@@ -165,21 +176,22 @@ describe('BillingService', () => {
       repository.findByBusiness.mockResolvedValue(
         makeSub({ leads_used_this_cycle: 120, overage_leads_this_cycle: 3 }),
       );
-      repository.update.mockResolvedValue(
+      repository.claimCycleRollover.mockResolvedValue(rolled(
         makeSub({
           billing_cycle_start: new Date('2026-08-01T00:00:00Z'),
           leads_used_this_cycle: 0,
           overage_leads_this_cycle: 0,
         }),
-      );
+      ));
 
       const result = await service.getSubscription(
         BUSINESS_ID,
         new Date('2026-08-05T00:00:00Z'),
       );
 
-      expect(repository.update).toHaveBeenCalledWith(
+      expect(repository.claimCycleRollover).toHaveBeenCalledWith(
         BUSINESS_ID,
+        expect.any(Date),
         expect.objectContaining({
           billingCycleStart: new Date('2026-08-01T00:00:00Z'),
           leadsUsedThisCycle: 0,
@@ -194,18 +206,105 @@ describe('BillingService', () => {
       repository.findByBusiness.mockResolvedValue(
         makeSub({ billing_cycle_start: new Date('2026-05-01T00:00:00Z') }),
       );
-      repository.update.mockResolvedValue(makeSub());
+      repository.claimCycleRollover.mockResolvedValue(rolled(makeSub()));
 
       await service.getSubscription(BUSINESS_ID, new Date('2026-07-03T00:00:00Z'));
 
-      expect(repository.update).toHaveBeenCalledWith(
+      expect(repository.claimCycleRollover).toHaveBeenCalledWith(
         BUSINESS_ID,
+        expect.any(Date),
         expect.objectContaining({
           billingCycleStart: new Date('2026-07-01T00:00:00Z'),
           leadsUsedThisCycle: 0,
           overageLeadsThisCycle: 0,
         }),
       );
+    });
+
+    /**
+     * The claim is made against the cycle the caller read, not just the business.
+     * Without that predicate a second caller arriving after the winner committed
+     * would roll the *new* cycle straight back off again.
+     */
+    it('claims the rollover against the cycle it actually read', async () => {
+      const from = new Date('2026-05-01T00:00:00Z');
+      repository.findByBusiness.mockResolvedValue(makeSub({ billing_cycle_start: from }));
+      repository.claimCycleRollover.mockResolvedValue(rolled(makeSub()));
+
+      await service.getSubscription(BUSINESS_ID, new Date('2026-07-03T00:00:00Z'));
+
+      expect(repository.claimCycleRollover).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        from,
+        expect.anything(),
+      );
+    });
+
+    /**
+     * Every billing read rolls the cycle over if it has elapsed, and the
+     * per-lead usage path is one of them — so at the moment a cycle ends, the
+     * concurrent callers all see it elapsed. Only the one that wins the claim
+     * may treat the rollover as its own; the rest have to take the winner's row,
+     * because the counters they are holding have already been zeroed.
+     */
+    it('returns the winner’s subscription when another caller rolled it first', async () => {
+      repository.findByBusiness.mockResolvedValue(
+        makeSub({ leads_used_this_cycle: 120, overage_leads_this_cycle: 3 }),
+      );
+      const winner = makeSub({
+        billing_cycle_start: new Date('2026-08-01T00:00:00Z'),
+        leads_used_this_cycle: 7,
+      });
+      repository.claimCycleRollover.mockResolvedValue({
+        subscription: winner,
+        claimed: false,
+      });
+
+      const result = await service.getSubscription(
+        BUSINESS_ID,
+        new Date('2026-08-05T00:00:00Z'),
+      );
+
+      // Not the stale 120 this caller read, and not a second reset to 0 —
+      // the row as the winner left it.
+      expect(result.leads_used_this_cycle).toBe(7);
+      expect(result.billing_cycle_start).toEqual(new Date('2026-08-01T00:00:00Z'));
+    });
+
+    /**
+     * The rollover log is how an operator reconciles a cycle boundary. One
+     * rollover that every concurrent caller announces reads as several, which
+     * is the same misreading the duplicate history entries used to cause.
+     */
+    it('announces the rollover only from the caller that made it', async () => {
+      const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+      repository.findByBusiness.mockResolvedValue(makeSub({ leads_used_this_cycle: 120 }));
+      repository.claimCycleRollover.mockResolvedValue({
+        subscription: makeSub({ billing_cycle_start: new Date('2026-08-01T00:00:00Z') }),
+        claimed: false,
+      });
+
+      await service.getSubscription(BUSINESS_ID, new Date('2026-08-05T00:00:00Z'));
+
+      expect(log).not.toHaveBeenCalledWith(expect.stringContaining('rolled over'));
+      log.mockRestore();
+    });
+
+    it('falls back to the row it read when the claim returns nothing', async () => {
+      const own = makeSub({ leads_used_this_cycle: 120 });
+      repository.findByBusiness.mockResolvedValue(own);
+      repository.claimCycleRollover.mockResolvedValue({
+        subscription: null,
+        claimed: false,
+      });
+
+      // A deleted subscription must not crash a billing read.
+      const result = await service.getSubscription(
+        BUSINESS_ID,
+        new Date('2026-08-05T00:00:00Z'),
+      );
+
+      expect(result).toBe(own);
     });
   });
 
@@ -217,7 +316,11 @@ describe('BillingService', () => {
   describe('billing history on rollover', () => {
     /** The `metadata` written by the single `repository.update` call. */
     function writtenMetadata(): Record<string, unknown> | undefined {
-      const [, patch] = repository.update.mock.calls[0] as [string, Record<string, unknown>];
+      const [, , patch] = repository.claimCycleRollover.mock.calls[0] as [
+        string,
+        Date,
+        Record<string, unknown>,
+      ];
       return patch['metadata'] as Record<string, unknown> | undefined;
     }
 
@@ -225,7 +328,7 @@ describe('BillingService', () => {
       repository.findByBusiness.mockResolvedValue(
         makeSub({ leads_used_this_cycle: 312, overage_leads_this_cycle: 12 }),
       );
-      repository.update.mockResolvedValue(makeSub());
+      repository.claimCycleRollover.mockResolvedValue(rolled(makeSub()));
 
       await service.getSubscription(BUSINESS_ID, new Date('2026-08-05T00:00:00Z'));
 
@@ -262,7 +365,7 @@ describe('BillingService', () => {
           metadata: { hardCap: false, billingHistory: [earlier] } as never,
         }),
       );
-      repository.update.mockResolvedValue(makeSub());
+      repository.claimCycleRollover.mockResolvedValue(rolled(makeSub()));
 
       await service.getSubscription(BUSINESS_ID, new Date('2026-08-05T00:00:00Z'));
 
@@ -290,7 +393,7 @@ describe('BillingService', () => {
           metadata: { billingHistory: priorCycles } as never,
         }),
       );
-      repository.update.mockResolvedValue(makeSub());
+      repository.claimCycleRollover.mockResolvedValue(rolled(makeSub()));
 
       await service.getSubscription(BUSINESS_ID, new Date('2026-08-05T00:00:00Z'));
 
@@ -307,7 +410,7 @@ describe('BillingService', () => {
       repository.findByBusiness.mockResolvedValue(
         makeSub({ leads_used_this_cycle: 0, overage_leads_this_cycle: 0 }),
       );
-      repository.update.mockResolvedValue(makeSub());
+      repository.claimCycleRollover.mockResolvedValue(rolled(makeSub()));
 
       await service.getSubscription(BUSINESS_ID, new Date('2026-08-05T00:00:00Z'));
 
@@ -461,15 +564,19 @@ describe('BillingService', () => {
   describe('canUseExchange', () => {
     it('returns false for SOLO and true for TEAM', async () => {
       // canUseExchange has no `now` param, so getSubscription rolls over
-      // against the real wall clock — stub `update` so that rollover (which
-      // will keep happening as real time moves past CYCLE_START) still
+      // against the real wall clock — stub the rollover claim so that rollover
+      // (which will keep happening as real time moves past CYCLE_START) still
       // resolves to a subscription with the same plan, instead of undefined.
       repository.findByBusiness.mockResolvedValueOnce(makeSub({ plan: RealtyPlan.SOLO }));
-      repository.update.mockResolvedValueOnce(makeSub({ plan: RealtyPlan.SOLO }));
+      repository.claimCycleRollover.mockResolvedValueOnce(
+        rolled(makeSub({ plan: RealtyPlan.SOLO })),
+      );
       expect(await service.canUseExchange(BUSINESS_ID)).toBe(false);
 
       repository.findByBusiness.mockResolvedValueOnce(makeSub({ plan: RealtyPlan.TEAM }));
-      repository.update.mockResolvedValueOnce(makeSub({ plan: RealtyPlan.TEAM }));
+      repository.claimCycleRollover.mockResolvedValueOnce(
+        rolled(makeSub({ plan: RealtyPlan.TEAM })),
+      );
       expect(await service.canUseExchange(BUSINESS_ID)).toBe(true);
     });
   });

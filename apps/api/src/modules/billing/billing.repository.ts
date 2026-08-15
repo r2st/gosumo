@@ -79,6 +79,47 @@ export class BillingRepository {
   }
 
   /**
+   * Claim the rollover of one billing cycle, and report whether *this* call is
+   * the one that made it.
+   *
+   * `billing_cycle_start` is both the predicate and the thing being written, so
+   * the row can only be rolled forward from the exact cycle the caller read.
+   * Every billing read rolls the cycle over if it has elapsed — the lead-usage
+   * path included, and that one runs once per captured lead from an event
+   * handler — so at the moment a cycle ends, every concurrent caller sees it
+   * elapsed and, deciding from the row it read, every one of them rolls it.
+   *
+   * Each of those writes also appends a closing snapshot built from the counters
+   * *it* read, which are the pre-reset ones for all of them. The result is the
+   * same cycle recorded as owed two or three times over, in the one record that
+   * survives the counters being zeroed.
+   *
+   * Under READ COMMITTED the losers block on the row lock, re-evaluate against
+   * the winner's `billing_cycle_start`, and match nothing.
+   */
+  async claimCycleRollover(
+    businessId: string,
+    fromCycleStart: Date,
+    data: UpdateSubscriptionData,
+  ): Promise<{ subscription: business_subscriptions | null; claimed: boolean }> {
+    const d: Prisma.business_subscriptionsUpdateManyMutationInput = {};
+    if (data.billingCycleStart !== undefined) d.billing_cycle_start = data.billingCycleStart;
+    if (data.leadsUsedThisCycle !== undefined) d.leads_used_this_cycle = data.leadsUsedThisCycle;
+    if (data.overageLeadsThisCycle !== undefined) {
+      d.overage_leads_this_cycle = data.overageLeadsThisCycle;
+    }
+    if (data.metadata !== undefined) d.metadata = data.metadata;
+
+    const result = await this.prisma.business_subscriptions.updateMany({
+      where: { business_id: businessId, billing_cycle_start: fromCycleStart },
+      data: d,
+    });
+
+    const subscription = await this.findByBusiness(businessId);
+    return { subscription, claimed: result.count > 0 };
+  }
+
+  /**
    * Atomically increment the cycle lead counters. Returns the updated row so the
    * caller can read the post-increment usage without a race.
    */

@@ -181,15 +181,36 @@ export class BillingService {
     // invoice or reconcile against.
     const metadata = this.closeCycleMetadata(sub);
 
+    // Claim the rollover rather than just performing it. Every billing read
+    // lands here, including the per-lead usage path, so when a cycle ends the
+    // concurrent callers all see it elapsed and all roll it — each appending a
+    // closing snapshot built from the counters it read, which are the pre-reset
+    // ones for every one of them. That records the same cycle as owed several
+    // times in the only place the charge survives the counters being zeroed.
+    const { subscription, claimed } = await this.repository.claimCycleRollover(
+      sub.business_id,
+      sub.billing_cycle_start,
+      {
+        billingCycleStart: cycleStart,
+        leadsUsedThisCycle: 0,
+        overageLeadsThisCycle: 0,
+        ...(metadata !== undefined ? { metadata } : {}),
+      },
+    );
+
+    if (!claimed) {
+      this.logger.debug(
+        `Billing cycle for business ${sub.business_id} was already rolled over by a concurrent caller`,
+      );
+      // The winner's row is the truth; returning the stale one would report
+      // counters that have since been zeroed.
+      return subscription ?? sub;
+    }
+
     this.logger.log(
       `Billing cycle rolled over for business ${sub.business_id} → ${cycleStart.toISOString()}`,
     );
-    return this.repository.update(sub.business_id, {
-      billingCycleStart: cycleStart,
-      leadsUsedThisCycle: 0,
-      overageLeadsThisCycle: 0,
-      ...(metadata !== undefined ? { metadata } : {}),
-    });
+    return subscription ?? sub;
   }
 
   /**
