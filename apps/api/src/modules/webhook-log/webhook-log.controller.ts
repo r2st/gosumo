@@ -69,6 +69,24 @@ export class WebhookLogController {
     return this.dlq.stats(tenantId);
   }
 
+  /**
+   * The backlog gauge. Platform-wide, not tenant-scoped: the number that
+   * matters operationally is how many deliveries are stuck anywhere, and it
+   * reports a count and two thresholds — nothing derived from any business's
+   * payloads — so it leaks nothing across tenants. Auth is still required.
+   */
+  @Get('dlq/health')
+  @ApiOperation({
+    summary: 'Webhook retry backlog depth, graded against its alert thresholds',
+    description:
+      'pass / warn / fail on the platform-wide PENDING count. Deliberately separate from ' +
+      '/health/ready: a backlog is not a reason to take every instance out of the load balancer.',
+  })
+  @ApiResponse({ status: 200, description: 'Backlog depth and the thresholds it was graded against' })
+  async deadLetterHealth() {
+    return this.dlq.queueHealth();
+  }
+
   @Get('dlq/:id')
   @ApiOperation({ summary: 'Get one dead-lettered delivery, including its stored payload' })
   @ApiParam({ name: 'id', description: 'Dead-letter UUID' })

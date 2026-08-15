@@ -16,6 +16,8 @@ import { DeadLetterStatus } from '@prisma/client';
 import type { webhook_dead_letters } from '@prisma/client';
 import { WebhookDlqService } from './webhook-dlq.service';
 import {
+  WEBHOOK_DLQ_DEPTH_FAIL,
+  WEBHOOK_DLQ_DEPTH_WARN,
   WEBHOOK_DLQ_EVENTS,
   WEBHOOK_DLQ_JOBS,
   WEBHOOK_RETRY_BASE_MS,
@@ -594,6 +596,82 @@ describe('WebhookDlqService inspection', () => {
     repository.countPendingGlobal.mockResolvedValueOnce(17);
 
     expect(await service.pendingDepth()).toBe(17);
+  });
+});
+
+/**
+ * The backlog gauge.
+ *
+ * A rising PENDING count is the one webhook symptom nothing else shows: the
+ * gateway got its 200, the delivery is in `webhook_events`, the retry schedule
+ * is being kept — and every attempt is failing, on its way to DISCARDED. The
+ * thresholds existed as constants with no reader; these pin the grading that
+ * now uses them.
+ */
+describe('WebhookDlqService.queueHealth', () => {
+  const CHECKED_AT = '2026-08-14T10:00:00.000Z';
+
+  it('passes when the backlog is below the warning threshold', async () => {
+    const { service, repository } = build();
+    repository.countPendingGlobal.mockResolvedValueOnce(WEBHOOK_DLQ_DEPTH_WARN - 1);
+
+    const health = await service.queueHealth(CHECKED_AT);
+
+    expect(health).toEqual({
+      status: 'pass',
+      pending: WEBHOOK_DLQ_DEPTH_WARN - 1,
+      warnAt: WEBHOOK_DLQ_DEPTH_WARN,
+      failAt: WEBHOOK_DLQ_DEPTH_FAIL,
+      detail: `${WEBHOOK_DLQ_DEPTH_WARN - 1} delivery(ies) pending retry`,
+      sources: [],
+      checkedAt: CHECKED_AT,
+    });
+  });
+
+  // At the threshold, not past it — the number names the condition itself.
+  it('warns at exactly the warning threshold', async () => {
+    const { service, repository } = build();
+    repository.countPendingGlobal.mockResolvedValueOnce(WEBHOOK_DLQ_DEPTH_WARN);
+
+    expect((await service.queueHealth(CHECKED_AT)).status).toBe('warn');
+  });
+
+  it('stays at warn just below the failure threshold', async () => {
+    const { service, repository } = build();
+    repository.countPendingGlobal.mockResolvedValueOnce(WEBHOOK_DLQ_DEPTH_FAIL - 1);
+
+    expect((await service.queueHealth(CHECKED_AT)).status).toBe('warn');
+  });
+
+  it('fails at exactly the failure threshold', async () => {
+    const { service, repository } = build();
+    repository.countPendingGlobal.mockResolvedValueOnce(WEBHOOK_DLQ_DEPTH_FAIL);
+
+    expect((await service.queueHealth(CHECKED_AT)).status).toBe('fail');
+  });
+
+  it('reports the registered replayers, so a backlog of anything else is legible', async () => {
+    const { service, repository } = build();
+    repository.countPendingGlobal.mockResolvedValueOnce(0);
+    service.registerReplayer('STRIPE', async () => undefined);
+    service.registerReplayer('RAZORPAY', async () => undefined);
+
+    expect((await service.queueHealth(CHECKED_AT)).sources).toEqual(['RAZORPAY', 'STRIPE']);
+  });
+
+  // A monitoring endpoint that 500s tells an operator less than one that names
+  // the probe it could not run — and "unknown" must never read as healthy.
+  it('reports unknown rather than throwing when the count cannot be read', async () => {
+    const { service, repository } = build();
+    repository.countPendingGlobal.mockRejectedValueOnce(new Error('db unreachable'));
+
+    const health = await service.queueHealth(CHECKED_AT);
+
+    expect(health.status).toBe('unknown');
+    expect(health.pending).toBeNull();
+    expect(health.detail).toContain('db unreachable');
+    expect(health.warnAt).toBe(WEBHOOK_DLQ_DEPTH_WARN);
+    expect(health.failAt).toBe(WEBHOOK_DLQ_DEPTH_FAIL);
   });
 });
 

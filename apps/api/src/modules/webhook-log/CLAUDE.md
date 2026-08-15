@@ -25,8 +25,22 @@ capture(delivery, error, now?): Promise<webhook_dead_letters | null>   // never 
 runRetry(businessId, id, now?): Promise<WebhookRetryOutcome>
 replayNow(businessId, id): Promise<WebhookReplayResultDto>
 sweepDue(now?, limit?): Promise<number>
-list / get / stats / pendingDepth / resolve
+list / get / stats / pendingDepth / queueHealth / resolve
 ```
+
+## Backlog monitoring
+
+`GET webhook-log/dlq/health` grades the platform-wide PENDING count against
+`WEBHOOK_DLQ_DEPTH_WARN` (25) and `WEBHOOK_DLQ_DEPTH_FAIL` (100) →
+`pass` / `warn` / `fail`, or `unknown` when the count itself cannot be read.
+
+A rising backlog is the one webhook symptom nothing else surfaces: the provider
+got its 200, the delivery is in `webhook_events`, the retry schedule is being
+kept — and every attempt is failing on its way to DISCARDED.
+
+It is **not** part of `/health/ready` on purpose. The depth is platform-wide, so
+folding it in would take every instance out of the load balancer at once and
+turn "some webhooks are failing" into "the API is down".
 
 ## Retry policy
 

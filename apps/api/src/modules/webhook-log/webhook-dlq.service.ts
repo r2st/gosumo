@@ -15,11 +15,29 @@ import type {
   WebhookReplayResultDto,
 } from './dto';
 import {
+  WEBHOOK_DLQ_DEPTH_FAIL,
+  WEBHOOK_DLQ_DEPTH_WARN,
   WEBHOOK_DLQ_EVENTS,
   WEBHOOK_DLQ_JOBS,
   WEBHOOK_DLQ_QUEUE,
   webhookRetryBackoffMs,
 } from './webhook-dlq.constants';
+
+/** `unknown` means the probe itself could not run — never "healthy". */
+export type WebhookDlqHealthStatus = 'pass' | 'warn' | 'fail' | 'unknown';
+
+/** The backlog gauge an operator (or an alert rule) reads. */
+export interface WebhookDlqHealth {
+  status: WebhookDlqHealthStatus;
+  /** Platform-wide PENDING entries, or null when the count could not be read. */
+  pending: number | null;
+  warnAt: number;
+  failAt: number;
+  detail: string;
+  /** Sources with a registered replayer — a backlog of anything else is stuck. */
+  sources: string[];
+  checkedAt: string;
+}
 
 /** Everything needed to park a failed delivery and later replay it. */
 export interface FailedWebhookDelivery {
@@ -289,6 +307,71 @@ export class WebhookDlqService {
   /** Platform-wide PENDING depth, for the readiness gauge. */
   async pendingDepth(): Promise<number> {
     return this.repository.countPendingGlobal();
+  }
+
+  /**
+   * Backlog health, graded against {@link WEBHOOK_DLQ_DEPTH_WARN} and
+   * {@link WEBHOOK_DLQ_DEPTH_FAIL}.
+   *
+   * A rising PENDING count is the one webhook symptom nothing else surfaces.
+   * Every other signal here reads healthy while it happens: the provider got
+   * its 200, `webhook_events` recorded the delivery, the retry schedule is
+   * being kept — deliveries are simply failing on every attempt and marching
+   * toward DISCARDED. By the time anyone notices, the payloads are past their
+   * attempt budget and only a manual replay brings them back.
+   *
+   * Deliberately *not* folded into `/health/ready`. The depth is platform-wide,
+   * so a backlog would take every instance out of the load balancer at once —
+   * turning "some webhooks are failing" into "the API is down", which is both
+   * false and the opposite of helpful. This is an operator gauge, and it is
+   * read on an operator route.
+   *
+   * Fails soft: an unreadable count is reported as `unknown`, never thrown. A
+   * monitoring endpoint that 500s tells an operator less than one that says
+   * which probe it could not run.
+   */
+  async queueHealth(nowIso: string = new Date().toISOString()): Promise<WebhookDlqHealth> {
+    let pending: number;
+    try {
+      pending = await this.pendingDepth();
+    } catch (err) {
+      this.logger.error(`Webhook DLQ depth probe failed: ${this.describe(err)}`);
+      return {
+        status: 'unknown',
+        pending: null,
+        warnAt: WEBHOOK_DLQ_DEPTH_WARN,
+        failAt: WEBHOOK_DLQ_DEPTH_FAIL,
+        detail: `backlog depth unreadable: ${this.describe(err)}`,
+        sources: this.registeredSources(),
+        checkedAt: nowIso,
+      };
+    }
+
+    // At the threshold, not past it: `WEBHOOK_DLQ_DEPTH_FAIL` entries parked is
+    // already the condition the number names.
+    const status: WebhookDlqHealthStatus =
+      pending >= WEBHOOK_DLQ_DEPTH_FAIL
+        ? 'fail'
+        : pending >= WEBHOOK_DLQ_DEPTH_WARN
+          ? 'warn'
+          : 'pass';
+
+    if (status !== 'pass') {
+      this.logger.warn(
+        `Webhook DLQ backlog ${status}: ${pending} pending ` +
+          `(warn ${WEBHOOK_DLQ_DEPTH_WARN}, fail ${WEBHOOK_DLQ_DEPTH_FAIL})`,
+      );
+    }
+
+    return {
+      status,
+      pending,
+      warnAt: WEBHOOK_DLQ_DEPTH_WARN,
+      failAt: WEBHOOK_DLQ_DEPTH_FAIL,
+      detail: `${pending} delivery(ies) pending retry`,
+      sources: this.registeredSources(),
+      checkedAt: nowIso,
+    };
   }
 
   /** Close an entry out by hand, with a note. Stops all further retries. */
