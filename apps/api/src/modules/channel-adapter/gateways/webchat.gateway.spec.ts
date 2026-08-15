@@ -871,12 +871,13 @@ describe('WebChatGateway', () => {
         });
 
         // The message is attributed to this socket's session, not the one named.
+        // `senderExternalId` is where the session id lives on the event — it is
+        // the address a reply is sent back to, and it is the only copy now that
+        // the payload is annotated `MessageReceivedEvent` rather than carrying
+        // a second, untyped `metadata.sessionId` beside it.
         expect(eventEmitter.emit).toHaveBeenCalledWith(
           'message.received',
-          expect.objectContaining({
-            senderExternalId: 'my-session',
-            metadata: { sessionId: 'my-session' },
-          }),
+          expect.objectContaining({ senderExternalId: 'my-session' }),
         );
       });
 

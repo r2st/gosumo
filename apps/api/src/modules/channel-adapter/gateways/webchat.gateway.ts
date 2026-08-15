@@ -16,6 +16,7 @@ import {
   MessageDirection,
   MessageContentType,
 } from "@gosumo/shared";
+import type { MessageReceivedEvent } from "@gosumo/shared";
 import { generateId, generateCorrelationId } from "@gosumo/shared";
 import { PrismaService } from "../../../common/services/prisma.service";
 import { ChannelAdapterService } from "../channel-adapter.service";
@@ -723,8 +724,22 @@ export class WebChatGateway
         data: { last_message_at: new Date(), updated_at: new Date() },
       });
 
-      // Emit enriched message.received event with all IDs populated
-      const event = {
+      // Emit enriched message.received event with all IDs populated.
+      //
+      // Annotated, not inferred. This is the *second* producer of
+      // `message.received` — `ChannelAdapterService` is the other, and every
+      // HTTP channel goes through it — but web chat is a socket, so it builds
+      // the event itself. Left as a bare object literal, a field added to
+      // `MessageReceivedEvent` compiled fine here and the gateway simply
+      // stopped satisfying the contract: `AiEngineService` skips an event with
+      // no `conversationId`, `ConversationService` skips one with no
+      // `clientId`, and either way web chat would go quiet with no error
+      // anywhere. The annotation is what makes that a build failure.
+      //
+      // `senderPhone` is deliberately absent — a web-chat visitor has no phone
+      // identity, and a session id forced into a phone field is corruption
+      // rather than a fallback.
+      const event: MessageReceivedEvent = {
         id: generateId(),
         type: "message.received",
         timestamp: new Date().toISOString(),
@@ -736,8 +751,6 @@ export class WebChatGateway
         channel: ChannelType.WEB_CHAT,
         senderExternalId: sessionId,
         clientId: ctx.clientId,
-        content: { type: MessageContentType.TEXT, text },
-        metadata: { sessionId },
       };
 
       this.eventEmitter.emit("message.received", event);
