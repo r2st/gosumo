@@ -24,9 +24,9 @@ import { channelLabel } from '@/components/channel-icon';
 import { formatDateIST, formatDuration, formatNumber, humanizeEnum } from '@/lib/format';
 
 export function ConversationsSection({ range }: { range: DateRange }) {
-  const { data, isLoading, isError, refetch } = useConversationReportFull(range);
+  const { data, isLoading, isError, error, refetch } = useConversationReportFull(range);
 
-  if (isError) return <ErrorState onRetry={() => void refetch()} />;
+  if (isError) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (isLoading) return <Skeleton className="h-96 w-full" />;
   if (!data) return <EmptyState icon={MessagesSquare} title="No conversation data" />;
 

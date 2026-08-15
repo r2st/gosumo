@@ -15,11 +15,11 @@ import type { OnboardingStepStatus } from '@/lib/onboarding-types';
  * time and see which steps are done, skipped, or still pending.
  */
 export default function SetupWizardSettingsPage() {
-  const { data: progress, isLoading, isError, refetch } = useOnboardingProgress();
+  const { data: progress, isLoading, isError, error, refetch } = useOnboardingProgress();
   const [open, setOpen] = useState(false);
 
   if (isLoading) return <LoadingState />;
-  if (isError || !progress) return <ErrorState onRetry={() => void refetch()} />;
+  if (isError || !progress) return <ErrorState error={error} onRetry={() => void refetch()} />;
 
   return (
     <>

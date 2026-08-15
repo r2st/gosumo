@@ -166,7 +166,7 @@ function getCredentialHint(channel: Channel): string | null {
 /* ─── Main page ───────────────────────────────────────────────────────────── */
 
 export default function ChannelsPage() {
-  const { data, isLoading, isError, refetch } = useChannels();
+  const { data, isLoading, isError, error, refetch } = useChannels();
   const disconnect = useDisconnectChannel();
   const toggleChannel = useToggleChannel();
   // Connect, disconnect and test are @Roles(MANAGER); the enable/disable
@@ -229,7 +229,7 @@ export default function ChannelsPage() {
   };
 
   if (isLoading) return <LoadingState />;
-  if (isError || !data) return <ErrorState onRetry={() => void refetch()} />;
+  if (isError || !data) return <ErrorState error={error} onRetry={() => void refetch()} />;
 
   const connected = data.data;
   const connectedTypes = new Set(connected.map((c) => c.type));

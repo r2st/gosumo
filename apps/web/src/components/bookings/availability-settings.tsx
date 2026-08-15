@@ -12,7 +12,7 @@ import { useBusinessSettings, useUpdateBusinessSettings } from '@/hooks/use-book
 import type { OfficeHours } from '@/lib/feature-types';
 
 export function AvailabilitySettings({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { data, isLoading, isError, refetch } = useBusinessSettings();
+  const { data, isLoading, isError, error, refetch } = useBusinessSettings();
   const update = useUpdateBusinessSettings();
 
   const [bookingEnabled, setBookingEnabled] = useState(true);
@@ -59,7 +59,7 @@ export function AvailabilitySettings({ open, onClose }: { open: boolean; onClose
       {isLoading ? (
         <LoadingState />
       ) : isError ? (
-        <ErrorState onRetry={() => refetch()} />
+        <ErrorState error={error} onRetry={() => refetch()} />
       ) : (
         <div className="space-y-5">
           <div className="rounded-lg border border-border p-4">

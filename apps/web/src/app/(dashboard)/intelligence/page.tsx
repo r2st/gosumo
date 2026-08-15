@@ -76,7 +76,7 @@ export default function IntelligencePage() {
         {corridorsQuery.isLoading || aggregatesQuery.isLoading ? (
           <LoadingState label={t('common.loading')} />
         ) : corridorsQuery.isError ? (
-          <ErrorState onRetry={() => void corridorsQuery.refetch()} />
+          <ErrorState error={corridorsQuery.error} onRetry={() => void corridorsQuery.refetch()} />
         ) : corridors.length === 0 ? (
           <Card>
             <CardContent className="pt-5">
@@ -241,10 +241,10 @@ function demandColor(rate: number): string {
 
 function CorridorDetail({ corridor }: { corridor: string }) {
   const { t, lang } = useLanguage();
-  const { data, isLoading, isError, refetch } = useCorridorPriors(corridor);
+  const { data, isLoading, isError, error, refetch } = useCorridorPriors(corridor);
 
   if (isLoading) return <LoadingState label={t('common.loading')} />;
-  if (isError) return <ErrorState onRetry={() => void refetch()} />;
+  if (isError) return <ErrorState error={error} onRetry={() => void refetch()} />;
 
   const priors = data?.priors ?? [];
   const cadence = getCadence(priors);

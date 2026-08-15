@@ -32,7 +32,7 @@ export default function AiConfigPage() {
 }
 
 function ThresholdsForm() {
-  const { data, isLoading, isError, refetch } = useConfidenceThresholds();
+  const { data, isLoading, isError, error, refetch } = useConfidenceThresholds();
   const update = useUpdateThresholds();
   // PATCH /ai/confidence/thresholds is @Roles(MANAGER).
   const { canManage } = usePermissions();
@@ -47,7 +47,7 @@ function ThresholdsForm() {
   }, [data]);
 
   if (isLoading) return <LoadingState />;
-  if (isError || !data) return <ErrorState onRetry={() => void refetch()} />;
+  if (isError || !data) return <ErrorState error={error} onRetry={() => void refetch()} />;
 
   const dirty = autoExecute !== data.autoExecute || draftReview !== data.draftReview;
   const onAuto = (v: number) => {
@@ -230,7 +230,7 @@ const AUTONOMY_OPTIONS = [
 ];
 
 function BehaviourForm() {
-  const { data, isLoading, isError, refetch } = useBusinessSettings();
+  const { data, isLoading, isError, error, refetch } = useBusinessSettings();
   const update = useUpdateBusinessSettings();
   // PATCH /business/settings is @Roles(MANAGER).
   const { canManage } = usePermissions();
@@ -253,7 +253,7 @@ function BehaviourForm() {
   }, [data]);
 
   if (isLoading) return <LoadingState />;
-  if (isError || !data || !form) return <ErrorState onRetry={() => void refetch()} />;
+  if (isError || !data || !form) return <ErrorState error={error} onRetry={() => void refetch()} />;
 
   const dirty =
     form.aiAutoReplyEnabled !== data.aiAutoReplyEnabled ||

@@ -151,6 +151,7 @@ export function SourceRoiSection({ range }: { range: DateRange }) {
   if (isError)
     return (
       <ErrorState
+        error={leadsQ.error ?? visitsQ.error}
         onRetry={() => {
           void leadsQ.refetch();
           void visitsQ.refetch();

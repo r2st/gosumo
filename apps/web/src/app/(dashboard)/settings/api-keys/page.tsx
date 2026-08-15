@@ -86,10 +86,10 @@ const EMAIL: IntegrationDef[] = [
 ];
 
 export default function ApiKeysPage() {
-  const { data: creds, isLoading, isError, refetch } = useIntegrationCredentials();
+  const { data: creds, isLoading, isError, error, refetch } = useIntegrationCredentials();
 
   if (isLoading) return <LoadingState />;
-  if (isError) return <ErrorState onRetry={() => void refetch()} />;
+  if (isError) return <ErrorState error={error} onRetry={() => void refetch()} />;
 
   return (
     <div className="space-y-8">

@@ -13,9 +13,9 @@ import { cn } from '@/lib/utils';
 import { formatDuration, formatNumber } from '@/lib/format';
 
 export function TeamSection({ range }: { range: DateRange }) {
-  const { data, isLoading, isError, refetch } = useConversationReportFull(range);
+  const { data, isLoading, isError, error, refetch } = useConversationReportFull(range);
 
-  if (isError) return <ErrorState onRetry={() => void refetch()} />;
+  if (isError) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (isLoading) return <Skeleton className="h-96 w-full" />;
 
   const agents = [...(data?.agentPerformance ?? [])].sort((a, b) => b.resolved - a.resolved);

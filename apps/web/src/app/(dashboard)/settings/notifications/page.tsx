@@ -50,7 +50,7 @@ type Form = Required<
 >;
 
 export default function NotificationsPage() {
-  const { data, isLoading, isError, refetch } = useBusinessSettings();
+  const { data, isLoading, isError, error, refetch } = useBusinessSettings();
   const update = useUpdateBusinessSettings();
   // Notification preferences ride on PATCH /business/settings — @Roles(MANAGER).
   const { canManage } = usePermissions();
@@ -71,7 +71,7 @@ export default function NotificationsPage() {
   }, [data]);
 
   if (isLoading) return <LoadingState />;
-  if (isError || !data || !form) return <ErrorState onRetry={() => void refetch()} />;
+  if (isError || !data || !form) return <ErrorState error={error} onRetry={() => void refetch()} />;
 
   const patch = (p: Partial<Form>) => setForm((f) => f && { ...f, ...p });
   const dirty =

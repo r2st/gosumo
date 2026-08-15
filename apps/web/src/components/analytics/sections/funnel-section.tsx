@@ -36,7 +36,7 @@ const FUNNEL_TOP = '#6366f1'; // indigo-500
 const FUNNEL_BOTTOM = '#10b981'; // emerald-500
 
 export function FunnelSection() {
-  const { data, isLoading, isError, refetch } = useLeadBoard();
+  const { data, isLoading, isError, error, refetch } = useLeadBoard();
 
   const rows = useMemo(() => {
     const counts: Partial<Record<LeadStage, number>> = {};
@@ -67,7 +67,7 @@ export function FunnelSection() {
     });
   }, [data]);
 
-  if (isError) return <ErrorState onRetry={() => void refetch()} />;
+  if (isError) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (isLoading) return <Skeleton className="h-96 w-full" />;
 
   const total = rows[0]?.count ?? 0;

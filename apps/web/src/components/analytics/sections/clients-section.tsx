@@ -23,9 +23,9 @@ import { channelLabel } from '@/components/channel-icon';
 import { formatDateIST, formatNumber, humanizeEnum, paiseToRupees } from '@/lib/format';
 
 export function ClientsSection({ range }: { range: DateRange }) {
-  const { data, isLoading, isError, refetch } = useClientReport(range);
+  const { data, isLoading, isError, error, refetch } = useClientReport(range);
 
-  if (isError) return <ErrorState onRetry={() => void refetch()} />;
+  if (isError) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (isLoading) return <Skeleton className="h-96 w-full" />;
   if (!data) return <EmptyState icon={Users} title="No client data" />;
 

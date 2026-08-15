@@ -48,11 +48,11 @@ export default function BusinessProfilePage() {
 }
 
 function ProfileForm() {
-  const { data: business, isLoading, isError, refetch } = useBusinessProfile();
+  const { data: business, isLoading, isError, error, refetch } = useBusinessProfile();
   const update = useUpdateBusinessProfile();
 
   if (isLoading) return <LoadingState />;
-  if (isError || !business) return <ErrorState onRetry={() => void refetch()} />;
+  if (isError || !business) return <ErrorState error={error} onRetry={() => void refetch()} />;
 
   return <ProfileFormInner key={business.updatedAt} business={business} update={update} />;
 }
@@ -181,7 +181,7 @@ function HoursForm() {
   const toast = useToast();
   // PATCH /business/settings is @Roles(MANAGER).
   const { canManage } = usePermissions();
-  const { data: settings, isLoading, isError, refetch } = useBusinessSettings();
+  const { data: settings, isLoading, isError, error, refetch } = useBusinessSettings();
   const update = useUpdateBusinessSettings();
   const [hours, setHours] = useState<OfficeHours | null>(null);
   const [enabled, setEnabled] = useState(false);
@@ -196,7 +196,7 @@ function HoursForm() {
   }, [settings]);
 
   if (isLoading) return <LoadingState />;
-  if (isError || !settings || hours === null) return <ErrorState onRetry={() => void refetch()} />;
+  if (isError || !settings || hours === null) return <ErrorState error={error} onRetry={() => void refetch()} />;
 
   const dirty =
     enabled !== settings.officeHoursEnabled ||

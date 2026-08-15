@@ -52,14 +52,14 @@ const PLANS: {
 const ORDER: SubscriptionPlan[] = ['FREE', 'STARTER', 'GROWTH', 'ENTERPRISE'];
 
 export default function BillingPage() {
-  const { data, isLoading, isError, refetch } = useSubscription();
+  const { data, isLoading, isError, error, refetch } = useSubscription();
   const upgrade = useUpgradePlan();
   // POST /billing/upgrade is @Roles(OWNER). Everyone else may read the plan
   // and their usage, but the plan buttons would only 403.
   const { canOwn } = usePermissions();
 
   if (isLoading) return <LoadingState />;
-  if (isError || !data) return <ErrorState onRetry={() => void refetch()} />;
+  if (isError || !data) return <ErrorState error={error} onRetry={() => void refetch()} />;
 
   const handleUpgrade = (plan: SubscriptionPlan) => {
     upgrade.mutate(plan, {

@@ -37,7 +37,7 @@ const SUGGESTED: Record<OnboardingStepId, string[]> = {
  * backend and finishes by marking onboarding complete.
  */
 export function OnboardingWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { data: progress, isLoading, isError, refetch } = useOnboardingProgress(open);
+  const { data: progress, isLoading, isError, error, refetch } = useOnboardingProgress(open);
   const updateStep = useUpdateOnboardingStep();
   const complete = useCompleteOnboarding();
 
@@ -123,7 +123,7 @@ export function OnboardingWizard({ open, onClose }: { open: boolean; onClose: ()
         className="relative z-10 flex h-full w-full max-w-6xl flex-col overflow-hidden rounded-none border border-border bg-card shadow-2xl sm:h-[88vh] sm:rounded-xl"
       >
         {isLoading && <LoadingState label="Loading your setup…" className="flex-1" />}
-        {isError && <ErrorState onRetry={() => void refetch()} className="flex-1" />}
+        {isError && <ErrorState error={error} onRetry={() => void refetch()} className="flex-1" />}
 
         {progress && finished && <CompletedView onClose={close} />}
 

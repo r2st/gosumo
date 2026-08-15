@@ -31,9 +31,9 @@ function bucketColor(bucket: string): string {
 }
 
 export function AiSection({ range }: { range: DateRange }) {
-  const { data, isLoading, isError, refetch } = useAutonomyReport(range);
+  const { data, isLoading, isError, error, refetch } = useAutonomyReport(range);
 
-  if (isError) return <ErrorState onRetry={() => void refetch()} />;
+  if (isError) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (isLoading) return <Skeleton className="h-96 w-full" />;
   if (!data) return <EmptyState icon={Bot} title="No AI decisions yet" />;
 

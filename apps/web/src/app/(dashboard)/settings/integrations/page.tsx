@@ -15,7 +15,7 @@ import { LoadingState, ErrorState } from '@/components/ui/states';
 import { timeAgo } from '@/lib/format';
 
 export default function IntegrationsPage() {
-  const { data, isLoading, isError, refetch } = useCalendarIntegration();
+  const { data, isLoading, isError, error, refetch } = useCalendarIntegration();
   const connect = useConnectCalendar();
   const disconnect = useDisconnectCalendar();
   const sync = useSyncCalendar();
@@ -24,7 +24,7 @@ export default function IntegrationsPage() {
   const { canManage, canWrite } = usePermissions();
 
   if (isLoading) return <LoadingState />;
-  if (isError || !data) return <ErrorState onRetry={() => void refetch()} />;
+  if (isError || !data) return <ErrorState error={error} onRetry={() => void refetch()} />;
 
   const handleConnect = () => {
     connect.mutate(undefined, {

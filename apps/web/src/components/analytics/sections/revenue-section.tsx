@@ -22,9 +22,9 @@ import { axisProps, shortDate, tooltipStyle } from '@/components/analytics/chart
 import { formatDateIST, formatNumber, humanizeEnum, paiseToCompactRupees, paiseToRupees } from '@/lib/format';
 
 export function RevenueSection({ range }: { range: DateRange }) {
-  const { data, isLoading, isError, refetch } = useRevenueReportFull(range);
+  const { data, isLoading, isError, error, refetch } = useRevenueReportFull(range);
 
-  if (isError) return <ErrorState onRetry={() => void refetch()} />;
+  if (isError) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (isLoading) return <Skeleton className="h-96 w-full" />;
   if (!data) return <EmptyState icon={TrendingUp} title="No revenue data" />;
 

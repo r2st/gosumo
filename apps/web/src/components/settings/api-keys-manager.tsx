@@ -25,7 +25,7 @@ const SCOPES = [
 ];
 
 export function ApiKeysManager() {
-  const { data, isLoading, isError, refetch } = useApiKeys();
+  const { data, isLoading, isError, error, refetch } = useApiKeys();
   const revoke = useRevokeApiKey();
   // POST /integrations/api-keys and DELETE /integrations/api-keys/:id are both
   // @Roles(MANAGER). Listing keys stays open — only minting and revoking are gated.
@@ -50,7 +50,7 @@ export function ApiKeysManager() {
       {isLoading ? (
         <LoadingState />
       ) : isError || !data ? (
-        <ErrorState onRetry={() => void refetch()} />
+        <ErrorState error={error} onRetry={() => void refetch()} />
       ) : data.data.length === 0 ? (
         <EmptyState
           icon={KeyRound}

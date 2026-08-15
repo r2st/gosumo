@@ -57,7 +57,7 @@ export function BookingCalendar({ onSelectBooking }: { onSelectBooking: (id: str
     return { rangeStart: gridStart, rangeEnd: gridEnd, days: eachDayOfInterval({ start: gridStart, end: gridEnd }) };
   }, [view, anchor]);
 
-  const { data, isLoading, isError, refetch } = useCalendar({ from: fmt(rangeStart), to: fmt(rangeEnd) });
+  const { data, isLoading, isError, error, refetch } = useCalendar({ from: fmt(rangeStart), to: fmt(rangeEnd) });
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
@@ -103,7 +103,7 @@ export function BookingCalendar({ onSelectBooking }: { onSelectBooking: (id: str
       {isLoading ? (
         <LoadingState />
       ) : isError ? (
-        <ErrorState onRetry={() => refetch()} />
+        <ErrorState error={error} onRetry={() => refetch()} />
       ) : view === 'week' ? (
         <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-7 sm:divide-x sm:divide-y-0">
           {days.map((day) => {

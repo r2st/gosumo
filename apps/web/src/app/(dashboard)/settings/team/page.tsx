@@ -50,7 +50,7 @@ const ROLE_OPTIONS = [
 ];
 
 export default function TeamPage() {
-  const { data, isLoading, isError, refetch } = useTeam();
+  const { data, isLoading, isError, error, refetch } = useTeam();
   const updateRole = useUpdateMemberRole();
   const removeMember = useRemoveMember();
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -63,7 +63,7 @@ export default function TeamPage() {
   const { canManage, canOwn: canChangeRoles } = usePermissions();
 
   if (isLoading) return <LoadingState />;
-  if (isError || !data) return <ErrorState onRetry={() => void refetch()} />;
+  if (isError || !data) return <ErrorState error={error} onRetry={() => void refetch()} />;
 
   const members = data.data;
 

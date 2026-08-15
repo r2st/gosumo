@@ -84,7 +84,7 @@ function DataSubjectRights() {
           {query.isLoading ? (
             <LoadingState label={t('common.loading')} />
           ) : query.isError ? (
-            <ErrorState onRetry={() => void query.refetch()} />
+            <ErrorState error={query.error} onRetry={() => void query.refetch()} />
           ) : query.data && !query.data.found ? (
             <EmptyState icon={Search} title={t('privacy.noDataForPhone')} />
           ) : query.data ? (
@@ -234,10 +234,10 @@ function ErasureControl({ phone }: { phone: string }) {
 
 function RetentionSettings() {
   const { t } = useLanguage();
-  const { data, isLoading, isError, refetch } = useComplianceSettings();
+  const { data, isLoading, isError, error, refetch } = useComplianceSettings();
 
   if (isLoading) return <LoadingState label={t('common.loading')} />;
-  if (isError || !data) return <ErrorState onRetry={() => void refetch()} />;
+  if (isError || !data) return <ErrorState error={error} onRetry={() => void refetch()} />;
   return <RetentionForm settings={data} />;
 }
 

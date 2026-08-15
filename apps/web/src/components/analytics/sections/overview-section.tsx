@@ -29,9 +29,9 @@ import {
 } from '@/lib/format';
 
 export function OverviewSection({ range }: { range: DateRange }) {
-  const { data: m, isLoading, isError, refetch } = useDashboardMetrics({ from: range.from, to: range.to });
+  const { data: m, isLoading, isError, error, refetch } = useDashboardMetrics({ from: range.from, to: range.to });
 
-  if (isError) return <ErrorState onRetry={() => void refetch()} />;
+  if (isError) return <ErrorState error={error} onRetry={() => void refetch()} />;
 
   const resolution = m
     ? [

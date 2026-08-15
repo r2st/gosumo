@@ -216,6 +216,7 @@ function LeadsBoard() {
           <LoadingState label="Loading pipeline…" />
         ) : isError ? (
           <ErrorState
+            error={boardQ.error ?? leadsQ.error}
             message="Could not load leads."
             onRetry={() => {
               boardQ.refetch();
