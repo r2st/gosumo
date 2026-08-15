@@ -53,6 +53,8 @@ describe('CannedResponseService', () => {
       findMany: jest.fn(),
       findById: jest.fn(),
       findByShortcut: jest.fn(),
+      findDeletedByShortcut: jest.fn(),
+      restore: jest.fn(),
       update: jest.fn(),
       softDelete: jest.fn(),
       incrementUsage: jest.fn(),
@@ -101,6 +103,7 @@ describe('CannedResponseService', () => {
 
     it('translates a DB unique-constraint race into 409', async () => {
       repo.findByShortcut.mockResolvedValue(null);
+      repo.findDeletedByShortcut.mockResolvedValue(null);
       repo.create.mockRejectedValue(
         new Prisma.PrismaClientKnownRequestError('conflict', {
           code: 'P2002',
@@ -111,6 +114,87 @@ describe('CannedResponseService', () => {
       await expect(
         service.create(BUSINESS_ID, { title: 'x', shortcut: 'x', content: 'x' }),
       ).rejects.toThrow(ConflictException);
+    });
+
+    // `delete` is a soft delete but `@@unique([business_id, shortcut])` still
+    // counts the deleted row, so the shortcut stays reserved. Inserting over it
+    // would fail with P2002 and surface as "already exists" for a response the
+    // operator cannot see anywhere in the UI.
+    describe('reusing a soft-deleted shortcut', () => {
+      const deletedRow = makeCannedResponse({
+        title: 'Old refund policy',
+        content: 'stale text',
+        usage_count: 91,
+        deleted_at: new Date('2026-06-02T00:00:00Z'),
+      });
+
+      it('revives the deleted row instead of failing the insert', async () => {
+        repo.findByShortcut.mockResolvedValue(null);
+        repo.findDeletedByShortcut.mockResolvedValue(deletedRow);
+        repo.restore.mockResolvedValue(
+          makeCannedResponse({ title: 'New refund policy', content: 'fresh text' }),
+        );
+
+        const result = await service.create(BUSINESS_ID, {
+          title: 'New refund policy',
+          shortcut: 'refund-policy',
+          content: 'fresh text',
+        });
+
+        expect(repo.create).not.toHaveBeenCalled();
+        expect(repo.restore).toHaveBeenCalledWith(
+          BUSINESS_ID,
+          RESPONSE_ID,
+          expect.objectContaining({
+            title: 'New refund policy',
+            shortcut: 'refund-policy',
+            content: 'fresh text',
+          }),
+        );
+        expect(result).toMatchObject({ title: 'New refund policy', content: 'fresh text' });
+      });
+
+      it('looks the deleted row up by the lowercased shortcut', async () => {
+        repo.findByShortcut.mockResolvedValue(null);
+        repo.findDeletedByShortcut.mockResolvedValue(null);
+        repo.create.mockResolvedValue(makeCannedResponse());
+
+        await service.create(BUSINESS_ID, {
+          title: 'x',
+          shortcut: 'Refund-Policy',
+          content: 'x',
+        });
+
+        expect(repo.findDeletedByShortcut).toHaveBeenCalledWith(BUSINESS_ID, 'refund-policy');
+      });
+
+      it('still 409s when a live response holds the shortcut', async () => {
+        repo.findByShortcut.mockResolvedValue(makeCannedResponse());
+
+        await expect(
+          service.create(BUSINESS_ID, { title: 'x', shortcut: 'refund-policy', content: 'x' }),
+        ).rejects.toThrow(ConflictException);
+
+        expect(repo.restore).not.toHaveBeenCalled();
+      });
+
+      it('carries the creator through to the revived row', async () => {
+        repo.findByShortcut.mockResolvedValue(null);
+        repo.findDeletedByShortcut.mockResolvedValue(deletedRow);
+        repo.restore.mockResolvedValue(makeCannedResponse());
+
+        await service.create(
+          BUSINESS_ID,
+          { title: 'x', shortcut: 'refund-policy', content: 'x' },
+          'agent-1',
+        );
+
+        expect(repo.restore).toHaveBeenCalledWith(
+          BUSINESS_ID,
+          RESPONSE_ID,
+          expect.objectContaining({ createdBy: 'agent-1' }),
+        );
+      });
     });
   });
 

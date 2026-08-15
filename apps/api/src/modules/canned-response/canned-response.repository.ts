@@ -99,6 +99,46 @@ export class CannedResponseRepository {
     });
   }
 
+  /**
+   * A soft-deleted row still holding `shortcut`. The `(business_id, shortcut)`
+   * unique index does not exclude deleted rows, so such a row keeps the shortcut
+   * reserved even though nothing in the UI shows it.
+   */
+  async findDeletedByShortcut(
+    businessId: string,
+    shortcut: string,
+  ): Promise<canned_responses | null> {
+    return this.prisma.canned_responses.findFirst({
+      where: { business_id: businessId, shortcut, deleted_at: { not: null } },
+    });
+  }
+
+  /**
+   * Revive a soft-deleted row as a brand-new canned response: every field is
+   * overwritten from `data` and `usage_count` restarts at zero, so the caller
+   * gets the row it asked to create rather than the deleted one's history.
+   */
+  async restore(
+    businessId: string,
+    id: string,
+    data: CreateCannedResponseData,
+  ): Promise<canned_responses> {
+    return this.prisma.canned_responses.update({
+      where: { id, business_id: businessId },
+      data: {
+        title: data.title,
+        content: data.content,
+        category: data.category ?? null,
+        channel: data.channel ?? null,
+        tags: data.tags ?? [],
+        is_active: data.isActive ?? true,
+        created_by: data.createdBy ?? null,
+        usage_count: 0,
+        deleted_at: null,
+      },
+    });
+  }
+
   async update(businessId: string, id: string, data: UpdateCannedResponseData): Promise<canned_responses> {
     return this.prisma.canned_responses.update({
       where: { id, business_id: businessId },

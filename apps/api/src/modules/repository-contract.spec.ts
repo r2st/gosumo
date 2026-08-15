@@ -808,8 +808,23 @@ describe('Every repository query on a tenant table is tenant-scoped', () => {
  * the empty run is checked for columns being written to `null` that the full
  * run set to a value.
  */
+/**
+ * Methods that issue an UPDATE but are semantically a *create*, so writing every
+ * column — including nulling the ones the caller omitted — is the point rather
+ * than the bug. Each needs its reason written out, like the tenant-scoping
+ * exemptions above.
+ */
+const FULL_OVERWRITES = new Set<string>([
+  // Reviving a soft-deleted row so its shortcut can be reused. The caller asked
+  // to create a new canned response, not to undelete the old one, so every
+  // field must come from the new payload and none may survive from the deleted
+  // row — an omitted `category`/`channel` has to land as null.
+  'CannedResponseRepository.restore',
+]);
+
 describe('Partial updates only write the fields they were given', () => {
-  const WRITE_ONLY = METHOD_CASES.filter(([, repo, method]) => {
+  const WRITE_ONLY = METHOD_CASES.filter(([label, repo, method]) => {
+    if (FULL_OVERWRITES.has(label)) return false;
     const fn = (repo.cls.prototype as Record<string, unknown>)[method];
     return parameterNames(fn).some(isDataParameter);
   });

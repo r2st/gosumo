@@ -319,5 +319,74 @@ describe('CannedResponseRepository', () => {
         data: { usage_count: { increment: 1 } },
       });
     });
+
+    it('finds the soft-deleted row still holding a shortcut', async () => {
+      await repository.findDeletedByShortcut(BIZ, '/hi');
+
+      expect(prisma.canned_responses.findFirst).toHaveBeenCalledWith({
+        where: { business_id: BIZ, shortcut: '/hi', deleted_at: { not: null } },
+      });
+    });
+  });
+
+  describe('restore', () => {
+    it('clears deleted_at and resets usage so the row reads as brand new', async () => {
+      await repository.restore(BIZ, ID, {
+        title: 'New greeting',
+        shortcut: '/hi',
+        content: 'Hello again!',
+      });
+
+      expect(prisma.canned_responses.update).toHaveBeenCalledWith({
+        where: { id: ID, business_id: BIZ },
+        data: expect.objectContaining({
+          title: 'New greeting',
+          content: 'Hello again!',
+          usage_count: 0,
+          deleted_at: null,
+        }),
+      });
+    });
+
+    it('overwrites optional fields rather than inheriting the deleted row', async () => {
+      // The revived row must not keep the old category/channel/tags — the
+      // caller asked to create a new response, not to undelete the old one.
+      await repository.restore(BIZ, ID, {
+        title: 'x',
+        shortcut: '/hi',
+        content: 'x',
+      });
+
+      const { data } = prisma.canned_responses.update.mock.calls[0][0];
+      expect(data).toMatchObject({
+        category: null,
+        channel: null,
+        tags: [],
+        is_active: true,
+        created_by: null,
+      });
+    });
+
+    it('applies the supplied optional fields when present', async () => {
+      await repository.restore(BIZ, ID, {
+        title: 'x',
+        shortcut: '/hi',
+        content: 'x',
+        category: 'billing',
+        channel: ChannelType.WHATSAPP,
+        tags: ['refund'],
+        isActive: false,
+        createdBy: 'agent-1',
+      });
+
+      const { data } = prisma.canned_responses.update.mock.calls[0][0];
+      expect(data).toMatchObject({
+        category: 'billing',
+        channel: ChannelType.WHATSAPP,
+        tags: ['refund'],
+        is_active: false,
+        created_by: 'agent-1',
+      });
+    });
   });
 });

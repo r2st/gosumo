@@ -44,4 +44,4 @@ pnpm --filter @gosumo/api test --testPathPattern=modules/canned-response
 - **`shortcut` is unique per business and always lower-cased** before lookup/create — `/Refund-Policy` and `/refund-policy` are the same response
 - **`channel: null` means "usable on every channel"** — list filtering by channel returns both channel-specific and channel-null responses
 - **`usage_count` only increments via `recordUsage`** — the dashboard client is expected to call this whenever an agent actually inserts a response, not on every fetch
-- **Soft delete only** — `deleted_at`; a deleted shortcut can be reused by a new canned response
+- **Soft delete only** — `deleted_at`; a deleted shortcut can be reused by a new canned response. The `@@unique([business_id, shortcut])` index does **not** exclude soft-deleted rows, so re-creating a deleted shortcut cannot insert: `create()` detects the deleted row (`findDeletedByShortcut`) and revives it via `restore()`, overwriting every field and resetting `usage_count` to 0. The returned response keeps the *old row's* `id`

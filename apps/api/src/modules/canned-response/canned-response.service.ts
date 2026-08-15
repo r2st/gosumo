@@ -35,8 +35,21 @@ export class CannedResponseService {
       throw new ConflictException(`A canned response with shortcut "${shortcut}" already exists`);
     }
 
+    const data = { ...dto, shortcut, createdBy };
+
+    // Deleting a canned response is a soft delete, but the `(business_id,
+    // shortcut)` unique index still counts the deleted row — so re-creating a
+    // shortcut that was deleted would fail the insert and surface as "already
+    // exists" for a response the operator cannot see anywhere. Reuse the freed
+    // shortcut by reviving that row as the new response instead.
+    const deleted = await this.repository.findDeletedByShortcut(businessId, shortcut);
+    if (deleted) {
+      const revived = await this.repository.restore(businessId, deleted.id, data);
+      return this.toDto(revived);
+    }
+
     try {
-      const created = await this.repository.create(businessId, { ...dto, shortcut, createdBy });
+      const created = await this.repository.create(businessId, data);
       return this.toDto(created);
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
