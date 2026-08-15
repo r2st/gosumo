@@ -40,6 +40,8 @@ src/
 - Swagger UI — served at `/v1/docs`, **development only**. In production it is not mounted at all (it would publish every route and DTO); set `ENABLE_SWAGGER=true` to override.
 - CORS — origins come from `CORS_ORIGIN` (comma-separated for a list). When it is unset the origin falls back to `*` and credentials are switched **off**, since `Access-Control-Allow-Origin: *` with credentials is the one combination the CORS spec forbids.
 - CORS configured for dashboard origin
+- **Shutdown** — `enableShutdownHooks()` runs `onModuleDestroy` on SIGTERM, then `configureHttpServerLifecycle()` closes *idle* keep-alive sockets on the same signal. Without that second step `server.close()` never resolves (Caddy's upstream connections are idle, not gone) and the supervisor SIGKILLs the process mid-job — the exact ungraceful exit the hooks exist to prevent. In-flight requests are untouched and still drain.
+- **Keep-alive** — `keepAliveTimeout` 65s / `headersTimeout` 70s, both above Caddy's upstream idle timeout. Node's 5s default makes the API the side that hangs up, which loses whatever request the proxy had just assigned that socket: a 502 from a healthy backend.
 
 ## Auth Flow
 

@@ -17,6 +17,7 @@ jest.mock('@nestjs/core', () => {
     useGlobalFilters: jest.fn(),
     useGlobalInterceptors: jest.fn(),
     enableShutdownHooks: jest.fn(),
+    getHttpServer: jest.fn().mockReturnValue({ closeIdleConnections: jest.fn() }),
     listen: jest.fn().mockResolvedValue(undefined),
   };
   return { NestFactory: { create: jest.fn().mockResolvedValue(app) } };
@@ -49,7 +50,11 @@ import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import {
+  HEADERS_TIMEOUT_MS,
+  KEEP_ALIVE_TIMEOUT_MS,
+  SHUTDOWN_SIGNALS,
   allowCredentials,
+  configureHttpServerLifecycle,
   isProduction,
   resolveCorsOrigin,
   runStartupChecks,
@@ -186,6 +191,113 @@ describe('bootstrap (main.ts)', () => {
  * serves traffic, and encrypts credentials — just not with the key the operator
  * thinks. A boot-time line is the only moment anyone looks.
  */
+/**
+ * HTTP server lifecycle.
+ *
+ * `enableShutdownHooks()` gets Nest to call `app.close()` on SIGTERM, and
+ * `app.close()` calls `server.close()` — which stops accepting new connections
+ * and then waits for every existing one to disappear. Caddy's upstream sockets
+ * are keep-alive and idle, so they do not, and shutdown stalls until the
+ * supervisor SIGKILLs the process. That kill is precisely the ungraceful exit
+ * the shutdown hooks were added to avoid: Prisma's pool dropped rather than
+ * returned, BullMQ workers cut off mid-job.
+ */
+describe('configureHttpServerLifecycle', () => {
+  let logger: Logger;
+  let warn: jest.SpyInstance;
+  let log: jest.SpyInstance;
+
+  beforeEach(() => {
+    logger = new Logger('test');
+    warn = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+    log = jest.spyOn(logger, 'log').mockImplementation(() => {});
+  });
+
+  /** Capture the signal handlers instead of installing them on the process. */
+  function captureSignals() {
+    const handlers = new Map<NodeJS.Signals, () => void>();
+    return {
+      handlers,
+      onSignal: (signal: NodeJS.Signals, handler: () => void) => {
+        handlers.set(signal, handler);
+      },
+    };
+  }
+
+  it('outlives the proxy keep-alive, and keeps headersTimeout above it', () => {
+    const server = { closeIdleConnections: jest.fn() };
+    const { onSignal } = captureSignals();
+
+    configureHttpServerLifecycle(server, logger, onSignal);
+
+    // Node's 5s default makes this process the side that hangs up, which loses
+    // whatever request Caddy had just chosen that socket for — a 502 from a
+    // perfectly healthy backend.
+    expect(server).toMatchObject({
+      keepAliveTimeout: KEEP_ALIVE_TIMEOUT_MS,
+      headersTimeout: HEADERS_TIMEOUT_MS,
+    });
+    expect(HEADERS_TIMEOUT_MS).toBeGreaterThan(KEEP_ALIVE_TIMEOUT_MS);
+  });
+
+  it('closes idle connections on every shutdown signal', () => {
+    const server = { closeIdleConnections: jest.fn() };
+    const { handlers, onSignal } = captureSignals();
+
+    configureHttpServerLifecycle(server, logger, onSignal);
+
+    expect([...handlers.keys()]).toEqual(SHUTDOWN_SIGNALS);
+    for (const signal of SHUTDOWN_SIGNALS) {
+      handlers.get(signal)!();
+    }
+    expect(server.closeIdleConnections).toHaveBeenCalledTimes(SHUTDOWN_SIGNALS.length);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('draining in-flight'));
+  });
+
+  it('does not touch connections before a signal arrives', () => {
+    const server = { closeIdleConnections: jest.fn() };
+    const { onSignal } = captureSignals();
+
+    configureHttpServerLifecycle(server, logger, onSignal);
+
+    // Cutting idle sockets during normal operation would be the 502 bug again.
+    expect(server.closeIdleConnections).not.toHaveBeenCalled();
+  });
+
+  it('shuts down without complaint on a server that cannot close idle sockets', () => {
+    const server: Record<string, unknown> = {};
+    const { handlers, onSignal } = captureSignals();
+
+    configureHttpServerLifecycle(server, logger, onSignal);
+
+    expect(() => handlers.get('SIGTERM')!()).not.toThrow();
+  });
+
+  it('survives a server whose closeIdleConnections throws', () => {
+    const server = {
+      closeIdleConnections: jest.fn(() => {
+        throw new Error('socket teardown failed');
+      }),
+    };
+    const { handlers, onSignal } = captureSignals();
+
+    configureHttpServerLifecycle(server, logger, onSignal);
+
+    // A failure here must not abort the rest of the shutdown sequence.
+    expect(() => handlers.get('SIGTERM')!()).not.toThrow();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('socket teardown failed'));
+  });
+
+  it('warns rather than throwing when there is no HTTP server at all', () => {
+    const { handlers, onSignal } = captureSignals();
+
+    configureHttpServerLifecycle(undefined, logger, onSignal);
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('No HTTP server'));
+    expect(handlers.size).toBe(0);
+  });
+});
+
 describe('runStartupChecks', () => {
   const originalEnv = { ...process.env };
   let logger: Logger;

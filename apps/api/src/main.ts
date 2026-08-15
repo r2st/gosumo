@@ -65,6 +65,88 @@ export function runStartupChecks(logger: Logger): void {
   }
 }
 
+/**
+ * Keep-alive idle timeout, in ms.
+ *
+ * Node's default is 5 seconds. Caddy holds its upstream connections open far
+ * longer than that, so the API is the side that hangs up — and when it does so
+ * in the window where Caddy has just picked that socket to send the next
+ * request on, the request dies on a closed connection and the visitor gets a
+ * 502 from a healthy backend. The fix is the standard one: outlive the proxy's
+ * idle timeout and let *it* do the closing.
+ */
+export const KEEP_ALIVE_TIMEOUT_MS = 65_000;
+
+/**
+ * Must exceed {@link KEEP_ALIVE_TIMEOUT_MS}. If headers time out first, Node
+ * closes sockets it should have kept, which is the same 502 by another route.
+ */
+export const HEADERS_TIMEOUT_MS = 70_000;
+
+/** The bits of `http.Server` this file touches — kept narrow so it is mockable. */
+export interface LifecycleHttpServer {
+  keepAliveTimeout?: number;
+  headersTimeout?: number;
+  closeIdleConnections?: () => void;
+}
+
+/** Signals that mean "shut down cleanly" — the same two Nest listens on. */
+export const SHUTDOWN_SIGNALS: NodeJS.Signals[] = ['SIGTERM', 'SIGINT'];
+
+/**
+ * Give the HTTP server the timeouts and the shutdown behaviour a process
+ * behind a reverse proxy needs.
+ *
+ * The shutdown half is the one that matters. `enableShutdownHooks()` gets Nest
+ * to run `app.close()` on SIGTERM, which calls `server.close()` — and
+ * `server.close()` stops accepting *new* connections but then waits for every
+ * existing one to go away on its own. Caddy's are keep-alive and idle, not
+ * gone, so nothing resolves. Shutdown stalls until the supervisor's timer runs
+ * out and SIGKILLs the process, which is exactly the ungraceful exit
+ * `enableShutdownHooks()` was added to prevent: Prisma's pool is dropped
+ * without being returned (against a 50-connection ceiling shared with another
+ * service) and BullMQ workers die mid-job.
+ *
+ * `closeIdleConnections()` — Node 18+ — closes the sockets that have no
+ * request in flight, which is what unblocks `server.close()`. Requests already
+ * being served are untouched and still get to finish; that is the drain.
+ *
+ * Registered *after* `enableShutdownHooks()` so Nest's handler runs first: it
+ * starts `app.close()` (which stops the listener), and this then clears the
+ * idle sockets that would otherwise hold it open.
+ */
+export function configureHttpServerLifecycle(
+  server: LifecycleHttpServer | undefined,
+  logger: Logger,
+  onSignal: (signal: NodeJS.Signals, handler: () => void) => void = (signal, handler) => {
+    process.once(signal, handler);
+  },
+): void {
+  if (!server) {
+    logger.warn('No HTTP server available — keep-alive and drain tuning skipped');
+    return;
+  }
+
+  server.keepAliveTimeout = KEEP_ALIVE_TIMEOUT_MS;
+  server.headersTimeout = HEADERS_TIMEOUT_MS;
+
+  for (const signal of SHUTDOWN_SIGNALS) {
+    onSignal(signal, () => {
+      try {
+        // Absent on a server this Node cannot provide it on. Nothing to do
+        // then — the wait is the old behaviour, not a new failure.
+        server.closeIdleConnections?.();
+        logger.log(`${signal} received — idle keep-alive connections closed, draining in-flight`);
+      } catch (err) {
+        logger.warn(
+          `Could not close idle connections on ${signal}: ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    });
+  }
+}
+
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
 
@@ -148,6 +230,13 @@ async function bootstrap() {
   // on its own timeout, and this deployment shares a 50-connection ceiling —
   // a few restarts in a row were enough to exhaust it.
   app.enableShutdownHooks();
+
+  // After enableShutdownHooks, so Nest's handler runs first and this clears
+  // the idle sockets that would otherwise keep `server.close()` waiting.
+  configureHttpServerLifecycle(
+    app.getHttpServer() as LifecycleHttpServer | undefined,
+    logger,
+  );
 
   const port = parseInt(process.env['PORT'] ?? '3000', 10);
   await app.listen(port);
