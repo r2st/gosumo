@@ -9,6 +9,13 @@ import { ChannelType } from '@gosumo/shared';
 import { AnalyticsRepository, DateRange } from './analytics.repository';
 import { ANALYTICS_CACHE, AnalyticsCache } from './analytics.cache';
 import { fillTimeSeries, pct, round2, rupeesToPaise, toCsv } from './analytics.util';
+import {
+  summarizeCsat,
+  CSAT_PROXY_MAX,
+  CSAT_PROXY_PENALTY,
+  CSAT_PROXY_SLOW_HOURS,
+  CSAT_PROXY_CHATTY_INBOUND,
+} from './conversation-quality.util';
 import { LlmClientService, LlmUnavailableError } from '../ai-engine/pipeline/llm-client.service';
 import {
   AiSummaryDto,
@@ -24,6 +31,7 @@ import {
   ConfidenceBucketDto,
   ConfidenceDistributionDto,
   ConversationMetricsDto,
+  ConversationQualityDto,
   DashboardSummaryDto,
   EscalationReasonDto,
   ExportedReportDto,
@@ -278,6 +286,97 @@ export class AnalyticsService {
       avgResolutionSeconds: round2(avgResolution),
       sampleSize: stats.sampleSize,
       series: this.buildSeries(range, seriesRows),
+    };
+  }
+
+  /**
+   * The conversation-quality report: how much got resolved, how much of that
+   * took one round trip, how fast, and how satisfied the customer probably was.
+   *
+   * Five queries in parallel rather than one large one. They scope to different
+   * windows on purpose — volume by `created_at`, resolution and CSAT by
+   * `resolved_at` — and folding them together would force one window on all of
+   * them, which is the mistake that makes a resolution-rate chart trend
+   * downwards forever (see `getConversationQualityStats`).
+   */
+  async getConversationQualityMetrics(
+    businessId: string,
+    query: AnalyticsRangeQueryDto,
+  ): Promise<ConversationQualityDto> {
+    const range = this.resolveRange(query);
+    const dateRange = this.asDateRange(range);
+
+    const [counts, quality, responseTimes, csatSignals, byChannel] = await Promise.all([
+      this.repository.getConversationCounts(businessId, dateRange),
+      this.repository.getConversationQualityStats(businessId, dateRange),
+      this.repository.getResponseTimeStats(businessId, dateRange),
+      this.repository.getCsatSignals(
+        businessId,
+        dateRange,
+        CSAT_PROXY_SLOW_HOURS,
+        CSAT_PROXY_CHATTY_INBOUND,
+      ),
+      this.repository.getConversationQualityByChannel(businessId, dateRange),
+    ]);
+
+    const csat = summarizeCsat(csatSignals.explicit, csatSignals.proxyGroups);
+
+    return {
+      range: this.toResolvedRangeDto(range),
+      volume: {
+        created: counts.total,
+        resolved: quality.resolvedCount,
+        open: counts.open,
+        pendingHuman: counts.pendingHuman,
+        escalated: counts.escalated,
+      },
+      // Denominator is what was opened in the window, not what was closed —
+      // "of the work that arrived, how much did we finish" is the question a
+      // business owner is asking. It can exceed 100% in a period spent clearing
+      // a backlog, which is true and worth seeing rather than clamping away.
+      resolutionRate: pct(quality.resolvedCount, counts.total),
+      firstContactResolution: {
+        count: quality.fcrCount,
+        // Denominator is *resolved* conversations: FCR asks "of the ones we
+        // closed, how many took one round trip", so an unclosed conversation
+        // is not yet a failure of first-contact resolution.
+        rate: pct(quality.fcrCount, quality.resolvedCount),
+        escalatedCount: quality.escalatedCount,
+      },
+      responseTime: {
+        avgFirstResponseSeconds: round2(responseTimes.avgSeconds),
+        p50FirstResponseSeconds: round2(responseTimes.p50Seconds),
+        p90FirstResponseSeconds: round2(responseTimes.p90Seconds),
+        sampleSize: responseTimes.sampleSize,
+      },
+      resolutionTime: {
+        avgSeconds: round2(quality.avgResolutionSeconds),
+        p50Seconds: round2(quality.p50ResolutionSeconds),
+        p90Seconds: round2(quality.p90ResolutionSeconds),
+      },
+      csat: {
+        explicitResponses: csat.explicitResponses,
+        explicitAverage: csat.explicitAverage,
+        proxySampled: csat.proxySampled,
+        proxyAverage: csat.proxyAverage,
+        combinedAverage: csat.combinedAverage,
+        combinedSampled: csat.combinedSampled,
+        distribution: csat.distribution,
+        proxyModel: {
+          maxScore: CSAT_PROXY_MAX,
+          slowHours: CSAT_PROXY_SLOW_HOURS,
+          chattyInboundThreshold: CSAT_PROXY_CHATTY_INBOUND,
+          penaltyPerSignal: CSAT_PROXY_PENALTY,
+        },
+      },
+      byChannel: byChannel.map((c) => ({
+        channel: c.channel,
+        created: c.created,
+        resolved: c.resolved,
+        resolutionRate: pct(c.resolved, c.created),
+        firstContactResolutionRate: pct(c.fcr, c.resolved),
+        avgResolutionSeconds: round2(c.avgResolutionSeconds),
+      })),
     };
   }
 

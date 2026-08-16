@@ -21,6 +21,7 @@ import { KnowledgeIngestionService } from './rag/knowledge-ingestion.service';
 import { ChannelAdapterModule } from '../channel-adapter/channel-adapter.module';
 import { RealtyTenantModule } from './realty/realty-tenant.module';
 import { CatalogModule } from '../catalog/catalog.module';
+import { ContactModule } from '../contact/contact.module';
 import { CatalogMatchService } from './pipeline/catalog-match.service';
 import { AiQualityController } from './quality/ai-quality.controller';
 import { AiQualityService } from './quality/ai-quality.service';
@@ -55,6 +56,9 @@ import {
     ChannelAdapterModule,
     RealtyTenantModule,
     CatalogModule,
+    // For `SegmentRoutingService` only — the per-contact "may the AI answer
+    // this customer?" decision the pipeline makes before scoring confidence.
+    ContactModule,
     BullModule.registerQueue({ name: AI_QUALITY_QUEUE }),
   ],
   controllers: [AiEngineController, AiQualityController],

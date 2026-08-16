@@ -2,7 +2,9 @@ import { Controller, Get, HttpStatus, Res } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
+import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { HealthService, ReadinessReport } from './health.service';
+import { PlatformHealthService, PlatformHealthReport } from './platform-health.service';
 
 /**
  * Health probes. Both routes are `@Public()` — a load balancer has no JWT, and
@@ -14,7 +16,10 @@ import { HealthService, ReadinessReport } from './health.service';
 @ApiTags('health')
 @Controller('health')
 export class HealthController {
-  constructor(private readonly health: HealthService) {}
+  constructor(
+    private readonly health: HealthService,
+    private readonly platformHealth: PlatformHealthService,
+  ) {}
 
   @Public()
   @Get()
@@ -49,5 +54,30 @@ export class HealthController {
       report.status === 'ok' ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE,
     );
     return report;
+  }
+
+  /**
+   * The operator's panel.
+   *
+   * Deliberately **not** `@Public()` and deliberately tenant-scoped, which is
+   * what lets it report things the two probes above must never publish: channel
+   * account names, connection counts, Redis memory. It is also uncached and
+   * costs real work, so it must never be the URL a load balancer polls — that
+   * is what `/health/ready` is for.
+   *
+   * Always answers 200. The rolled-up `status` in the body is the verdict; a
+   * non-200 here would make an ops dashboard's own fetch the thing that fails
+   * during the incident it was opened to diagnose.
+   */
+  @Get('platform')
+  @ApiOperation({
+    summary: 'Platform health panel — channels, AI pipeline, queues, database, Redis',
+    description:
+      'Authenticated and tenant-scoped. Every section is independently guarded: one that ' +
+      'cannot be read reports `unknown` and the rest still renders.',
+  })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Platform health report' })
+  async platform(@TenantId() tenantId: string): Promise<PlatformHealthReport> {
+    return this.platformHealth.report(tenantId);
   }
 }

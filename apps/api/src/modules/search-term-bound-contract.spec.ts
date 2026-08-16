@@ -35,6 +35,7 @@ import { ListCannedResponsesQueryDto } from './canned-response/dto';
 import { MessageSearchQueryDto } from './message/dto';
 import { SearchKnowledgeQueryDto } from './ai-engine/dto';
 import { ListConversationsQueryDto } from './conversation/dto';
+import { SearchMessagesQueryDto } from './conversation-search/dto';
 
 /** The exact pipe configuration from main.ts. */
 function productionPipe(): ValidationPipe {
@@ -73,6 +74,10 @@ const SEARCH_DTOS: Array<[string, unknown, string]> = [
   ['GET /messages/search', MessageSearchQueryDto, 'q'],
   ['GET /ai/knowledge/search', SearchKnowledgeQueryDto, 'q'],
   ['GET /conversations', ListConversationsQueryDto, 'q'],
+  // Full-text search rather than ILIKE, so the pg_trgm cost story above does
+  // not apply — but `websearch_to_tsquery` parses the whole term and a
+  // kilobyte-long query is still work the caller chose. Same cap, same reason.
+  ['GET /search/messages', SearchMessagesQueryDto, 'q'],
 ];
 
 describe('search terms are length-bounded', () => {

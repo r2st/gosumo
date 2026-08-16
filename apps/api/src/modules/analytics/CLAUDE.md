@@ -12,6 +12,7 @@ Track and serve the metrics that matter most: conversation volumes, AI autonomy 
 getConversationMetrics(businessId, query): Promise<ConversationMetricsDto>
 getIntentBreakdown(businessId, query): Promise<IntentBreakdownDto[]>
 getResponseTimeMetrics(businessId, query): Promise<ResponseTimeMetricsDto>
+getConversationQualityMetrics(businessId, query): Promise<ConversationQualityDto>
 getAutonomyMetrics(businessId, query): Promise<AutonomyMetricsDto>
 getConfidenceDistribution(businessId, query): Promise<ConfidenceDistributionDto>
 getOrderMetrics / getRevenueTimeSeries / getBookingMetrics
@@ -66,5 +67,9 @@ pnpm --filter @gosumo/api test --testPathPattern=modules/analytics
 - **Cross-tenant isolation is critical** — every aggregation query must include `business_id = :businessId`; test this explicitly in integration tests
 - `analytics_events` and `audit_logs` are append-only — never run UPDATE or DELETE on these tables
 - **`getAiSummary` fails open** — if OpenRouter is unavailable or `OPENROUTER_API_KEY` is unset, it returns a deterministic, numbers-only summary with `aiGenerated: false` instead of throwing. Never surface an LLM outage as an API error here.
+- **Conversation quality scopes resolution by `resolved_at`, not `created_at`** — a conversation opened in March and closed in April belongs to April. Scoping by creation makes the current period's resolution rate permanently understated (its newest conversations have not had time to close), which is the classic way a resolution chart trends down while nothing has got worse. It also means `resolutionRate` can exceed 100% in a period spent clearing a backlog — true, and not clamped
+- **First-contact resolution needs both halves**: exactly one inbound message *and* no human takeover, with "escalated" read off `ai_decisions` rather than the conversation's current status (status is where it ended, not where it has been)
+- **The CSAT proxy is not a measurement and is never blended silently into the explicit score.** `csat.explicit*` and `csat.proxy*` are reported separately with their own sample sizes, and every response carries `csat.proxyModel` — the four parameters that produced the number. Explicit ratings exist on well under 1% of conversations for a tenant that sends no survey, so a real-CSAT-only trend line is computed over a tiny self-selected sample
+- **Proxy signal groups, not per-conversation rows** — `getCsatSignals` groups by the four booleans, so a tenant with a million resolved conversations returns at most 16 rows and the scoring policy stays in `conversation-quality.util.ts` where it is readable and unit-testable without a database
 - **`exportReport` reuses the same JSON-endpoint methods** (`getConversationMetrics`, `getRevenueMetrics`, etc.) and just renders the result as CSV — it is not a separate query path, so the 30-day default / 365-day cap apply identically
 

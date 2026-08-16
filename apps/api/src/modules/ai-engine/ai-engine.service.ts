@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
@@ -55,6 +56,11 @@ import { AiEngineRepository } from './ai-engine.repository';
 import { ChannelAdapterService } from '../channel-adapter/channel-adapter.service';
 import { RealtyTenantService } from './realty/realty-tenant.service';
 import { ConversationLockService } from '../../common/services/conversation-lock.service';
+import {
+  SegmentRoutingService,
+  NO_SEGMENT_ROUTING,
+  type SegmentRoutingDecision,
+} from '../contact/segment-routing.service';
 import {
   ProcessMessageDto,
   IntentClassificationDto,
@@ -140,6 +146,14 @@ export class AiEngineService {
     private readonly eventEmitter: EventEmitter2,
     private readonly realtyTenants: RealtyTenantService,
     private readonly conversationLocks: ConversationLockService,
+    /**
+     * Optional so the pipeline can be constructed without the contact module —
+     * every existing unit harness in this repo builds `AiEngineService`
+     * positionally, and a required parameter here would make "no segment
+     * routing configured" indistinguishable from a test that predates it.
+     * Absent means the same thing an unconfigured tenant means: INHERIT.
+     */
+    @Optional() private readonly segmentRouting?: SegmentRoutingService,
   ) {}
 
   // ─────────────────────────────────────────────
@@ -231,6 +245,11 @@ export class AiEngineService {
       text,
     );
 
+    // Which segment, if any, has an opinion about this contact. Costs one
+    // indexed query that returns nothing for a tenant with no routing segments
+    // configured — see SegmentRoutingService for the cost and failure model.
+    const routing = await this.resolveSegmentRouting(businessId, context, traceId);
+
     const scored = this.confidence.calculate({
       intent: classification.intent,
       data: {
@@ -241,11 +260,18 @@ export class AiEngineService {
       priceNotInCatalog: catalog.priceNotInCatalog,
       policy: { policyDefined: context.businessRules.length > 0 },
       safety,
-      forceEscalate: dto.forceEscalate === true,
-      // The tenant's own bands. `context.business` is already loaded, so this
-      // costs no extra read. Without it the routing gate ignored every value
-      // the settings page and the onboarding wizard collect.
-      thresholds: readStoredThresholds(context.business?.ai_settings),
+      // A HUMAN_ONLY segment is a hard "the AI does not answer these
+      // customers", so it is fed to the same input an explicit per-message
+      // `forceEscalate` uses rather than being applied afterwards: the
+      // calculator records it in the confidence breakdown, so the audit trail
+      // on `ai_decisions` says *why* the turn escalated instead of showing an
+      // unexplained low score.
+      forceEscalate: dto.forceEscalate === true || routing.mode === 'HUMAN_ONLY',
+      // The tenant's own bands, with the matched segment's overriding them.
+      // `context.business` is already loaded, so the tenant half costs no extra
+      // read. Without it the routing gate ignored every value the settings page
+      // and the onboarding wizard collect.
+      thresholds: this.effectiveThresholds(context.business?.ai_settings, routing),
       ...this.refundOverrideInputs(classification, context),
     });
 
@@ -262,6 +288,60 @@ export class AiEngineService {
     }
 
     return this.finalize(businessId, dto, context, classification, scored, route, parsed, startMs, traceId);
+  }
+
+  /**
+   * The routing rule in force for this conversation's contact.
+   *
+   * Absent `SegmentRoutingService` — a unit harness, or a deployment that does
+   * not wire the contact module — this is INHERIT, which is what every tenant
+   * without routing segments resolves to anyway. The service itself never
+   * throws (see its class docstring for what each failure resolves to), so
+   * there is no catch here to swallow one.
+   */
+  private async resolveSegmentRouting(
+    businessId: string,
+    context: EnrichedContext,
+    traceId: string,
+  ): Promise<SegmentRoutingDecision> {
+    if (!this.segmentRouting) return NO_SEGMENT_ROUTING;
+
+    const decision = await this.segmentRouting.resolve(
+      businessId,
+      context.conversation?.client_id ?? null,
+    );
+
+    if (decision.mode !== 'INHERIT') {
+      this.logger.log(
+        `[${traceId}] Segment "${decision.segmentName}" routes this contact as ${decision.mode}`,
+      );
+    }
+    return decision;
+  }
+
+  /**
+   * The tenant's confidence bands with the matched segment's laid over them.
+   *
+   * Per-field, not all-or-nothing: a segment that raises only `autoExecute`
+   * keeps the tenant's `draftReview`. Replacing the pair wholesale would let
+   * one configured field silently reset the other to a platform default the
+   * tenant never chose.
+   *
+   * `ContactService.validateRouting` is what guarantees the merged pair is not
+   * inverted, and it checks the merge rather than the payload for this reason.
+   */
+  private effectiveThresholds(
+    aiSettings: unknown,
+    routing: SegmentRoutingDecision,
+  ): { autoExecute?: number; draftReview?: number } | undefined {
+    const tenant = readStoredThresholds(aiSettings);
+    if (routing.autoExecuteThreshold === null && routing.draftReviewThreshold === null) {
+      return tenant;
+    }
+    return {
+      autoExecute: routing.autoExecuteThreshold ?? tenant?.autoExecute,
+      draftReview: routing.draftReviewThreshold ?? tenant?.draftReview,
+    };
   }
 
   // ─────────────────────────────────────────────

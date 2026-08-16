@@ -12,6 +12,9 @@ import {
   ArrayMaxSize,
   ArrayNotEmpty,
   IsNotEmpty,
+  IsIn,
+  IsUUID,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
@@ -19,6 +22,24 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { MAX_PAGE_NUMBER } from '../../../common/validators/pagination.constants';
 import { ChannelType } from '@gosumo/shared';
 import { SEARCH_TERM_MAX_LENGTH } from '../../../common/validators/search-term.constants';
+
+// ─────────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────────
+
+/**
+ * The longest window a day-based segment criterion may name.
+ *
+ * Ten years, which is longer than any tenant's history and short enough that a
+ * mistyped value cannot turn into a date arithmetic overflow. The bound exists
+ * because these numbers are turned into `Date` objects — an unbounded one
+ * produces an Invalid Date, and every comparison against it silently returns
+ * false, so an over-large window reads as an empty segment rather than an error.
+ */
+export const SEGMENT_MAX_WINDOW_DAYS = 3650;
+
+/** Mirrors the `SegmentRoutingMode` Prisma enum. */
+export const SEGMENT_ROUTING_MODES = ['INHERIT', 'AI_ONLY', 'AI_FIRST', 'HUMAN_ONLY'] as const;
 
 // ─────────────────────────────────────────────
 // Helpers
@@ -196,6 +217,122 @@ export class SegmentFilterDto {
   @IsOptional()
   @IsBoolean()
   hasOrders?: boolean;
+
+  // ── Purchase history ──────────────────────────
+
+  @ApiPropertyOptional({ description: 'At least this many lifetime orders' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  minTotalOrders?: number;
+
+  @ApiPropertyOptional({ description: 'At most this many lifetime orders' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  maxTotalOrders?: number;
+
+  @ApiPropertyOptional({ description: 'Minimum lifetime spend, in paise' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  minTotalSpentPaise?: number;
+
+  @ApiPropertyOptional({ description: 'Maximum lifetime spend, in paise' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  maxTotalSpentPaise?: number;
+
+  // ── Behaviour ─────────────────────────────────
+
+  @ApiPropertyOptional({ description: 'Interacted within the last N days' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(SEGMENT_MAX_WINDOW_DAYS)
+  activeWithinDays?: number;
+
+  @ApiPropertyOptional({
+    description: 'No interaction for at least N days (contacts who never interacted qualify)',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(SEGMENT_MAX_WINDOW_DAYS)
+  inactiveForDays?: number;
+
+  @ApiPropertyOptional({ description: 'Has ever opened a conversation' })
+  @IsOptional()
+  @IsBoolean()
+  hasConversations?: boolean;
+
+  @ApiPropertyOptional({ description: 'First seen within the last N days' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(SEGMENT_MAX_WINDOW_DAYS)
+  newerThanDays?: number;
+
+  @ApiPropertyOptional({ description: 'First seen more than N days ago' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(SEGMENT_MAX_WINDOW_DAYS)
+  olderThanDays?: number;
+}
+
+/**
+ * Routing rules attached to a segment: whether the AI may answer the contacts
+ * it matches, and on what terms.
+ */
+export class SegmentRoutingDto {
+  @ApiPropertyOptional({
+    enum: SEGMENT_ROUTING_MODES,
+    description:
+      'INHERIT (default) leaves the decision to the tenant thresholds; HUMAN_ONLY escalates ' +
+      'every turn from a matching contact regardless of AI confidence.',
+  })
+  @IsOptional()
+  @IsIn(SEGMENT_ROUTING_MODES)
+  mode?: (typeof SEGMENT_ROUTING_MODES)[number];
+
+  @ApiPropertyOptional({
+    description: 'Tie-break when a contact matches several routing segments — higher wins',
+    minimum: 0,
+    maximum: 1000,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1000)
+  priority?: number;
+
+  @ApiPropertyOptional({
+    description: 'Per-segment auto-execute confidence band (0-100). Null clears it.',
+  })
+  @IsOptional()
+  @ValidateIf((_o, v) => v !== null)
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  autoExecuteThreshold?: number | null;
+
+  @ApiPropertyOptional({
+    description: 'Per-segment draft-review confidence band (0-100). Null clears it.',
+  })
+  @IsOptional()
+  @ValidateIf((_o, v) => v !== null)
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  draftReviewThreshold?: number | null;
+
+  @ApiPropertyOptional({ description: 'Team member matching conversations belong to. Null clears it.' })
+  @IsOptional()
+  @ValidateIf((_o, v) => v !== null)
+  @IsUUID()
+  assigneeId?: string | null;
 }
 
 export class CreateSegmentDto {
@@ -219,6 +356,12 @@ export class CreateSegmentDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({ type: SegmentRoutingDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SegmentRoutingDto)
+  routing?: SegmentRoutingDto;
 }
 
 export class UpdateSegmentDto {
@@ -243,6 +386,12 @@ export class UpdateSegmentDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({ type: SegmentRoutingDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SegmentRoutingDto)
+  routing?: SegmentRoutingDto;
 }
 
 export class SegmentMembersQueryDto {
@@ -270,6 +419,24 @@ export interface SegmentResponseDto {
   filter: SegmentFilterDto;
   isActive: boolean;
   memberCount: number;
+  routing: {
+    mode: (typeof SEGMENT_ROUTING_MODES)[number];
+    priority: number;
+    autoExecuteThreshold: number | null;
+    draftReviewThreshold: number | null;
+    assigneeId: string | null;
+  };
   createdAt: string;
   updatedAt: string;
+}
+
+/** What `GET /contacts/:id/routing` answers — see `SegmentRoutingService`. */
+export interface ResolvedRoutingDto {
+  clientId: string;
+  mode: (typeof SEGMENT_ROUTING_MODES)[number];
+  segmentId: string | null;
+  segmentName: string | null;
+  autoExecuteThreshold: number | null;
+  draftReviewThreshold: number | null;
+  assigneeId: string | null;
 }

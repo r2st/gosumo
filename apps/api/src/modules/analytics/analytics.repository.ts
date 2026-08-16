@@ -4,6 +4,7 @@ import { ChannelType } from '@gosumo/shared';
 import { PrismaService } from '../../common/services/prisma.service';
 import { Granularity } from './dto';
 import { granularityToSqlUnit, BucketRow } from './analytics.util';
+import type { CsatProxyGroup } from './conversation-quality.util';
 
 /**
  * A half-open time window: `[from, to)`. `from` is inclusive, `to` exclusive.
@@ -65,6 +66,32 @@ interface TopProductRaw {
   name: string | null;
   units: number;
   revenue: number;
+}
+
+interface ConversationQualityRaw {
+  resolved_count: number;
+  fcr_count: number;
+  escalated_count: number;
+  avg_sec: number;
+  p50: number;
+  p90: number;
+}
+
+/** Postgres returns the signal booleans nullable; the mapper folds them. */
+interface CsatProxyGroupRaw {
+  escalated: boolean;
+  breached: boolean;
+  slow: boolean | null;
+  chatty: boolean | null;
+  count: number;
+}
+
+interface ChannelQualityRaw {
+  channel: string;
+  created: number;
+  resolved: number;
+  fcr: number;
+  avg_resolution_sec: number;
 }
 
 interface StaffRaw {
@@ -287,6 +314,244 @@ export class AnalyticsRepository {
         AND resolved_at >= ${range.from} AND resolved_at < ${range.to}
     `;
     return rows[0]?.avg_sec ?? 0;
+  }
+
+  // ───────────────────────────────────────────────────────────────────
+  // Conversation quality
+  // ───────────────────────────────────────────────────────────────────
+
+  /**
+   * Resolution and first-contact-resolution counts over conversations
+   * **resolved** in the range, plus resolution-latency percentiles.
+   *
+   * Scoped by `resolved_at` and not `created_at`: a conversation opened in
+   * March and closed in April belongs to April's resolution figures. Scoping by
+   * creation would make the current period's resolution rate permanently
+   * understated, since its newest conversations have not had time to close —
+   * the classic way a resolution-rate chart trends down while nothing has got
+   * worse.
+   *
+   * FCR is "resolved, the customer sent exactly one message, and no human ever
+   * took it over". Both halves are needed: one inbound message with three
+   * agents on the thread is not a first-contact resolution, and an escalated
+   * thread the customer never had to chase is not one either. `escalated` is
+   * read off `ai_decisions` rather than the conversation's *current* status,
+   * because status is where a conversation ended, not where it has been.
+   */
+  async getConversationQualityStats(
+    businessId: string,
+    range: DateRange,
+  ): Promise<{
+    resolvedCount: number;
+    fcrCount: number;
+    escalatedCount: number;
+    avgResolutionSeconds: number;
+    p50ResolutionSeconds: number;
+    p90ResolutionSeconds: number;
+  }> {
+    const rows = await this.prisma.$queryRaw<ConversationQualityRaw[]>`
+      WITH resolved AS (
+        SELECT c.id,
+               c.human_message_count,
+               EXTRACT(EPOCH FROM (c.resolved_at - c.first_message_at)) AS resolution_sec
+        FROM conversations c
+        WHERE c.business_id = ${businessId}::uuid
+          AND c.deleted_at IS NULL
+          AND c.status = 'RESOLVED'
+          AND c.resolved_at >= ${range.from} AND c.resolved_at < ${range.to}
+      ),
+      marked AS (
+        SELECT r.id,
+               r.resolution_sec,
+               r.human_message_count,
+               EXISTS (
+                 SELECT 1 FROM ai_decisions d
+                 WHERE d.conversation_id = r.id
+                   AND d.business_id = ${businessId}::uuid
+                   AND d.outcome = 'ESCALATED'
+               ) AS escalated,
+               (
+                 SELECT COUNT(*) FROM messages m
+                 WHERE m.conversation_id = r.id
+                   AND m.business_id = ${businessId}::uuid
+                   AND m.direction = 'INBOUND'
+               ) AS inbound_count
+        FROM resolved r
+      )
+      SELECT COUNT(*)::int AS resolved_count,
+             (COUNT(*) FILTER (
+                WHERE inbound_count = 1 AND NOT escalated AND human_message_count = 0
+             ))::int AS fcr_count,
+             (COUNT(*) FILTER (WHERE escalated))::int AS escalated_count,
+             COALESCE(AVG(resolution_sec), 0)::float8 AS avg_sec,
+             COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY resolution_sec), 0)::float8 AS p50,
+             COALESCE(PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY resolution_sec), 0)::float8 AS p90
+      FROM marked
+    `;
+
+    const row = rows[0];
+    return {
+      resolvedCount: row?.resolved_count ?? 0,
+      fcrCount: row?.fcr_count ?? 0,
+      escalatedCount: row?.escalated_count ?? 0,
+      avgResolutionSeconds: row?.avg_sec ?? 0,
+      p50ResolutionSeconds: row?.p50 ?? 0,
+      p90ResolutionSeconds: row?.p90 ?? 0,
+    };
+  }
+
+  /**
+   * The two inputs to the CSAT summary: explicit ratings by value, and the
+   * distinct signal combinations among unrated resolved conversations.
+   *
+   * The second half groups by the four booleans rather than returning one row
+   * per conversation. There are at most sixteen combinations, so this is a
+   * bounded result whatever the tenant's volume — and the scoring policy stays
+   * out of SQL, in `conversation-quality.util.ts`, where it can be read and
+   * changed without a migration.
+   *
+   * The two sets are disjoint by construction (`csat_score IS NULL` /
+   * `IS NOT NULL`), so no conversation is counted twice when they are pooled.
+   */
+  async getCsatSignals(
+    businessId: string,
+    range: DateRange,
+    slowHours: number,
+    chattyInbound: number,
+  ): Promise<{
+    explicit: { score: number; count: number }[];
+    proxyGroups: CsatProxyGroup[];
+  }> {
+    const [explicit, proxy] = await Promise.all([
+      this.prisma.$queryRaw<{ score: number; count: number }[]>`
+        SELECT csat_score::int AS score, COUNT(*)::int AS count
+        FROM conversations
+        WHERE business_id = ${businessId}::uuid
+          AND deleted_at IS NULL
+          AND status = 'RESOLVED'
+          AND resolved_at >= ${range.from} AND resolved_at < ${range.to}
+          AND csat_score IS NOT NULL
+        GROUP BY 1
+        ORDER BY 1
+      `,
+      this.prisma.$queryRaw<CsatProxyGroupRaw[]>`
+        WITH resolved AS (
+          SELECT c.id,
+                 c.human_message_count,
+                 (c.resolved_at - c.first_message_at) > (${slowHours}::int * INTERVAL '1 hour') AS slow
+          FROM conversations c
+          WHERE c.business_id = ${businessId}::uuid
+            AND c.deleted_at IS NULL
+            AND c.status = 'RESOLVED'
+            AND c.resolved_at >= ${range.from} AND c.resolved_at < ${range.to}
+            AND c.csat_score IS NULL
+        )
+        SELECT EXISTS (
+                 SELECT 1 FROM ai_decisions d
+                 WHERE d.conversation_id = r.id
+                   AND d.business_id = ${businessId}::uuid
+                   AND d.outcome = 'ESCALATED'
+               ) AS escalated,
+               EXISTS (
+                 SELECT 1 FROM sla_breaches b
+                 WHERE b.conversation_id = r.id
+                   AND b.business_id = ${businessId}::uuid
+               ) AS breached,
+               COALESCE(r.slow, FALSE) AS slow,
+               (
+                 SELECT COUNT(*) FROM messages m
+                 WHERE m.conversation_id = r.id
+                   AND m.business_id = ${businessId}::uuid
+                   AND m.direction = 'INBOUND'
+               ) > ${chattyInbound}::int AS chatty,
+               COUNT(*)::int AS count
+        FROM resolved r
+        GROUP BY 1, 2, 3, 4
+      `,
+    ]);
+
+    return {
+      explicit,
+      proxyGroups: proxy.map((r) => ({
+        escalated: r.escalated,
+        breached: r.breached,
+        // `resolved_at - first_message_at` is null when a conversation has no
+        // first message recorded, and NULL > interval is NULL — folded to false
+        // here so an incomplete row is "not slow" rather than dropped from the
+        // group set entirely.
+        slow: r.slow ?? false,
+        chatty: r.chatty ?? false,
+        count: r.count,
+      })),
+    };
+  }
+
+  /**
+   * Per-channel volume, resolution and first-response latency in one pass.
+   *
+   * Created and resolved counts come from different windows on purpose — see
+   * {@link getConversationQualityStats} — so a channel's `resolutionRate` is
+   * "how many did we close" against "how many did we open", not a cohort rate.
+   */
+  async getConversationQualityByChannel(
+    businessId: string,
+    range: DateRange,
+  ): Promise<
+    {
+      channel: ChannelType;
+      created: number;
+      resolved: number;
+      fcr: number;
+      avgResolutionSeconds: number;
+    }[]
+  > {
+    const rows = await this.prisma.$queryRaw<ChannelQualityRaw[]>`
+      WITH created AS (
+        SELECT channel, COUNT(*)::int AS created
+        FROM conversations
+        WHERE business_id = ${businessId}::uuid
+          AND deleted_at IS NULL
+          AND created_at >= ${range.from} AND created_at < ${range.to}
+        GROUP BY 1
+      ),
+      closed AS (
+        SELECT c.channel,
+               COUNT(*)::int AS resolved,
+               (COUNT(*) FILTER (
+                  WHERE c.human_message_count = 0
+                    AND (
+                      SELECT COUNT(*) FROM messages m
+                      WHERE m.conversation_id = c.id
+                        AND m.business_id = ${businessId}::uuid
+                        AND m.direction = 'INBOUND'
+                    ) = 1
+               ))::int AS fcr,
+               COALESCE(AVG(EXTRACT(EPOCH FROM (c.resolved_at - c.first_message_at))), 0)::float8
+                 AS avg_resolution_sec
+        FROM conversations c
+        WHERE c.business_id = ${businessId}::uuid
+          AND c.deleted_at IS NULL
+          AND c.status = 'RESOLVED'
+          AND c.resolved_at >= ${range.from} AND c.resolved_at < ${range.to}
+        GROUP BY 1
+      )
+      SELECT COALESCE(created.channel, closed.channel) AS channel,
+             COALESCE(created.created, 0)              AS created,
+             COALESCE(closed.resolved, 0)              AS resolved,
+             COALESCE(closed.fcr, 0)                   AS fcr,
+             COALESCE(closed.avg_resolution_sec, 0)    AS avg_resolution_sec
+      FROM created
+      FULL OUTER JOIN closed ON created.channel = closed.channel
+      ORDER BY 2 DESC
+    `;
+
+    return rows.map((r) => ({
+      channel: r.channel as ChannelType,
+      created: r.created,
+      resolved: r.resolved,
+      fcr: r.fcr,
+      avgResolutionSeconds: r.avg_resolution_sec,
+    }));
   }
 
   // ───────────────────────────────────────────────────────────────────

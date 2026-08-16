@@ -218,17 +218,44 @@ interface PrismaCall {
  * The SQL text of a `$queryRaw`-family call, with parameters collapsed to `?`.
  *
  * Two call shapes reach here. The tagged-template form (`$queryRaw`...``) is
- * invoked with a TemplateStringsArray and the interpolated values; joining the
- * static fragments yields the statement with each bind hole marked. The
- * `...Unsafe` form takes the statement as a plain string. Anything else — a
- * `Prisma.sql` fragment object, say — has no readable text, so it yields the
- * empty string and is skipped by the callers rather than guessed at.
+ * invoked with a TemplateStringsArray and the interpolated values; interleaving
+ * the static fragments with the rendered values yields the statement with each
+ * bind hole marked. The `...Unsafe` form takes the statement as a plain string.
+ *
+ * **An interpolated value may itself be SQL.** A repository that composes its
+ * WHERE — `` Prisma.join(this.conditions(businessId, f), ' AND ') `` spliced in
+ * as `${where}` — puts the tenant predicate in a `Prisma.Sql` *value*, not in
+ * the template's static text. Collapsing that to a bare `?` hid the entire
+ * clause, so the tenant check below read a correctly-scoped statement as having
+ * no `business_id` at all. Worse than the false alarm: it would equally have hidden
+ * a composed WHERE that really had dropped the tenant, which is the leak this
+ * file exists to catch. `sqlFragmentText` renders those values instead.
  */
 function rawSql(args: unknown[]): string {
-  const [first] = args;
-  if (Array.isArray(first)) return first.join('?');
+  const [first, ...values] = args;
   if (typeof first === 'string') return first;
-  return '';
+  if (!Array.isArray(first)) return '';
+  return first
+    .map((chunk, i) => (i < values.length ? `${chunk}${sqlFragmentText(values[i])}` : String(chunk)))
+    .join('');
+}
+
+/**
+ * A value interpolated into a raw template: its own SQL text if it is a
+ * `Prisma.Sql` fragment, otherwise `?` for the bind hole it becomes.
+ *
+ * `Prisma.Sql` flattens nested fragments when it is constructed, so a joined
+ * fragment's `strings` already hold the full text and its `values` are plain
+ * binds. The recursion is the belt-and-braces case, not the common one.
+ */
+function sqlFragmentText(value: unknown): string {
+  const frag = value as { strings?: unknown; values?: unknown } | null;
+  if (!frag || typeof frag !== 'object' || !Array.isArray(frag.strings)) return '?';
+
+  const binds = Array.isArray(frag.values) ? frag.values : [];
+  return frag.strings
+    .map((chunk, i) => (i < binds.length ? `${chunk}${sqlFragmentText(binds[i])}` : String(chunk)))
+    .join('');
 }
 
 /** Stands in for a `Prisma.Decimal` column on a read row. */

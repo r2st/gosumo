@@ -50,6 +50,16 @@ export interface RedisClient {
   zremrangebyrank(key: string, start: number, stop: number): Promise<number>;
   /** Liveness probe for the readiness check. */
   ping(): Promise<string>;
+  /**
+   * Server statistics, one `key:value` per line.
+   *
+   * Read by the platform-health panel for memory pressure, eviction and client
+   * counts. Optional on this interface because every existing test double
+   * predates it and a required method would break them all — an absent `info`
+   * means the panel reports Redis reachable with unknown statistics, which is
+   * the honest answer for a client that cannot be asked.
+   */
+  info?(section?: string): Promise<string>;
   quit(): Promise<'OK'>;
   /** Hard socket teardown, used when a graceful `quit()` will not come back. */
   disconnect?(): void;

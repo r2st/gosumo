@@ -16,6 +16,7 @@ import { Prisma } from '@prisma/client';
 
 import { ContactService } from './contact.service';
 import { ContactRepository } from './contact.repository';
+import { SegmentRoutingService } from './segment-routing.service';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
 const CONTACT_ID = '00000000-0000-4000-a000-000000000020';
@@ -74,6 +75,9 @@ describe('ContactService — unscored contacts and segment count fallbacks', () 
         ContactService,
         { provide: ContactRepository, useValue: repo },
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
+        // Routing resolution is covered on its own in segment-routing.spec.ts;
+        // here it only has to exist so the service can be constructed.
+        { provide: SegmentRoutingService, useValue: { resolve: jest.fn() } },
       ],
     }).compile();
 

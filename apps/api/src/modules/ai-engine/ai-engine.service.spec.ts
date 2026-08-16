@@ -27,6 +27,10 @@ import { AiEngineRepository } from './ai-engine.repository';
 import { ChannelAdapterService } from '../channel-adapter/channel-adapter.service';
 import { RealtyTenantService } from './realty/realty-tenant.service';
 import { ConversationLockService } from '../../common/services/conversation-lock.service';
+import {
+  SegmentRoutingService,
+  NO_SEGMENT_ROUTING,
+} from '../contact/segment-routing.service';
 
 // ─────────────────────────────────────────────
 // Builders
@@ -72,6 +76,8 @@ function llmResponse(intent: string, escalate = false): string {
 
 interface Harness {
   service: AiEngineService;
+  /** `SegmentRoutingService.resolve` — INHERIT unless a test says otherwise. */
+  resolveRouting: jest.Mock;
   /** Catalog size probe — `{ total }` decides whether the tenant has a catalog. */
   listItems: jest.Mock;
   /** Per-term catalog lookup; a non-empty array means the item is stocked. */
@@ -207,6 +213,13 @@ function makeHarness(): Harness {
     update: jest.fn().mockResolvedValue({}),
   };
   const prisma = { businesses } as unknown as PrismaService;
+
+  // Default: no segment expresses an opinion, which is what every tenant
+  // resolves to until someone configures routing — so every case in this file
+  // that predates segment routing scores exactly as it did.
+  const resolveRouting = jest.fn().mockResolvedValue(NO_SEGMENT_ROUTING);
+  const segmentRouting = { resolve: resolveRouting } as unknown as SegmentRoutingService;
+
   const service = new AiEngineService(
     prisma,
     contextLoader,
@@ -227,10 +240,12 @@ function makeHarness(): Harness {
     eventEmitter,
     realtyTenants,
     new ConversationLockService(),
+    segmentRouting,
   );
 
   return {
     service,
+    resolveRouting,
     listItems,
     searchCatalog,
     llmComplete,
@@ -1237,5 +1252,149 @@ describe('AiEngineService — delivery and event handling', () => {
   it('reports module status', () => {
     const h = makeHarness();
     expect(h.service.getStatus()).toEqual({ module: 'AiEngine', status: 'ready' });
+  });
+});
+
+// ─────────────────────────────────────────────
+// Segment-based routing
+// ─────────────────────────────────────────────
+//
+// The lesson from PRICE_NOT_IN_CATALOG and REFUND_OVER_LIMIT — a control
+// implemented in the calculator but never fed by the pipeline sits dark, and
+// the calculator's own unit test passes either way. These cases are end-to-end
+// through `processMessage` for that reason: they fail if the resolver stops
+// being called, if its verdict stops reaching `confidence.calculate`, or if the
+// band override stops being merged.
+
+describe('AiEngineService — segment-based routing', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  /** The same turn every other test uses as its high-confidence baseline. */
+  function autoExecutableTurn(h: Harness): void {
+    h.context.value = makeContext('kal 3 baje book karna hai');
+  }
+
+  it('escalates a turn a HUMAN_ONLY segment claims, even at auto-pilot confidence', async () => {
+    const h = makeHarness();
+    autoExecutableTurn(h);
+    h.resolveRouting.mockResolvedValue({
+      mode: 'HUMAN_ONLY',
+      segmentId: 'seg-vip',
+      segmentName: 'VIP',
+      autoExecuteThreshold: null,
+      draftReviewThreshold: null,
+      assigneeId: null,
+    });
+
+    const result = await h.service.processMessage('b1', dto);
+
+    expect(result.outcome).toBe('ESCALATED');
+    // Nothing reached the customer from the model.
+    expect(h.emit).not.toHaveBeenCalledWith('ai.auto.executed', expect.any(Object));
+  });
+
+  it('records the escalation as a forced one, so the decision says why', async () => {
+    // The reason this feeds `forceEscalate` rather than being applied after
+    // scoring: `ai_decisions` is the audit trail, and an unexplained zero score
+    // on a turn with full RAG context and a clear policy is indistinguishable
+    // from a scoring bug.
+    const h = makeHarness();
+    autoExecutableTurn(h);
+    h.resolveRouting.mockResolvedValue({
+      mode: 'HUMAN_ONLY',
+      segmentId: 'seg-vip',
+      segmentName: 'VIP',
+      autoExecuteThreshold: null,
+      draftReviewThreshold: null,
+      assigneeId: null,
+    });
+
+    await h.service.processMessage('b1', dto);
+
+    expect(h.createDecision).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'ESCALATED', confidence_score: 0 }),
+    );
+  });
+
+  it('leaves an INHERIT verdict scoring exactly as it did before routing existed', async () => {
+    const h = makeHarness();
+    autoExecutableTurn(h);
+    // NO_SEGMENT_ROUTING is the harness default; asserted explicitly because
+    // "every tenant that has configured nothing is unaffected" is the property
+    // that makes this change safe to deploy.
+    const result = await h.service.processMessage('b1', dto);
+
+    expect(result.outcome).toBe('AUTO_EXECUTED');
+  });
+
+  it('does not force escalation for AI_ONLY or AI_FIRST', async () => {
+    for (const mode of ['AI_ONLY', 'AI_FIRST'] as const) {
+      const h = makeHarness();
+      autoExecutableTurn(h);
+      h.resolveRouting.mockResolvedValue({
+        mode,
+        segmentId: 'seg-1',
+        segmentName: 'Self serve',
+        autoExecuteThreshold: null,
+        draftReviewThreshold: null,
+        assigneeId: null,
+      });
+
+      const result = await h.service.processMessage('b1', dto);
+      expect(result.outcome).toBe('AUTO_EXECUTED');
+    }
+  });
+
+  it('applies a segment auto-execute band that is stricter than the tenant default', async () => {
+    const h = makeHarness();
+    autoExecutableTurn(h);
+    h.resolveRouting.mockResolvedValue({
+      mode: 'AI_FIRST',
+      segmentId: 'seg-careful',
+      segmentName: 'Careful',
+      // Above anything the deterministic calculator can produce, so a turn that
+      // would otherwise auto-execute is held back for a human instead.
+      autoExecuteThreshold: 100,
+      draftReviewThreshold: 40,
+      assigneeId: null,
+    });
+
+    const result = await h.service.processMessage('b1', dto);
+
+    expect(result.outcome).not.toBe('AUTO_EXECUTED');
+  });
+
+  it('keeps the tenant band a segment does not override', async () => {
+    // Per-field merge: a segment that sets only draftReview must not silently
+    // reset autoExecute to a platform default the tenant never chose.
+    const h = makeHarness();
+    autoExecutableTurn(h);
+    h.businesses.findUnique.mockResolvedValue({ ai_settings: { autoExecuteThreshold: 100 } });
+    h.context.value = {
+      ...makeContext('kal 3 baje book karna hai'),
+      business: { name: 'Priya Salon', ai_settings: { autoExecuteThreshold: 100 } } as never,
+    };
+    h.resolveRouting.mockResolvedValue({
+      mode: 'AI_FIRST',
+      segmentId: 'seg-1',
+      segmentName: 'Careful',
+      autoExecuteThreshold: null,
+      draftReviewThreshold: 40,
+      assigneeId: null,
+    });
+
+    const result = await h.service.processMessage('b1', dto);
+
+    // The tenant's 100 survives the segment's partial override.
+    expect(result.outcome).not.toBe('AUTO_EXECUTED');
+  });
+
+  it('resolves routing against the conversation contact', async () => {
+    const h = makeHarness();
+    autoExecutableTurn(h);
+
+    await h.service.processMessage('b1', dto);
+
+    expect(h.resolveRouting).toHaveBeenCalledWith('b1', 'cl1');
   });
 });

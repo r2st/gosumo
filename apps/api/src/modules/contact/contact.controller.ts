@@ -123,6 +123,20 @@ export class ContactController {
     return this.contactService.updateContact(tenantId, id, dto);
   }
 
+  @Get(':id/routing')
+  @ApiOperation({
+    summary: 'Which segment routing rule currently applies to this contact',
+    description:
+      'The same resolution the AI pipeline performs on every inbound message. Answers ' +
+      '"why did this customer get a human?" without reading pipeline logs.',
+  })
+  @ApiResponse({ status: 200, description: 'The routing decision in force for this contact' })
+  @ApiParam({ name: 'id', description: 'Contact (client) UUID' })
+  @ApiResponse({ status: 404, description: 'Contact not found' })
+  async getRouting(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) id: string) {
+    return this.contactService.resolveRouting(tenantId, id);
+  }
+
   @Post(':id/tags')
   @ApiOperation({ summary: 'Add tags to a contact' })
   @ApiResponse({ status: 201, description: 'The created tag' })

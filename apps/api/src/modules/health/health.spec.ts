@@ -11,6 +11,7 @@ import { PrismaService } from '../../common/services/prisma.service';
 import type { RedisClient } from '../auth/redis.provider';
 import { HealthService } from './health.service';
 import { HealthController } from './health.controller';
+import type { PlatformHealthService } from './platform-health.service';
 import type { QueueTelemetryService } from '../../common/queue/queue-telemetry.service';
 import type { QdrantClient } from '../ai-engine/rag/qdrant.client';
 import { queryTimingRecorder } from '../../common/services/query-timing.middleware';
@@ -55,6 +56,15 @@ function makeResponse(): Response & { statusCode: number } {
     },
   };
   return res as unknown as Response & { statusCode: number };
+}
+
+/**
+ * The controller's second dependency. Only `/health/platform` touches it, and
+ * nothing below probes that route — these tests are about what a balancer sees
+ * on liveness and readiness, which must never reach the operator panel.
+ */
+function makePlatformHealth(): PlatformHealthService {
+  return { report: jest.fn() } as unknown as PlatformHealthService;
 }
 
 describe('HealthService — liveness', () => {
@@ -326,14 +336,14 @@ describe('HealthService — query timing', () => {
 describe('HealthController', () => {
   it('returns the liveness report', () => {
     const { service } = makeService();
-    const controller = new HealthController(service);
+    const controller = new HealthController(service, makePlatformHealth());
 
     expect(controller.liveness().status).toBe('ok');
   });
 
   it('answers 200 when ready', async () => {
     const { service } = makeService();
-    const controller = new HealthController(service);
+    const controller = new HealthController(service, makePlatformHealth());
     const res = makeResponse();
 
     const report = await controller.readiness(res);
@@ -348,7 +358,7 @@ describe('HealthController', () => {
     const { service } = makeService({
       query: jest.fn().mockRejectedValue(new Error('pg down')),
     });
-    const controller = new HealthController(service);
+    const controller = new HealthController(service, makePlatformHealth());
     const res = makeResponse();
 
     const report = await controller.readiness(res);
@@ -606,7 +616,7 @@ describe('HealthService — vector store never gates readiness', () => {
     const { service } = makeService({ isReachable: jest.fn().mockResolvedValue(false) });
     const res = makeResponse();
 
-    await new HealthController(service).readiness(res);
+    await new HealthController(service, makePlatformHealth()).readiness(res);
 
     expect(res.statusCode).toBe(HttpStatus.OK);
   });

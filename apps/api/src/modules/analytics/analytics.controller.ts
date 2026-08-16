@@ -14,6 +14,7 @@ import {
   ClientReportDto,
   ClientRetentionMetricsDto,
   ConfidenceDistributionDto,
+  ConversationQualityDto,
   ConversationReportDto,
   DashboardMetricsDto,
   EscalationReasonDto,
@@ -35,6 +36,7 @@ import {
  *   /dashboard                — high-level "today" summary (Redis-cached 5m)
  *   /conversations            — volume, resolution, AI-vs-human split, by channel
  *   /conversations/response-times — first-response + resolution latency
+ *   /conversations/quality    — resolution rate, FCR, latency percentiles, CSAT (+proxy)
  *   /revenue                  — gross/net revenue, AOV, time series
  *   /revenue/top-products     — best sellers by revenue
  *   /clients/acquisition      — new vs returning, by channel
@@ -146,6 +148,24 @@ export class AnalyticsController {
     @Query() query: AnalyticsRangeQueryDto,
   ): Promise<ResponseTimeMetricsDto> {
     return this.analyticsService.getResponseTimeMetrics(tenantId, query);
+  }
+
+  @Get('conversations/quality')
+  @ApiOperation({
+    summary: 'Conversation quality: resolution rate, first-contact resolution, latency, CSAT',
+    description:
+      'CSAT is reported twice: `explicit` over conversations that were actually rated, and ' +
+      '`proxy` over resolved conversations that were not, inferred from escalation, SLA ' +
+      'breaches, resolution time and how often the customer had to repeat themselves. The ' +
+      "proxy's parameters are returned alongside the score.",
+  })
+  @ApiResponse({ status: 200, description: 'Conversation quality metrics' })
+  @ApiResponse({ status: 422, description: 'Date range exceeds 365 days' })
+  async getConversationQuality(
+    @TenantId() tenantId: string,
+    @Query() query: AnalyticsRangeQueryDto,
+  ): Promise<ConversationQualityDto> {
+    return this.analyticsService.getConversationQualityMetrics(tenantId, query);
   }
 
   // ─────────────────────────────────────────────

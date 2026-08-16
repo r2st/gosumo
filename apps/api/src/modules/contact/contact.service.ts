@@ -1,10 +1,23 @@
-import { Injectable, Logger, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import type { clients, segments } from '@prisma/client';
 import { generateId, generateCorrelationId } from '@gosumo/shared';
 import type { ContactTaggedEvent } from '@gosumo/shared';
-import { ContactRepository, ContactListFilters, SegmentFilter } from './contact.repository';
+import {
+  ContactRepository,
+  ContactListFilters,
+  SegmentFilter,
+  type SegmentRouting,
+  type SegmentRoutingMode,
+} from './contact.repository';
+import { SegmentRoutingService } from './segment-routing.service';
 import {
   ContactResponseDto,
   PaginatedContactsDto,
@@ -14,6 +27,8 @@ import {
   UpdateSegmentDto,
   SegmentResponseDto,
   SegmentFilterDto,
+  SegmentRoutingDto,
+  ResolvedRoutingDto,
 } from './dto';
 
 const MAX_TAG_LENGTH = 50;
@@ -44,6 +59,7 @@ export class ContactService {
   constructor(
     private readonly repository: ContactRepository,
     private readonly eventEmitter: EventEmitter2,
+    private readonly segmentRouting: SegmentRoutingService,
   ) {}
 
   // ───────────────────────────────────────────────────────────────────
@@ -158,8 +174,87 @@ export class ContactService {
       description: dto.description,
       filter: dto.filter as SegmentFilter,
       isActive: dto.isActive,
+      routing: this.validateRouting(dto.routing, null),
     });
     return this.toSegmentDto(businessId, segment);
+  }
+
+  /**
+   * Check a routing payload against the invariant the confidence bands carry,
+   * and translate it to the repository's shape.
+   *
+   * `autoExecute >= draftReview` is the same rule `AiEngineService` enforces on
+   * the tenant-level bands, and for the same reason: inverted, the review
+   * window is empty and everything the model produces either auto-sends or
+   * escalates, with nothing drafted for a human in between. A partial update
+   * can invert them one field at a time, so the check is made against the
+   * merged result rather than the payload.
+   *
+   * A band left unset on the segment inherits the tenant's, so a payload that
+   * sets only one of the two is checked against `current` and not against a
+   * default that may not be what this tenant uses.
+   */
+  private validateRouting(
+    routing: SegmentRoutingDto | undefined,
+    current: segments | null,
+  ): Partial<SegmentRouting> | undefined {
+    if (!routing) return undefined;
+
+    const merged = {
+      autoExecute:
+        routing.autoExecuteThreshold !== undefined
+          ? routing.autoExecuteThreshold
+          : current?.auto_execute_threshold ?? null,
+      draftReview:
+        routing.draftReviewThreshold !== undefined
+          ? routing.draftReviewThreshold
+          : current?.draft_review_threshold ?? null,
+    };
+
+    if (
+      merged.autoExecute !== null &&
+      merged.draftReview !== null &&
+      merged.autoExecute < merged.draftReview
+    ) {
+      throw new BadRequestException(
+        `autoExecuteThreshold (${merged.autoExecute}) must be greater than or equal to ` +
+          `draftReviewThreshold (${merged.draftReview}) — otherwise no response is ever drafted ` +
+          `for review`,
+      );
+    }
+
+    return {
+      ...(routing.mode !== undefined ? { mode: routing.mode as SegmentRoutingMode } : {}),
+      ...(routing.priority !== undefined ? { priority: routing.priority } : {}),
+      ...(routing.autoExecuteThreshold !== undefined
+        ? { autoExecuteThreshold: routing.autoExecuteThreshold }
+        : {}),
+      ...(routing.draftReviewThreshold !== undefined
+        ? { draftReviewThreshold: routing.draftReviewThreshold }
+        : {}),
+      ...(routing.assigneeId !== undefined ? { assigneeId: routing.assigneeId } : {}),
+    };
+  }
+
+  /**
+   * Which routing rule applies to one contact right now.
+   *
+   * The same call the AI pipeline makes on every inbound message, exposed so an
+   * operator can answer "why did this customer get a human?" without reading
+   * the pipeline's logs.
+   */
+  async resolveRouting(businessId: string, clientId: string): Promise<ResolvedRoutingDto> {
+    await this.getContactEntity(businessId, clientId); // 404 guard
+    const decision = await this.segmentRouting.resolve(businessId, clientId);
+    return {
+      clientId,
+      mode: decision.mode,
+      segmentId: decision.segmentId,
+      segmentName: decision.segmentName,
+      autoExecuteThreshold: decision.autoExecuteThreshold,
+      draftReviewThreshold: decision.draftReviewThreshold,
+      assigneeId: decision.assigneeId,
+    };
   }
 
   async listSegments(businessId: string): Promise<SegmentResponseDto[]> {
@@ -200,7 +295,7 @@ export class ContactService {
   }
 
   async updateSegment(businessId: string, id: string, dto: UpdateSegmentDto): Promise<SegmentResponseDto> {
-    await this.getSegmentEntity(businessId, id);
+    const current = await this.getSegmentEntity(businessId, id);
 
     if (dto.name) {
       const existing = await this.repository.findSegmentByName(businessId, dto.name);
@@ -214,6 +309,7 @@ export class ContactService {
       description: dto.description,
       filter: dto.filter as SegmentFilter | undefined,
       isActive: dto.isActive,
+      routing: this.validateRouting(dto.routing, current),
     });
     return this.toSegmentDto(businessId, updated);
   }
@@ -289,6 +385,13 @@ export class ContactService {
       filter: s.filter as unknown as SegmentFilterDto,
       isActive: s.is_active,
       memberCount,
+      routing: {
+        mode: s.routing_mode as SegmentResponseDto['routing']['mode'],
+        priority: s.routing_priority,
+        autoExecuteThreshold: s.auto_execute_threshold,
+        draftReviewThreshold: s.draft_review_threshold,
+        assigneeId: s.routing_assignee_id,
+      },
       createdAt: s.created_at.toISOString(),
       updatedAt: s.updated_at.toISOString(),
     };

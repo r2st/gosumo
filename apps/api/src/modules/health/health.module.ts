@@ -3,6 +3,7 @@ import { AuthModule } from '../auth/auth.module';
 import { QdrantClient } from '../ai-engine/rag/qdrant.client';
 import { HealthController } from './health.controller';
 import { HealthService } from './health.service';
+import { PlatformHealthService } from './platform-health.service';
 
 /**
  * HealthModule — liveness and readiness probes.
@@ -22,7 +23,7 @@ import { HealthService } from './health.service';
 @Module({
   imports: [AuthModule],
   controllers: [HealthController],
-  providers: [HealthService, QdrantClient],
-  exports: [HealthService],
+  providers: [HealthService, PlatformHealthService, QdrantClient],
+  exports: [HealthService, PlatformHealthService],
 })
 export class HealthModule {}

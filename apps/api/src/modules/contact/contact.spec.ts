@@ -13,10 +13,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { NotFoundException, ConflictException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, SegmentRoutingMode } from '@prisma/client';
 
 import { ContactService } from './contact.service';
 import { ContactRepository, SegmentFilter } from './contact.repository';
+import { SegmentRoutingService } from './segment-routing.service';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
 const CONTACT_ID = '00000000-0000-4000-a000-000000000020';
@@ -57,6 +58,13 @@ function makeSegment(overrides: Record<string, unknown> = {}) {
     description: null,
     filter: { minLtv: 1000 },
     is_active: true,
+    // Routing defaults — a segment that expresses no opinion, which is what
+    // every segment created before routing existed reads as.
+    routing_mode: SegmentRoutingMode.INHERIT,
+    routing_priority: 0,
+    auto_execute_threshold: null,
+    draft_review_threshold: null,
+    routing_assignee_id: null,
     created_at: new Date('2026-06-01T00:00:00Z'),
     updated_at: new Date('2026-06-01T00:00:00Z'),
     deleted_at: null,
@@ -93,6 +101,9 @@ describe('ContactService', () => {
         ContactService,
         { provide: ContactRepository, useValue: repo },
         { provide: EventEmitter2, useValue: emitter },
+        // Routing resolution is covered on its own in segment-routing.spec.ts;
+        // here it only has to exist so the service can be constructed.
+        { provide: SegmentRoutingService, useValue: { resolve: jest.fn() } },
       ],
     }).compile();
 

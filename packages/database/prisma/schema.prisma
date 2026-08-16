@@ -1031,6 +1031,15 @@ model conversations {
   // orders by snoozed_until; the status index above stops one column short and
   // left it sorting every snoozed row to return one batch.
   @@index([business_id, status, snoozed_until])
+  // The conversation-quality aggregates (resolution rate, first-contact
+  // resolution, CSAT proxy) all scope to "RESOLVED within [from, to)". The
+  // status index above leads with the right two columns and then sorts on
+  // last_message_at, so each of them read the tenant's whole resolved history.
+  @@index([business_id, status, resolved_at(sort: Desc)])
+  // The CSAT proxy's explicit arm. Partial in migration 0042 (most
+  // conversations never receive a score); Prisma cannot express the WHERE, so
+  // the index it would diff is the unfiltered one — kept identical in name.
+  @@index([business_id, csat_submitted_at(sort: Desc)])
   // Conversation search — same unanchored-ILIKE story as clients.
   @@index([subject(ops: raw("gin_trgm_ops"))], type: Gin)
   @@index([current_topic(ops: raw("gin_trgm_ops"))], type: Gin)
@@ -1096,6 +1105,18 @@ model messages {
   /// Extracted text for full-text search (denormalized)
   text_content String? @db.Text
 
+  /// `to_tsvector('simple', text_content)`, maintained by Postgres as a
+  /// GENERATED ... STORED column — see migration 0042 for why 'simple' and not
+  /// 'english'.
+  ///
+  /// Prisma has no tsvector type, so it is `Unsupported`: the generated client
+  /// omits it from every input and output type, which is exactly right. It is
+  /// database-maintained, so nothing may write it, and conversation search
+  /// reads it through `$queryRaw` where the `@@` operator and `ts_rank_cd` are
+  /// available. Declared here only so `prisma migrate diff` does not propose
+  /// dropping the column.
+  search_vector Unsupported("tsvector")?
+
   metadata Json @default("{}") @db.JsonB
 
   sent_at    DateTime? @db.Timestamptz
@@ -1133,6 +1154,10 @@ model messages {
   // table. This is the largest and fastest-growing table in the schema, so it
   // is also where the unindexed scan hurts most.
   @@index([text_content(ops: raw("gin_trgm_ops"))], type: Gin)
+  // Conversation search reads `(business_id, search_vector)` as one composite
+  // GIN index (btree_gin). Prisma cannot express an index over an Unsupported
+  // column, so that one lives only in migration 0042 — same arrangement as the
+  // JSONB threading index from 0034.
   @@map("messages")
 }
 
@@ -2519,6 +2544,25 @@ model audit_logs {
 
 /// A saved contact segment — a dynamic filter over `clients`, used to target
 /// campaigns and to group the contact list in the dashboard.
+/// How a segment answers "may the AI handle these contacts by itself?".
+///
+/// INHERIT is the default and means the segment expresses no opinion — the
+/// tenant's own confidence bands decide, exactly as they did before segments
+/// carried routing. It is an explicit value rather than a NULL so the resolver
+/// has one thing to compare, and so a segment can be returned to neutral
+/// without discarding the thresholds and assignee configured alongside it.
+enum SegmentRoutingMode {
+  INHERIT
+  /// Always let the AI answer, subject to its confidence bands.
+  AI_ONLY
+  /// AI answers first, but the band for auto-execution can be raised via
+  /// `auto_execute_threshold` / `draft_review_threshold`.
+  AI_FIRST
+  /// Never auto-execute. Every turn from a matching contact is escalated to a
+  /// human, whatever the model's confidence.
+  HUMAN_ONLY
+}
+
 model segments {
   id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   business_id String  @db.Uuid
@@ -2527,10 +2571,32 @@ model segments {
 
   /// Filter evaluated against `clients` at query time:
   /// { tags?: string[], channels?: ChannelType[], minLtv?, maxChurnRisk?,
-  ///   minEngagement?, hasOrders?: boolean }
+  ///   minEngagement?, hasOrders?: boolean, minTotalOrders?, maxTotalOrders?,
+  ///   minTotalSpentPaise?, maxTotalSpentPaise?, activeWithinDays?,
+  ///   inactiveForDays?, minConversations?, newerThanDays?, olderThanDays? }
   filter Json @default("{}") @db.JsonB
 
   is_active Boolean @default(true)
+
+  /// Whether contacts in this segment are handled by the AI or by a person.
+  routing_mode SegmentRoutingMode @default(INHERIT)
+
+  /// Tie-break when a contact matches several routing segments. Higher wins;
+  /// equal priorities fall back to the older segment, so the resolution is
+  /// total and does not change when an unrelated segment is edited.
+  routing_priority Int @default(0)
+
+  /// Optional per-segment confidence bands (0–100), overriding the tenant's.
+  /// Null means "use the tenant's". A VIP segment raises `auto_execute`; a
+  /// low-risk segment can lower it.
+  auto_execute_threshold Int?
+  draft_review_threshold Int?
+
+  /// FK to team_members — the agent conversations from this segment are
+  /// assigned to when it routes to a human. Deliberately not a relation: the
+  /// member may be removed while the segment survives, and a dangling id is
+  /// resolved to "unassigned" at read time rather than blocking the delete.
+  routing_assignee_id String? @db.Uuid
 
   created_at DateTime  @default(now()) @db.Timestamptz
   updated_at DateTime  @updatedAt @db.Timestamptz
@@ -2540,6 +2606,10 @@ model segments {
 
   @@unique([business_id, name])
   @@index([business_id, is_active])
+  // The routing resolver runs on the inbound path of every message from a
+  // known client and reads only the segments that express an opinion, highest
+  // priority first.
+  @@index([business_id, routing_mode, routing_priority(sort: Desc)])
   @@map("segments")
 }
 

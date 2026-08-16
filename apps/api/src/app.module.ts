@@ -50,6 +50,7 @@ import { CannedResponseModule } from './modules/canned-response/canned-response.
 import { SlaModule } from './modules/sla/sla.module';
 import { AgentPerformanceModule } from './modules/agent-performance/agent-performance.module';
 import { WebhookLogModule } from './modules/webhook-log/webhook-log.module';
+import { ConversationSearchModule } from './modules/conversation-search/conversation-search.module';
 import { HealthModule } from './modules/health/health.module';
 
 @Module({
@@ -170,6 +171,7 @@ import { HealthModule } from './modules/health/health.module';
     SlaModule,
     AgentPerformanceModule,
     WebhookLogModule,
+    ConversationSearchModule,
   ],
 })
 export class AppModule {}

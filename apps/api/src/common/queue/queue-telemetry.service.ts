@@ -36,6 +36,108 @@ export interface QueueDepthBreach extends QueueDepth {
   threshold: number;
 }
 
+/** Depth plus how fast this process is actually working the queue. */
+export interface QueueThroughput extends QueueDepth {
+  completedInWindow: number;
+  failedInWindow: number;
+  /** How much of the window has actually elapsed — see {@link RollingCounter}. */
+  windowMinutes: number;
+  completedPerMinute: number;
+  failedPerMinute: number;
+  /** `stalled` means backlog with nothing moving — the one worth alerting on. */
+  state: 'draining' | 'stalled' | 'idle';
+}
+
+/** How far back throughput is measured. */
+export const THROUGHPUT_WINDOW_MINUTES = 5;
+
+/** Two decimals, so a rate reads as a rate and not as float dust. */
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * A count over a sliding window, kept as one bucket per minute.
+ *
+ * Buckets rather than timestamps because the thing being counted is every job
+ * this process completes — at a few hundred a minute, retaining a timestamp
+ * each would be an unbounded array in a long-lived process, which is the
+ * memory leak this class exists to not be. Fixed buckets cost
+ * {@link THROUGHPUT_WINDOW_MINUTES} numbers per queue, forever.
+ *
+ * Deliberately not backed by Redis or Bull's own metrics: this counts what
+ * *this* process did, which is the number that distinguishes "the cluster is
+ * busy" from "this instance's workers are dead".
+ */
+class RollingCounter {
+  private readonly completedBuckets: number[];
+  private readonly failedBuckets: number[];
+  private lastMinute: number;
+  private readonly startedAtMs: number;
+
+  constructor(
+    private readonly now: () => number = Date.now,
+    private readonly windowSize: number = THROUGHPUT_WINDOW_MINUTES,
+  ) {
+    this.completedBuckets = new Array<number>(windowSize).fill(0);
+    this.failedBuckets = new Array<number>(windowSize).fill(0);
+    this.startedAtMs = now();
+    this.lastMinute = Math.floor(this.startedAtMs / 60_000);
+  }
+
+  recordCompleted(): void {
+    this.roll();
+    this.completedBuckets[this.index()] = (this.completedBuckets[this.index()] ?? 0) + 1;
+  }
+
+  recordFailed(): void {
+    this.roll();
+    this.failedBuckets[this.index()] = (this.failedBuckets[this.index()] ?? 0) + 1;
+  }
+
+  completed(): number {
+    this.roll();
+    return this.completedBuckets.reduce((a, b) => a + b, 0);
+  }
+
+  failed(): number {
+    this.roll();
+    return this.failedBuckets.reduce((a, b) => a + b, 0);
+  }
+
+  /**
+   * The window actually covered so far, in minutes.
+   *
+   * A process up for 40 seconds has not observed five minutes of queue
+   * behaviour, and dividing its two completed jobs by five would report a rate
+   * four times lower than reality — right after a restart, which is exactly
+   * when someone is watching. Capped at the window size once the process is
+   * older than it.
+   */
+  windowMinutes(): number {
+    const elapsed = (this.now() - this.startedAtMs) / 60_000;
+    return Math.max(0, Math.min(this.windowSize, elapsed));
+  }
+
+  private index(): number {
+    return this.lastMinute % this.windowSize;
+  }
+
+  /** Zero every bucket the clock has passed since the last write. */
+  private roll(): void {
+    const minute = Math.floor(this.now() / 60_000);
+    if (minute === this.lastMinute) return;
+
+    const elapsed = Math.min(minute - this.lastMinute, this.windowSize);
+    for (let i = 1; i <= elapsed; i++) {
+      const slot = (this.lastMinute + i) % this.windowSize;
+      this.completedBuckets[slot] = 0;
+      this.failedBuckets[slot] = 0;
+    }
+    this.lastMinute = minute;
+  }
+}
+
 /**
  * Backlog size that means work is arriving faster than it is being done.
  *
@@ -50,12 +152,15 @@ export const QUEUE_DEPTH_WARN_THRESHOLD = 500;
 export class QueueTelemetryService implements OnApplicationBootstrap {
   private readonly logger = new Logger(QueueTelemetryService.name);
   private readonly queues: Queue[] = [];
+  /** Per-queue throughput, by queue name. */
+  private readonly counters = new Map<string, RollingCounter>();
 
   constructor(private readonly discovery: DiscoveryService) {}
 
   onApplicationBootstrap(): void {
     for (const queue of discoverQueues(this.discovery)) {
       this.queues.push(queue);
+      this.counters.set(queue.name, new RollingCounter());
       this.attach(queue);
     }
     this.logger.log(
@@ -73,7 +178,15 @@ export class QueueTelemetryService implements OnApplicationBootstrap {
    * is an error, because only the second one means work was lost.
    */
   private attach(queue: Queue): void {
+    // Counted, not logged. A completed job is the ordinary case and logging it
+    // would bury every line that matters; the count is what turns a queue depth
+    // into a verdict — see `throughput()`.
+    queue.on('completed', () => {
+      this.counters.get(queue.name)?.recordCompleted();
+    });
+
     queue.on('failed', (job, err) => {
+      this.counters.get(queue.name)?.recordFailed();
       const attempts = job?.attemptsMade ?? 0;
       const max = job?.opts?.attempts ?? 1;
       const detail =
@@ -144,5 +257,57 @@ export class QueueTelemetryService implements OnApplicationBootstrap {
     return depths
       .filter((d) => d.waiting > threshold)
       .map((d) => ({ ...d, threshold }));
+  }
+
+  /**
+   * Depth plus **throughput** for every watched queue.
+   *
+   * Depth alone cannot distinguish the two situations an operator most needs
+   * to tell apart. A queue sitting at 400 waiting while completing 60 jobs a
+   * minute is a busy system that will drain; a queue sitting at 400 while
+   * completing zero is a dead worker. The counts are identical and the
+   * verdicts are opposite, so the backlog number on its own has never been
+   * enough to act on.
+   *
+   * Rates come from this process only, and the report says so — with several
+   * instances behind a load balancer, each sees the jobs it personally ran.
+   * That is the honest number and also the useful one: "this instance is
+   * processing nothing while the queue is deep" is precisely the fault that a
+   * cluster-wide average would hide.
+   */
+  async throughput(): Promise<QueueThroughput[]> {
+    const depths = await this.depths();
+    return depths.map((depth) => {
+      const counter = this.counters.get(depth.name);
+      const windowMinutes = counter ? counter.windowMinutes() : 0;
+      const completed = counter?.completed() ?? 0;
+      const failed = counter?.failed() ?? 0;
+
+      return {
+        ...depth,
+        completedInWindow: completed,
+        failedInWindow: failed,
+        windowMinutes,
+        // Guarded rather than divided by a possibly-zero window: a process that
+        // booted a second ago has no rate, and reporting one computed over
+        // milliseconds of uptime would read as a wildly busy queue.
+        completedPerMinute: windowMinutes > 0 ? round2(completed / windowMinutes) : 0,
+        failedPerMinute: windowMinutes > 0 ? round2(failed / windowMinutes) : 0,
+        /**
+         * Draining, stalled, or idle.
+         *
+         * "stalled" is the one worth alerting on and is deliberately narrow: a
+         * backlog *and* nothing completing. Either alone is normal — a deep
+         * queue that is moving will drain, and an idle worker with an empty
+         * queue is a Tuesday.
+         */
+        state:
+          depth.waiting + depth.active === 0
+            ? ('idle' as const)
+            : completed > 0 || depth.active > 0
+              ? ('draining' as const)
+              : ('stalled' as const),
+      };
+    });
   }
 }

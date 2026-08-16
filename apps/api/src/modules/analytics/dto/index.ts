@@ -192,6 +192,80 @@ export interface ConversationMetricsDto {
   volumeSeries: TimeSeriesPointDto[];
 }
 
+/**
+ * Conversation quality: resolution, first-contact resolution, latency, and the
+ * CSAT estimate. Served by `GET /analytics/conversations/quality`.
+ */
+export interface ConversationQualityDto {
+  range: ResolvedRangeDto;
+  volume: {
+    /** Opened in the window. */
+    created: number;
+    /** Closed in the window — a different cohort, deliberately. */
+    resolved: number;
+    open: number;
+    pendingHuman: number;
+    escalated: number;
+  };
+  /** Resolved-in-window / created-in-window, 0–100. May exceed 100 while a
+   * backlog is being cleared, which is a real thing to be able to see. */
+  resolutionRate: number;
+  firstContactResolution: {
+    /** Resolved with exactly one inbound message and no human takeover. */
+    count: number;
+    /** Of resolved conversations, 0–100. */
+    rate: number;
+    /** Resolved conversations the AI escalated at some point. */
+    escalatedCount: number;
+  };
+  responseTime: {
+    avgFirstResponseSeconds: number;
+    p50FirstResponseSeconds: number;
+    p90FirstResponseSeconds: number;
+    sampleSize: number;
+  };
+  resolutionTime: {
+    avgSeconds: number;
+    p50Seconds: number;
+    p90Seconds: number;
+  };
+  csat: {
+    /** Conversations that received a real rating. */
+    explicitResponses: number;
+    explicitAverage: number | null;
+    /** Resolved-but-unrated conversations scored by the proxy. */
+    proxySampled: number;
+    proxyAverage: number | null;
+    combinedAverage: number | null;
+    combinedSampled: number;
+    /** 1–5 histogram over explicit and proxy scores together. */
+    distribution: Record<'1' | '2' | '3' | '4' | '5', number>;
+    /**
+     * The proxy's parameters, returned with every response.
+     *
+     * A derived score whose model is invisible is a score nobody can argue
+     * with. These are the four numbers that decide it — see
+     * `conversation-quality.util.ts`.
+     */
+    proxyModel: {
+      maxScore: number;
+      slowHours: number;
+      chattyInboundThreshold: number;
+      penaltyPerSignal: number;
+    };
+  };
+  byChannel: ChannelQualityDto[];
+}
+
+export interface ChannelQualityDto {
+  channel: ChannelType;
+  created: number;
+  resolved: number;
+  resolutionRate: number;
+  firstContactResolutionRate: number;
+  avgResolutionSeconds: number;
+}
+
 export interface ChannelVolumeDto {
   channel: ChannelType;
   count: number;
