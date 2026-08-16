@@ -721,6 +721,13 @@ model businesses {
   sla_policies                   sla_policies[]
   sla_breaches                   sla_breaches[]
   api_keys                       api_keys[]
+  ai_quality_metrics             ai_quality_metrics[]
+  payment_reconciliation_runs    payment_reconciliation_runs[]
+  payment_discrepancies          payment_discrepancies[]
+  notification_template_versions notification_template_versions[]
+  data_retention_policies        data_retention_policies[]
+  data_archive_records           data_archive_records[]
+  data_retention_runs            data_retention_runs[]
 
   @@index([slug])
   @@index([email])
@@ -1193,6 +1200,14 @@ model notification_templates {
   language  String  @default("en") @db.VarChar(10)
   is_active Boolean @default(true)
 
+  /// `version` of the ACTIVE row in `notification_template_versions`, or null
+  /// for a template that has never been versioned. Denormalized so the common
+  /// read ("what will a dispatch bind to?") does not need the join.
+  active_version Int? @db.Integer
+  /// Highest version number ever cut for this template. The allocator for the
+  /// next one — never decremented, so a deleted version cannot be reused.
+  latest_version Int  @default(0) @db.Integer
+
   created_at DateTime  @default(now()) @db.Timestamptz
   updated_at DateTime  @updatedAt @db.Timestamptz
   deleted_at DateTime? @db.Timestamptz
@@ -1201,6 +1216,7 @@ model notification_templates {
   channel_account channel_accounts? @relation(fields: [channel_account_id], references: [id])
 
   notifications notifications[]
+  versions      notification_template_versions[]
 
   @@unique([business_id, channel, name])
   @@index([business_id, channel, is_active])
@@ -1220,6 +1236,14 @@ model notifications {
 
   /// Template used to render the body (null for ad-hoc/raw notifications).
   template_id String? @db.Uuid
+  /// The exact template snapshot this notification is bound to.
+  ///
+  /// Set at creation from the template's ACTIVE version and never changed, so
+  /// a template edited while this row is queued still renders as it did when
+  /// the send was accepted. Null for ad-hoc bodies and for rows written before
+  /// versioning existed — `renderFromVersion` falls back to the live template
+  /// for those, which is the pre-versioning behaviour.
+  template_version_id String? @db.Uuid
   /// Domain event that triggered this notification, e.g. "booking.reminder".
   event_type  String? @db.VarChar(100)
 
@@ -1261,6 +1285,8 @@ model notifications {
   business businesses              @relation(fields: [business_id], references: [id], onDelete: Cascade)
   client   clients?                @relation(fields: [client_id], references: [id])
   template notification_templates? @relation(fields: [template_id], references: [id])
+
+  template_version notification_template_versions? @relation(fields: [template_version_id], references: [id])
 
   @@unique([business_id, dedupe_key], map: "uq_notifications_business_dedupe")
   @@index([business_id, status, created_at(sort: Desc)])
@@ -3692,4 +3718,451 @@ model api_keys {
 
   @@index([business_id, created_at(sort: Desc)])
   @@map("api_keys")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PRODUCTION HARDENING
+//
+// Five surfaces that were operable but not observable: AI decision quality,
+// gateway-vs-ledger payment truth, notification storms, template churn under
+// in-flight sends, and data that outlives its purpose.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────
+// 1. AI response quality monitoring
+// ─────────────────────────────────────────────
+
+/// Rollup granularity for {@link ai_quality_metrics}.
+enum AiQualityBucket {
+  HOUR
+  DAY
+}
+
+/// Pre-aggregated AI decision quality, one row per
+/// (business, channel, granularity, bucket).
+///
+/// `ai_decisions` already holds every fact this table reports, but answering
+/// "what is our auto-execute rate on WhatsApp this week" from it means a
+/// full scan plus a join to `conversations` for the channel, on the hottest
+/// write table the AI pipeline has. The rollup is written once per closed
+/// bucket by a scheduled job and read cheaply forever after.
+///
+/// Channel is NOT nullable and there is no "all channels" row: a NULL in a
+/// unique constraint compares distinct in Postgres, so an aggregate row would
+/// have no upsert key and the job would duplicate it on every re-run. Cross-
+/// channel totals are summed at read time from the per-channel rows instead.
+model ai_quality_metrics {
+  id          String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String          @db.Uuid
+  channel     ChannelType
+  bucket      AiQualityBucket
+  /// Inclusive start of the bucket, truncated to the granularity, UTC.
+  bucket_start DateTime       @db.Timestamptz
+
+  /// Total decisions in the bucket. Denominator for every rate below.
+  decisions Int @default(0)
+
+  // Outcome tallies — mirror AiDecisionOutcome one-for-one so a new outcome
+  // is a visible schema change rather than a silently uncounted decision.
+  auto_executed   Int @default(0)
+  sent_for_review Int @default(0)
+  escalated       Int @default(0)
+  overridden      Int @default(0)
+  expired         Int @default(0)
+
+  /// Decisions a human later overrode (`ai_decisions.was_overridden`).
+  ///
+  /// Not the same as `overridden`, which counts the OVERRIDDEN_BY_HUMAN
+  /// outcome. A decision can auto-execute and be corrected afterwards; that
+  /// is the expensive kind of wrong and it is invisible in the outcome tally.
+  human_overrides Int @default(0)
+
+  /// Confidence histogram: exactly 10 deciles, [0,0.1) … [0.9,1.0].
+  /// A histogram rather than a mean because the routing thresholds (0.70,
+  /// 0.90) are cliffs — a mean of 0.80 is either a healthy spread or every
+  /// decision piled against the review boundary, and those need opposite fixes.
+  confidence_deciles Json @default("[0,0,0,0,0,0,0,0,0,0]") @db.JsonB
+
+  /// Sum of confidence scores; with `decisions` this gives the mean without
+  /// storing a pre-divided value that cannot be re-aggregated across buckets.
+  confidence_sum Decimal  @default(0) @db.Decimal(14, 4)
+  confidence_min Decimal? @db.Decimal(5, 4)
+  confidence_max Decimal? @db.Decimal(5, 4)
+
+  // Latency. p50/p95 are computed with percentile_disc over the bucket's raw
+  // rows, so they are exact for the bucket. They are deliberately NOT summed
+  // across buckets at read time — a percentile of percentiles is not a
+  // percentile — which is why latency_sum_ms and latency_count are also kept.
+  latency_count  Int  @default(0)
+  latency_sum_ms Int  @default(0)
+  latency_p50_ms Int?
+  latency_p95_ms Int?
+  latency_max_ms Int?
+
+  prompt_tokens     Int @default(0)
+  completion_tokens Int @default(0)
+
+  /// When the rollup job wrote this row. A re-run overwrites the counts and
+  /// bumps this, so a stale bucket is distinguishable from an empty one.
+  computed_at DateTime @default(now()) @db.Timestamptz
+  created_at  DateTime @default(now()) @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@unique([business_id, bucket, bucket_start, channel], map: "uq_ai_quality_bucket")
+  @@index([business_id, bucket, bucket_start(sort: Desc)])
+  // The rollup job asks "which buckets have I not computed", tenant unknown.
+  @@index([bucket, bucket_start(sort: Desc)])
+  @@map("ai_quality_metrics")
+}
+
+// ─────────────────────────────────────────────
+// 2. Payment reconciliation
+// ─────────────────────────────────────────────
+
+enum ReconciliationRunStatus {
+  RUNNING
+  COMPLETED
+  /// Aborted — the gateway was unreachable or the run threw. Partial counts.
+  FAILED
+}
+
+/// What kind of gateway-vs-ledger disagreement was found.
+enum PaymentDiscrepancyType {
+  /// Gateway says paid, we do not have it in a terminal successful state.
+  STATUS_MISMATCH
+  /// Gateway captured a different amount than we recorded — the partial-payment
+  /// case, and also the over-capture case (delta is signed).
+  AMOUNT_MISMATCH
+  /// Gateway settled in a different currency than the local record.
+  CURRENCY_MISMATCH
+  /// We hold a SUCCESS payment the gateway has no record of.
+  MISSING_AT_GATEWAY
+  /// The gateway has a captured payment with no local row at all.
+  MISSING_LOCALLY
+  /// Local refund is non-terminal while the gateway has moved on (or the
+  /// reverse) — money is in flight and neither side is authoritative yet.
+  REFUND_IN_TRANSIT
+  /// Refund amounts disagree, including partial refunds we never recorded.
+  REFUND_AMOUNT_MISMATCH
+  /// Gateway reports a dispute/chargeback against a payment we hold as good.
+  DISPUTED_CHARGE
+  /// Two local rows claim the same gateway payment id.
+  DUPLICATE_PAYMENT
+}
+
+enum PaymentDiscrepancyStatus {
+  OPEN
+  INVESTIGATING
+  RESOLVED
+  /// Reviewed and accepted as not-a-problem. Suppressed from re-alerting but
+  /// still re-detected, so the occurrence count keeps climbing if it recurs.
+  IGNORED
+}
+
+enum PaymentDiscrepancySeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+/// One execution of the reconciliation sweep for one (business, gateway).
+model payment_reconciliation_runs {
+  id          String                  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String                  @db.Uuid
+  gateway     PaymentGateway
+  status      ReconciliationRunStatus @default(RUNNING)
+
+  /// The half-open window [start, end) of local records examined.
+  window_start DateTime @db.Timestamptz
+  window_end   DateTime @db.Timestamptz
+
+  payments_checked    Int @default(0)
+  refunds_checked     Int @default(0)
+  discrepancies_found Int @default(0)
+  /// Discrepancies the sweep settled itself (a missed webhook it could apply
+  /// safely). Everything else is left OPEN for a human.
+  auto_resolved       Int @default(0)
+
+  /// Records the window did not reach because the run hit its time budget.
+  /// Distinguishes "clean" from "never looked", which the counts cannot.
+  truncated Boolean @default(false)
+
+  error String? @db.Text
+
+  started_at  DateTime  @default(now()) @db.Timestamptz
+  finished_at DateTime? @db.Timestamptz
+
+  business      businesses              @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  discrepancies payment_discrepancies[]
+
+  @@index([business_id, started_at(sort: Desc)])
+  @@index([business_id, gateway, status])
+  @@map("payment_reconciliation_runs")
+}
+
+/// A flagged disagreement between the gateway and the local ledger.
+///
+/// Never auto-deleted and never silently re-created: `fingerprint` is unique
+/// per business, so a sweep that keeps finding the same problem increments
+/// `occurrences` instead of producing one row per run. Without that, a single
+/// unresolvable discrepancy becomes a row every hour forever, and the table
+/// that is supposed to be a work queue becomes a log.
+model payment_discrepancies {
+  id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String  @db.Uuid
+  run_id      String? @db.Uuid
+
+  payment_id String? @db.Uuid
+  refund_id  String? @db.Uuid
+
+  gateway            PaymentGateway
+  gateway_payment_id String?        @db.VarChar(255)
+  gateway_refund_id  String?        @db.VarChar(255)
+
+  type     PaymentDiscrepancyType
+  severity PaymentDiscrepancySeverity @default(MEDIUM)
+  status   PaymentDiscrepancyStatus   @default(OPEN)
+
+  /// Stable identity of the *problem*, not of the detection. Derived from
+  /// (type, local id, gateway id) — see `discrepancyFingerprint()`.
+  fingerprint String @db.VarChar(255)
+
+  local_status   String? @db.VarChar(50)
+  gateway_status String? @db.VarChar(100)
+
+  /// Major-unit amounts (rupees), matching `payments.amount`.
+  local_amount   Decimal? @db.Decimal(14, 2)
+  gateway_amount Decimal? @db.Decimal(14, 2)
+  /// gateway_amount - local_amount. Signed: negative is a short capture
+  /// (partial payment), positive is an over-capture.
+  delta_amount   Decimal? @db.Decimal(14, 2)
+  currency       String?  @db.Char(3)
+
+  /// Human-readable statement of the disagreement. Authored prose, never a
+  /// raw gateway body — those carry account ids and trace tokens.
+  detail String @db.Text
+
+  /// How many sweeps have observed this same problem.
+  occurrences      Int      @default(1)
+  first_detected_at DateTime @default(now()) @db.Timestamptz
+  last_detected_at  DateTime @default(now()) @db.Timestamptz
+
+  resolved_at     DateTime? @db.Timestamptz
+  resolved_by     String?   @db.Uuid
+  resolution_note String?   @db.Text
+
+  metadata Json @default("{}") @db.JsonB
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses                   @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  run      payment_reconciliation_runs? @relation(fields: [run_id], references: [id], onDelete: SetNull)
+
+  @@unique([business_id, fingerprint], map: "uq_payment_discrepancy_fingerprint")
+  @@index([business_id, status, severity, last_detected_at(sort: Desc)])
+  @@index([business_id, type, status])
+  @@index([payment_id])
+  @@index([refund_id])
+  @@map("payment_discrepancies")
+}
+
+// ─────────────────────────────────────────────
+// 4. Template versioning
+// ─────────────────────────────────────────────
+
+enum TemplateVersionState {
+  /// Editable, never sent from.
+  DRAFT
+  /// The version new dispatches bind to. At most one per template.
+  ACTIVE
+  /// Superseded. Still rendered for notifications already bound to it.
+  ARCHIVED
+}
+
+enum TemplateValidationState {
+  /// Not yet validated — cannot be activated.
+  UNCHECKED
+  VALID
+  INVALID
+}
+
+/// An immutable snapshot of a template's renderable content.
+///
+/// Editing a template used to mutate the row every queued notification would
+/// later render from, so a fix applied while a batch was in flight changed the
+/// message half of that batch received — and a *breaking* edit (a renamed
+/// variable, a removed placeholder) turned queued rows into sends with holes
+/// in them. A notification binds `template_version_id` when it is created and
+/// renders from that snapshot no matter what happens to the template after.
+model notification_template_versions {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+  template_id String @db.Uuid
+
+  /// Monotonic per template, starting at 1.
+  version Int
+
+  state TemplateVersionState @default(DRAFT)
+
+  /// Frozen copy of the fields that affect rendering.
+  content       Json    @db.JsonB
+  variables     Json    @default("[]") @db.JsonB
+  subject       String? @db.VarChar(500)
+  language      String  @default("en") @db.VarChar(10)
+  category      String? @db.VarChar(50)
+  external_name String? @db.VarChar(255)
+
+  validation_state  TemplateValidationState @default(UNCHECKED)
+  /// [{code, message, field?}] — populated by `validateVersion`.
+  validation_errors Json                    @default("[]") @db.JsonB
+  validated_at      DateTime?               @db.Timestamptz
+
+  /// Free-text note from whoever cut the version.
+  change_note String? @db.Text
+  created_by  String? @db.Uuid
+
+  activated_at   DateTime? @db.Timestamptz
+  deactivated_at DateTime? @db.Timestamptz
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses             @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  template notification_templates @relation(fields: [template_id], references: [id], onDelete: Cascade)
+
+  notifications notifications[]
+
+  @@unique([template_id, version], map: "uq_template_version_number")
+  @@index([business_id, template_id, state])
+  @@index([template_id, state])
+  @@map("notification_template_versions")
+}
+
+// ─────────────────────────────────────────────
+// 5. Data retention policies
+// ─────────────────────────────────────────────
+
+/// Entities a retention policy can govern. Each maps to exactly one table
+/// with a purge/anonymize implementation in `RetentionPolicyService`.
+enum RetentionDataClass {
+  MESSAGES
+  CONVERSATIONS
+  AUDIT_LOGS
+  NOTIFICATIONS
+  ANALYTICS_EVENTS
+  WEBHOOK_EVENTS
+  AI_DECISIONS
+}
+
+enum RetentionActionKind {
+  /// Strip personal data, keep the row and its aggregate value.
+  ANONYMIZE
+  /// Snapshot into `data_archive_records`, keep the original.
+  ARCHIVE
+  /// Snapshot, then delete the original.
+  ARCHIVE_AND_PURGE
+  /// Delete outright.
+  PURGE
+}
+
+/// Per-business, per-data-class retention rule.
+///
+/// A business with no row for a class keeps that data indefinitely — absence
+/// means "no policy", not "delete immediately", because the failure modes are
+/// not symmetric.
+model data_retention_policies {
+  id          String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String             @db.Uuid
+  data_class  RetentionDataClass
+  action      RetentionActionKind
+
+  /// Age at which a record becomes eligible, in days.
+  retention_days Int
+
+  is_enabled Boolean @default(true)
+
+  /// Rows touched per sweep tick for this policy. Bounds one run's work.
+  batch_size Int @default(500)
+
+  /// Whether the sweep should also drop the record's derived cache entries.
+  purge_caches Boolean @default(true)
+
+  last_run_at      DateTime? @db.Timestamptz
+  last_run_count   Int       @default(0)
+  /// True when the last run stopped with eligible records still live.
+  last_run_pending Boolean   @default(false)
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@unique([business_id, data_class], map: "uq_retention_policy_business_class")
+  @@index([is_enabled, data_class])
+  @@map("data_retention_policies")
+}
+
+/// A cold snapshot of records taken before they were purged.
+///
+/// One row per (policy run, source row) so an archived record can be produced
+/// on request — a DPDPA access request, a tax audit, a dispute — without
+/// restoring a database backup. `payload` is the row as it stood at archival.
+model data_archive_records {
+  id          String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String             @db.Uuid
+  data_class  RetentionDataClass
+  run_id      String?            @db.Uuid
+
+  /// Primary key of the archived row in its source table.
+  source_id String @db.Uuid
+  /// `created_at` of the source row — what made it eligible.
+  source_created_at DateTime @db.Timestamptz
+
+  payload Json @db.JsonB
+
+  /// Set once the source row has actually been deleted. An archive row with
+  /// this null is a snapshot of a record that is still live.
+  purged_at DateTime? @db.Timestamptz
+
+  archived_at DateTime @default(now()) @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@unique([business_id, data_class, source_id], map: "uq_archive_business_class_source")
+  @@index([business_id, data_class, source_created_at])
+  @@index([business_id, archived_at(sort: Desc)])
+  @@map("data_archive_records")
+}
+
+/// One execution of the retention sweep for one (business, data class).
+model data_retention_runs {
+  id          String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String             @db.Uuid
+  data_class  RetentionDataClass
+  action      RetentionActionKind
+
+  /// Records older than this were eligible.
+  cutoff DateTime @db.Timestamptz
+
+  examined   Int @default(0)
+  archived   Int @default(0)
+  anonymized Int @default(0)
+  purged     Int @default(0)
+  /// Redis keys dropped for the purged records.
+  caches_purged Int @default(0)
+
+  /// Eligible records remained when the run stopped (batch ceiling or deadline).
+  pending Boolean @default(false)
+  error   String? @db.Text
+
+  started_at  DateTime  @default(now()) @db.Timestamptz
+  finished_at DateTime? @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, data_class, started_at(sort: Desc)])
+  @@map("data_retention_runs")
 }

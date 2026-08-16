@@ -39,6 +39,14 @@ export type {
   // Operations layer
   analytics_events,
   audit_logs,
+  // Production hardening layer
+  ai_quality_metrics,
+  payment_reconciliation_runs,
+  payment_discrepancies,
+  notification_template_versions,
+  data_retention_policies,
+  data_archive_records,
+  data_retention_runs,
 } from '@prisma/client';
 
 // Re-export all Prisma enums
@@ -72,6 +80,17 @@ export {
   AuditAction,
   FileUploadType,
   AnalyticsEventCategory,
+  // Production hardening: AI quality, payment reconciliation, template
+  // versioning, data retention.
+  AiQualityBucket,
+  ReconciliationRunStatus,
+  PaymentDiscrepancyType,
+  PaymentDiscrepancyStatus,
+  PaymentDiscrepancySeverity,
+  TemplateVersionState,
+  TemplateValidationState,
+  RetentionDataClass,
+  RetentionActionKind,
 } from '@prisma/client';
 
 // ─────────────────────────────────────────────
