@@ -8,6 +8,7 @@
 import { NotificationModule } from './notification.module';
 import { NotificationProcessor } from './notification.processor';
 import { NotificationService } from './notification.service';
+import { NotificationSettingsService } from './settings/notification-settings.service';
 import {
   NOTIFICATION_JOBS,
   STUCK_RECOVERY_CRON,
@@ -85,7 +86,10 @@ describe('NotificationModule — sweep scheduling', () => {
 describe('NotificationProcessor — sweep job', () => {
   it('runs the sweep and lets a failure reach Bull', async () => {
     const service = { recoverStuck: jest.fn().mockResolvedValue(undefined) };
-    const processor = new NotificationProcessor(service as unknown as NotificationService);
+    const processor = new NotificationProcessor(
+      service as unknown as NotificationService,
+      { sweepDueDigests: jest.fn() } as unknown as NotificationSettingsService,
+    );
 
     await processor.handleRecoverStuck();
     expect(service.recoverStuck).toHaveBeenCalled();

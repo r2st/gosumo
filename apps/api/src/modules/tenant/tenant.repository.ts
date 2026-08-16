@@ -346,6 +346,44 @@ export class TenantRepository {
   }
 
   /**
+   * Assignable members from a candidate list, with their skills.
+   *
+   * Separate from {@link findAssignableTeamMembers} rather than widening it:
+   * that method is on the hot auto-assign path for every strategy, and only
+   * SKILL_BASED needs the array column back.
+   */
+  async findAssignableTeamMembersWithSkills(
+    businessId: string,
+    memberIds: string[],
+  ): Promise<Array<{ id: string; skills: string[] }>> {
+    if (memberIds.length === 0) return [];
+    return this.prisma.team_members.findMany({
+      where: {
+        id: { in: memberIds },
+        business_id: businessId,
+        status: TeamMemberStatus.ACTIVE,
+        deleted_at: null,
+      },
+      select: { id: true, skills: true },
+    });
+  }
+
+  /** Replace a member's skill tags. */
+  async updateTeamMemberSkills(
+    businessId: string,
+    memberId: string,
+    skills: string[],
+  ): Promise<number> {
+    // The tenant sits in the write's own `where` alongside the id, rather than
+    // relying on the id having been resolved through a scoped read first.
+    const result = await this.prisma.team_members.updateMany({
+      where: { id: memberId, business_id: businessId, deleted_at: null },
+      data: { skills },
+    });
+    return result.count;
+  }
+
+  /**
    * Find a team member by email within a business scope.
    */
   async findTeamMemberByEmail(

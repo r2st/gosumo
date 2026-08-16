@@ -19,6 +19,14 @@ import {
   STUCK_RECOVERY_CRON,
   STUCK_RECOVERY_REPEAT_JOB_ID,
 } from './notification.constants';
+import { NotificationSettingsService } from './settings/notification-settings.service';
+import { NotificationSettingsRepository } from './settings/notification-settings.repository';
+import { NotificationDigestListener } from './settings/notification-digest.listener';
+import {
+  DIGEST_SWEEP_CRON,
+  DIGEST_SWEEP_JOB,
+  DIGEST_SWEEP_REPEAT_JOB_ID,
+} from './settings/notification-settings.constants';
 
 /**
  * NotificationModule — multi-channel notification dispatch (email, SMS,
@@ -38,6 +46,9 @@ import {
     NotificationRepository,
     NotificationProcessor,
     NotificationEventListener,
+    NotificationSettingsService,
+    NotificationSettingsRepository,
+    NotificationDigestListener,
     TemplateRenderer,
     SenderRegistry,
     EmailSender,
@@ -51,7 +62,10 @@ import {
       useFactory: () => new NotificationRateLimiter(),
     },
   ],
-  exports: [NotificationService],
+  // The settings service is exported so callers that raise *operator* alerts —
+  // SLA escalation, channel outages — can ask one place whether the business
+  // wants to be told, instead of each reimplementing quiet hours and muting.
+  exports: [NotificationService, NotificationSettingsService],
 })
 export class NotificationModule implements OnModuleInit {
   private readonly logger = new Logger(NotificationModule.name);
@@ -66,34 +80,56 @@ export class NotificationModule implements OnModuleInit {
    * blocks boot.
    */
   async onModuleInit(): Promise<void> {
+    await this.scheduleRepeatable(
+      NOTIFICATION_JOBS.RECOVER_STUCK,
+      STUCK_RECOVERY_REPEAT_JOB_ID,
+      STUCK_RECOVERY_CRON,
+      'stuck-notification sweep',
+    );
+    await this.scheduleRepeatable(
+      DIGEST_SWEEP_JOB,
+      DIGEST_SWEEP_REPEAT_JOB_ID,
+      DIGEST_SWEEP_CRON,
+      'digest sweep',
+    );
+  }
+
+  /**
+   * Register one repeatable job, replacing a prior schedule under the same id.
+   *
+   * Each schedule is registered independently rather than in one `Promise.all`:
+   * Redis being unavailable is expected in tests and CI, and one schedule
+   * failing must not stop the next from being attempted.
+   */
+  private async scheduleRepeatable(
+    jobName: string,
+    jobId: string,
+    cron: string,
+    label: string,
+  ): Promise<void> {
     try {
       const existing = await this.queue.getRepeatableJobs();
       await Promise.all(
         existing
-          .filter(
-            (job) =>
-              job.id === STUCK_RECOVERY_REPEAT_JOB_ID && job.cron !== STUCK_RECOVERY_CRON,
-          )
+          .filter((job) => job.id === jobId && job.cron !== cron)
           .map((job) => this.queue.removeRepeatableByKey(job.key)),
       );
       await this.queue.add(
-        NOTIFICATION_JOBS.RECOVER_STUCK,
+        jobName,
         {},
         {
-          jobId: STUCK_RECOVERY_REPEAT_JOB_ID,
-          repeat: { cron: STUCK_RECOVERY_CRON },
+          jobId,
+          repeat: { cron },
           removeOnComplete: true,
           // Kept on purpose, as on the other crons: a sweep that fails is the
-          // only signal that stranded notifications are piling up unswept.
+          // only signal that work is piling up unswept.
           removeOnFail: false,
         },
       );
-      this.logger.log(`Scheduled stuck-notification sweep (${STUCK_RECOVERY_CRON})`);
+      this.logger.log(`Scheduled ${label} (${cron})`);
     } catch (err) {
       this.logger.warn(
-        `Could not schedule stuck-notification sweep: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        `Could not schedule ${label}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }

@@ -41,6 +41,7 @@ import {
   resolvePlan,
   isUnlimited,
   slugify,
+  normaliseSkills,
 } from './tenant.constants';
 
 // ─────────────────────────────────────────────
@@ -630,6 +631,73 @@ export class TenantService {
     const assignable = new Set(members.map((m) => m.id));
     // Preserve the caller's order — round-robin's tie-break depends on it.
     return memberIds.filter((id) => assignable.has(id));
+  }
+
+  /**
+   * Narrow a candidate list to the assignable members holding *every* required
+   * skill.
+   *
+   * AND, not OR: "needs Hindi and billing" is a request for someone who can do
+   * both, and an OR match would route a billing-only agent a Hindi conversation
+   * they cannot answer — the exact failure skill routing exists to avoid. A
+   * member with extra skills beyond those required still qualifies.
+   *
+   * An empty `requiredSkills` degenerates to plain assignability, so callers do
+   * not need a separate branch for the unskilled case.
+   *
+   * Comparison is on the normalised (upper-case, trimmed) form of both sides.
+   * The column is free-form text, so "hindi" and "Hindi" are the same skill to
+   * everyone except a raw string compare.
+   */
+  async filterAssignableTeamMembersBySkills(
+    businessId: string,
+    memberIds: string[],
+    requiredSkills: string[],
+  ): Promise<string[]> {
+    if (memberIds.length === 0) return [];
+
+    const required = normaliseSkills(requiredSkills);
+    if (required.length === 0) {
+      return this.filterAssignableTeamMembers(businessId, memberIds);
+    }
+
+    const members = await this.repository.findAssignableTeamMembersWithSkills(
+      businessId,
+      memberIds,
+    );
+
+    const qualified = new Set(
+      members
+        .filter((m) => {
+          const held = new Set(normaliseSkills(m.skills));
+          return required.every((skill) => held.has(skill));
+        })
+        .map((m) => m.id),
+    );
+
+    // Caller order preserved, as above — the load-balancing tie-break reads it.
+    return memberIds.filter((id) => qualified.has(id));
+  }
+
+  /** Replace a member's skill tags, returning the normalised set stored. */
+  async setTeamMemberSkills(
+    businessId: string,
+    memberId: string,
+    skills: string[],
+  ): Promise<string[]> {
+    await this.assertTeamMember(businessId, memberId);
+    const normalised = normaliseSkills(skills);
+    const count = await this.repository.updateTeamMemberSkills(
+      businessId,
+      memberId,
+      normalised,
+    );
+    if (count === 0) {
+      throw new BadRequestException(
+        `Team member ${memberId} does not belong to this business`,
+      );
+    }
+    return normalised;
   }
 
   /**

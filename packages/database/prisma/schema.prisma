@@ -766,6 +766,13 @@ model team_members {
   /// {email, whatsapp, sound, taskAlerts}
   notification_prefs Json @default("{}") @db.JsonB
 
+  /// Free-form capability tags this member can be routed work by, e.g.
+  /// ["HINDI","BILLING"]. Normalised upper-case on write. Deliberately not an
+  /// enum: the useful axes differ per business (languages, product lines,
+  /// seniority) and a shared enum would either be empty or wrong for everyone.
+  /// An empty array means the member takes only skill-free routing.
+  skills String[] @default([])
+
   invite_token String?   @unique @db.VarChar(64)
   /// FK to team_members (self-referential)
   invited_by   String?   @db.Uuid
@@ -4536,6 +4543,11 @@ model business_notification_settings {
   realtime_alerts  String[] @default([])
   /// Minimum severity an alert must carry to be sent at all.
   realtime_min_severity String @default("WARNING") @db.VarChar(20)
+  /// Conversation channels whose alerts are silenced, e.g. ["INSTAGRAM"]. A
+  /// business running a low-value channel it does not staff mutes it here
+  /// rather than turning realtime alerts off wholesale. Alerts with no source
+  /// channel (billing, platform health) are never matched by this.
+  muted_channels String[] @default([])
 
   digest_frequency NotificationDigestFrequency @default(DAILY)
   /// Hour of day the digest is cut, 0–23, in `timezone`.

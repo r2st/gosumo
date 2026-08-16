@@ -178,6 +178,12 @@ const GLOBAL_SWEEPS = new Set<string>([
   // reason. A job whose build was lost between Postgres and Redis is stranded
   // in PENDING with nothing but its age to distinguish it.
   'ExportJobRepository.findStuckGlobal',
+  // Digest sweep (cron, no request tenant): returns only the settings row id
+  // and its business_id, then re-enters the scoped path per row to claim and
+  // cut. It must span tenants — the question is *which* businesses have a
+  // digest due in this tick, and `next_digest_at` is indexed precisely so the
+  // answer is one range scan rather than one query per business.
+  'NotificationSettingsRepository.findDueDigestsGlobal',
 ]);
 
 /** Every documented reason a query may legitimately omit the tenant predicate. */

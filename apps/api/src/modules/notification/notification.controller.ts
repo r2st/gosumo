@@ -30,6 +30,11 @@ import {
   ListNotificationsQueryDto,
   UpdateDeliveryStatusDto,
 } from './dto';
+import { NotificationSettingsService } from './settings/notification-settings.service';
+import {
+  PreviewAlertDto,
+  UpdateNotificationSettingsDto,
+} from './settings/dto';
 
 /**
  * NotificationController — REST surface for the Notification module.
@@ -45,7 +50,10 @@ import {
 export class NotificationController {
   private readonly logger = new Logger(NotificationController.name);
 
-  constructor(private readonly service: NotificationService) {}
+  constructor(
+    private readonly service: NotificationService,
+    private readonly settingsService: NotificationSettingsService,
+  ) {}
 
   // ─── Dispatch ───
 
@@ -85,18 +93,6 @@ export class NotificationController {
     @Query('to') to?: string,
   ) {
     return this.service.getStats(tenantId, from, to);
-  }
-
-  @Get(':id')
-  @ApiOperation({ summary: 'Get one notification by id' })
-  @ApiResponse({ status: 200, description: 'The requested notification' })
-  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
-  @ApiParam({ name: 'id', format: 'uuid', description: 'Record UUID' })
-  async get(
-    @TenantId() tenantId: string,
-    @Param('id', UuidValidationPipe) id: string,
-  ) {
-    return this.service.getNotification(tenantId, id);
   }
 
   @Post(':id/retry')
@@ -288,5 +284,62 @@ export class NotificationController {
     @Param('id', UuidValidationPipe) id: string,
   ) {
     await this.service.deleteTrigger(tenantId, id);
+  }
+
+  // ─── Operator settings ───
+
+  @Get('settings')
+  @ApiOperation({ summary: 'Get this business’s operator notification rules' })
+  @ApiResponse({ status: 200, description: 'The settings, created with defaults on first read' })
+  async getSettings(@TenantId() tenantId: string) {
+    return this.settingsService.getSettings(tenantId);
+  }
+
+  @Put('settings')
+  @ApiOperation({ summary: 'Update operator notification rules (partial)' })
+  @ApiResponse({ status: 200, description: 'The updated settings' })
+  @ApiResponse({
+    status: 400,
+    description: 'Unknown timezone, or only one end of the quiet-hours window set',
+  })
+  async updateSettings(
+    @TenantId() tenantId: string,
+    @Body() dto: UpdateNotificationSettingsDto,
+  ) {
+    return this.settingsService.updateSettings(tenantId, dto);
+  }
+
+  @Post('settings/preview-alert')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Ask what the current rules would do with one alert, without sending it',
+  })
+  @ApiResponse({ status: 200, description: 'Whether the alert would be delivered, deferred, or dropped' })
+  @ApiResponse({ status: 400, description: '`at` is not an ISO 8601 timestamp' })
+  async previewAlert(@TenantId() tenantId: string, @Body() dto: PreviewAlertDto) {
+    return this.settingsService.previewAlert(tenantId, dto);
+  }
+
+  // ─── By-id reads ───
+
+  /**
+   * Declared last on purpose. `@Get(':id')` matches any single path segment, and
+   * Nest registers routes in declaration order, so while this sat above the
+   * static single-segment routes it swallowed `GET /notifications/templates` and
+   * `GET /notifications/triggers` — both reached this handler with `id` set to
+   * the literal word and were rejected by `UuidValidationPipe` as a malformed
+   * UUID. Anything single-segment and static must stay above it.
+   * `route-shadowing-contract.spec.ts` enforces that repo-wide.
+   */
+  @Get(':id')
+  @ApiOperation({ summary: 'Get one notification by id' })
+  @ApiResponse({ status: 200, description: 'The requested notification' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'Record UUID' })
+  async get(
+    @TenantId() tenantId: string,
+    @Param('id', UuidValidationPipe) id: string,
+  ) {
+    return this.service.getNotification(tenantId, id);
   }
 }

@@ -284,3 +284,40 @@ export function usagePeriodKey(now: Date = new Date()): string {
  * single indexed lookup on `(business_id, resource_type, resource_id)`.
  */
 export const TEAM_MEMBER_RESOURCE = 'team_member';
+
+// ─────────────────────────────────────────────
+// Team-member skills
+// ─────────────────────────────────────────────
+
+/**
+ * Upper bound on a member's skill tags, and on the skills one routing request
+ * may require. Both are arrays a client controls, so both need a ceiling; the
+ * same number does for each because requiring more skills than any member can
+ * hold could never match anyone.
+ */
+export const MAX_MEMBER_SKILLS = 32;
+
+/** Longest single skill tag. */
+export const MAX_SKILL_LENGTH = 40;
+
+/**
+ * Canonicalise skill tags: trimmed, upper-cased, blanks dropped, de-duplicated,
+ * order preserved.
+ *
+ * The column is free-form text rather than an enum, so "hindi", "Hindi" and
+ * " HINDI " are the same skill to every human and three different skills to a
+ * raw string compare. Normalising on both write and match is what stops a
+ * conversation requiring "BILLING" from skipping the agent tagged "billing".
+ */
+export function normaliseSkills(skills: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of skills) {
+    if (typeof raw !== 'string') continue;
+    const tag = raw.trim().toUpperCase();
+    if (!tag || seen.has(tag)) continue;
+    seen.add(tag);
+    out.push(tag);
+  }
+  return out;
+}

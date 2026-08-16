@@ -57,6 +57,16 @@ export enum AutoAssignStrategy {
   ROUND_ROBIN = 'ROUND_ROBIN',
   /** Assign to the agent with the fewest active conversations. */
   LEAST_BUSY = 'LEAST_BUSY',
+  /**
+   * Assign to the least-busy agent holding every required skill.
+   *
+   * Skill match first, load second — the point is that only a qualified agent
+   * is considered at all, and load balancing then decides between the ones who
+   * are. Falls back to nothing rather than to an unqualified agent: routing a
+   * Hindi conversation to someone who cannot read it is worse than leaving it
+   * in the unassigned queue where a human will notice.
+   */
+  SKILL_BASED = 'SKILL_BASED',
 }
 
 /**

@@ -31,6 +31,7 @@ import { AiEngineController } from './ai-engine/ai-engine.controller';
 import { ChannelsController } from './channels/channels.controller';
 import { IntegrationsController } from './integrations/integrations.controller';
 import { SlaController } from './sla/sla.controller';
+import { AuditController } from './audit/audit.controller';
 import { RealtyCrmController } from './realty-integrations/crm/realty-crm.controller';
 import { RealtySheetsController } from './realty-integrations/sheets/realty-sheets.controller';
 
@@ -89,6 +90,18 @@ const GATED: Array<[string, NewableFunction, string, string]> = [
   ['POST /sla/policies', SlaController, 'createPolicy', 'MANAGER'],
   ['PATCH /sla/policies/:id', SlaController, 'updatePolicy', 'MANAGER'],
   ['DELETE /sla/policies/:id', SlaController, 'deletePolicy', 'MANAGER'],
+  // Skills decide which conversations reach whom, so granting one grants access
+  // to a queue — the same class of authority change as a role.
+  ['PATCH /auth/team/:id/skills', TeamController, 'setSkills', 'MANAGER'],
+  // The audit trail is the one *read* that is gated. These rows carry
+  // `ip_address` and `user_agent` for every acting member, so a staff-visible
+  // endpoint would make the trail a way to watch colleagues rather than a way
+  // to answer "who granted that". Reads stay open elsewhere because settings
+  // pages must render; here the data *is* the surveillance.
+  ['GET /audit-logs', AuditController, 'list', 'MANAGER'],
+  ['GET /audit-logs/summary', AuditController, 'summary', 'MANAGER'],
+  ['GET /audit-logs/export', AuditController, 'export', 'MANAGER'],
+  ['GET /audit-logs/:id', AuditController, 'get', 'MANAGER'],
 ];
 
 /** Reads that must stay reachable by every authenticated member, VIEWER included. */

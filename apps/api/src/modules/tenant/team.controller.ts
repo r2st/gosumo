@@ -10,6 +10,7 @@ import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 import { ListTeamQueryDto, DEFAULT_TEAM_PAGE_SIZE } from './dto/list-team-query.dto';
+import { SetMemberSkillsDto } from './dto/set-member-skills.dto';
 import { AuditAction, TeamMemberRole } from '@gosumo/database';
 import { PrismaService } from '../../common/services/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
@@ -172,6 +173,51 @@ export class TeamController {
     });
 
     return { id: updated.id, role: updated.role, status: updated.status };
+  }
+
+  @Patch(':id/skills')
+  @Roles(TeamMemberRole.MANAGER)
+  @ApiOperation({ summary: 'Replace a team member’s skill tags' })
+  @ApiResponse({ status: 200, description: 'The member with the normalised skill set' })
+  @ApiResponse({ status: 400, description: 'Member does not belong to this business' })
+  @ApiResponse({ status: 403, description: 'Caller is not OWNER/MANAGER' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'Record UUID' })
+  async setSkills(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', UuidValidationPipe) memberId: string,
+    @Body() dto: SetMemberSkillsDto,
+  ) {
+    const actor = await this.requireActor(tenantId, user.sub);
+    const before = await this.prisma.team_members.findFirst({
+      where: { id: memberId, business_id: tenantId, deleted_at: null },
+      select: { email: true, skills: true },
+    });
+
+    const skills = await this.tenantService.setTeamMemberSkills(
+      tenantId,
+      memberId,
+      dto.skills,
+    );
+
+    // Skills decide which conversations reach whom, so "who could see the
+    // billing queue last month" is an answerable question only if the changes
+    // are recorded. Written after the update commits, as with the role change.
+    await this.audit.record({
+      businessId: tenantId,
+      actorType: 'TEAM_MEMBER',
+      actorId: actor.id,
+      actorEmail: user.email ?? null,
+      action: AuditAction.UPDATE,
+      resourceType: TEAM_MEMBER_RESOURCE,
+      resourceId: memberId,
+      before: { skills: before?.skills ?? [] },
+      after: { skills },
+      description: `Set skills for ${before?.email ?? memberId} to [${skills.join(', ')}]`,
+    });
+
+    return { id: memberId, skills };
   }
 
   @Delete(':id')

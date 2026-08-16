@@ -27,6 +27,7 @@ import { ShippingModule } from './modules/shipping/shipping.module';
 import { CampaignModule } from './modules/campaign/campaign.module';
 import { HitlModule } from './modules/hitl/hitl.module';
 import { NotificationModule } from './modules/notification/notification.module';
+import { AuditModule } from './modules/audit/audit.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { ChannelsModule } from './modules/channels/channels.module';
@@ -152,6 +153,7 @@ import { HealthModule } from './modules/health/health.module';
     CampaignModule,
     HitlModule,
     NotificationModule,
+    AuditModule,
     AnalyticsModule,
     AdminModule,
     ChannelsModule,

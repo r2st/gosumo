@@ -139,8 +139,13 @@ export interface EscalateOptions {
 
 export interface AutoAssignOptions {
   strategy: AutoAssignStrategy;
-  /** Candidate team-member ids for ROUND_ROBIN / LEAST_BUSY strategies. */
+  /** Candidate team-member ids for ROUND_ROBIN / LEAST_BUSY / SKILL_BASED. */
   candidateAgentIds?: string[];
+  /**
+   * Skills a candidate must hold for SKILL_BASED. Every one of them, not any.
+   * Ignored by the other strategies.
+   */
+  requiredSkills?: string[];
 }
 
 export interface SlaMetrics {
@@ -671,6 +676,8 @@ export class ConversationService {
    * - AI: leave it with the AI — unassign, status stays OPEN.
    * - ROUND_ROBIN: pick the least-recently-loaded candidate deterministically.
    * - LEAST_BUSY: pick the candidate with the fewest active conversations.
+   * - SKILL_BASED: drop candidates missing any required skill, then least-busy
+   *   among the rest. With no required skills it is exactly LEAST_BUSY.
    *
    * Emits `conversation.assigned` when a human agent is chosen.
    */
@@ -707,19 +714,38 @@ export class ConversationService {
     // one skipped entirely. Unusable candidates are dropped rather than
     // rejected: a suspended agent in a stale candidate list should be passed
     // over, not fail the request.
-    const candidates = await this.tenantService.filterAssignableTeamMembers(
-      businessId,
-      requested,
-    );
+    const requiredSkills =
+      options.strategy === AutoAssignStrategy.SKILL_BASED
+        ? (options.requiredSkills ?? [])
+        : [];
+
+    const candidates =
+      requiredSkills.length > 0
+        ? await this.tenantService.filterAssignableTeamMembersBySkills(
+            businessId,
+            requested,
+            requiredSkills,
+          )
+        : await this.tenantService.filterAssignableTeamMembers(businessId, requested);
+
     if (candidates.length < requested.length) {
       this.logger.warn(
         `Auto-assign for ${id}: ${requested.length - candidates.length} of ` +
-          `${requested.length} candidates are not assignable in this business`,
+          `${requested.length} candidates are not assignable in this business` +
+          (requiredSkills.length > 0
+            ? ` or lack the required skills [${requiredSkills.join(', ')}]`
+            : ''),
       );
     }
     if (candidates.length === 0) {
+      // Deliberately an error rather than a silent fall-back to an unqualified
+      // agent: a conversation nobody on the candidate list can handle belongs
+      // in the unassigned queue where a human will see it, not with someone who
+      // cannot answer it.
       throw new BadRequestException(
-        `Strategy ${options.strategy} requires at least one assignable candidate agent`,
+        requiredSkills.length > 0
+          ? `No assignable candidate holds all required skills: ${requiredSkills.join(', ')}`
+          : `Strategy ${options.strategy} requires at least one assignable candidate agent`,
       );
     }
 
@@ -729,7 +755,14 @@ export class ConversationService {
     );
 
     let chosen: string;
-    if (options.strategy === AutoAssignStrategy.LEAST_BUSY) {
+    if (
+      options.strategy === AutoAssignStrategy.LEAST_BUSY ||
+      options.strategy === AutoAssignStrategy.SKILL_BASED
+    ) {
+      // SKILL_BASED shares the least-busy tie-break: the skill filter has
+      // already removed everyone unqualified, so what is left is a load
+      // question. `reduce` keeps the earliest candidate on a tie, which makes
+      // the choice deterministic against the caller's ordering.
       chosen = candidates.reduce((best, agent) =>
         (counts[agent] ?? 0) < (counts[best] ?? 0) ? agent : best,
       );

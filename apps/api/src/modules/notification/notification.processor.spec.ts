@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bull';
 import { NotificationProcessor } from './notification.processor';
 import { NotificationService } from './notification.service';
+import { NotificationSettingsService } from './settings/notification-settings.service';
 import {
   NOTIFICATION_QUEUE,
   NOTIFICATION_JOBS,
@@ -35,6 +36,7 @@ describe('NotificationProcessor', () => {
     };
     processor = new NotificationProcessor(
       service as unknown as NotificationService,
+      { sweepDueDigests: jest.fn() } as unknown as NotificationSettingsService,
     );
   });
 

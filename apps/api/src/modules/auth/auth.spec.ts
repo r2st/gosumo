@@ -35,6 +35,7 @@ const mockTeamMember: TeamMemberWithBusiness = {
   last_login_at: null,
   login_count: 0,
   notification_prefs: {},
+  skills: [],
   invite_token: null,
   invited_by: null,
   invited_at: null,

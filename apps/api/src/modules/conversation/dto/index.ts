@@ -18,6 +18,10 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { MAX_PAGE_NUMBER } from '../../../common/validators/pagination.constants';
 import { ChannelType, ConversationStatus } from '@gosumo/shared';
 import { AutoAssignStrategy } from '../conversation.constants';
+import {
+  MAX_MEMBER_SKILLS,
+  MAX_SKILL_LENGTH,
+} from '../../tenant/tenant.constants';
 import { IsCalendarDateString } from '../../../common/validators/is-calendar-date.validator';
 
 // ─────────────────────────────────────────────
@@ -203,7 +207,8 @@ export class AutoAssignDto {
   strategy!: AutoAssignStrategy;
 
   @ApiPropertyOptional({
-    description: 'Candidate team-member UUIDs (required for ROUND_ROBIN/LEAST_BUSY)',
+    description:
+      'Candidate team-member UUIDs (required for ROUND_ROBIN/LEAST_BUSY/SKILL_BASED)',
     type: [String],
   })
   @IsOptional()
@@ -211,6 +216,18 @@ export class AutoAssignDto {
   @ArrayMaxSize(100)
   @IsUUID('4', { each: true })
   candidateAgentIds?: string[];
+
+  @ApiPropertyOptional({
+    description:
+      'Skills a candidate must hold, ALL of them, for SKILL_BASED. Matched case-insensitively. Ignored by other strategies.',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_MEMBER_SKILLS)
+  @IsString({ each: true })
+  @MaxLength(MAX_SKILL_LENGTH, { each: true })
+  requiredSkills?: string[];
 }
 
 /** Add a single tag. */

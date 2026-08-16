@@ -14,3 +14,4 @@ export { SuspendBusinessDto } from './suspend-business.dto';
 export { RecordUsageDto } from './usage.dto';
 export type { UsageMetricStatus, UsageSnapshotResponse } from './usage.dto';
 export type { OnboardingStatusResponse } from './onboarding.dto';
+export { SetMemberSkillsDto } from './set-member-skills.dto';

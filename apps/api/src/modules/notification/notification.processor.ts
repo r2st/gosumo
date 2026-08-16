@@ -8,6 +8,8 @@ import {
   DispatchJobData,
   BatchJobData,
 } from './notification.constants';
+import { NotificationSettingsService } from './settings/notification-settings.service';
+import { DIGEST_SWEEP_JOB } from './settings/notification-settings.constants';
 
 /**
  * NotificationProcessor — consumes the `notifications` Bull queue.
@@ -23,7 +25,10 @@ import {
 export class NotificationProcessor {
   private readonly logger = new Logger(NotificationProcessor.name);
 
-  constructor(private readonly notificationService: NotificationService) {}
+  constructor(
+    private readonly notificationService: NotificationService,
+    private readonly settingsService: NotificationSettingsService,
+  ) {}
 
   @Process(NOTIFICATION_JOBS.DISPATCH)
   async handleDispatch(job: Job<DispatchJobData>): Promise<void> {
@@ -52,5 +57,23 @@ export class NotificationProcessor {
   @Process(NOTIFICATION_JOBS.RECOVER_STUCK)
   async handleRecoverStuck(): Promise<void> {
     await this.notificationService.recoverStuck();
+  }
+
+  /**
+   * Repeatable sweep that cuts every digest which has come due.
+   *
+   * Same shape and same error boundary as the stuck sweep: cross-tenant, no job
+   * data, and left to reject so Bull and queue telemetry can see a failing
+   * schedule. Per-business failures are already swallowed inside the sweep, so
+   * a rejection here means the scan itself broke.
+   */
+  @Process(DIGEST_SWEEP_JOB)
+  async handleDigestSweep(): Promise<void> {
+    const result = await this.settingsService.sweepDueDigests();
+    if (result.found > 0) {
+      this.logger.log(
+        `Digest sweep: ${result.sent} sent, ${result.skipped} skipped of ${result.found} due`,
+      );
+    }
   }
 }
