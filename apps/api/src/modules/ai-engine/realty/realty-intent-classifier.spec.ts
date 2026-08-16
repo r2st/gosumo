@@ -67,6 +67,8 @@ describe('RealtyIntentClassifierService', () => {
         promptTokens: 10,
         completionTokens: 5,
         latencyMs: 20,
+        attemptedModels: [],
+        usedFallback: false,
       });
       llm.extractJson.mockReturnValue({
         primaryIntent: RealtyIntent.SELLER_LEAD,
@@ -83,7 +85,7 @@ describe('RealtyIntentClassifierService', () => {
     });
 
     it('falls back to GENERAL on invalid LLM output', async () => {
-      llm.complete.mockResolvedValue({ text: 'x', modelId: 'm', promptTokens: 1, completionTokens: 1, latencyMs: 1 });
+      llm.complete.mockResolvedValue({ text: 'x', modelId: 'm', promptTokens: 1, completionTokens: 1, latencyMs: 1, attemptedModels: ['m'], usedFallback: false });
       llm.extractJson.mockReturnValue(null);
       const r = await service.classify('zzz totally unmatched phrase 123');
       expect(r.intent).toBe(RealtyIntent.GENERAL);

@@ -12,6 +12,7 @@ import {
   HttpCode,
   HttpStatus,
   RawBodyRequest,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { Request } from 'express';
@@ -19,6 +20,7 @@ import { PaymentService } from './payment.service';
 import { InvoiceService } from './invoice.service';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { Public } from '../../common/decorators/public.decorator';
+import { webhookRawBody } from '../../common/utils/webhook-verification.util';
 import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
 import {
   CreatePaymentLinkDto,
@@ -202,7 +204,16 @@ export class PaymentController {
     @Req() req: RawBodyRequest<Request>,
     @Headers('x-razorpay-signature') signature: string,
   ) {
-    const rawBody = req.rawBody ?? Buffer.from(JSON.stringify(req.body));
+    // No `JSON.stringify(req.body)` fallback: those are not the bytes
+    // Razorpay signed, so the digest can never match and the resulting 401
+    // sends an operator hunting a rotated gateway secret when the real fault
+    // is this process's own bootstrap. See webhookRawBody().
+    const rawBody = webhookRawBody(req);
+    if (!rawBody) {
+      throw new InternalServerErrorException(
+        'Webhook cannot be verified: the raw request body is unavailable',
+      );
+    }
 
     await this.paymentService.handleRazorpayWebhook(rawBody, signature ?? '');
 
@@ -223,7 +234,12 @@ export class PaymentController {
     @Req() req: RawBodyRequest<Request>,
     @Headers('stripe-signature') signature: string,
   ) {
-    const rawBody = req.rawBody ?? Buffer.from(JSON.stringify(req.body));
+    const rawBody = webhookRawBody(req);
+    if (!rawBody) {
+      throw new InternalServerErrorException(
+        'Webhook cannot be verified: the raw request body is unavailable',
+      );
+    }
 
     await this.paymentService.handleStripeWebhook(rawBody, signature ?? '');
 

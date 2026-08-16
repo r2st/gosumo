@@ -14,6 +14,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { HitlService } from './hitl.service';
 import type { InternalNote } from './hitl.service';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
+import { TenantRateLimit } from '../../common/rate-limit/tenant-rate-limit.decorator';
 import {
   CurrentUser,
   AuthenticatedUser,
@@ -140,6 +141,7 @@ export class HitlController {
   }
 
   @Post('tasks/:id/approve')
+  @TenantRateLimit('message-ingest')
   @ApiOperation({ summary: 'Approve an AI-generated draft response' })
   @ApiResponse({ status: 201, description: 'Result of the approve action' })
   @ApiParam({ name: 'id', description: 'Task UUID' })
@@ -170,6 +172,7 @@ export class HitlController {
   }
 
   @Post('tasks/:id/edit-send')
+  @TenantRateLimit('message-ingest')
   @ApiOperation({ summary: 'Edit an AI draft and send it' })
   @ApiResponse({ status: 201, description: 'Result of the edit send action' })
   @ApiParam({ name: 'id', description: 'Task UUID' })
@@ -204,6 +207,7 @@ export class HitlController {
   // ───────────────────────────────────────────────────────────────────
 
   @Post('conversations/:conversationId/manual-response')
+  @TenantRateLimit('message-ingest')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Send a manual response to a conversation' })
   @ApiParam({ name: 'conversationId', description: 'Conversation UUID' })

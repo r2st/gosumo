@@ -5,11 +5,12 @@
  * webhook's security depends on:
  *
  *  - **rawBody.** Signature verification must run against the exact bytes the
- *    gateway signed. `req.rawBody` is populated by `rawBody: true` in main.ts;
- *    the `Buffer.from(JSON.stringify(req.body))` fallback exists for the case
- *    where it is not, and re-serialising a parsed body will not reproduce the
- *    original bytes. The fallback must therefore still hand *something* to the
- *    verifier rather than crashing — the verifier is what rejects it.
+ *    gateway signed. `req.rawBody` is populated by `rawBody: true` in main.ts.
+ *    When it is absent there is no honest way to verify: re-serialising the
+ *    parsed body does not reproduce the gateway's bytes, so the digest cannot
+ *    match. The handler must therefore refuse outright — a 500 naming this
+ *    process's own misconfiguration — rather than hand the verifier bytes
+ *    nobody signed and report the result as a signature failure.
  *
  *  - **A missing signature header** must reach the service as `''`, so the
  *    service performs its normal rejection, rather than arriving as
@@ -19,6 +20,7 @@
  * `undefined` (let the service default) instead of becoming NaN.
  */
 import { Test, TestingModule } from '@nestjs/testing';
+import { InternalServerErrorException } from '@nestjs/common';
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
 import { PaymentController } from './payment.controller';
@@ -132,14 +134,18 @@ describe('PaymentController', () => {
       expect(result).toEqual({ status: 'ok' });
     });
 
-    it('falls back to the re-serialised body when rawBody is absent', async () => {
+    it('refuses to verify at all when rawBody is absent', async () => {
       const body = { event: 'payment.captured' };
 
-      await controller.handleRazorpayWebhook(reqWithoutRawBody(body), 'sig-abc');
+      await expect(
+        controller.handleRazorpayWebhook(reqWithoutRawBody(body), 'sig-abc'),
+      ).rejects.toBeInstanceOf(InternalServerErrorException);
 
-      const [passed] = paymentService.handleRazorpayWebhook.mock.calls[0];
-      expect(Buffer.isBuffer(passed)).toBe(true);
-      expect(passed.toString()).toBe(JSON.stringify(body));
+      // The point of the 500: never hand the verifier bytes the gateway did
+      // not sign. A re-serialised body could only ever produce a bogus
+      // "invalid signature", pointing the operator at the gateway's secret
+      // when the fault is this process's own bootstrap.
+      expect(paymentService.handleRazorpayWebhook).not.toHaveBeenCalled();
     });
 
     it('sends an empty string rather than undefined when the signature header is missing', async () => {
@@ -170,14 +176,14 @@ describe('PaymentController', () => {
       expect(result).toEqual({ received: true });
     });
 
-    it('falls back to the re-serialised body when rawBody is absent', async () => {
+    it('refuses to verify at all when rawBody is absent', async () => {
       const body = { type: 'checkout.session.completed' };
 
-      await controller.handleStripeWebhook(reqWithoutRawBody(body), 'sig-xyz');
+      await expect(
+        controller.handleStripeWebhook(reqWithoutRawBody(body), 'sig-xyz'),
+      ).rejects.toBeInstanceOf(InternalServerErrorException);
 
-      const [passed] = paymentService.handleStripeWebhook.mock.calls[0];
-      expect(Buffer.isBuffer(passed)).toBe(true);
-      expect(passed.toString()).toBe(JSON.stringify(body));
+      expect(paymentService.handleStripeWebhook).not.toHaveBeenCalled();
     });
 
     it('sends an empty string rather than undefined when the signature header is missing', async () => {

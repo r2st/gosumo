@@ -11,6 +11,7 @@ import {
   resolveCorsOrigin as parseCorsOrigin,
 } from './common/utils/cors.util';
 import { correlationId } from './common/middleware/correlation-id.middleware';
+import { API_VERSION } from './common/versioning/api-version.constants';
 import { securityHeaders } from './common/middleware/security-headers.middleware';
 import {
   bodyShapeGuard,
@@ -288,8 +289,9 @@ async function bootstrap() {
     rawBody: true,
   });
 
-  // Global prefix
-  app.setGlobalPrefix('v1');
+  // Global prefix — the API's one and only version, applied here and nowhere
+  // else. Controllers declare their paths without it; see API_VERSION.
+  app.setGlobalPrefix(API_VERSION);
 
   // Security headers, before anything else so a response that never reaches a
   // controller — a 401 from the global guard, a 404 — still carries them.
@@ -376,7 +378,7 @@ async function bootstrap() {
       .build();
 
     const document = SwaggerModule.createDocument(app, config);
-    SwaggerModule.setup('v1/docs', app, document, {
+    SwaggerModule.setup(`${API_VERSION}/docs`, app, document, {
       swaggerOptions: {
         persistAuthorization: true,
       },
@@ -402,7 +404,7 @@ async function bootstrap() {
 
   logger.log(`Application running on port ${port}`);
   if (swaggerEnabled()) {
-    logger.log(`Swagger docs available at http://localhost:${port}/v1/docs`);
+    logger.log(`Swagger docs available at http://localhost:${port}/${API_VERSION}/docs`);
   }
   logger.log(`Environment: ${process.env['NODE_ENV'] ?? 'development'}`);
 }

@@ -210,6 +210,10 @@ function buildPipeline() {
     promptTokens: 120,
     completionTokens: 24,
     latencyMs: 40,
+    // The primary answered — no cascade. Routing must not read these, but the
+    // stub has to satisfy the contract the real client now returns.
+    attemptedModels: ['openai/gpt-oss-20b:free'],
+    usedFallback: false,
   });
 
   // ── I/O edges ──────────────────────────────
@@ -568,6 +572,8 @@ describe('AI confidence routing (integration)', () => {
         promptTokens: 120,
         completionTokens: 24,
         latencyMs: 40,
+        attemptedModels: ['openai/gpt-oss-20b:free'],
+        usedFallback: false,
       });
 
       await p.service.handleMessageReceived(messageReceived());
@@ -615,6 +621,8 @@ describe('AI confidence routing (integration)', () => {
         promptTokens: 10,
         completionTokens: 8,
         latencyMs: 12,
+        attemptedModels: ['openai/gpt-oss-20b:free'],
+        usedFallback: false,
       });
 
       await p.service.handleMessageReceived(messageReceived());

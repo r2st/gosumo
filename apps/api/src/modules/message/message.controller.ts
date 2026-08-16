@@ -19,6 +19,7 @@ import {
 } from '@nestjs/swagger';
 import { MessageService } from './message.service';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
+import { TenantRateLimit } from '../../common/rate-limit/tenant-rate-limit.decorator';
 import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
 import {
   MessagePaginationQueryDto,
@@ -79,6 +80,7 @@ export class MessageController {
   // ─── Search ──────────────────────────────────
 
   @Get('messages/search')
+  @TenantRateLimit('search')
   @ApiOperation({ summary: 'Search messages by text content' })
   @ApiQuery({ name: 'q', required: true, description: 'Search query' })
   @ApiResponse({ status: 200, description: 'Search results' })

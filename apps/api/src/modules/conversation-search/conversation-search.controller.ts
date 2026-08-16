@@ -2,6 +2,7 @@ import { Controller, Get, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { ConversationSearchService } from './conversation-search.service';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
+import { TenantRateLimit } from '../../common/rate-limit/tenant-rate-limit.decorator';
 import {
   SearchMessagesQueryDto,
   type ConversationSearchResultDto,
@@ -25,6 +26,7 @@ export class ConversationSearchController {
   constructor(private readonly search: ConversationSearchService) {}
 
   @Get('messages')
+  @TenantRateLimit('search')
   @ApiOperation({
     summary: 'Full-text search across conversation messages',
     description:
@@ -41,6 +43,7 @@ export class ConversationSearchController {
   }
 
   @Get('conversations')
+  @TenantRateLimit('search')
   @ApiOperation({
     summary: 'Full-text search, collapsed to one row per conversation',
     description:

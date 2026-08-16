@@ -7,6 +7,8 @@ import { QueueTelemetryModule } from './common/queue/queue-telemetry.module';
 import { ConversationLockModule } from './common/services/conversation-lock.module';
 import { PrismaModule } from './common/services/prisma.module';
 import { ResilienceModule } from './common/resilience/resilience.module';
+import { RateLimitModule } from './common/rate-limit/rate-limit.module';
+import { VersioningModule } from './common/versioning/versioning.module';
 import { JOB_TIMEOUT_MS } from './common/queue/queue.constants';
 
 // Feature modules
@@ -51,6 +53,7 @@ import { SlaModule } from './modules/sla/sla.module';
 import { AgentPerformanceModule } from './modules/agent-performance/agent-performance.module';
 import { WebhookLogModule } from './modules/webhook-log/webhook-log.module';
 import { ConversationSearchModule } from './modules/conversation-search/conversation-search.module';
+import { DataExportModule } from './modules/data-export/data-export.module';
 import { HealthModule } from './modules/health/health.module';
 
 @Module({
@@ -128,6 +131,13 @@ import { HealthModule } from './modules/health/health.module';
 
     // Feature modules
     AuthModule,
+    // Immediately after AuthModule, and not before it: global APP_GUARDs run
+    // in declaration order, and the per-tenant limiter needs the user
+    // JwtAuthGuard attaches to know which business to charge.
+    RateLimitModule,
+    // Deprecation signalling. Opt-in per route, so registering it changes
+    // nothing until a route carries @ApiDeprecated().
+    VersioningModule,
     TenantModule,
     ChannelAdapterModule,
     ConversationModule,
@@ -172,6 +182,7 @@ import { HealthModule } from './modules/health/health.module';
     AgentPerformanceModule,
     WebhookLogModule,
     ConversationSearchModule,
+    DataExportModule,
   ],
 })
 export class AppModule {}

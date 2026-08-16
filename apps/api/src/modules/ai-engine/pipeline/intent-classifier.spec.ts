@@ -48,6 +48,8 @@ describe('IntentClassifierService', () => {
         promptTokens: 10,
         completionTokens: 5,
         latencyMs: 100,
+        attemptedModels: [],
+        usedFallback: false,
       });
       llm.extractJson.mockReturnValue({
         primaryIntent: IntentType.CHIT_CHAT,
@@ -70,6 +72,8 @@ describe('IntentClassifierService', () => {
         promptTokens: 1,
         completionTokens: 1,
         latencyMs: 1,
+        attemptedModels: [],
+        usedFallback: false,
       });
       llm.extractJson.mockReturnValue(null);
 

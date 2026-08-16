@@ -113,6 +113,8 @@ function makeHarness(): Harness {
     promptTokens: 100,
     completionTokens: 20,
     latencyMs: 50,
+    attemptedModels: [],
+    usedFallback: false,
   });
 
   const intentClassifier = new IntentClassifierService(llm);

@@ -19,6 +19,7 @@ import { RealtyIngestionService } from './realty-ingestion.service';
 import { RealtyIvrService } from './realty-ivr.service';
 import { parseIvrCallback } from './ivr/ivr-callback.parser';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
+import { TenantRateLimit } from '../../common/rate-limit/tenant-rate-limit.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import {
   allowUnverifiedWebhook,
@@ -178,6 +179,7 @@ export class RealtyIngestionController {
   // ─────────────────────────────────────────────
 
   @Post('realty/ingestion/csv')
+  @TenantRateLimit('bulk-write')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Bulk-import leads from parsed CSV rows (E.164 identity merge)' })
   @ApiResponse({ status: 200, description: 'Import summary' })

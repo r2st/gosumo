@@ -132,6 +132,42 @@ export function verifySharedSecretSignature(options: {
 }
 
 /**
+ * The exact bytes a webhook arrived as, or `null` if they are not available.
+ *
+ * Exists to remove one specific pattern from the gateway webhook handlers:
+ *
+ * ```ts
+ * const rawBody = req.rawBody ?? Buffer.from(JSON.stringify(req.body));
+ * ```
+ *
+ * That fallback is not the sender's bytes. `JSON.stringify` re-serialises the
+ * *parsed* object, so key order, whitespace, unicode escaping and number
+ * formatting are Node's rather than Razorpay's, and the digest will not match.
+ * Which means the fallback is harmless today — it fails closed — and it is
+ * exactly the wrong shape to leave lying around, for two reasons.
+ *
+ * The first is diagnosis. `rawBody` is absent only when the app was not
+ * created with `rawBody: true`; that is a bootstrap misconfiguration affecting
+ * *every* webhook at once, and the fallback reports it as `401 Invalid webhook
+ * signature` on each one. An operator reading that goes looking for a rotated
+ * secret at the gateway, which is the wrong system entirely.
+ *
+ * The second is what the pattern invites. The obvious "fix" for a webhook
+ * endpoint that suddenly rejects everything is to make the comparison match —
+ * and if the signature is ever computed over the re-serialised body on *both*
+ * sides, verification passes for any payload an attacker cares to send. The
+ * fallback is one plausible edit away from a bypass.
+ *
+ * So: no fallback. Absent bytes are a configuration fault, reported as one.
+ */
+export function webhookRawBody(req: { rawBody?: Buffer }): Buffer | null {
+  const raw = req.rawBody;
+  // A zero-length buffer is a real (empty) body and verifies normally — the
+  // check is for absence, not emptiness.
+  return raw instanceof Buffer ? raw : null;
+}
+
+/**
  * Constant-time equality for a shared secret presented by a caller — the
  * Meta `hub.verify_token`, the portal ingest token, and anything else compared
  * against a configured string rather than a computed digest.

@@ -4,7 +4,15 @@ import {
   LLM_BREAKER_COOLDOWN_MS,
   LLM_BREAKER_FAILURE_THRESHOLD,
   LLM_TIMEOUT_MS,
+  LLM_FALLBACK_MODELS,
 } from '../ai-engine.constants';
+
+/**
+ * Most `fetch` calls one turn can make: the primary's two attempts plus one
+ * per backup model. Several tests bound calls by "one turn's worth" rather
+ * than a literal, so lengthening the chain does not silently weaken them.
+ */
+const MAX_CALLS_PER_TURN = 2 + LLM_FALLBACK_MODELS.length;
 
 function makeClient(apiKey = 'test-key'): LlmClientService {
   const config = {
@@ -65,7 +73,10 @@ describe('LlmClientService', () => {
 
     const client = makeClient();
     await expect(client.complete(req)).rejects.toBeInstanceOf(LlmUnavailableError);
-    expect(fetchSpy).toHaveBeenCalledTimes(2); // maxAttempts = 2
+    // The primary's two attempts, then one attempt at each backup in the
+    // chain — a 5xx is model-scoped, so it cascades. The failures here are
+    // immediate, so the budget never bites.
+    expect(fetchSpy).toHaveBeenCalledTimes(2 + LLM_FALLBACK_MODELS.length);
   }, 10_000);
 
   /**
@@ -267,7 +278,11 @@ describe('LlmClientService — circuit breaker', () => {
       ]);
 
       expect(fetchSpy.mock.calls.length).toBeGreaterThan(before);
-      expect(fetchSpy.mock.calls.length).toBeLessThanOrEqual(before + 2);
+      // One turn's worth of calls, not three. The probe cascades over its
+      // whole model chain — that is one caller finding out the provider is
+      // still down, which is the point; what must not happen is the other two
+      // callers doing it as well.
+      expect(fetchSpy.mock.calls.length).toBeLessThanOrEqual(before + MAX_CALLS_PER_TURN);
     });
 
     it('closes when the probe succeeds', async () => {
@@ -413,9 +428,34 @@ describe('LlmClientService — a stalled response body', () => {
     await jest.advanceTimersByTimeAsync(LLM_TIMEOUT_MS);
     await jest.advanceTimersByTimeAsync(1_000);
     await jest.advanceTimersByTimeAsync(LLM_TIMEOUT_MS);
+    // A stall is a timeout, which is model-scoped, so the cascade runs — but
+    // it is also the slowest possible failure, so the budget stops it after
+    // one backup rather than letting it run the whole chain.
+    await jest.advanceTimersByTimeAsync(LLM_TIMEOUT_MS);
 
     await asserted;
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it('stops cascading once the budget can no longer fit a whole attempt', async () => {
+    // This is the bound that keeps a slow provider from multiplying: without
+    // it, a stall costs the turn LLM_TIMEOUT_MS × every model in the chain,
+    // and it is paid in a worker slot. The budget admits the primary's two
+    // attempts plus exactly one backup, so the third model is reachable only
+    // when the earlier failures were fast.
+    jest.useFakeTimers();
+    const fetchSpy = stalledBodyFetch();
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    const client = makeClient();
+    const asserted = expect(client.complete(req)).rejects.toBeInstanceOf(LlmUnavailableError);
+
+    // Well past what the whole chain would need if it were unbounded.
+    await jest.advanceTimersByTimeAsync(LLM_TIMEOUT_MS * (MAX_CALLS_PER_TURN + 2) + 5_000);
+
+    await asserted;
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(fetchSpy.mock.calls.length).toBeLessThan(MAX_CALLS_PER_TURN);
   });
 
   it('counts a stalled body as a failure, so sustained stalling opens the breaker', async () => {
@@ -428,8 +468,9 @@ describe('LlmClientService — a stalled response body', () => {
     const client = makeClient();
     for (let i = 0; i < LLM_BREAKER_FAILURE_THRESHOLD; i++) {
       const settled = expect(client.complete(req)).rejects.toBeInstanceOf(LlmUnavailableError);
-      // Both attempts' deadlines plus the backoff between them.
-      await jest.advanceTimersByTimeAsync(LLM_TIMEOUT_MS * 2 + 1_000);
+      // Both attempts' deadlines, the backoff between them, and the one
+      // backup the budget still has room for.
+      await jest.advanceTimersByTimeAsync(LLM_TIMEOUT_MS * 3 + 1_000);
       await settled;
     }
 
@@ -451,8 +492,183 @@ describe('LlmClientService — a stalled response body', () => {
 
     const client = makeClient();
     const settled = expect(client.complete(req)).rejects.toBeInstanceOf(LlmUnavailableError);
-    await jest.advanceTimersByTimeAsync(LLM_TIMEOUT_MS * 2 + 1_000);
+    await jest.advanceTimersByTimeAsync(LLM_TIMEOUT_MS * 3 + 1_000);
 
     await settled;
+  });
+});
+
+// ─────────────────────────────────────────────
+// The model fallback chain
+//
+// A paid model that is up answers every request. A free slug is a shared
+// allocation, so its ordinary failure is `429` on a model that is perfectly
+// healthy for somebody else a second later — and a same-model retry is charged
+// against the same exhausted allocation, which is why retrying alone was never
+// going to be enough. The alternative to a working fallback is escalating the
+// conversation to a human who may be asleep.
+// ─────────────────────────────────────────────
+
+describe('LlmClientService — model fallback chain', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  const okResponse = (model: string) =>
+    ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{ message: { content: 'answer' } }],
+        model,
+        usage: { prompt_tokens: 3, completion_tokens: 4 },
+      }),
+    }) as unknown as Response;
+
+  const failResponse = (status: number) =>
+    ({
+      ok: false,
+      status,
+      text: async () => `status ${status}`,
+    }) as unknown as Response;
+
+  /** The `model` field of the body sent on the nth fetch call. */
+  const modelOfCall = (spy: jest.SpyInstance, n: number): string => {
+    const init = spy.mock.calls[n]?.[1] as RequestInit | undefined;
+    return (JSON.parse(String(init?.body ?? '{}')) as { model?: string }).model ?? '';
+  };
+
+  it('falls back to the next model when the primary is rate limited', async () => {
+    // 429 is the single most common free-tier refusal and the one this whole
+    // mechanism exists for.
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(failResponse(429))
+      .mockResolvedValueOnce(okResponse(LLM_FALLBACK_MODELS[0]!));
+
+    const result = await makeClient().complete(req);
+
+    expect(result.text).toBe('answer');
+    expect(result.usedFallback).toBe(true);
+    expect(result.attemptedModels).toEqual(['openai/gpt-oss-20b:free', LLM_FALLBACK_MODELS[0]]);
+    // The second call must actually ask a *different* slug — re-sending the
+    // one that just refused is the one call guaranteed not to help.
+    expect(modelOfCall(fetchSpy, 0)).toBe('openai/gpt-oss-20b:free');
+    expect(modelOfCall(fetchSpy, 1)).toBe(LLM_FALLBACK_MODELS[0]);
+  });
+
+  it('does not retry a rate-limited model before falling back', async () => {
+    // The retry would be charged against the same exhausted allocation, and
+    // the customer pays the backoff for it.
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(failResponse(429))
+      .mockResolvedValueOnce(okResponse(LLM_FALLBACK_MODELS[0]!));
+
+    await makeClient().complete(req);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('falls back when a free slug has been retired (404)', async () => {
+    // Free models are withdrawn without notice. Until someone edits the
+    // constant, the chain is the only thing keeping the app answering.
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(failResponse(404))
+      .mockResolvedValueOnce(okResponse(LLM_FALLBACK_MODELS[0]!));
+
+    const result = await makeClient().complete(req);
+
+    expect(result.usedFallback).toBe(true);
+  });
+
+  it('reports no fallback when the primary answers', async () => {
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(okResponse('openai/gpt-oss-20b:free'));
+
+    const result = await makeClient().complete(req);
+
+    expect(result.usedFallback).toBe(false);
+    expect(result.attemptedModels).toEqual(['openai/gpt-oss-20b:free']);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not cascade on an authentication failure', async () => {
+    // A 401 is the account, not the slug. Asking two more models with the same
+    // bad key turns one clear configuration error into three slow ones and
+    // burns the budget a genuine model outage needs.
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(failResponse(401));
+
+    await expect(makeClient().complete(req)).rejects.toBeInstanceOf(LlmUnavailableError);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not cascade on a malformed request', async () => {
+    // A 400 means the prompt is wrong — an oversized context, a bad
+    // parameter — and every model in the chain will say so.
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(failResponse(400));
+
+    await expect(makeClient().complete(req)).rejects.toBeInstanceOf(LlmUnavailableError);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces the auth status unchanged rather than a chain summary', async () => {
+    // The operator needs to see 401, not "every model failed". Rewriting a
+    // non-cascading failure into the cascade's own error would hide the one
+    // detail that says which env var to fix.
+    jest.spyOn(global, 'fetch').mockResolvedValue(failResponse(401));
+
+    await expect(makeClient().complete(req)).rejects.toMatchObject({
+      context: { status: 401 },
+    });
+  });
+
+  it('never asks the same slug twice when the primary is already in the chain', async () => {
+    // Intent routing can pick a chain member as the primary. Trying it again
+    // as its own backup is a call that cannot succeed.
+    const primary = LLM_FALLBACK_MODELS[0]!;
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(failResponse(429));
+
+    await expect(makeClient().complete({ ...req, model: primary })).rejects.toBeInstanceOf(
+      LlmUnavailableError,
+    );
+
+    const asked = fetchSpy.mock.calls.map((_call, i) => modelOfCall(fetchSpy, i));
+    expect(new Set(asked).size).toBe(asked.length);
+    expect(asked[0]).toBe(primary);
+  });
+
+  it('gives up with the last failure once every model has refused', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue(failResponse(429));
+
+    const err = await makeClient()
+      .complete(req)
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(LlmUnavailableError);
+    // The status is preserved from the last failure so `isOutageFailure` still
+    // sees the real provider signal; the chain rides along in context.
+    expect((err as LlmUnavailableError).context['status']).toBe(429);
+    expect((err as LlmUnavailableError).context['attemptedModels']).toHaveLength(
+      1 + LLM_FALLBACK_MODELS.length,
+    );
+  });
+
+  it('counts a turn a backup rescued as a success for the breaker', async () => {
+    // The gateway answered. Opening the circuit because the *primary* slug is
+    // rationed would disable the fallback that is currently working.
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(okResponse(LLM_FALLBACK_MODELS[0]!))
+      .mockResolvedValueOnce(failResponse(429));
+
+    const client = makeClient();
+    for (let i = 0; i < LLM_BREAKER_FAILURE_THRESHOLD + 2; i++) {
+      await client.complete(req).catch(() => undefined);
+    }
+
+    expect(client.circuitOpen).toBe(false);
   });
 });

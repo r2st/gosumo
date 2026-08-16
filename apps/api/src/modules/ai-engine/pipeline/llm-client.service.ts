@@ -13,6 +13,10 @@ import {
   DEFAULT_MODEL,
   LLM_BREAKER_FAILURE_THRESHOLD,
   LLM_BREAKER_COOLDOWN_MS,
+  LLM_FALLBACK_MODELS,
+  LLM_FALLBACK_MAX_MODELS,
+  LLM_FALLBACK_BUDGET_MS,
+  isModelScopedFailure,
 } from '../ai-engine.constants';
 
 /**
@@ -33,6 +37,20 @@ export interface LlmCompletionResult {
   promptTokens: number;
   completionTokens: number;
   latencyMs: number;
+  /**
+   * Every model slug this turn asked, in order, ending with the one that
+   * answered. Length > 1 means the primary refused and a backup served it.
+   *
+   * Recorded separately from `modelId` because `modelId` is what OpenRouter
+   * says it used, which is the *last* entry and carries no trace of the ones
+   * before it. Without this a cascade is invisible: the turn succeeds, the
+   * decision row names a model nobody configured for that intent, and the
+   * primary's failure rate — the thing that says a free slug has been retired
+   * or is permanently rationed — is never counted anywhere.
+   */
+  attemptedModels: string[];
+  /** True when a model other than the requested one produced this text. */
+  usedFallback: boolean;
 }
 
 /**
@@ -139,21 +157,151 @@ export class LlmClientService {
     // an unavailable LLM as a reason to escalate or fall back, so this changes
     // when they find out, not what they do about it.
     //
-    // The breaker wraps the *whole* retry loop, not each attempt: the two
-    // attempts of one turn are one piece of evidence about the provider, and
-    // counting them separately would halve the effective threshold.
-    return this.breaker.run(() => this.completeWithRetries(request, apiKey));
+    // The breaker wraps the *whole* cascade, not each attempt or each model:
+    // every model this turn tried is one piece of evidence about OpenRouter,
+    // and counting them separately would divide the effective threshold by the
+    // chain length. It also means a turn a backup rescued is a *success* here
+    // — which is right, because the gateway answered.
+    return this.breaker.run(() => this.completeWithFallback(request, apiKey));
   }
 
   /**
-   * The two-attempt completion itself, with no breaker state of its own — the
-   * breaker observes this method's outcome from the outside.
+   * Try the requested model, then each backup in {@link LLM_FALLBACK_MODELS},
+   * stopping at the first one that answers.
+   *
+   * Two rules decide whether the cascade continues, and both are about not
+   * spending a customer's wait on a call that cannot succeed:
+   *
+   *  - **The failure has to be about the model.** {@link isModelScopedFailure}
+   *    draws that line. A `401` is the account, not the slug, and asking two
+   *    more models with the same bad key just makes one clear error take three
+   *    times as long to surface.
+   *  - **The budget has to cover a whole attempt.** Starting a call with four
+   *    seconds left buys a turn that fails on the deadline instead of failing
+   *    now, and pays {@link LLM_TIMEOUT_MS} of a BullMQ worker slot for it.
+   *
+   * Only the primary keeps its two attempts. A backup gets one: the reason to
+   * retry a model is that nothing better is available, and here something is.
+   */
+  private async completeWithFallback(
+    request: LlmCompletionRequest,
+    apiKey: string,
+  ): Promise<LlmCompletionResult> {
+    const primary = request.model ?? DEFAULT_MODEL;
+    const chain = this.buildChain(primary);
+    const startedAt = Date.now();
+    const attempted: string[] = [];
+    let lastError: LlmUnavailableError | undefined;
+
+    for (let i = 0; i < chain.length; i++) {
+      const model = chain[i]!;
+
+      // Budget is checked before every model *except the first*: the primary
+      // is not a fallback and must always get its attempt, or a
+      // misconfiguration here would silently disable the LLM entirely.
+      if (i > 0) {
+        const elapsed = Date.now() - startedAt;
+        if (elapsed + LLM_TIMEOUT_MS > LLM_FALLBACK_BUDGET_MS) {
+          this.logger.warn(
+            `LLM fallback budget exhausted after ${elapsed}ms and ` +
+              `${attempted.length} model(s); not trying ${model}`,
+          );
+          break;
+        }
+      }
+
+      attempted.push(model);
+      try {
+        const result = await this.completeWithRetries(
+          request,
+          apiKey,
+          model,
+          // The primary is the only one worth re-asking; see the doc comment.
+          i === 0 ? this.maxAttempts : 1,
+        );
+        if (i > 0) {
+          // WARN, not LOG: the turn succeeded, but the model the tenant's
+          // intent routing chose did not serve it. Sustained, this line is how
+          // anyone learns a free slug has been retired or permanently
+          // rationed — the success would otherwise hide it completely.
+          this.logger.warn(
+            `LLM fallback served this turn: ${primary} failed, ${model} answered ` +
+              `(tried ${attempted.join(' → ')})`,
+          );
+        }
+        return { ...result, attemptedModels: [...attempted], usedFallback: i > 0 };
+      } catch (err) {
+        // completeWithRetries only ever throws LlmUnavailableError; anything
+        // else escaping it is a bug here, not a provider failure, and must not
+        // be re-routed onto a backup model.
+        if (!(err instanceof LlmUnavailableError)) throw err;
+        lastError = err;
+
+        const status = err.context['status'];
+        const numericStatus = typeof status === 'number' ? status : undefined;
+        if (!isModelScopedFailure(numericStatus)) {
+          // Not the model's fault — every entry in the chain would answer the
+          // same way. Surface it now, unchanged, so the status the operator
+          // needs to see is the one they get.
+          throw err;
+        }
+
+        const isLast = i === chain.length - 1;
+        if (!isLast) {
+          this.logger.warn(
+            `LLM model ${model} failed (${numericStatus ?? 'no status'}); ` +
+              `falling back to ${chain[i + 1]}`,
+          );
+        }
+      }
+    }
+
+    // Every model in the chain refused. The error thrown is the *last* one, so
+    // its status still drives `isOutageFailure` and the breaker sees the real
+    // provider signal rather than a synthetic one; the chain is carried in
+    // context for the log.
+    throw new LlmUnavailableError(
+      `every model failed (${attempted.join(', ')}): ` +
+        `${lastError?.message ?? 'no completion'}`,
+      {
+        cause: lastError,
+        status:
+          typeof lastError?.context['status'] === 'number'
+            ? (lastError.context['status'] as number)
+            : undefined,
+        context: { attemptedModels: attempted, elapsedMs: Date.now() - startedAt },
+      },
+    );
+  }
+
+  /**
+   * The models one turn may try, in order: the requested one first, then the
+   * configured backups, capped at {@link LLM_FALLBACK_MAX_MODELS}.
+   *
+   * The primary is removed from the backup list rather than left to be tried
+   * twice — the intent routing already picks a chain member as the primary for
+   * some intents, and re-asking the slug that just refused is the one call
+   * guaranteed not to help.
+   */
+  private buildChain(primary: string): string[] {
+    const backups = LLM_FALLBACK_MODELS.filter((m) => m !== primary);
+    return [primary, ...backups].slice(0, Math.max(1, LLM_FALLBACK_MAX_MODELS));
+  }
+
+  /**
+   * One model's attempts, with no breaker state of its own — the breaker
+   * observes the whole cascade's outcome from the outside.
+   *
+   * `model` is passed explicitly rather than read off `request.model` because
+   * the cascade calls this once per model in the chain; `maxAttempts` is a
+   * parameter for the same reason (the primary retries, a backup does not).
    */
   private async completeWithRetries(
     request: LlmCompletionRequest,
     apiKey: string,
-  ): Promise<LlmCompletionResult> {
-    const model = request.model ?? DEFAULT_MODEL;
+    model: string = request.model ?? DEFAULT_MODEL,
+    maxAttempts: number = this.maxAttempts,
+  ): Promise<Omit<LlmCompletionResult, 'attemptedModels' | 'usedFallback'>> {
     const body = {
       model,
       max_tokens: request.maxTokens ?? LLM_MAX_TOKENS,
@@ -166,7 +314,7 @@ export class LlmClientService {
 
     let lastError: Error | undefined;
 
-    for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const startMs = Date.now();
       try {
         const response = await this.fetchWithTimeout(apiKey, body);
@@ -208,14 +356,19 @@ export class LlmClientService {
           throw err;
         }
         lastError = err instanceof Error ? err : new Error(String(err));
-        const isLast = attempt === this.maxAttempts;
+        const isLast = attempt === maxAttempts;
         if (isLast) {
-          this.logger.error(
-            `OpenRouter completion failed after ${attempt} attempt(s): ${lastError.message}`,
+          // WARN, not ERROR: the cascade above may still rescue this turn, and
+          // an ERROR line for a failure the tenant never saw is exactly the
+          // noise that trains people to ignore the level. The genuinely
+          // terminal case — every model gone — is what `complete()`'s callers
+          // report on.
+          this.logger.warn(
+            `OpenRouter model ${model} failed after ${attempt} attempt(s): ${lastError.message}`,
           );
         } else {
           this.logger.warn(
-            `OpenRouter completion attempt ${attempt} failed, retrying: ${lastError.message}`,
+            `OpenRouter completion attempt ${attempt} for ${model} failed, retrying: ${lastError.message}`,
           );
           await this.sleep(1000);
         }
@@ -226,7 +379,8 @@ export class LlmClientService {
     // an outage rather than a bad request. Deliberately carries no `status`,
     // which is how `isOutageFailure` recognises it.
     throw new LlmUnavailableError(
-      lastError?.message ?? 'OpenRouter completion failed after all retries',
+      lastError?.message ?? `OpenRouter completion failed for ${model} after all retries`,
+      { cause: lastError, context: { model } },
     );
   }
 

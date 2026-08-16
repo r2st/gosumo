@@ -11,7 +11,7 @@
  * it; passing the wrong id makes the money trail name the wrong broker.
  */
 
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { RealtyEoiStatus } from '@prisma/client';
 import type { Request } from 'express';
 
@@ -143,29 +143,47 @@ describe('RealtyEoiController', () => {
     });
 
     /**
-     * The fallback when `rawBody` is absent (a misconfigured body parser).
+     * When `rawBody` is absent (a misconfigured body parser) there is nothing
+     * honest left to verify.
      *
-     * It re-serialises the parsed body, which will not byte-match the original
-     * payload in general — so verification fails and the delivery is rejected.
-     * That is the safe direction: the fallback cannot let an unsigned payload
-     * through, it can only cause a legitimate one to be retried.
+     * Re-serialising the parsed body does not reproduce the bytes Razorpay
+     * signed, so that digest can never match. It fails closed, which is why it
+     * was survivable — but it reports a bootstrap fault as `401 invalid
+     * signature`, sending an operator after a rotated gateway secret while
+     * *every* webhook on the process is failing for an unrelated reason. The
+     * handler names the real fault instead.
      */
-    it('falls back to the re-serialised body when the raw bytes are missing', async () => {
+    it('refuses to verify when the raw bytes are missing', async () => {
       const { controller, eoi } = build();
 
-      await controller.webhook(req({ body: { event: 'payment_link.paid' } }), 'sig_abc');
-
-      const passed = eoi.handleRazorpayWebhook.mock.calls[0][0] as Buffer;
-      expect(Buffer.isBuffer(passed)).toBe(true);
-      expect(passed.toString()).toBe('{"event":"payment_link.paid"}');
+      await expect(
+        controller.webhook(req({ body: { event: 'payment_link.paid' } }), 'sig_abc'),
+      ).rejects.toBeInstanceOf(InternalServerErrorException);
+      expect(eoi.handleRazorpayWebhook).not.toHaveBeenCalled();
     });
 
-    it('falls back to an empty object when there is no body at all', async () => {
+    it('refuses the same way when there is no body at all', async () => {
       const { controller, eoi } = build();
 
-      await controller.webhook(req({}), 'sig_abc');
+      await expect(controller.webhook(req({}), 'sig_abc')).rejects.toBeInstanceOf(
+        InternalServerErrorException,
+      );
+      expect(eoi.handleRazorpayWebhook).not.toHaveBeenCalled();
+    });
 
-      expect((eoi.handleRazorpayWebhook.mock.calls[0][0] as Buffer).toString()).toBe('{}');
+    /**
+     * Ordering: the missing-signature check runs first. A delivery with
+     * neither a signature nor raw bytes is a client error (400), not this
+     * server's misconfiguration (500) — the caller is told what *they* got
+     * wrong, and an unsigned payload never reaches the raw-body branch.
+     */
+    it('reports a missing signature as a 400 even when rawBody is also absent', async () => {
+      const { controller, eoi } = build();
+
+      await expect(controller.webhook(req({}), '' as unknown as string)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(eoi.handleRazorpayWebhook).not.toHaveBeenCalled();
     });
   });
 });

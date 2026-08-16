@@ -15,6 +15,7 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { AiEngineService } from './ai-engine.service';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
+import { TenantRateLimit } from '../../common/rate-limit/tenant-rate-limit.decorator';
 import {
   ProcessMessageDto,
   ClassifyIntentDto,
@@ -55,6 +56,7 @@ export class AiEngineController {
   // ───────────────────────────────────────────────────────────────────
 
   @Post('process')
+  @TenantRateLimit('ai-invoke')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Manually trigger AI message processing (admin/testing)' })
   @ApiResponse({ status: 200, description: 'AI decision produced', type: AIDecisionDto })
@@ -95,6 +97,7 @@ export class AiEngineController {
   }
 
   @Post('decisions/:id/regenerate')
+  @TenantRateLimit('ai-invoke')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Re-run LLM with optional reviewer feedback' })
   @ApiParam({ name: 'id', description: 'AI decision UUID' })
@@ -113,6 +116,7 @@ export class AiEngineController {
   // ───────────────────────────────────────────────────────────────────
 
   @Post('classify')
+  @TenantRateLimit('ai-classify')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Standalone intent classification' })
   @ApiResponse({ status: 200, description: 'Intent classification result', type: IntentClassificationDto })
@@ -149,6 +153,7 @@ export class AiEngineController {
   // ───────────────────────────────────────────────────────────────────
 
   @Post('knowledge')
+  @TenantRateLimit('knowledge-ingest')
   @Roles(TeamMemberRole.MANAGER)
   @ApiOperation({ summary: 'Ingest a document into the knowledge base' })
   @ApiResponse({ status: 201, description: 'Document indexed', type: IngestResultDto })
@@ -160,6 +165,7 @@ export class AiEngineController {
   }
 
   @Get('knowledge/search')
+  @TenantRateLimit('search')
   @ApiOperation({ summary: 'Semantic search over the knowledge base' })
   @ApiResponse({ status: 200, description: 'Matching knowledge entries', type: [KnowledgeEntryDto] })
   async searchKnowledge(

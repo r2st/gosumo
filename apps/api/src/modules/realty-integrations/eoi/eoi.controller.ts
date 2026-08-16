@@ -10,6 +10,7 @@ import {
   HttpCode,
   HttpStatus,
   BadRequestException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import type { Request } from 'express';
@@ -18,6 +19,7 @@ import { EoiService } from './eoi.service';
 import { TenantId } from '../../../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Public } from '../../../common/decorators/public.decorator';
+import { webhookRawBody } from '../../../common/utils/webhook-verification.util';
 import { UuidValidationPipe } from '../../../common/pipes/uuid-validation.pipe';
 import { RequestEoiDto, ApproveEoiDto, RejectEoiDto } from '../dto';
 
@@ -121,9 +123,16 @@ export class RealtyEoiController {
     @Req() req: RawBodyRequest,
     @Headers('x-razorpay-signature') signature: string,
   ) {
-    const rawBody = req.rawBody ?? Buffer.from(JSON.stringify(req.body ?? {}));
     if (!signature) {
       throw new BadRequestException('Missing x-razorpay-signature header');
+    }
+    // No `JSON.stringify(req.body)` fallback — those are not the bytes
+    // Razorpay signed. See webhookRawBody().
+    const rawBody = webhookRawBody(req);
+    if (!rawBody) {
+      throw new InternalServerErrorException(
+        'Webhook cannot be verified: the raw request body is unavailable',
+      );
     }
     return this.eoi.handleRazorpayWebhook(rawBody, signature);
   }

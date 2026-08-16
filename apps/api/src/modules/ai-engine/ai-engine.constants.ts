@@ -102,6 +102,97 @@ export const LLM_BREAKER_FAILURE_THRESHOLD = 5;
  * long enough that a sustained outage is not re-probed by every message.
  */
 export const LLM_BREAKER_COOLDOWN_MS = 30_000;
+
+// ─────────────────────────────────────────────
+// Model fallback chain
+// ─────────────────────────────────────────────
+
+/**
+ * Backup models tried, in order, when the requested one cannot serve a turn.
+ *
+ * This exists because of what the free tier actually does when it refuses. A
+ * paid model that is up answers every request; a free slug is a shared
+ * allocation, so its ordinary failure mode is `429` on a model that is
+ * perfectly healthy for somebody else a second later — and `503 no instances
+ * available` when the upstream provider drops the free pool entirely. Neither
+ * is a statement about OpenRouter, and neither is fixed by retrying the same
+ * slug: the retry is charged against the same exhausted allocation.
+ *
+ * Another slug is. The chain is ordered by how different the backing provider
+ * is from the primary, not by capability — a backup routed to the same
+ * upstream as the one that just refused is not a backup. Capability is a
+ * secondary concern here because every entry is instruction-following enough
+ * for this app's prompts, and a slightly weaker reply that exists beats a
+ * strong one that does not: the alternative to a fallback is escalating the
+ * conversation to a human who may be asleep.
+ *
+ * Deliberately short. Each additional entry buys a smaller marginal chance of
+ * success and costs the turn another full attempt, and the caller waiting on
+ * it is a customer watching a typing indicator.
+ */
+export const LLM_FALLBACK_MODELS: readonly string[] = [
+  'meta-llama/llama-3.3-70b-instruct:free',
+  'google/gemma-3-27b-it:free',
+];
+
+/**
+ * Most models one turn may try, primary included.
+ *
+ * The bound is on the *turn*, not on the chain, so lengthening
+ * {@link LLM_FALLBACK_MODELS} for coverage does not silently lengthen the
+ * worst case a waiting customer pays.
+ */
+export const LLM_FALLBACK_MAX_MODELS = 3;
+
+/**
+ * Wall-clock budget for the whole cascade, across every model it tries.
+ *
+ * Without it the worst case is multiplicative — {@link LLM_FALLBACK_MAX_MODELS}
+ * models × {@link LLM_TIMEOUT_MS} × the primary's retry — and it is paid
+ * precisely when the provider is slow rather than down, which is the case the
+ * per-call timeout handles least well. A backup is only attempted if a full
+ * {@link LLM_TIMEOUT_MS} still fits inside what is left, so the cascade stops
+ * early rather than starting a call it would have to abandon.
+ *
+ * Sized to admit the primary's two attempts plus one backup: the third model
+ * is reachable only when the earlier failures were fast (a `429` costs
+ * milliseconds), which is exactly the case where trying it is cheap.
+ */
+export const LLM_FALLBACK_BUDGET_MS = 25_000;
+
+/**
+ * Provider statuses that mean "this model cannot serve you", as opposed to
+ * "this account cannot" or "nothing can".
+ *
+ * Only these cascade. The distinction is the whole design: falling back on a
+ * `401` tries a second and third model with the same bad API key, turning one
+ * fast, legible configuration error into three slow ones and burning the
+ * budget that a genuine model outage needs. Same for `403`.
+ *
+ *  - `402` — free allocation exhausted for this slug (OpenRouter's own code
+ *    for it). Another slug has its own allocation.
+ *  - `404` — the slug does not exist, usually because a free model was
+ *    retired. The chain is what keeps the app answering until someone edits
+ *    the constant.
+ *  - `408` / `429` — busy or rationed. The single most common free-tier
+ *    refusal, and the one a same-model retry can only make worse.
+ *  - `5xx` — the upstream provider behind this slug is unhealthy. A different
+ *    slug is usually a different provider.
+ *
+ * A `400` is excluded: it means the *request* is malformed — an oversized
+ * prompt, a bad parameter — and every model in the chain will say so.
+ */
+export function isModelScopedFailure(status: number | undefined): boolean {
+  // No status at all: two attempts that never got an answer (transport error
+  // or timeout). Ambiguous by nature — it could be the network, or it could be
+  // the one upstream provider this slug routes to hanging. Treated as
+  // model-scoped so the cascade gets its chance, and bounded by
+  // LLM_FALLBACK_BUDGET_MS so the network case cannot run away.
+  if (status === undefined) return true;
+  if (status === 402 || status === 404 || status === 408 || status === 429) return true;
+  return status >= 500;
+}
+
 /** Number of inbound exchanges with an unchanged intent that triggers a loop. */
 export const LOOP_DETECTION_THRESHOLD = 3;
 
