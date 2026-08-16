@@ -151,6 +151,15 @@ const GLOBAL_SWEEPS = new Set<string>([
   // row. It must span tenants — a parked webhook can predate any resolvable
   // tenant, so `business_id` is nullable on that table.
   'WebhookDlqRepository.listDueGlobal',
+  // AI quality rollup (cron, no request tenant): aggregates one closed time
+  // bucket across every tenant, GROUP BY business_id. Each returned group
+  // carries its own business_id and every write that follows is keyed by it.
+  // It must span tenants — the question is *which* tenants decided anything
+  // in the bucket, and asking per tenant would be one full scan per tenant.
+  'AiQualityRepository.aggregateWindow',
+  // "How far behind is the rollup" — a property of the job, not of a tenant.
+  // Returns one timestamp and no rows.
+  'AiQualityRepository.latestComputedBucketStart',
 ]);
 
 /** Every documented reason a query may legitimately omit the tenant predicate. */
