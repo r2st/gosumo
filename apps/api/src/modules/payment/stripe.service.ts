@@ -67,10 +67,48 @@ export interface StripeSessionStatus {
  * Gateway abstraction for Stripe operations. Swap a mock for this interface
  * in tests; the production implementation talks to the real Stripe REST API.
  */
+/**
+ * A PaymentIntent as Stripe holds it, normalized for reconciliation.
+ *
+ * `amountMinor` is the intent's amount; `amountReceivedMinor` is what actually
+ * settled. A succeeded intent has them equal; anything else is the partial or
+ * failed-capture case that the local `SUCCESS` status would hide.
+ */
+export interface StripePaymentSnapshot {
+  id: string;
+  /** requires_payment_method | processing | succeeded | canceled | … */
+  status: string;
+  amountMinor: number;
+  amountReceivedMinor: number;
+  amountRefundedMinor: number;
+  currency: string;
+  disputed: boolean;
+}
+
+export interface StripeRefundSnapshot {
+  id: string;
+  paymentIntentId: string;
+  /** pending | succeeded | failed | canceled | requires_action */
+  status: string;
+  amountMinor: number;
+}
+
+export interface StripeDispute {
+  id: string;
+  paymentIntentId: string;
+  /** warning_needs_response | needs_response | under_review | won | lost | … */
+  status: string;
+  amountMinor: number;
+  reason: string | null;
+}
+
 export interface IStripeGateway {
   createCheckoutSession(options: StripeCheckoutOptions): Promise<StripeCheckoutResult>;
   createRefund(paymentIntentId: string, amountMinor: number): Promise<StripeRefundResult>;
   fetchSessionStatus(sessionId: string): Promise<StripeSessionStatus>;
+  fetchPaymentIntent(paymentIntentId: string): Promise<StripePaymentSnapshot>;
+  fetchRefundsForPaymentIntent(paymentIntentId: string): Promise<StripeRefundSnapshot[]>;
+  listDisputes(sinceEpochSeconds: number): Promise<StripeDispute[]>;
   verifyWebhookSignature(payload: string | Buffer, signatureHeader: string): boolean;
 }
 
@@ -207,6 +245,90 @@ export class StripeService implements IStripeGateway {
       paymentStatus: response.payment_status,
       paymentIntentId: response.payment_intent ?? undefined,
     };
+  }
+
+  /**
+   * Fetch a PaymentIntent as Stripe holds it — the reconciliation read.
+   * Uses GET /v1/payment_intents/:id with the latest charge expanded, since
+   * the refunded total and the dispute flag live on the charge, not the intent.
+   */
+  async fetchPaymentIntent(paymentIntentId: string): Promise<StripePaymentSnapshot> {
+    const response = await this.makeRequest<{
+      id: string;
+      status: string;
+      amount: number;
+      amount_received?: number;
+      currency: string;
+      latest_charge?: {
+        amount_refunded?: number;
+        disputed?: boolean;
+      } | null;
+    }>('GET', `/payment_intents/${paymentIntentId}?expand[]=latest_charge`);
+
+    return {
+      id: response.id,
+      status: response.status,
+      amountMinor: response.amount,
+      amountReceivedMinor: response.amount_received ?? 0,
+      amountRefundedMinor: response.latest_charge?.amount_refunded ?? 0,
+      currency: (response.currency ?? '').toUpperCase(),
+      disputed: Boolean(response.latest_charge?.disputed),
+    };
+  }
+
+  /**
+   * Every refund Stripe holds against a PaymentIntent.
+   * Uses GET /v1/refunds?payment_intent=…
+   *
+   * Plural for the same reason as the Razorpay side: partial refunds stack,
+   * and a refund issued from the Stripe dashboard has no local row at all.
+   */
+  async fetchRefundsForPaymentIntent(
+    paymentIntentId: string,
+  ): Promise<StripeRefundSnapshot[]> {
+    const response = await this.makeRequest<{
+      data?: Array<{
+        id: string;
+        payment_intent?: string | null;
+        status: string;
+        amount: number;
+      }>;
+    }>('GET', `/refunds?payment_intent=${encodeURIComponent(paymentIntentId)}&limit=100`);
+
+    return (response.data ?? []).map((item) => ({
+      id: item.id,
+      paymentIntentId: item.payment_intent ?? paymentIntentId,
+      status: item.status,
+      amountMinor: item.amount,
+    }));
+  }
+
+  /** Disputes created since an instant. Uses GET /v1/disputes. */
+  async listDisputes(sinceEpochSeconds: number): Promise<StripeDispute[]> {
+    const response = await this.makeRequest<{
+      data?: Array<{
+        id: string;
+        payment_intent?: string | null;
+        status: string;
+        amount: number;
+        reason?: string | null;
+      }>;
+    }>(
+      'GET',
+      `/disputes?created[gte]=${Math.floor(sinceEpochSeconds)}&limit=100`,
+    );
+
+    return (response.data ?? [])
+      .filter((item): item is typeof item & { payment_intent: string } =>
+        Boolean(item.payment_intent),
+      )
+      .map((item) => ({
+        id: item.id,
+        paymentIntentId: item.payment_intent,
+        status: item.status,
+        amountMinor: item.amount,
+        reason: item.reason ?? null,
+      }));
   }
 
   /**

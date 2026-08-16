@@ -72,10 +72,53 @@ export interface RazorpayPaymentLinkStatus {
   paymentId?: string;
 }
 
+/**
+ * A payment as the gateway holds it, normalized for reconciliation.
+ *
+ * `amountPaise` is what was *authorized*; `amountPaidPaise` is what was
+ * actually captured. Reconciliation cares about the difference — a captured
+ * amount short of the authorized one is the partial-payment case, and reading
+ * only `amount` would report it as settled in full.
+ */
+export interface RazorpayPaymentSnapshot {
+  id: string;
+  /** created | authorized | captured | refunded | failed */
+  status: string;
+  amountPaise: number;
+  amountPaidPaise: number;
+  amountRefundedPaise: number;
+  currency: string;
+  /** True once Razorpay has flagged a dispute against this payment. */
+  disputed: boolean;
+  capturedAt: Date | null;
+}
+
+/** A refund as the gateway holds it. */
+export interface RazorpayRefundSnapshot {
+  id: string;
+  paymentId: string;
+  /** pending | processed | failed */
+  status: string;
+  amountPaise: number;
+}
+
+/** A dispute/chargeback the gateway has opened against a payment. */
+export interface RazorpayDispute {
+  id: string;
+  paymentId: string;
+  /** open | under_review | won | lost | closed */
+  status: string;
+  amountPaise: number;
+  reason: string | null;
+}
+
 export interface IRazorpayGateway {
   createPaymentLink(options: RazorpayPaymentLinkOptions): Promise<RazorpayPaymentLinkResult>;
   createRefund(paymentId: string, amountPaise: number): Promise<RazorpayRefundResult>;
   fetchPaymentLinkStatus(paymentLinkId: string): Promise<RazorpayPaymentLinkStatus>;
+  fetchPayment(paymentId: string): Promise<RazorpayPaymentSnapshot>;
+  fetchRefundsForPayment(paymentId: string): Promise<RazorpayRefundSnapshot[]>;
+  listDisputes(sinceEpochSeconds: number): Promise<RazorpayDispute[]>;
   verifyWebhookSignature(payload: string | Buffer, signature: string): boolean;
 }
 
@@ -213,6 +256,108 @@ export class RazorpayService implements IRazorpayGateway {
       amountPaidPaise: response.amount_paid ?? 0,
       paymentId: capturedPayment?.payment_id,
     };
+  }
+
+  /**
+   * Fetch one payment as Razorpay holds it — the reconciliation read.
+   * Uses GET /v1/payments/:id.
+   *
+   * Distinct from {@link fetchPaymentLinkStatus}, which answers "was this link
+   * paid". This answers "what does the gateway believe about this money":
+   * authorized vs captured vs refunded amounts, and whether a dispute is open.
+   */
+  async fetchPayment(paymentId: string): Promise<RazorpayPaymentSnapshot> {
+    const response = await this.makeRequest<{
+      id: string;
+      status: string;
+      amount: number;
+      amount_paid?: number;
+      amount_refunded?: number;
+      currency: string;
+      captured?: boolean;
+      created_at?: number;
+      dispute_status?: string | null;
+    }>('GET', `/payments/${paymentId}`);
+
+    // `amount_paid` is absent on a plain payment entity (it belongs to the
+    // link/order shape). When it is, a captured payment has paid its full
+    // amount by definition, and an uncaptured one has paid nothing — inferring
+    // it is what keeps the amount comparison honest instead of reporting every
+    // captured payment as a zero-rupee partial.
+    const captured = response.status === 'captured' || response.captured === true;
+    const amountPaidPaise =
+      typeof response.amount_paid === 'number'
+        ? response.amount_paid
+        : captured
+          ? response.amount
+          : 0;
+
+    return {
+      id: response.id,
+      status: response.status,
+      amountPaise: response.amount,
+      amountPaidPaise,
+      amountRefundedPaise: response.amount_refunded ?? 0,
+      currency: (response.currency ?? '').toUpperCase(),
+      disputed: Boolean(response.dispute_status),
+      capturedAt:
+        captured && response.created_at
+          ? new Date(response.created_at * 1000)
+          : null,
+    };
+  }
+
+  /**
+   * Every refund the gateway holds against a payment.
+   * Uses GET /v1/payments/:id/refunds.
+   *
+   * Plural because a payment can carry several partial refunds, and the sum is
+   * what has to match the local ledger — checking only the one refund we know
+   * about is how a refund issued in the gateway dashboard stays invisible.
+   */
+  async fetchRefundsForPayment(paymentId: string): Promise<RazorpayRefundSnapshot[]> {
+    const response = await this.makeRequest<{
+      items?: Array<{
+        id: string;
+        payment_id?: string;
+        status: string;
+        amount: number;
+      }>;
+    }>('GET', `/payments/${paymentId}/refunds`);
+
+    return (response.items ?? []).map((item) => ({
+      id: item.id,
+      paymentId: item.payment_id ?? paymentId,
+      status: item.status,
+      amountPaise: item.amount,
+    }));
+  }
+
+  /**
+   * Disputes opened since an instant. Uses GET /v1/disputes.
+   *
+   * A dispute never arrives as a change to the payment we already hold — the
+   * money is clawed back by a separate entity — so reconciliation has to ask
+   * for them directly rather than infer them from payment status.
+   */
+  async listDisputes(sinceEpochSeconds: number): Promise<RazorpayDispute[]> {
+    const response = await this.makeRequest<{
+      items?: Array<{
+        id: string;
+        payment_id: string;
+        status: string;
+        amount: number;
+        reason_code?: string | null;
+      }>;
+    }>('GET', `/disputes?from=${Math.floor(sinceEpochSeconds)}&count=100`);
+
+    return (response.items ?? []).map((item) => ({
+      id: item.id,
+      paymentId: item.payment_id,
+      status: item.status,
+      amountPaise: item.amount,
+      reason: item.reason_code ?? null,
+    }));
   }
 
   /**
