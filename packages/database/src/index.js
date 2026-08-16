@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.prisma = exports.AnalyticsEventCategory = exports.FileUploadType = exports.AuditAction = exports.NotificationTemplateChannel = exports.EmbeddingEntityType = exports.CatalogItemType = exports.CampaignType = exports.CampaignStatus = exports.ShipmentStatus = exports.BookingStatus = exports.RefundStatus = exports.PaymentGateway = exports.PaymentMethod = exports.PaymentStatus = exports.OrderStatus = exports.RuleTrigger = exports.RuleType = exports.AiDecisionType = exports.AiDecisionOutcome = exports.TaskPriority = exports.TaskType = exports.TaskStatus = exports.TeamMemberStatus = exports.TeamMemberRole = exports.ConversationStatus = exports.MessageStatus = exports.MessageType = exports.MessageDirection = exports.ChannelType = exports.PrismaClient = void 0;
+exports.prisma = exports.NotificationDigestFrequency = exports.ContactMergeStrategy = exports.CannedResponseApprovalStatus = exports.ConversationTagSource = exports.DataExportArchiveFormat = exports.DataExportJobStatus = exports.RetentionActionKind = exports.RetentionDataClass = exports.TemplateValidationState = exports.TemplateVersionState = exports.PaymentDiscrepancySeverity = exports.PaymentDiscrepancyStatus = exports.PaymentDiscrepancyType = exports.ReconciliationRunStatus = exports.AiQualityBucket = exports.AnalyticsEventCategory = exports.FileUploadType = exports.AuditAction = exports.NotificationTemplateChannel = exports.EmbeddingEntityType = exports.CatalogItemType = exports.CampaignType = exports.CampaignStatus = exports.ShipmentStatus = exports.BookingStatus = exports.RefundStatus = exports.PaymentGateway = exports.PaymentMethod = exports.PaymentStatus = exports.OrderStatus = exports.RuleTrigger = exports.RuleType = exports.AiDecisionType = exports.AiDecisionOutcome = exports.TaskPriority = exports.TaskType = exports.TaskStatus = exports.TeamMemberStatus = exports.TeamMemberRole = exports.ConversationStatus = exports.MessageStatus = exports.MessageType = exports.MessageDirection = exports.ChannelType = exports.PrismaClient = void 0;
 const client_1 = require("@prisma/client");
 // Re-export the generated client and all its types
 var client_2 = require("@prisma/client");
@@ -36,6 +36,25 @@ Object.defineProperty(exports, "NotificationTemplateChannel", { enumerable: true
 Object.defineProperty(exports, "AuditAction", { enumerable: true, get: function () { return client_3.AuditAction; } });
 Object.defineProperty(exports, "FileUploadType", { enumerable: true, get: function () { return client_3.FileUploadType; } });
 Object.defineProperty(exports, "AnalyticsEventCategory", { enumerable: true, get: function () { return client_3.AnalyticsEventCategory; } });
+// Production hardening: AI quality, payment reconciliation, template
+// versioning, data retention.
+Object.defineProperty(exports, "AiQualityBucket", { enumerable: true, get: function () { return client_3.AiQualityBucket; } });
+Object.defineProperty(exports, "ReconciliationRunStatus", { enumerable: true, get: function () { return client_3.ReconciliationRunStatus; } });
+Object.defineProperty(exports, "PaymentDiscrepancyType", { enumerable: true, get: function () { return client_3.PaymentDiscrepancyType; } });
+Object.defineProperty(exports, "PaymentDiscrepancyStatus", { enumerable: true, get: function () { return client_3.PaymentDiscrepancyStatus; } });
+Object.defineProperty(exports, "PaymentDiscrepancySeverity", { enumerable: true, get: function () { return client_3.PaymentDiscrepancySeverity; } });
+Object.defineProperty(exports, "TemplateVersionState", { enumerable: true, get: function () { return client_3.TemplateVersionState; } });
+Object.defineProperty(exports, "TemplateValidationState", { enumerable: true, get: function () { return client_3.TemplateValidationState; } });
+Object.defineProperty(exports, "RetentionDataClass", { enumerable: true, get: function () { return client_3.RetentionDataClass; } });
+Object.defineProperty(exports, "RetentionActionKind", { enumerable: true, get: function () { return client_3.RetentionActionKind; } });
+// R84: export archives, tag provenance, template approval, contact merge,
+// per-business notification rules.
+Object.defineProperty(exports, "DataExportJobStatus", { enumerable: true, get: function () { return client_3.DataExportJobStatus; } });
+Object.defineProperty(exports, "DataExportArchiveFormat", { enumerable: true, get: function () { return client_3.DataExportArchiveFormat; } });
+Object.defineProperty(exports, "ConversationTagSource", { enumerable: true, get: function () { return client_3.ConversationTagSource; } });
+Object.defineProperty(exports, "CannedResponseApprovalStatus", { enumerable: true, get: function () { return client_3.CannedResponseApprovalStatus; } });
+Object.defineProperty(exports, "ContactMergeStrategy", { enumerable: true, get: function () { return client_3.ContactMergeStrategy; } });
+Object.defineProperty(exports, "NotificationDigestFrequency", { enumerable: true, get: function () { return client_3.NotificationDigestFrequency; } });
 exports.prisma = global.__prisma ??
     new client_1.PrismaClient({
         log: process.env['NODE_ENV'] === 'development'

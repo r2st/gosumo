@@ -91,6 +91,14 @@ export {
   TemplateValidationState,
   RetentionDataClass,
   RetentionActionKind,
+  // R84: export archives, tag provenance, template approval, contact merge,
+  // per-business notification rules.
+  DataExportJobStatus,
+  DataExportArchiveFormat,
+  ConversationTagSource,
+  CannedResponseApprovalStatus,
+  ContactMergeStrategy,
+  NotificationDigestFrequency,
 } from '@prisma/client';
 
 // ─────────────────────────────────────────────

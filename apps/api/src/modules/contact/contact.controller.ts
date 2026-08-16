@@ -1,8 +1,15 @@
 import { Controller, Get, Patch, Post, Delete, Param, Query, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import type { Request } from 'express';
+import { Req } from '@nestjs/common';
+import { TeamMemberRole } from '@gosumo/database';
 import { ContactService } from './contact.service';
+import { ContactMergeService } from './merge/contact-merge.service';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
+import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { clientIp } from '../../common/utils/client-ip.util';
 import {
   ListContactsQueryDto,
   UpdateContactDto,
@@ -10,6 +17,10 @@ import {
   CreateSegmentDto,
   UpdateSegmentDto,
   SegmentMembersQueryDto,
+  FindDuplicatesQueryDto,
+  MergeContactsDto,
+  PreviewMergeDto,
+  ListMergesQueryDto,
 } from './dto';
 
 /**
@@ -22,7 +33,114 @@ import {
 @ApiTags('contacts')
 @Controller('contacts')
 export class ContactController {
-  constructor(private readonly contactService: ContactService) {}
+  constructor(
+    private readonly contactService: ContactService,
+    private readonly merges: ContactMergeService,
+  ) {}
+
+  // ─────────────────────────────────────────────
+  // Merge & dedup
+  //
+  // Declared before /:id, like segments, so "duplicates" and "merges" are never
+  // matched as a contact id.
+  // ─────────────────────────────────────────────
+
+  @Get('duplicates')
+  @ApiOperation({
+    summary: 'Suggest probable duplicate contacts',
+    description:
+      'Suggestions only — nothing is merged at any score. Each pair carries the ' +
+      'signals that produced it so a person can judge whether two records really ' +
+      'are one customer.',
+  })
+  @ApiResponse({ status: 200, description: 'Candidate pairs, strongest first' })
+  async findDuplicates(
+    @TenantId() tenantId: string,
+    @Query() query: FindDuplicatesQueryDto,
+  ) {
+    return this.merges.findDuplicates(tenantId, query);
+  }
+
+  @Post('merges/preview')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Show exactly what a merge would do, without doing it',
+    description:
+      'Computed by the same code that performs the merge, so what is approved is ' +
+      'what runs.',
+  })
+  @ApiResponse({ status: 200, description: 'Per-field decisions and the rows that would move' })
+  @ApiResponse({ status: 404, description: 'Either contact is not visible to this business' })
+  async previewMerge(@TenantId() tenantId: string, @Body() dto: PreviewMergeDto) {
+    return this.merges.previewMerge(
+      tenantId,
+      dto.survivorId,
+      dto.duplicateId,
+      dto.strategy,
+      dto.fields,
+    );
+  }
+
+  @Post('merges')
+  @Roles(TeamMemberRole.MANAGER)
+  @ApiOperation({
+    summary: 'Merge one contact into another',
+    description:
+      'Moves every conversation, order, payment and booking onto the survivor and ' +
+      'retires the duplicate. Reversible unless it moved more rows than can be ' +
+      'recorded, which the response reports.',
+  })
+  @ApiResponse({ status: 201, description: 'The merge record and what moved' })
+  @ApiResponse({ status: 400, description: 'A contact cannot be merged into itself' })
+  @ApiResponse({ status: 403, description: 'Only a MANAGER or OWNER may merge contacts' })
+  @ApiResponse({ status: 404, description: 'Either contact is not visible to this business' })
+  async mergeContacts(
+    @TenantId() tenantId: string,
+    @Body() dto: MergeContactsDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    return this.merges.merge(tenantId, dto.survivorId, dto.duplicateId, {
+      strategy: dto.strategy,
+      overrides: dto.fields,
+      performedBy: user?.sub,
+      actorEmail: user?.email ?? null,
+      requestId: (req.headers['x-correlation-id'] as string | undefined) ?? null,
+      ipAddress: clientIp(req),
+    });
+  }
+
+  @Get('merges')
+  @ApiOperation({ summary: 'List past contact merges' })
+  @ApiResponse({ status: 200, description: 'Merge history, most recent first' })
+  async listMerges(@TenantId() tenantId: string, @Query() query: ListMergesQueryDto) {
+    return this.merges.listMerges(tenantId, query);
+  }
+
+  @Post('merges/:id/revert')
+  @Roles(TeamMemberRole.MANAGER)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Undo a merge',
+    description:
+      'Restores the retired contact and moves back exactly the rows the merge ' +
+      'moved. Refuses outright — rather than half-applying — when the merge was ' +
+      'recorded as irreversible.',
+  })
+  @ApiParam({ name: 'id', description: 'Merge UUID' })
+  @ApiResponse({ status: 200, description: 'What was restored' })
+  @ApiResponse({ status: 400, description: 'Already reverted, or not reversible' })
+  @ApiResponse({ status: 404, description: 'No such merge for this business' })
+  async revertMerge(
+    @TenantId() tenantId: string,
+    @Param('id', UuidValidationPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.merges.revert(tenantId, id, {
+      revertedBy: user?.sub,
+      actorEmail: user?.email ?? null,
+    });
+  }
 
   // ─────────────────────────────────────────────
   // Segments (declared before /:id so "segments" never matches as an id)

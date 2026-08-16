@@ -1,7 +1,18 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Query,
+  Req,
+  Res,
+} from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import type { Request } from 'express';
-import { TeamMemberRole } from '@gosumo/database';
+import type { Request, Response } from 'express';
+import { TeamMemberRole, DataExportArchiveFormat } from '@gosumo/database';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { TenantRateLimit } from '../../common/rate-limit/tenant-rate-limit.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
@@ -9,7 +20,13 @@ import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { clientIp } from '../../common/utils/client-ip.util';
 import { DataExportService, ExportActor } from './data-export.service';
-import { ResolveSubjectDto } from './dto';
+import { ExportJobService } from './export-job.service';
+import {
+  DownloadArchiveDto,
+  ListArchivesQueryDto,
+  RequestArchiveDto,
+  ResolveSubjectDto,
+} from './dto';
 
 /**
  * DataExportController — subject-access exports for a customer.
@@ -26,7 +43,10 @@ import { ResolveSubjectDto } from './dto';
 @Controller('data-export')
 @Roles(TeamMemberRole.MANAGER)
 export class DataExportController {
-  constructor(private readonly dataExport: DataExportService) {}
+  constructor(
+    private readonly dataExport: DataExportService,
+    private readonly archives: ExportJobService,
+  ) {}
 
   @Get('clients/:clientId/summary')
   @TenantRateLimit('export')
@@ -87,6 +107,104 @@ export class DataExportController {
     // already holds into an id; returning the profile would make it a contact
     // lookup that happens to sit behind the export's rate limit.
     return { clientId: client.id, name: client.name };
+  }
+
+  // ─────────────────────────────────────────────
+  // Archives — the asynchronous path
+  // ─────────────────────────────────────────────
+
+  @Post('clients/:clientId/archives')
+  @TenantRateLimit('export')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Request a downloadable archive of everything stored about one customer',
+    description:
+      'Returns immediately; the archive is built on a queue. The response carries a ' +
+      'download token that is shown exactly once and cannot be recovered — only its ' +
+      'hash is stored.',
+  })
+  @ApiParam({ name: 'clientId', description: 'Customer UUID' })
+  @ApiResponse({ status: 202, description: 'Archive requested; poll or download with the token' })
+  @ApiResponse({ status: 400, description: 'Too many archives already building for this business' })
+  @ApiResponse({ status: 404, description: 'No such customer for this business' })
+  async requestArchive(
+    @TenantId() tenantId: string,
+    @Param('clientId', UuidValidationPipe) clientId: string,
+    @Body() dto: RequestArchiveDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    return this.archives.requestArchive(
+      tenantId,
+      clientId,
+      dto.format ?? DataExportArchiveFormat.JSON,
+      this.actorOf(user, req),
+    );
+  }
+
+  @Get('archives')
+  @ApiOperation({ summary: 'List this business’s export archives' })
+  @ApiResponse({ status: 200, description: 'Archive metadata — never the archive bytes' })
+  async listArchives(@TenantId() tenantId: string, @Query() query: ListArchivesQueryDto) {
+    return this.archives.listArchives(tenantId, query);
+  }
+
+  @Get('archives/:jobId')
+  @ApiOperation({ summary: 'Check one archive’s build status and size' })
+  @ApiParam({ name: 'jobId', description: 'Archive job UUID' })
+  @ApiResponse({ status: 200, description: 'Archive metadata' })
+  @ApiResponse({ status: 404, description: 'No such archive for this business' })
+  async getArchive(
+    @TenantId() tenantId: string,
+    @Param('jobId', UuidValidationPipe) jobId: string,
+  ) {
+    return this.archives.getArchive(tenantId, jobId);
+  }
+
+  /**
+   * Download the bytes.
+   *
+   * POST rather than GET, and the token in the body rather than the query
+   * string, because a GET with the credential in the URL puts it in the access
+   * log, the browser's history and any `Referer` header the page later sends —
+   * for a credential that unlocks one person's entire history with the
+   * business. The cost is that it is not a link the operator can click; that is
+   * the intended trade.
+   */
+  @Post('archives/:jobId/download')
+  @TenantRateLimit('export')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Download a built archive' })
+  @ApiParam({ name: 'jobId', description: 'Archive job UUID' })
+  @ApiResponse({ status: 200, description: 'The archive, as a file attachment' })
+  @ApiResponse({ status: 400, description: 'The archive is not built yet' })
+  @ApiResponse({ status: 403, description: 'The archive has expired' })
+  @ApiResponse({ status: 404, description: 'No such archive, or the token does not match' })
+  async downloadArchive(
+    @TenantId() tenantId: string,
+    @Param('jobId', UuidValidationPipe) jobId: string,
+    @Body() dto: DownloadArchiveDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const archive = await this.archives.downloadArchive(
+      tenantId,
+      jobId,
+      dto.token,
+      this.actorOf(user, req),
+    );
+
+    res.setHeader('Content-Type', archive.contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${archive.filename}"`);
+    res.setHeader('Content-Length', String(archive.body.byteLength));
+    if (archive.checksum) {
+      // So the recipient can verify the transfer without a second request.
+      res.setHeader('X-Archive-SHA256', archive.checksum);
+    }
+    // Never let a proxy or the browser keep a copy of a bulk PII disclosure.
+    res.setHeader('Cache-Control', 'no-store, private');
+    res.send(archive.body);
   }
 
   /**

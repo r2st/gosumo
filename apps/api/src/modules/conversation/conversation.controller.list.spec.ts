@@ -58,7 +58,12 @@ describe('ConversationController.list', () => {
 
   beforeEach(() => {
     service = { listConversations: jest.fn() };
-    controller = new ConversationController(service as unknown as ConversationService);
+    controller = new ConversationController(
+      service as unknown as ConversationService,
+      // The list route never touches tagging; a stub keeps this spec about
+      // serialization rather than about the controller's dependency graph.
+      {} as never,
+    );
   });
 
   it('serializes each row and threads the caller through as the viewer', async () => {

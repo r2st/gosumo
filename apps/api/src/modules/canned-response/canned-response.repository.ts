@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { canned_responses } from '@prisma/client';
 import { ChannelType } from '@gosumo/shared';
+import { CannedResponseApprovalStatus } from '@gosumo/database';
+import type { TemplateVariableSpec } from './template-variables.util';
 import { PrismaService } from '../../common/services/prisma.service';
 import { escapeLikeTerm } from '../../common/utils/search-pattern.util';
 
@@ -9,6 +11,7 @@ export interface CannedResponseListFilters {
   search?: string;
   category?: string;
   channel?: ChannelType;
+  approvalStatus?: CannedResponseApprovalStatus;
   tag?: string;
   isActive?: boolean;
   page?: number;
@@ -32,6 +35,7 @@ export interface CreateCannedResponseData {
   tags?: string[];
   isActive?: boolean;
   createdBy?: string;
+  variables?: TemplateVariableSpec[];
 }
 
 export interface UpdateCannedResponseData {
@@ -41,6 +45,13 @@ export interface UpdateCannedResponseData {
   channel?: ChannelType | null;
   tags?: string[];
   isActive?: boolean;
+  variables?: TemplateVariableSpec[];
+  approvalStatus?: CannedResponseApprovalStatus;
+  submittedBy?: string | null;
+  submittedAt?: Date | null;
+  reviewedBy?: string | null;
+  reviewedAt?: Date | null;
+  reviewNote?: string | null;
 }
 
 /**
@@ -62,6 +73,7 @@ export class CannedResponseRepository {
         tags: data.tags ?? [],
         is_active: data.isActive ?? true,
         created_by: data.createdBy,
+        variables: (data.variables ?? []) as unknown as Prisma.InputJsonValue,
       },
     });
   }
@@ -149,6 +161,17 @@ export class CannedResponseRepository {
         ...(data.channel !== undefined ? { channel: data.channel } : {}),
         ...(data.tags !== undefined ? { tags: data.tags } : {}),
         ...(data.isActive !== undefined ? { is_active: data.isActive } : {}),
+        ...(data.variables !== undefined
+          ? { variables: data.variables as unknown as Prisma.InputJsonValue }
+          : {}),
+        ...(data.approvalStatus !== undefined
+          ? { approval_status: data.approvalStatus }
+          : {}),
+        ...(data.submittedBy !== undefined ? { submitted_by: data.submittedBy } : {}),
+        ...(data.submittedAt !== undefined ? { submitted_at: data.submittedAt } : {}),
+        ...(data.reviewedBy !== undefined ? { reviewed_by: data.reviewedBy } : {}),
+        ...(data.reviewedAt !== undefined ? { reviewed_at: data.reviewedAt } : {}),
+        ...(data.reviewNote !== undefined ? { review_note: data.reviewNote } : {}),
       },
     });
   }
@@ -197,6 +220,9 @@ export class CannedResponseRepository {
     }
     if (filters.isActive !== undefined) {
       where.is_active = filters.isActive;
+    }
+    if (filters.approvalStatus) {
+      where.approval_status = filters.approvalStatus;
     }
     if (and.length) {
       where.AND = and;

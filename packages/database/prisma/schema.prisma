@@ -728,6 +728,10 @@ model businesses {
   data_retention_policies        data_retention_policies[]
   data_archive_records           data_archive_records[]
   data_retention_runs            data_retention_runs[]
+  data_export_jobs               data_export_jobs[]
+  conversation_tag_assignments   conversation_tag_assignments[]
+  contact_merges                 contact_merges[]
+  business_notification_settings business_notification_settings?
 
   @@index([slug])
   @@index([email])
@@ -835,6 +839,7 @@ model clients {
   analytics_events         analytics_events[]
   notifications            notifications[]
   notification_preferences notification_preferences[]
+  data_export_jobs         data_export_jobs[]
 
   @@unique([business_id, phone], map: "uq_clients_business_phone")
   @@unique([business_id, email], map: "uq_clients_business_email")
@@ -1016,6 +1021,7 @@ model conversations {
   ai_decisions     ai_decisions[]
   analytics_events analytics_events[]
   sla_breaches     sla_breaches[]
+  tag_assignments  conversation_tag_assignments[]
 
   @@index([business_id, status, last_message_at(sort: Desc)])
   // The inbox's default view applies no status filter, so the index above
@@ -2629,6 +2635,24 @@ model canned_responses {
   usage_count Int          @default(0)
   created_by  String?      @db.Uuid
 
+  /// Declared `{{ variable }}` specs: `[{ name, label?, required, default? }]`.
+  /// Derived from `content` on write, so it cannot drift from the body, and
+  /// stored rather than re-parsed because the list is read on every insert to
+  /// decide what the agent must supply.
+  variables Json @default("[]") @db.JsonB
+
+  /// Only APPROVED responses may be inserted into a conversation. Existing rows
+  /// are backfilled to APPROVED by migration 0043 — defaulting them to DRAFT
+  /// would retroactively withdraw every canned response every tenant already
+  /// depends on, to enforce a review that did not exist when they were written.
+  approval_status CannedResponseApprovalStatus @default(DRAFT)
+
+  submitted_by String?   @db.Uuid
+  submitted_at DateTime? @db.Timestamptz
+  reviewed_by  String?   @db.Uuid
+  reviewed_at  DateTime? @db.Timestamptz
+  review_note  String?   @db.Text
+
   created_at DateTime  @default(now()) @db.Timestamptz
   updated_at DateTime  @updatedAt @db.Timestamptz
   deleted_at DateTime? @db.Timestamptz
@@ -2638,6 +2662,9 @@ model canned_responses {
 
   @@unique([business_id, shortcut])
   @@index([business_id, is_active, category])
+  /// The reviewer queue and the agent-facing picker both filter on approval
+  /// state; without this each read the tenant's whole response library.
+  @@index([business_id, approval_status, updated_at(sort: Desc)])
   @@map("canned_responses")
 }
 
@@ -4235,4 +4262,319 @@ model data_retention_runs {
 
   @@index([business_id, data_class, started_at(sort: Desc)])
   @@map("data_retention_runs")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// R84 — export archives, tag provenance, template approval, contact merge,
+//       per-business notification rules
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────
+// 1. Subject-access export archives
+// ─────────────────────────────────────────────
+
+enum DataExportJobStatus {
+  /// Row written, build job not yet picked up.
+  PENDING
+  BUILDING
+  /// Archive bytes are stored and downloadable.
+  READY
+  FAILED
+  /// Past `expires_at`; bytes have been dropped.
+  EXPIRED
+}
+
+enum DataExportArchiveFormat {
+  /// One JSON document: `{ meta, sections: { name: [...] } }`.
+  JSON
+  /// Newline-delimited: one `{section, record}` object per line. Streamable by
+  /// the recipient without holding the whole export in memory.
+  NDJSON
+}
+
+/// An asynchronous subject-access export, from request through download.
+///
+/// The synchronous `GET /data-export/clients/:id` builds the same bundle inside
+/// one request, which is right for a customer with a short history and wrong
+/// for the ones that actually generate access requests: the export a regulator
+/// asks about is the four-year account with 30,000 messages, and building that
+/// inline ties up a worker for the whole assembly and then hands the operator
+/// a JSON body their browser has to be talked into saving. This splits the two
+/// halves — a request that returns immediately, and a download of bytes built
+/// off the request path.
+///
+/// The archive lives in `payload` rather than on disk because the API runs as
+/// more than one process behind Caddy: a file written by the instance that
+/// built it is a 404 from the instance that serves the download, and neither
+/// instance's local disk survives a redeploy. Size is bounded by the same
+/// per-section caps as the synchronous export, and `expires_at` plus the sweep
+/// bound how long the bytes are kept.
+model data_export_jobs {
+  id          String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String              @db.Uuid
+  client_id   String              @db.Uuid
+  status      DataExportJobStatus @default(PENDING)
+  format      DataExportArchiveFormat @default(JSON)
+
+  /// SHA-256 of the download token. The token itself is returned once, at
+  /// request time, and never stored — a leaked database row must not be a
+  /// second copy of the credential that downloads a customer's whole history.
+  token_hash String @db.VarChar(64)
+
+  /// gzip of the serialized archive. Null until READY, and cleared on expiry.
+  payload Bytes?
+  /// Uncompressed byte length, for the operator to see before downloading.
+  byte_size Int @default(0)
+  /// SHA-256 of the uncompressed archive, so a recipient can verify transfer.
+  checksum String? @db.VarChar(64)
+
+  /// Per-section row counts and which sections hit their cap, mirroring the
+  /// synchronous export's `truncated` reporting.
+  sections  Json @default("{}") @db.JsonB
+  truncated Json @default("[]") @db.JsonB
+
+  /// Actor snapshot — kept denormalized so the trail survives the team member
+  /// being removed, which is exactly when anyone reads it.
+  requested_by       String? @db.Uuid
+  requested_by_email String? @db.VarChar(320)
+  request_ip         String? @db.VarChar(64)
+  correlation_id     String? @db.VarChar(64)
+
+  error String? @db.Text
+
+  download_count Int       @default(0)
+  downloaded_at  DateTime? @db.Timestamptz
+
+  started_at  DateTime? @db.Timestamptz
+  completed_at DateTime? @db.Timestamptz
+  expires_at  DateTime  @db.Timestamptz
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  client   clients    @relation(fields: [client_id], references: [id], onDelete: Cascade)
+
+  /// The download route resolves a job by token alone (the recipient of a
+  /// subject-access link has no tenant context), so this must be selective on
+  /// its own.
+  @@unique([token_hash], map: "uq_data_export_token_hash")
+  @@index([business_id, client_id, created_at(sort: Desc)])
+  @@index([business_id, status, created_at(sort: Desc)])
+  /// Drives the expiry sweep, which starts without a business_id.
+  @@index([status, expires_at])
+  @@map("data_export_jobs")
+}
+
+// ─────────────────────────────────────────────
+// 2. Conversation tag provenance
+// ─────────────────────────────────────────────
+
+enum ConversationTagSource {
+  /// Applied by the auto-tagger.
+  AI
+  /// Applied by a person.
+  MANUAL
+  /// Applied by a deterministic business rule.
+  RULE
+}
+
+/// Provenance for one tag on one conversation.
+///
+/// `conversations.tags` stays the array the inbox filters on — it is indexed
+/// GIN and read on every list query, and moving it behind a join would cost
+/// the most-loaded screen in the product. This table sits beside it and records
+/// *how* each tag got there, which the array cannot express.
+///
+/// The reason it has to exist: an auto-tagger with no memory of human decisions
+/// re-applies a tag the moment the conversation changes, so removing a wrong AI
+/// tag lasts until the next inbound message. A removal therefore keeps its row
+/// with `suppressed = true` — a tombstone that the tagger reads and honours —
+/// rather than deleting it. Deleting the row would make "a human said no" and
+/// "nobody has considered this tag" the same state, and they must not be.
+model conversation_tag_assignments {
+  id              String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id     String @db.Uuid
+  conversation_id String @db.Uuid
+
+  /// Normalized (lower-cased, trimmed) tag.
+  tag    String                @db.VarChar(100)
+  source ConversationTagSource
+
+  /// The tagger's confidence, 0.0000–1.0000. Null for MANUAL and RULE.
+  confidence Decimal? @db.Decimal(5, 4)
+  /// Model slug that proposed it, for auditing a bad tagging run.
+  model      String?  @db.VarChar(100)
+  /// The tagger's one-line justification.
+  rationale  String?  @db.Text
+
+  /// True once a human removed this tag. The row is kept so the auto-tagger
+  /// never re-applies it; see the model comment.
+  suppressed    Boolean   @default(false)
+  suppressed_at DateTime? @db.Timestamptz
+  suppressed_by String?   @db.Uuid
+
+  created_by String?  @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business     businesses    @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  conversation conversations @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+
+  @@unique([conversation_id, tag], map: "uq_conv_tag_assignment")
+  @@index([business_id, tag, suppressed])
+  @@index([business_id, source, created_at(sort: Desc)])
+  @@map("conversation_tag_assignments")
+}
+
+// ─────────────────────────────────────────────
+// 3. Canned-response approval workflow
+// ─────────────────────────────────────────────
+
+enum CannedResponseApprovalStatus {
+  /// Being written. Not usable in a conversation.
+  DRAFT
+  /// Submitted, awaiting a reviewer.
+  PENDING
+  /// Usable.
+  APPROVED
+  /// Rejected with a note; the author can revise and resubmit.
+  REJECTED
+}
+
+// ─────────────────────────────────────────────
+// 4. Contact merge
+// ─────────────────────────────────────────────
+
+/// How a merge decided each conflicting field.
+enum ContactMergeStrategy {
+  /// Take the surviving contact's value wherever both have one.
+  PREFER_SURVIVOR
+  /// Take the duplicate's value wherever both have one.
+  PREFER_DUPLICATE
+  /// Take the value from whichever contact was seen most recently.
+  PREFER_MOST_RECENT
+  /// Caller supplied an explicit value per field.
+  MANUAL
+}
+
+/// An executed contact merge, kept so it can be explained and undone.
+///
+/// A merge moves every conversation, order, payment and booking from one
+/// customer record onto another and soft-deletes the loser. That is the most
+/// destructive operation a tenant can perform on their own CRM through a single
+/// call, and getting it wrong on a false-positive duplicate — two brothers on
+/// one family phone, a shared office email — silently welds two real customers
+/// together. So the pre-merge state of the duplicate is snapshotted into
+/// `snapshot` and every relocation is counted in `moved`, which is what makes
+/// `revert` possible at all: without the snapshot the duplicate's own field
+/// values are simply gone, overwritten or not.
+model contact_merges {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  /// The record that remains.
+  survivor_id String @db.Uuid
+  /// The record that was soft-deleted and emptied.
+  duplicate_id String @db.Uuid
+
+  strategy ContactMergeStrategy
+
+  /// Per-field decision: `{ field: { chosen, survivor, duplicate } }`.
+  field_resolutions Json @default("{}") @db.JsonB
+  /// Rows relocated per table: `{ conversations: 12, orders: 3, ... }`.
+  moved Json @default("{}") @db.JsonB
+  /// The duplicate's full row as it stood before the merge.
+  snapshot Json @default("{}") @db.JsonB
+
+  /// Why these two were considered the same record.
+  match_reason String?  @db.VarChar(255)
+  match_score  Decimal? @db.Decimal(5, 4)
+
+  performed_by String?  @db.Uuid
+  performed_at DateTime @default(now()) @db.Timestamptz
+
+  reverted_at DateTime? @db.Timestamptz
+  reverted_by String?   @db.Uuid
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@index([business_id, performed_at(sort: Desc)])
+  @@index([business_id, survivor_id])
+  @@index([business_id, duplicate_id])
+  @@map("contact_merges")
+}
+
+// ─────────────────────────────────────────────
+// 5. Per-business notification rules
+// ─────────────────────────────────────────────
+
+enum NotificationDigestFrequency {
+  OFF
+  HOURLY
+  DAILY
+  WEEKLY
+}
+
+/// Operator-facing notification rules for one business.
+///
+/// Distinct from `notification_preferences`, which is per-*customer* and
+/// governs what GoSumo sends **to** a customer. This governs what GoSumo sends
+/// **to the business's own team** — the digest, the real-time alerts, and the
+/// hours during which the team would rather not be paged. Merging the two would
+/// mean a customer's marketing opt-out could silence an SLA-breach alert to the
+/// operator.
+model business_notification_settings {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  /// Master switch for immediate alerts.
+  realtime_enabled Boolean @default(true)
+  /// Alert kinds that are on, e.g. ["ESCALATION","SLA_BREACH"]. An unknown
+  /// entry is ignored rather than rejected, so a rule written by a newer
+  /// dashboard does not brick an older API.
+  realtime_alerts  String[] @default([])
+  /// Minimum severity an alert must carry to be sent at all.
+  realtime_min_severity String @default("WARNING") @db.VarChar(20)
+
+  digest_frequency NotificationDigestFrequency @default(DAILY)
+  /// Hour of day the digest is cut, 0–23, in `timezone`.
+  digest_hour      Int                         @default(9) @db.SmallInt
+  /// 0 = Sunday. Only read when frequency is WEEKLY.
+  digest_day_of_week Int                       @default(1) @db.SmallInt
+  /// Extra addresses beyond the business's own. Empty means owners only.
+  digest_recipients String[] @default([])
+  /// Skip the digest entirely when the window produced nothing.
+  digest_skip_when_empty Boolean @default(true)
+
+  /// Do-not-disturb window in minutes from local midnight. Both null = none.
+  quiet_hours_start Int? @db.SmallInt
+  quiet_hours_end   Int? @db.SmallInt
+  /// Alerts at or above this severity page through quiet hours anyway. An
+  /// outage that starts at 02:00 is precisely what the operator wants woken
+  /// for; without an override, quiet hours silently become an availability gap.
+  quiet_hours_override_severity String? @db.VarChar(20)
+
+  /// IANA zone the hour fields are interpreted in. Defaults to the business's
+  /// own, but is stored separately so a business operating across zones can
+  /// pin its ops rota without moving its customer-facing timezone.
+  timezone String @default("Asia/Kolkata") @db.VarChar(50)
+
+  /// Where escalations go when nobody is assigned.
+  fallback_email String? @db.VarChar(320)
+
+  last_digest_sent_at DateTime? @db.Timestamptz
+  /// Next scheduled cut. The sweep selects on this, so it is a stored column
+  /// rather than something recomputed per row per tick.
+  next_digest_at      DateTime? @db.Timestamptz
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@unique([business_id], map: "uq_business_notification_settings")
+  /// Drives the digest sweep, which starts without a business_id.
+  @@index([digest_frequency, next_digest_at])
+  @@map("business_notification_settings")
 }

@@ -19,8 +19,9 @@ import {
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { MAX_PAGE_NUMBER } from '../../../common/validators/pagination.constants';
+import { MAX_PAGE_NUMBER, MAX_ROW_OFFSET } from '../../../common/validators/pagination.constants';
 import { ChannelType } from '@gosumo/shared';
+import { ContactMergeStrategy } from '@gosumo/database';
 import { SEARCH_TERM_MAX_LENGTH } from '../../../common/validators/search-term.constants';
 
 // ─────────────────────────────────────────────
@@ -439,4 +440,108 @@ export interface ResolvedRoutingDto {
   autoExecuteThreshold: number | null;
   draftReviewThreshold: number | null;
   assigneeId: string | null;
+}
+
+// ─────────────────────────────────────────────
+// Merge & dedup
+// ─────────────────────────────────────────────
+
+export class FindDuplicatesQueryDto {
+  @ApiPropertyOptional({
+    minimum: 0,
+    maximum: 1,
+    default: 0.6,
+    description: 'Minimum match score. Lower surfaces more, and more false pairs.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  threshold?: number;
+
+  @ApiPropertyOptional({ minimum: 1, maximum: 100, default: 100 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+}
+
+/**
+ * Explicit per-field values, used with the MANUAL strategy.
+ *
+ * Only the fields a merge has to choose between. Everything else on the
+ * surviving row — scores, counters, timestamps — is derived by the merge
+ * itself and is deliberately not settable here.
+ */
+export class MergeFieldOverridesDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  name?: string | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(320)
+  email?: string | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  phone?: string | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  avatar_url?: string | null;
+}
+
+export class PreviewMergeDto {
+  @ApiProperty({ description: 'The contact that remains' })
+  @IsUUID()
+  survivorId!: string;
+
+  @ApiProperty({ description: 'The contact that is retired' })
+  @IsUUID()
+  duplicateId!: string;
+
+  @ApiPropertyOptional({
+    enum: ContactMergeStrategy,
+    default: ContactMergeStrategy.PREFER_SURVIVOR,
+  })
+  @IsOptional()
+  @IsEnum(ContactMergeStrategy)
+  strategy?: ContactMergeStrategy;
+
+  @ApiPropertyOptional({ type: MergeFieldOverridesDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => MergeFieldOverridesDto)
+  fields?: MergeFieldOverridesDto;
+}
+
+export class MergeContactsDto extends PreviewMergeDto {}
+
+export class ListMergesQueryDto {
+  @ApiPropertyOptional({ minimum: 1, maximum: 100, default: 20 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+
+  @ApiPropertyOptional({ minimum: 0, maximum: MAX_ROW_OFFSET, default: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(MAX_ROW_OFFSET)
+  offset?: number;
 }

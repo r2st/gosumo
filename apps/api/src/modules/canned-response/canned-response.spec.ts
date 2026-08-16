@@ -15,6 +15,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { NotFoundException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { CannedResponseApprovalStatus } from '@gosumo/database';
 
 import { CannedResponseService } from './canned-response.service';
 import { CannedResponseRepository } from './canned-response.repository';
@@ -35,6 +36,16 @@ function makeCannedResponse(overrides: Record<string, unknown> = {}) {
     is_active: true,
     usage_count: 0,
     created_by: null,
+    variables: [],
+    // APPROVED by default, matching migration 0043's backfill of every row that
+    // predates the review workflow. A fixture that defaulted to DRAFT would make
+    // these tests assert the gate rather than the behaviour they are about.
+    approval_status: CannedResponseApprovalStatus.APPROVED,
+    submitted_by: null,
+    submitted_at: null,
+    reviewed_by: null,
+    reviewed_at: null,
+    review_note: null,
     created_at: new Date('2026-06-01T00:00:00Z'),
     updated_at: new Date('2026-06-01T00:00:00Z'),
     deleted_at: null,

@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { ConversationService } from './conversation.service';
+import { ConversationTaggingService } from './tagging/conversation-tagging.service';
 import {
   serializeConversationListItem,
   type ConversationListRow,
@@ -32,6 +33,7 @@ import {
   SetTagsDto,
   UpdateNoteDto,
 } from './dto';
+import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
 /**
  * ConversationController — REST endpoints for conversation management.
@@ -44,7 +46,10 @@ import {
 export class ConversationController {
   private readonly logger = new Logger(ConversationController.name);
 
-  constructor(private readonly conversationService: ConversationService) {}
+  constructor(
+    private readonly conversationService: ConversationService,
+    private readonly tagging: ConversationTaggingService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List conversations with optional filters' })
@@ -281,8 +286,13 @@ export class ConversationController {
     @TenantId() tenantId: string,
     @Param('id', UuidValidationPipe) id: string,
     @Body() dto: AddTagDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.conversationService.addTag(tenantId, id, dto.tag);
+    // Routed through the tagging service, not `conversationService.addTag`, so
+    // the assignment row is written alongside the array. A tag applied without
+    // provenance is one the auto-tagger cannot reason about, and one nobody can
+    // later attribute.
+    return this.tagging.addTags(tenantId, id, [dto.tag], user?.sub);
   }
 
   @Put(':id/tags')
@@ -294,8 +304,9 @@ export class ConversationController {
     @TenantId() tenantId: string,
     @Param('id', UuidValidationPipe) id: string,
     @Body() dto: SetTagsDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.conversationService.setTags(tenantId, id, dto.tags);
+    return this.tagging.setTags(tenantId, id, dto.tags, user?.sub);
   }
 
   @Delete(':id/tags/:tag')
@@ -308,8 +319,46 @@ export class ConversationController {
     @TenantId() tenantId: string,
     @Param('id', UuidValidationPipe) id: string,
     @Param('tag') tag: string,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.conversationService.removeTag(tenantId, id, tag);
+    return this.tagging.removeTag(tenantId, id, tag, user?.sub);
+  }
+
+  @Post(':id/tags/auto')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Classify the conversation and apply the tags it earns',
+    description:
+      'Reads the recent transcript and proposes topic tags from the allowed ' +
+      'vocabulary. Tags a human has previously removed are never re-applied. ' +
+      'Never fails the request when the model is unavailable — it returns an ' +
+      'empty result instead.',
+  })
+  @ApiParam({ name: 'id', description: 'Conversation UUID' })
+  @ApiResponse({ status: 200, description: 'What was applied, and what was skipped and why' })
+  @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
+  async autoTag(
+    @TenantId() tenantId: string,
+    @Param('id', UuidValidationPipe) id: string,
+  ) {
+    return this.tagging.autoTag(tenantId, id);
+  }
+
+  @Get(':id/tags/assignments')
+  @ApiOperation({
+    summary: 'Tag provenance for one conversation',
+    description:
+      'Who or what applied each tag, with the model’s confidence and rationale, ' +
+      'including tombstoned tags a human removed.',
+  })
+  @ApiParam({ name: 'id', description: 'Conversation UUID' })
+  @ApiResponse({ status: 200, description: 'Assignment rows' })
+  @ApiResponse({ status: 404, description: 'Conversation not found' })
+  async tagAssignments(
+    @TenantId() tenantId: string,
+    @Param('id', UuidValidationPipe) id: string,
+  ) {
+    return this.tagging.listAssignments(tenantId, id);
   }
 
   @Patch(':id/note')

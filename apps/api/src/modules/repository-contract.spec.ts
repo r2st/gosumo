@@ -99,6 +99,14 @@ const CROSS_TENANT_LOOKUPS = new Set<string>([
   // Razorpay payment-link callback for an EOI: the link id is the gateway's,
   // and the row is what identifies the tenant.
   'RealtyIntegrationsRepository.findAnyEoiByPaymentLink',
+  // Data-export archive download: the lookup key is the SHA-256 of a one-time
+  // token, so it cannot be scoped by a column the caller supplies. Unlike the
+  // gateway lookups above, the request *does* carry a tenant, and
+  // `downloadArchive` compares the resolved row's `business_id` and `id`
+  // against it before reading a single byte — the archive itself comes back
+  // through `findPayload`, which is scoped. The unscoped read resolves the
+  // secret; it decides nothing.
+  'ExportJobRepository.findByTokenHash',
 ]);
 
 /**
@@ -160,6 +168,16 @@ const GLOBAL_SWEEPS = new Set<string>([
   // "How far behind is the rollup" — a property of the job, not of a tenant.
   // Returns one timestamp and no rows.
   'AiQualityRepository.latestComputedBucketStart',
+  // Export-archive expiry sweep (cron, no request tenant): returns only the job
+  // id and its business_id, then expires each through the scoped path. It must
+  // span tenants — an archive holding a customer's personal data past its
+  // retention window is the thing being swept, and asking per tenant would mean
+  // enumerating every business on every tick.
+  'ExportJobRepository.findExpiredGlobal',
+  // Export-build recovery sweep (cron, no request tenant): same shape and same
+  // reason. A job whose build was lost between Postgres and Redis is stranded
+  // in PENDING with nothing but its age to distinguish it.
+  'ExportJobRepository.findStuckGlobal',
 ]);
 
 /** Every documented reason a query may legitimately omit the tenant predicate. */
@@ -258,14 +276,40 @@ function sqlFragmentText(value: unknown): string {
     .join('');
 }
 
-/** Stands in for a `Prisma.Decimal` column on a read row. */
-function decimalLike(value: number): { toNumber(): number; toString(): string } {
-  return { toNumber: () => value, toString: () => String(value) };
+/**
+ * Stands in for a `Prisma.Decimal` column on a read row.
+ *
+ * `add` is here because a repository that sums two rows' money — merging two
+ * contacts' lifetime spend — calls it on the value it read, and a plain number
+ * would take the method down before its later writes were recorded.
+ */
+interface DecimalLike {
+  toNumber(): number;
+  toString(): string;
+  add(other: DecimalLike | number): DecimalLike;
 }
 
-function makeRecordingPrisma(): { prisma: PrismaService; calls: PrismaCall[] } {
-  const calls: PrismaCall[] = [];
+function decimalLike(value: number): DecimalLike {
+  return {
+    toNumber: () => value,
+    toString: () => String(value),
+    add: (other) => decimalLike(value + (typeof other === 'number' ? other : other.toNumber())),
+  };
+}
 
+/**
+ * The canonical row: what the double returns from a read, and what the harness
+ * hands to a parameter that takes a *record* rather than an id.
+ *
+ * Those are deliberately the same object. A repository method that accepts an
+ * already-fetched row (`revertMerge(businessId, merge, …)`) is being handed
+ * something its caller got from a read, so the harness models it with what a
+ * read returns. Anything missing here makes the method throw part-way, and
+ * every query it would have made afterwards goes unrecorded — an unscoped
+ * write hiding behind an `undefined.toNumber()`. See the "drives every method
+ * to completion" test.
+ */
+function recordRow(): Record<string, unknown> {
   const row: Record<string, unknown> = {
     id: RECORD_ID,
     business_id: BUSINESS_ID,
@@ -276,10 +320,7 @@ function makeRecordingPrisma(): { prisma: PrismaService; calls: PrismaCall[] } {
     created_at: new Date(0),
     updated_at: new Date(0),
     deleted_at: null,
-    // Columns that repositories dereference on the row they just read. Without
-    // these the method throws part-way and every query it would have made
-    // afterwards goes unrecorded — an unscoped write hiding behind an
-    // `undefined.toNumber()`. See the "drives every method to completion" test.
+    // Columns that repositories dereference on the row they just read.
     name: null,
     email: null,
     phone: null,
@@ -290,10 +331,26 @@ function makeRecordingPrisma(): { prisma: PrismaService; calls: PrismaCall[] } {
     amount: decimalLike(0),
     first_seen_at: new Date(0),
     last_interaction_at: null,
+    // An audit row handed back to the operation that undoes it: the two
+    // contacts it moved rows between, and the snapshot it restores from.
+    survivor_id: RECORD_ID,
+    duplicate_id: RECORD_ID,
+    snapshot: { duplicate: {}, survivorBefore: {}, relocated: {} },
   };
-  // A `include: { client: true }` read hands back a row whose relation is
-  // itself a row; self-reference keeps that true to any depth.
-  row['client'] = row;
+  // An `include: { client: true }` read hands back a row whose relation is
+  // itself a row. It is a *copy*, not a self-reference: these rows are now also
+  // handed to methods as arguments, and the assertions `JSON.stringify` the
+  // arguments a method passed to Prisma. A cycle there throws before a single
+  // tenant value is checked, which reads as a repository failure and is not
+  // one. One level is what a repository actually dereferences.
+  row['client'] = { ...row };
+  return row;
+}
+
+function makeRecordingPrisma(): { prisma: PrismaService; calls: PrismaCall[] } {
+  const calls: PrismaCall[] = [];
+
+  const row = recordRow();
 
   const modelProxy = (model: string) =>
     new Proxy(
@@ -443,6 +500,10 @@ function dataObject(): Record<string, unknown> {
     metadata: {},
     filter: {},
     isActive: true,
+    // Payloads that carry whole rows rather than ids — the two contacts a merge
+    // is given, which it reads tags and totals off before writing anything.
+    survivor: recordRow(),
+    duplicate: recordRow(),
     // Money and score fields get fed to `new Prisma.Decimal(...)`, which throws
     // on undefined and takes the method down before it reaches its query.
     amountRupees: 100,
@@ -488,9 +549,35 @@ function parameterNames(fn: unknown): string[] {
     .filter(Boolean);
 }
 
-/** True for the parameter a repository method treats as its patch/payload. */
+/**
+ * True for the parameter a repository method treats as its patch/payload.
+ *
+ * `params` is in the list because on a repository in this codebase that name is
+ * the payload object, not an options bag — `create(params: { businessId, … })`.
+ * Filling it with `{}` meant a `create` stamped `business_id: undefined` and
+ * read as a repository that forgets its tenant; the bag-shaped parameters are
+ * spelled `filters` / `options` / `criteria` and are still handled as bags.
+ */
 function isDataParameter(name: string): boolean {
-  return /(data|dto|input|payload|updates|patch|record|entry)$/i.test(name);
+  return /(data|dto|input|payload|updates|patch|record|entry|params)$/i.test(name);
+}
+
+/**
+ * Parameters that take an already-fetched row rather than an id or a patch.
+ *
+ * These get the same object a read returns (`recordRow`). Left to the fallback
+ * they became a bare id string, and every field the method reached for on them
+ * was `undefined` — which showed up not as an error but as a write whose
+ * `where` was `{ id: undefined }`, indistinguishable from a genuinely unscoped
+ * write.
+ */
+function isRecordParameter(name: string): boolean {
+  return /^(merge|survivor|duplicate|client|contact|conversation|row)$/i.test(name);
+}
+
+/** Parameters that take a Prisma transaction client. */
+function isTransactionParameter(name: string): boolean {
+  return /^(tx|trx|prisma|client_?tx)$/i.test(name);
 }
 
 /**
@@ -502,9 +589,21 @@ function isDataParameter(name: string): boolean {
  */
 type DataMode = 'full' | 'empty';
 
-/** Picks a plausible value for a parameter based on its name. */
-function valueForParameter(name: string, dataMode: DataMode = 'full'): unknown {
+/**
+ * Picks a plausible value for a parameter based on its name.
+ *
+ * `tx` gets the recording double itself, not a second one: a method that takes
+ * a transaction client records into the same call log as the method that opened
+ * the transaction, which is what the isolation assertions read.
+ */
+function valueForParameter(
+  name: string,
+  dataMode: DataMode = 'full',
+  tx?: PrismaService,
+): unknown {
   if (/^_?(business|tenant)_?id$/i.test(name)) return BUSINESS_ID;
+  if (isTransactionParameter(name)) return tx;
+  if (isRecordParameter(name)) return recordRow();
   if (isDataParameter(name)) return dataMode === 'empty' ? {} : dataObject();
   // Bulk-write collections. A plural payload parameter has to arrive as an
   // array: a repository that maps over it blows up on a scalar, which reads as
@@ -548,7 +647,7 @@ async function runMethod(
   const instance = new repo.cls(prisma);
 
   const fn = (repo.cls.prototype as Record<string, unknown>)[method];
-  const args = parameterNames(fn).map((p) => valueForParameter(p, dataMode));
+  const args = parameterNames(fn).map((p) => valueForParameter(p, dataMode, prisma));
 
   let error: Error | undefined;
   try {
