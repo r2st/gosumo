@@ -1,11 +1,11 @@
 /**
  * Repeatable-job bootstrap — shared contract across the modules that own a cron.
  *
- * Three modules register a recurring Bull job in `onModuleInit`:
+ * Four modules register a recurring Bull job in `onModuleInit`:
  * ComplianceModule (weekly DPDPA retention sweep), RealtyIngestionModule
- * (weekly portal-parser health check) and RealtyIntegrationsModule (nightly
- * Google Sheets export). They implement the same three-part contract, and none
- * of them had a test:
+ * (weekly portal-parser health check), RealtyIntegrationsModule (nightly
+ * Google Sheets export) and SlaModule (five-minute overdue-breach sweep).
+ * They implement the same three-part contract, and none of them had a test:
  *
  *   1. register the job under a stable jobId, so redeploys converge instead of
  *      accumulating schedules;
@@ -37,6 +37,12 @@ import {
   PARSER_HEALTH_REPEAT_JOB_ID,
 } from './realty-ingestion/health/parser-health.constants';
 import { RealtyIntegrationsModule } from './realty-integrations/realty-integrations.module';
+import { SlaModule } from './sla/sla.module';
+import {
+  SLA_JOBS,
+  SLA_SWEEP_CRON,
+  SLA_SWEEP_REPEAT_JOB_ID,
+} from './sla/sla.constants';
 import {
   NIGHTLY_SHEETS_EXPORT_CRON,
   NIGHTLY_SHEETS_EXPORT_JOB_ID,
@@ -62,8 +68,8 @@ const makeQueue = (existing: RepeatableJob[] = []): FakeQueue => ({
 });
 
 /**
- * The three modules, described by the only things that differ between them.
- * Driving them from one table keeps the contract single-sourced — a fourth
+ * The scheduled modules, described by the only things that differ between them.
+ * Driving them from one table keeps the contract single-sourced — another
  * scheduled module is one row, not another copy of these six tests.
  */
 const SCHEDULED_MODULES = [
@@ -87,6 +93,13 @@ const SCHEDULED_MODULES = [
     jobId: NIGHTLY_SHEETS_EXPORT_JOB_ID,
     cron: NIGHTLY_SHEETS_EXPORT_CRON,
     jobName: REALTY_INTEGRATIONS_JOBS.NIGHTLY_SHEETS_EXPORT,
+  },
+  {
+    name: 'SlaModule',
+    build: (queue: Queue) => new SlaModule(queue),
+    jobId: SLA_SWEEP_REPEAT_JOB_ID,
+    cron: SLA_SWEEP_CRON,
+    jobName: SLA_JOBS.BREACH_SWEEP,
   },
 ] as const;
 

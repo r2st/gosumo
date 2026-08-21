@@ -138,6 +138,10 @@ const PRE_AUTHENTICATION_LOOKUPS = new Set<string>([
  * crosses a boundary even though the query does.
  */
 const GLOBAL_SWEEPS = new Set<string>([
+  // SLA breach cron: returns the distinct business_id list of tenants with an
+  // overdue tracker, then sweeps each through the scoped path. Only the
+  // discriminator crosses tenants — no tracker rows, no conversation content.
+  'SlaRepository.findBusinessIdsWithOverdueTrackers',
   // Retention cron: returns the distinct business_id list, then purges per
   // business through the scoped path.
   'ComplianceRepository.listBusinessIdsWithLeads',
@@ -883,10 +887,44 @@ describe('Every repository query on a tenant table is tenant-scoped', () => {
     );
 
     // Every tenant value in the emitted queries must be the one passed in.
-    const tenantValues = serialised.match(/"business_?[Ii]d":"([^"]+)"/g) ?? [];
+    //
+    // `orderBy: { business_id: 'asc' }` serialises identically to a predicate,
+    // so a sort direction would read as a hardcoded tenant and fail a
+    // correctly-scoped method. `'asc'`/`'desc'` are the only two values that
+    // can never be a tenant id, so excluding exactly those keeps the check's
+    // teeth everywhere else — a wrong *id* still fails, as does any other
+    // non-argument value.
+    const SORT_DIRECTIONS = new Set(['asc', 'desc']);
+    const tenantValues = (serialised.match(/"business_?[Ii]d":"([^"]+)"/g) ?? []).filter(
+      (match) => {
+        const value = /:"([^"]+)"/.exec(match)?.[1] ?? '';
+        return !SORT_DIRECTIONS.has(value);
+      },
+    );
     for (const match of tenantValues) {
       expect(match).toContain(BUSINESS_ID);
     }
+  });
+
+  /**
+   * The exclusion above is narrow on purpose, and this is what keeps it narrow:
+   * a tenant id that is not the argument must still fail, in exactly the shape
+   * the `orderBy` false positive took.
+   */
+  it('still rejects a hardcoded tenant that is not a sort direction', () => {
+    const SORT_DIRECTIONS = new Set(['asc', 'desc']);
+    const serialised = JSON.stringify([
+      { where: { business_id: '00000000-0000-4000-a000-000000000999' } },
+      { orderBy: { business_id: 'asc' } },
+    ]);
+
+    const flagged = (serialised.match(/"business_?[Ii]d":"([^"]+)"/g) ?? []).filter((match) => {
+      const value = /:"([^"]+)"/.exec(match)?.[1] ?? '';
+      return !SORT_DIRECTIONS.has(value);
+    });
+
+    expect(flagged).toHaveLength(1);
+    expect(flagged[0]).toContain('000000000999');
   });
 
   /**

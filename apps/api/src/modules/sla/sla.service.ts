@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import type { sla_policies, sla_breaches } from '@prisma/client';
+import { SLA_SWEEP_MAX_BUSINESSES } from './sla.constants';
 import { ChannelType, generateId, generateCorrelationId } from '@gosumo/shared';
 import type {
   ConversationCreatedEvent,
@@ -28,6 +29,18 @@ import {
 const DEFAULT_RANGE_DAYS = 30;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const SWEEP_BATCH_SIZE = 200;
+
+/** What one platform-wide sweep did, including what it could not reach. */
+export interface SlaSweepSummary {
+  /** Tenants that had overdue trackers when the sweep started. */
+  businesses: number;
+  /** Trackers marked breached across all of them. */
+  swept: number;
+  /** Tenants whose own sweep threw. Their trackers are still unmarked. */
+  failed: number;
+  /** The tenant enumeration hit its cap; more are waiting for the next tick. */
+  truncated: boolean;
+}
 
 function pct(numerator: number, denominator: number): number {
   if (denominator <= 0) return 0;
@@ -254,6 +267,53 @@ export class SlaService {
     await this.repository.markEscalatedBatch(businessId, escalatedIds, new Date());
 
     return { swept: overdue.length };
+  }
+
+  /**
+   * Run the overdue sweep for every tenant that currently has one.
+   *
+   * Breach detection is event-driven: a tracker is checked when `message.sent`
+   * or `conversation.resolved` fires. The conversation nobody ever answers has
+   * no such event, so for it this sweep *is* the detection — and nothing was
+   * calling it. `POST /sla/breaches/sweep` existed, but it is per-business and
+   * manual, which means in practice an ignored conversation breached its SLA
+   * and no breach row, no `sla.breached` event and no escalation ever followed.
+   *
+   * One failing tenant must not stop the rest: a sweep that aborts halfway
+   * leaves the tenants after it in the list undetected until the next tick, and
+   * if the failure is persistent, forever. Failures are counted and reported so
+   * a tenant that never sweeps is visible rather than merely absent.
+   */
+  async sweepAllBusinesses(now: Date = new Date()): Promise<SlaSweepSummary> {
+    const businessIds = await this.repository.findBusinessIdsWithOverdueTrackers(
+      now,
+      SLA_SWEEP_MAX_BUSINESSES,
+    );
+
+    let swept = 0;
+    let failed = 0;
+
+    for (const businessId of businessIds) {
+      try {
+        const result = await this.sweepOverdueBreaches(businessId);
+        swept += result.swept;
+      } catch (err) {
+        failed += 1;
+        this.logger.error(
+          `SLA sweep failed for business ${businessId}; other tenants continue: ${this.errMsg(err)}`,
+        );
+      }
+    }
+
+    return {
+      businesses: businessIds.length,
+      swept,
+      failed,
+      // The enumeration is capped, so a platform-wide backlog larger than the
+      // cap drains across ticks. Saying so is the difference between "nothing
+      // left" and "we stopped looking".
+      truncated: businessIds.length === SLA_SWEEP_MAX_BUSINESSES,
+    };
   }
 
   private async onBreachDetected(

@@ -275,6 +275,31 @@ export class SlaRepository {
     });
   }
 
+  /**
+   * Business ids that currently have at least one overdue, unmet, un-breached
+   * tracker.
+   *
+   * Deliberately cross-tenant: this is what the scheduled sweep iterates, and
+   * it runs on behalf of the platform rather than any one business. It returns
+   * only the discriminator — no tracker rows, no conversation content — and
+   * every sweep step that follows is scoped to one id from this list. Listed
+   * in `GLOBAL_SWEEPS` in `repository-contract.spec.ts` with that reason.
+   *
+   * Selecting the tenants with work, rather than every business, is what keeps
+   * the five-minute cadence cheap: a platform where nobody is breaching costs
+   * one indexed query per tick and nothing else.
+   */
+  async findBusinessIdsWithOverdueTrackers(now: Date, limit: number): Promise<string[]> {
+    const rows = await this.prisma.sla_breaches.findMany({
+      where: { met_at: null, breached: false, due_at: { lt: now } },
+      select: { business_id: true },
+      distinct: ['business_id'],
+      orderBy: { business_id: 'asc' },
+      take: limit,
+    });
+    return rows.map((r) => r.business_id);
+  }
+
   async listBreaches(businessId: string, filters: BreachListFilters): Promise<PaginatedBreaches> {
     const page = filters.page ?? 1;
     const limit = filters.limit ?? 20;
