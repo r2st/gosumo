@@ -718,6 +718,7 @@ model businesses {
   realty_eoi_requests            realty_eoi_requests[]
   segments                       segments[]
   canned_responses               canned_responses[]
+  knowledge_articles             knowledge_articles[]
   sla_policies                   sla_policies[]
   sla_breaches                   sla_breaches[]
   api_keys                       api_keys[]
@@ -789,6 +790,7 @@ model team_members {
   resolved_tasks   tasks[]            @relation("ResolvedBy")
   audit_logs       audit_logs[]
   canned_responses canned_responses[]
+  knowledge_articles knowledge_articles[] @relation("KnowledgeArticleAuthor")
   api_keys         api_keys[]
 
   @@unique([business_id, email])
@@ -2673,6 +2675,85 @@ model canned_responses {
   /// state; without this each read the tenant's whole response library.
   @@index([business_id, approval_status, updated_at(sort: Desc)])
   @@map("canned_responses")
+}
+
+/// A business-authored FAQ or help article stored in PostgreSQL, searchable by
+/// keyword and used to ground AI answers.
+///
+/// This is deliberately *not* the Qdrant-backed RAG store in `ai-engine/rag`.
+/// That store needs a reachable vector database and an embedding provider;
+/// where neither is available `RagRetrieverService.retrieve` correctly returns
+/// `[]` and every answer goes out ungrounded. These rows live in the same
+/// PostgreSQL the API already requires, so a tenant's knowledge survives the
+/// vector store being absent. The two are merged at retrieval time, so a
+/// deployment that has Qdrant gets both.
+model knowledge_articles {
+  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String   @db.Uuid
+  title       String   @db.VarChar(255)
+  /// URL-safe handle, unique per business. Derived from `title` on create.
+  slug        String   @db.VarChar(160)
+
+  /// The short, quotable answer. This is what goes into the AI prompt when the
+  /// article matches; `body` is the long form an operator reads. Retrieval
+  /// falls back to a truncated `body` when it is null, so it stays optional.
+  summary String? @db.Text
+  body    String  @db.Text
+
+  category String?  @db.VarChar(100)
+  tags     String[] @default([])
+
+  /// Extra search terms. The body is written for humans and often never
+  /// contains the words customers actually type ("cod", "refund window"), so
+  /// operators add them here; they are indexed with the title at high weight.
+  keywords String[] @default([])
+
+  /// Intents this article may ground. Empty = every intent, which is the
+  /// default: an article restricted to intents nobody classifies is invisible,
+  /// and that failure is silent.
+  applicable_intents String[] @default([])
+
+  status KnowledgeArticleStatus @default(DRAFT)
+
+  /// A second, independent switch from `status`. PUBLISHED controls whether
+  /// operators see it; this controls whether the AI may quote it. An article
+  /// can be published for the team and withheld from customers.
+  ai_enabled Boolean @default(true)
+
+  /// Retrieval counter, incremented when the article is fed to a prompt.
+  /// Best-effort: a failed increment never fails the turn.
+  use_count Int @default(0)
+
+  created_by   String?   @db.Uuid
+  updated_by   String?   @db.Uuid
+  published_at DateTime? @db.Timestamptz
+
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  business businesses    @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  author   team_members? @relation("KnowledgeArticleAuthor", fields: [created_by], references: [id])
+
+  @@unique([business_id, slug])
+  @@index([business_id, status, updated_at(sort: Desc)])
+  @@index([business_id, category])
+  /// The full-text search index is a GIN index over a `tsvector` expression,
+  /// which Prisma cannot express. It is created in migration 0045 and must
+  /// stay in step with `KNOWLEDGE_TSVECTOR_SQL` in the repository — the
+  /// expression in the query has to match the indexed one exactly or Postgres
+  /// silently sequential-scans instead of erroring.
+  @@map("knowledge_articles")
+}
+
+enum KnowledgeArticleStatus {
+  /// Being written. Never retrieved, never grounds an answer.
+  DRAFT
+  /// Live. Retrievable by operators and — when `ai_enabled` — by the AI.
+  PUBLISHED
+  /// Withdrawn but kept. Never retrieved; distinct from a soft delete so an
+  /// operator can see why an answer stopped being given.
+  ARCHIVED
 }
 
 /// A configurable SLA target (first-response / resolution) with match

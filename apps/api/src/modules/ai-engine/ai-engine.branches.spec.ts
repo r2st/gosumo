@@ -39,6 +39,7 @@ import { CatalogService } from '../catalog/catalog.service';
 import { GuardrailsService, SafetySignals } from './safety/guardrails.service';
 import { ReviewQueueService } from './hitl/review-queue.service';
 import { KnowledgeIngestionService } from './rag/knowledge-ingestion.service';
+import { KnowledgeService } from '../knowledge/knowledge.service';
 import { EmbeddingService } from './rag/embedding.service';
 import { AiEngineRepository } from './ai-engine.repository';
 import { ChannelAdapterService } from '../channel-adapter/channel-adapter.service';
@@ -228,6 +229,9 @@ function makeHarness() {
     guardrails,
     reviewQueue,
     { ingest: jest.fn() } as unknown as KnowledgeIngestionService,
+    // A tenant with no PostgreSQL articles: retrieval contributes nothing, so
+    // these cases score exactly as they did before the knowledge base existed.
+    { retrieveForAi: jest.fn().mockResolvedValue([]) } as unknown as KnowledgeService,
     { hash: jest.fn() } as unknown as EmbeddingService,
     repository,
     channelAdapter,

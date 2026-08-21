@@ -51,6 +51,7 @@ import { RealtyIntegrationsModule } from './modules/realty-integrations/realty-i
 import { ContactModule } from './modules/contact/contact.module';
 import { CannedResponseModule } from './modules/canned-response/canned-response.module';
 import { SlaModule } from './modules/sla/sla.module';
+import { KnowledgeModule } from './modules/knowledge/knowledge.module';
 import { AgentPerformanceModule } from './modules/agent-performance/agent-performance.module';
 import { WebhookLogModule } from './modules/webhook-log/webhook-log.module';
 import { ConversationSearchModule } from './modules/conversation-search/conversation-search.module';
@@ -181,6 +182,7 @@ import { HealthModule } from './modules/health/health.module';
     ContactModule,
     CannedResponseModule,
     SlaModule,
+    KnowledgeModule,
     AgentPerformanceModule,
     WebhookLogModule,
     ConversationSearchModule,

@@ -503,7 +503,7 @@ describe('critical path — a message arrives on every channel', () => {
 
   describe('the AI pipeline is reached by the announced event', () => {
     /**
-     * `AiEngineService` takes nineteen collaborators and this exercises one
+     * `AiEngineService` takes twenty collaborators and this exercises one
      * method, so everything but the four the guard path actually touches is a
      * bare object. What is being asserted is the *guard*, not the pipeline: the
      * pipeline has its own suites, and none of them can tell you whether a
@@ -522,7 +522,7 @@ describe('critical path — a message arrives on every channel', () => {
       } as unknown as RealtyTenantService;
 
       // Constructed positionally rather than through the container: wiring a
-      // testing module would mean modelling fourteen collaborators this path
+      // testing module would mean modelling fifteen collaborators this path
       // never touches, and each one is a place for the test to drift from the
       // handler it is about.
       const service = new AiEngineService(
@@ -539,6 +539,7 @@ describe('critical path — a message arrives on every channel', () => {
         unused, // guardrails
         unused, // reviewQueue
         unused, // knowledgeIngestion
+        unused, // knowledge
         unused, // embeddings
         unused, // repository
         unused, // channelAdapter

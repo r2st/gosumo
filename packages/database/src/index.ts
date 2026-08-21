@@ -99,6 +99,8 @@ export {
   CannedResponseApprovalStatus,
   ContactMergeStrategy,
   NotificationDigestFrequency,
+  // R86: PostgreSQL-backed knowledge base.
+  KnowledgeArticleStatus,
 } from '@prisma/client';
 
 // ─────────────────────────────────────────────

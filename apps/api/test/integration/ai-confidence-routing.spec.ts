@@ -52,6 +52,7 @@ import { CatalogService } from '../../src/modules/catalog/catalog.service';
 import { GuardrailsService } from '../../src/modules/ai-engine/safety/guardrails.service';
 import { ReviewQueueService } from '../../src/modules/ai-engine/hitl/review-queue.service';
 import { KnowledgeIngestionService } from '../../src/modules/ai-engine/rag/knowledge-ingestion.service';
+import { KnowledgeService } from '../../src/modules/knowledge/knowledge.service';
 import { EmbeddingService } from '../../src/modules/ai-engine/rag/embedding.service';
 import { AiEngineRepository } from '../../src/modules/ai-engine/ai-engine.repository';
 import { ChannelAdapterService } from '../../src/modules/channel-adapter/channel-adapter.service';
@@ -304,6 +305,10 @@ function buildPipeline() {
     guardrails,
     reviewQueue,
     { ingest: jest.fn() } as unknown as KnowledgeIngestionService,
+    // The tenants here keep no PostgreSQL articles either, so grounding comes
+    // from the vector store alone and every case scores as it did before the
+    // knowledge base existed.
+    { retrieveForAi: jest.fn().mockResolvedValue([]) } as unknown as KnowledgeService,
     { hash: jest.fn().mockReturnValue('hash-1') } as unknown as EmbeddingService,
     repository,
     channelAdapter,

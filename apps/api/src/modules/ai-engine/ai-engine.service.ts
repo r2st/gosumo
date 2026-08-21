@@ -33,7 +33,7 @@ import {
 
 import { ContextLoaderService, EnrichedContext } from './pipeline/context-loader.service';
 import { IntentClassifierService } from './pipeline/intent-classifier.service';
-import { RagRetrieverService } from './rag/rag-retriever.service';
+import { RagRetrieverService, type RetrievedChunk } from './rag/rag-retriever.service';
 import { PromptAssemblerService } from './pipeline/prompt-assembler.service';
 import { LlmClientService, LlmUnavailableError } from './pipeline/llm-client.service';
 import {
@@ -51,6 +51,7 @@ import { extractAmountPaise } from './pipeline/money-extract.util';
 import { GuardrailsService } from './safety/guardrails.service';
 import { ReviewQueueService } from './hitl/review-queue.service';
 import { KnowledgeIngestionService } from './rag/knowledge-ingestion.service';
+import { KnowledgeService, type GroundingArticle } from '../knowledge/knowledge.service';
 import { EmbeddingService } from './rag/embedding.service';
 import { AiEngineRepository } from './ai-engine.repository';
 import { ChannelAdapterService } from '../channel-adapter/channel-adapter.service';
@@ -140,6 +141,7 @@ export class AiEngineService {
     private readonly guardrails: GuardrailsService,
     private readonly reviewQueue: ReviewQueueService,
     private readonly knowledgeIngestion: KnowledgeIngestionService,
+    private readonly knowledge: KnowledgeService,
     private readonly embeddings: EmbeddingService,
     private readonly repository: AiEngineRepository,
     private readonly channelAdapter: ChannelAdapterService,
@@ -225,15 +227,47 @@ export class AiEngineService {
     // pipeline); confidence then drops on ragChunkCount and the turn routes to
     // a human. Logged because "answering with no grounding at all" and
     // "genuinely found nothing" are indistinguishable downstream.
-    const chunks = safety.jailbreakDetected
-      ? []
-      : await this.rag.retrieve(text, businessId, classification.intent).catch((err: unknown) => {
-          this.logger.warn(
-            `RAG retrieval failed for business ${businessId}; continuing ungrounded ` +
-              `(confidence will be penalised): ${errMessage(err)}`,
-          );
-          return [];
-        });
+    //
+    // Two stores are consulted, and both are optional. Qdrant holds embedded
+    // document chunks; `knowledge_articles` holds operator-written FAQ text in
+    // the same PostgreSQL the API cannot start without. A deployment with no
+    // vector store still grounds on the second — which was the actual state of
+    // production before this path existed, with every answer going out
+    // ungrounded and nothing but a depressed confidence score to say so.
+    //
+    // They are merged rather than tried in order: a business that has both
+    // should get both, and neither is a fallback for the other.
+    const [vectorChunks, articles]: [RetrievedChunk[], GroundingArticle[]] = safety
+      .jailbreakDetected
+      ? [[], []]
+      : await Promise.all([
+          this.rag.retrieve(text, businessId, classification.intent).catch((err: unknown) => {
+            this.logger.warn(
+              `RAG retrieval failed for business ${businessId}; continuing ungrounded ` +
+                `(confidence will be penalised): ${errMessage(err)}`,
+            );
+            return [] as RetrievedChunk[];
+          }),
+          // `retrieveForAi` handles its own failures and returns [] — see the
+          // note there on why a knowledge-base outage must not fail the turn.
+          this.knowledge.retrieveForAi(businessId, text, classification.intent),
+        ]);
+
+    // Articles enter the prompt through the same `<rag_context>` block, which
+    // neutralizes their text on the way in. `score` is on a different scale
+    // from cosine similarity (ts_rank_cd is unbounded above), so articles are
+    // appended after the vector chunks rather than interleaved by score —
+    // sorting the merged list would rank the two stores against each other on
+    // numbers that do not mean the same thing.
+    const chunks: RetrievedChunk[] = [
+      ...vectorChunks,
+      ...articles.map((a) => ({
+        id: a.id,
+        content: `${a.title}\n${a.excerpt}`,
+        score: a.score,
+        sourceType: 'KNOWLEDGE_ARTICLE',
+      })),
+    ];
 
     // ── DECIDE ────────────────────────────────
     // Does the business actually sell what is being priced? Returns an empty

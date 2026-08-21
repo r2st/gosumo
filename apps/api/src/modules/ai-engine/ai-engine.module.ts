@@ -22,6 +22,7 @@ import { ChannelAdapterModule } from '../channel-adapter/channel-adapter.module'
 import { RealtyTenantModule } from './realty/realty-tenant.module';
 import { CatalogModule } from '../catalog/catalog.module';
 import { ContactModule } from '../contact/contact.module';
+import { KnowledgeModule } from '../knowledge/knowledge.module';
 import { CatalogMatchService } from './pipeline/catalog-match.service';
 import { AiQualityController } from './quality/ai-quality.controller';
 import { AiQualityService } from './quality/ai-quality.service';
@@ -59,6 +60,9 @@ import {
     // For `SegmentRoutingService` only — the per-contact "may the AI answer
     // this customer?" decision the pipeline makes before scoring confidence.
     ContactModule,
+    // For `KnowledgeService` only — the PostgreSQL half of retrieval, which
+    // grounds answers on deployments where Qdrant is absent or unreachable.
+    KnowledgeModule,
     BullModule.registerQueue({ name: AI_QUALITY_QUEUE }),
   ],
   controllers: [AiEngineController, AiQualityController],
