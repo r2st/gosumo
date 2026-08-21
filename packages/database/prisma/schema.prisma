@@ -733,6 +733,7 @@ model businesses {
   conversation_tag_assignments   conversation_tag_assignments[]
   contact_merges                 contact_merges[]
   business_notification_settings business_notification_settings?
+  operator_alerts                operator_alerts[]
 
   @@index([slug])
   @@index([email])
@@ -2754,6 +2755,86 @@ enum KnowledgeArticleStatus {
   /// Withdrawn but kept. Never retrieved; distinct from a soft delete so an
   /// operator can see why an answer stopped being given.
   ARCHIVED
+}
+
+/// One alert raised for a business's *own team* — an SLA escalation, a channel
+/// outage, a failed payment — together with what the routing rules in
+/// `business_notification_settings` decided about it.
+///
+/// Stored even when the rules withhold it. An operator debugging "why was I
+/// never told" needs the suppressed rows as much as the delivered ones, and a
+/// deferred alert has to survive until its quiet-hours window ends.
+model operator_alerts {
+  id          String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  business_id String @db.Uuid
+
+  /// One of ALERT_KINDS. VARCHAR rather than an enum for the same reason
+  /// `realtime_alerts` is a TEXT[]: a newer dashboard may raise a kind this
+  /// build has never heard of, and a rejected INSERT would lose the alert.
+  kind     String @db.VarChar(40)
+  /// One of ALERT_SEVERITIES. Unknown values rank at the floor on read.
+  severity String @db.VarChar(20)
+
+  title String  @db.VarChar(300)
+  body  String? @db.Text
+
+  /// Conversation channel the alert came from, matched against `muted_channels`.
+  /// Null for alerts with no channel — those are never muted by that rule.
+  source_channel String? @db.VarChar(30)
+
+  /// What the alert is about, so the dashboard can deep-link to it.
+  conversation_id String? @db.Uuid
+  entity_type     String? @db.VarChar(40)
+  entity_id       String? @db.Uuid
+
+  /// Structured detail for the dashboard (policy id, breach type, targets).
+  context Json @default("{}") @db.JsonB
+
+  status OperatorAlertStatus @default(PENDING)
+  /// Why it was withheld, deferred, or failed. Null when it went straight out.
+  reason String? @db.VarChar(200)
+
+  deferred_until DateTime? @db.Timestamptz
+  delivered_at   DateTime? @db.Timestamptz
+  /// Addresses the alert actually reached.
+  delivered_to   String[]  @default([])
+
+  read_at DateTime? @db.Timestamptz
+  read_by String?   @db.Uuid
+
+  /// Collapses repeats of the same underlying condition, per business. Null
+  /// means "always distinct" — Postgres treats NULLs as distinct in a unique
+  /// index, which is what makes that work without a second code path.
+  dedupe_key String? @db.VarChar(200)
+
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  business businesses @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@unique([business_id, dedupe_key], map: "operator_alerts_dedupe_key")
+  @@index([business_id, read_at, created_at(sort: Desc)], map: "operator_alerts_inbox_idx")
+  @@index([business_id, kind, created_at(sort: Desc)], map: "operator_alerts_kind_idx")
+  @@index([business_id, conversation_id], map: "operator_alerts_conversation_idx")
+  /// The release sweep selects on `deferred_until` with no tenant. Its index is
+  /// partial (`WHERE status = 'DEFERRED'`), which Prisma cannot express — it is
+  /// created in migration 0046 as `operator_alerts_deferred_idx`.
+  @@map("operator_alerts")
+}
+
+enum OperatorAlertStatus {
+  /// Raised and cleared by the rules; delivery has not finished yet.
+  PENDING
+  /// Held until `deferred_until` by the business's quiet hours.
+  DEFERRED
+  /// Sent to at least one operator address.
+  DELIVERED
+  /// Withheld by a routing rule. `reason` says which one.
+  SUPPRESSED
+  /// The business wanted it and no address could be resolved, or every
+  /// dispatch threw. Distinct from SUPPRESSED: this one is a misconfiguration
+  /// to fix, not a rule working as intended.
+  FAILED
 }
 
 /// A configurable SLA target (first-response / resolution) with match

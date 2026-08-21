@@ -101,6 +101,8 @@ export {
   NotificationDigestFrequency,
   // R86: PostgreSQL-backed knowledge base.
   KnowledgeArticleStatus,
+  // R87: operator alerting.
+  OperatorAlertStatus,
 } from '@prisma/client';
 
 // ─────────────────────────────────────────────

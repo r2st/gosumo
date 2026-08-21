@@ -241,7 +241,26 @@ export class NotificationSettingsService {
     row: business_notification_settings,
   ): Promise<string[]> {
     if (row.digest_recipients.length > 0) return [...row.digest_recipients];
-    if (row.fallback_email) return [row.fallback_email];
+    return this.resolveFallbackRecipients(businessId, row);
+  }
+
+  /**
+   * Where operator mail goes when nothing more specific applies: the configured
+   * escalation address, then the business's own.
+   *
+   * Shared by the digest and by `OperatorAlertService`, so an operator who sets
+   * `fallback_email` gets both. `row` is optional only to save a read on the
+   * digest path, which has already loaded it — passing `null` re-reads.
+   *
+   * Deliberately *not* "every team member": an alert fanned out to a
+   * twenty-person team is how operators learn to filter alerts into a folder.
+   */
+  async resolveFallbackRecipients(
+    businessId: string,
+    row?: business_notification_settings | null,
+  ): Promise<string[]> {
+    const settings = row ?? (await this.repository.findByBusiness(businessId));
+    if (settings?.fallback_email) return [settings.fallback_email];
     const businessEmail = await this.repository.findBusinessEmail(businessId);
     return businessEmail ? [businessEmail] : [];
   }

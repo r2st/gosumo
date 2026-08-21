@@ -10,6 +10,8 @@ import {
 } from './notification.constants';
 import { NotificationSettingsService } from './settings/notification-settings.service';
 import { DIGEST_SWEEP_JOB } from './settings/notification-settings.constants';
+import { OperatorAlertService } from './alerts/operator-alert.service';
+import { ALERT_RELEASE_JOB } from './alerts/operator-alert.constants';
 
 /**
  * NotificationProcessor — consumes the `notifications` Bull queue.
@@ -28,6 +30,7 @@ export class NotificationProcessor {
   constructor(
     private readonly notificationService: NotificationService,
     private readonly settingsService: NotificationSettingsService,
+    private readonly alertService: OperatorAlertService,
   ) {}
 
   @Process(NOTIFICATION_JOBS.DISPATCH)
@@ -73,6 +76,24 @@ export class NotificationProcessor {
     if (result.found > 0) {
       this.logger.log(
         `Digest sweep: ${result.sent} sent, ${result.skipped} skipped of ${result.found} due`,
+      );
+    }
+  }
+
+  /**
+   * Repeatable sweep that delivers every alert whose quiet-hours window ended.
+   *
+   * Same shape and same error boundary as the digest sweep: cross-tenant, no
+   * job data, and left to reject so Bull and queue telemetry can see a failing
+   * schedule. Per-alert failures are already swallowed inside the sweep, so a
+   * rejection here means the scan itself broke.
+   */
+  @Process(ALERT_RELEASE_JOB)
+  async handleAlertRelease(): Promise<void> {
+    const result = await this.alertService.sweepDeferred();
+    if (result.found > 0) {
+      this.logger.log(
+        `Operator alert release: ${result.released} sent, ${result.skipped} skipped of ${result.found} due`,
       );
     }
   }

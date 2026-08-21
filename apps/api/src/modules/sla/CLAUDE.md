@@ -28,6 +28,13 @@ sweepAllBusinesses(now?): Promise<SlaSweepSummary>   // the scheduled path
 - `sla.breached` — `{ businessId, conversationId, policyId, breachType, targetMinutes, actualMinutes }`
 - `sla.escalated` — `{ businessId, conversationId, policyId, breachType, action, target? }` (one per configured escalation action)
 
+Both are consumed by `OperatorAlertListener` in the notification module, which
+turns them into stored, routed, deliverable operator alerts (`sla.breached` →
+WARNING, `sla.escalated` → CRITICAL aimed at the action's `target`). Until R87
+`sla.escalated` had **no listener at all**: detection worked and escalation was
+a log line. Note what is still true — the alert *tells a human* what the policy
+asked for; nothing here executes a `REASSIGN` or `CREATE_TASK` action itself.
+
 **Listens to:**
 - `conversation.created` → match a policy (channel/tags), create FIRST_RESPONSE + RESOLUTION trackers in `sla_breaches`
 - `message.sent` → check the FIRST_RESPONSE tracker

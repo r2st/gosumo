@@ -9,11 +9,22 @@ import { NotificationModule } from './notification.module';
 import { NotificationProcessor } from './notification.processor';
 import { NotificationService } from './notification.service';
 import { NotificationSettingsService } from './settings/notification-settings.service';
+import { OperatorAlertService } from './alerts/operator-alert.service';
 import {
   NOTIFICATION_JOBS,
   STUCK_RECOVERY_CRON,
   STUCK_RECOVERY_REPEAT_JOB_ID,
 } from './notification.constants';
+import {
+  ALERT_RELEASE_CRON,
+  ALERT_RELEASE_JOB,
+  ALERT_RELEASE_REPEAT_JOB_ID,
+} from './alerts/operator-alert.constants';
+import {
+  DIGEST_SWEEP_CRON,
+  DIGEST_SWEEP_JOB,
+  DIGEST_SWEEP_REPEAT_JOB_ID,
+} from './settings/notification-settings.constants';
 
 type QueueMock = {
   add: jest.Mock;
@@ -75,6 +86,49 @@ describe('NotificationModule — sweep scheduling', () => {
     expect(queue.removeRepeatableByKey).not.toHaveBeenCalled();
   });
 
+  it('registers the digest and alert-release sweeps alongside it', async () => {
+    // Three independent schedules on one queue. A new one added to
+    // `onModuleInit` without its own case here is a sweep nobody notices is
+    // unregistered — the failure mode is silence, not an error.
+    const queue = makeQueue();
+
+    await new NotificationModule(queue as never).onModuleInit();
+
+    expect(queue.add).toHaveBeenCalledWith(
+      DIGEST_SWEEP_JOB,
+      {},
+      expect.objectContaining({
+        jobId: DIGEST_SWEEP_REPEAT_JOB_ID,
+        repeat: { cron: DIGEST_SWEEP_CRON },
+      }),
+    );
+    expect(queue.add).toHaveBeenCalledWith(
+      ALERT_RELEASE_JOB,
+      {},
+      expect.objectContaining({
+        jobId: ALERT_RELEASE_REPEAT_JOB_ID,
+        repeat: { cron: ALERT_RELEASE_CRON },
+      }),
+    );
+  });
+
+  it('still registers the later schedules when an earlier one fails', async () => {
+    // Registered independently rather than in one `Promise.all`: Redis being
+    // half-available must not cost the alert release sweep its schedule.
+    const queue = makeQueue();
+    queue.getRepeatableJobs
+      .mockRejectedValueOnce(new Error('ECONNREFUSED'))
+      .mockResolvedValue([]);
+
+    await new NotificationModule(queue as never).onModuleInit();
+
+    expect(queue.add).toHaveBeenCalledWith(
+      ALERT_RELEASE_JOB,
+      {},
+      expect.objectContaining({ jobId: ALERT_RELEASE_REPEAT_JOB_ID }),
+    );
+  });
+
   it('never blocks boot when Redis is unavailable', async () => {
     const queue = makeQueue();
     queue.getRepeatableJobs.mockRejectedValue(new Error('ECONNREFUSED'));
@@ -89,6 +143,7 @@ describe('NotificationProcessor — sweep job', () => {
     const processor = new NotificationProcessor(
       service as unknown as NotificationService,
       { sweepDueDigests: jest.fn() } as unknown as NotificationSettingsService,
+      { sweepDeferred: jest.fn() } as unknown as OperatorAlertService,
     );
 
     await processor.handleRecoverStuck();

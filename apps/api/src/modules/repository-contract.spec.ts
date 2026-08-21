@@ -188,6 +188,13 @@ const GLOBAL_SWEEPS = new Set<string>([
   // digest due in this tick, and `next_digest_at` is indexed precisely so the
   // answer is one range scan rather than one query per business.
   'NotificationSettingsRepository.findDueDigestsGlobal',
+  // Deferred operator-alert release sweep (cron, no request tenant): returns
+  // only the alert id and its business_id, then re-enters the scoped path per
+  // row to claim and deliver. It must span tenants — the question is *which*
+  // businesses are holding an alert whose quiet-hours window has now ended, and
+  // a partial index on `deferred_until` makes that one probe over the handful
+  // of parked rows rather than one query per business.
+  'OperatorAlertRepository.findDueDeferredGlobal',
 ]);
 
 /** Every documented reason a query may legitimately omit the tenant predicate. */

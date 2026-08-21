@@ -3,6 +3,8 @@ import { Job } from 'bull';
 import { NotificationProcessor } from './notification.processor';
 import { NotificationService } from './notification.service';
 import { NotificationSettingsService } from './settings/notification-settings.service';
+import { OperatorAlertService } from './alerts/operator-alert.service';
+import { ALERT_RELEASE_JOB } from './alerts/operator-alert.constants';
 import {
   NOTIFICATION_QUEUE,
   NOTIFICATION_JOBS,
@@ -37,6 +39,7 @@ describe('NotificationProcessor', () => {
     processor = new NotificationProcessor(
       service as unknown as NotificationService,
       { sweepDueDigests: jest.fn() } as unknown as NotificationSettingsService,
+      { sweepDeferred: jest.fn() } as unknown as OperatorAlertService,
     );
   });
 
@@ -122,6 +125,34 @@ describe('NotificationProcessor', () => {
       await expect(processor.handleBatch(job(data))).rejects.toThrow(
         'rate limited',
       );
+    });
+  });
+
+  describe('operator alert release sweep', () => {
+    it('binds to the release job name and lets a failure reach Bull', () => {
+      expect(
+        Reflect.getMetadata(
+          PROCESS_METADATA,
+          NotificationProcessor.prototype.handleAlertRelease,
+        ),
+      ).toEqual(expect.objectContaining({ name: ALERT_RELEASE_JOB }));
+    });
+
+    it('runs the sweep and does not swallow its failure', async () => {
+      const alerts = { sweepDeferred: jest.fn().mockResolvedValue({ found: 0, released: 0, skipped: 0 }) };
+      const p = new NotificationProcessor(
+        service as unknown as NotificationService,
+        { sweepDueDigests: jest.fn() } as unknown as NotificationSettingsService,
+        alerts as unknown as OperatorAlertService,
+      );
+
+      await p.handleAlertRelease();
+      expect(alerts.sweepDeferred).toHaveBeenCalled();
+
+      // This job owns no retry bookkeeping of its own; swallowing would mark it
+      // complete and lose the only signal that alerts are piling up unreleased.
+      alerts.sweepDeferred.mockRejectedValue(new Error('db down'));
+      await expect(p.handleAlertRelease()).rejects.toThrow('db down');
     });
   });
 });

@@ -27,6 +27,16 @@ import {
   DIGEST_SWEEP_JOB,
   DIGEST_SWEEP_REPEAT_JOB_ID,
 } from './settings/notification-settings.constants';
+import { OperatorAlertController } from './alerts/operator-alert.controller';
+import { OperatorAlertService } from './alerts/operator-alert.service';
+import { OperatorAlertRepository } from './alerts/operator-alert.repository';
+import { OperatorAlertListener } from './alerts/operator-alert.listener';
+import {
+  ALERT_RELEASE_CRON,
+  ALERT_RELEASE_JOB,
+  ALERT_RELEASE_REPEAT_JOB_ID,
+} from './alerts/operator-alert.constants';
+import { TenantModule } from '../tenant/tenant.module';
 
 /**
  * NotificationModule — multi-channel notification dispatch (email, SMS,
@@ -39,8 +49,11 @@ import {
  * payment domain events and fans them out per the business's triggers.
  */
 @Module({
-  imports: [BullModule.registerQueue({ name: NOTIFICATION_QUEUE })],
-  controllers: [NotificationController],
+  // TenantModule for `TenantService`: an escalation action may name a team
+  // member or a role, and resolving that to an address is a synchronous read on
+  // another module's table. TenantModule imports nothing, so this is acyclic.
+  imports: [BullModule.registerQueue({ name: NOTIFICATION_QUEUE }), TenantModule],
+  controllers: [NotificationController, OperatorAlertController],
   providers: [
     NotificationService,
     NotificationRepository,
@@ -49,6 +62,9 @@ import {
     NotificationSettingsService,
     NotificationSettingsRepository,
     NotificationDigestListener,
+    OperatorAlertService,
+    OperatorAlertRepository,
+    OperatorAlertListener,
     TemplateRenderer,
     SenderRegistry,
     EmailSender,
@@ -65,7 +81,7 @@ import {
   // The settings service is exported so callers that raise *operator* alerts —
   // SLA escalation, channel outages — can ask one place whether the business
   // wants to be told, instead of each reimplementing quiet hours and muting.
-  exports: [NotificationService, NotificationSettingsService],
+  exports: [NotificationService, NotificationSettingsService, OperatorAlertService],
 })
 export class NotificationModule implements OnModuleInit {
   private readonly logger = new Logger(NotificationModule.name);
@@ -91,6 +107,12 @@ export class NotificationModule implements OnModuleInit {
       DIGEST_SWEEP_REPEAT_JOB_ID,
       DIGEST_SWEEP_CRON,
       'digest sweep',
+    );
+    await this.scheduleRepeatable(
+      ALERT_RELEASE_JOB,
+      ALERT_RELEASE_REPEAT_JOB_ID,
+      ALERT_RELEASE_CRON,
+      'operator alert release sweep',
     );
   }
 
