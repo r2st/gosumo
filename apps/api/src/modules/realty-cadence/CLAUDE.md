@@ -67,3 +67,7 @@ decides *whether/what* to send, not *how*.
 ```bash
 pnpm --filter @gosumo/api test --testPathPattern=modules/realty-cadence
 ```
+
+## Enrolment guards (G001)
+
+`enroll()` resolves the lead through `RealtyLeadsService.getLead` **first** — a foreign lead id from `POST /enroll` is a 404, not an orphan row — and refuses an opted-out lead or one in `CLOSED_WON` / `CLOSED_LOST`. `realty.visit.completed` fires for a won deal's last visit too; without this the POST_VISIT chase went to a buyer who had just paid. `processDueEnrollments` stops a due enrolment with `lead_closed` when the lead's stage is terminal (mirrors `opted_out`), and `realty.lead.stage_changed` to a terminal stage stops every enrolment unconditionally via `pauseForLead(…, 'lead_closed')`.

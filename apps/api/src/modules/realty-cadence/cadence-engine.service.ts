@@ -68,6 +68,23 @@ export class CadenceEngineService {
     leadId: string,
     trigger: CadenceTrigger,
   ): Promise<realty_cadence_enrollments | null> {
+    // Resolve the lead inside this tenant first. That is what makes a
+    // cross-tenant lead id from the manual endpoint a 404 instead of an
+    // orphan enrolment, and it is the only place to refuse a buyer who has
+    // opted out or a deal that is already closed — `realty.visit.completed`
+    // fires for a CLOSED_WON lead's last visit too, and a "how did the visit
+    // go?" chase to someone who just paid is exactly what the stage machine
+    // exists to prevent.
+    const lead = await this.leadsService.getLead(businessId, leadId);
+    if (lead.optOut) {
+      this.logger.log(`Lead ${leadId} has opted out — not enrolling in ${trigger}`);
+      return null;
+    }
+    if (isTerminalStage(lead.stage)) {
+      this.logger.log(`Lead ${leadId} is ${lead.stage} — not enrolling in ${trigger}`);
+      return null;
+    }
+
     const cadence = await this.repository.findActiveCadenceByTrigger(businessId, trigger);
     if (!cadence) return null;
 
@@ -263,6 +280,13 @@ export class CadenceEngineService {
     // Opt-out is absolute — halt immediately.
     if (lead.optOut) {
       await this.finish(businessId, enrollment, 'STOPPED', 'opted_out');
+      return 'stopped';
+    }
+    // So is a closed deal. The stage_changed listener stops enrolments when the
+    // close happens; this catches a close that never emitted (a direct DB edit,
+    // an event lost to a restart) before the next chase goes out.
+    if (isTerminalStage(lead.stage)) {
+      await this.finish(businessId, enrollment, 'STOPPED', 'lead_closed');
       return 'stopped';
     }
 

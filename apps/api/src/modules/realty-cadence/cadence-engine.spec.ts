@@ -16,6 +16,7 @@
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { NotFoundException } from '@nestjs/common';
 import { CadenceTrigger, CadenceStopOn, LeadStage } from '@gosumo/shared';
 
 import { CadenceEngineService } from './cadence-engine.service';
@@ -118,7 +119,8 @@ describe('CadenceEngineService', () => {
       updateEnrollment: jest.fn(),
     };
     const mockLeads = {
-      getLead: jest.fn(),
+      // Every enrolment resolves its lead first; default to a live, contactable one.
+      getLead: jest.fn(async () => makeLead()),
       getLeadsByIds: jest.fn(async () => new Map()),
       findLeadByPhone: jest.fn(),
     };
@@ -166,6 +168,42 @@ describe('CadenceEngineService', () => {
       expect(result).toBeNull();
       expect(repository.createEnrollment).not.toHaveBeenCalled();
     });
+
+    it('resolves the lead inside the tenant before anything else — a foreign id is a 404, not an orphan row', async () => {
+      leadsService.getLead.mockRejectedValue(new NotFoundException('Lead not found'));
+      repository.findActiveCadenceByTrigger.mockResolvedValue({ id: CADENCE_ID } as never);
+
+      await expect(engine.enroll(BUSINESS_ID, LEAD_ID, CadenceTrigger.NO_RESPONSE)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(leadsService.getLead).toHaveBeenCalledWith(BUSINESS_ID, LEAD_ID);
+      expect(repository.findActiveCadenceByTrigger).not.toHaveBeenCalled();
+      expect(repository.createEnrollment).not.toHaveBeenCalled();
+    });
+
+    it('refuses to enrol an opted-out lead', async () => {
+      leadsService.getLead.mockResolvedValue(makeLead({ optOut: true }) as never);
+      repository.findActiveCadenceByTrigger.mockResolvedValue({ id: CADENCE_ID } as never);
+
+      const result = await engine.enroll(BUSINESS_ID, LEAD_ID, CadenceTrigger.POST_VISIT);
+
+      expect(result).toBeNull();
+      expect(repository.createEnrollment).not.toHaveBeenCalled();
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
+    });
+
+    it.each([LeadStage.CLOSED_WON, LeadStage.CLOSED_LOST])(
+      'refuses to enrol a %s lead (the last visit of a won deal still emits visit.completed)',
+      async (stage) => {
+        leadsService.getLead.mockResolvedValue(makeLead({ stage }) as never);
+        repository.findActiveCadenceByTrigger.mockResolvedValue({ id: CADENCE_ID } as never);
+
+        const result = await engine.enroll(BUSINESS_ID, LEAD_ID, CadenceTrigger.POST_VISIT);
+
+        expect(result).toBeNull();
+        expect(repository.createEnrollment).not.toHaveBeenCalled();
+      },
+    );
 
     it('no-ops when the lead already has an active enrolment', async () => {
       repository.findActiveCadenceByTrigger.mockResolvedValue({ id: CADENCE_ID } as never);
@@ -264,6 +302,26 @@ describe('CadenceEngineService', () => {
         expect.objectContaining({ status: 'STOPPED', stopReason: 'opted_out' }),
       );
     });
+
+    it.each([LeadStage.CLOSED_WON, LeadStage.CLOSED_LOST])(
+      'stops the enrolment before sending when the lead is %s (a close that never emitted)',
+      async (stage) => {
+        repository.findDueEnrollments.mockResolvedValue([makeEnrollment()] as never);
+        repository.listStepsByCadence.mockResolvedValue([makeStep()] as never);
+        leadsService.getLead.mockResolvedValue(makeLead({ stage }));
+        repository.updateEnrollment.mockResolvedValue(makeEnrollment() as never);
+
+        const result = await engine.processDueEnrollments(NOW, BUSINESS_ID);
+
+        expect(result.stopped).toBe(1);
+        expect(repository.updateEnrollment).toHaveBeenCalledWith(
+          BUSINESS_ID,
+          'enr-1',
+          expect.objectContaining({ status: 'STOPPED', stopReason: 'lead_closed' }),
+        );
+        expect(eventEmitter.emit).not.toHaveBeenCalledWith('realty.cadence.step_sent', expect.anything());
+      },
+    );
 
     it('skips (does not send) a MARKETING step outside the service window', async () => {
       repository.findDueEnrollments.mockResolvedValue([makeEnrollment({ current_step: 0 })] as never);

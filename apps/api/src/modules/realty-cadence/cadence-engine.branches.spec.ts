@@ -133,7 +133,9 @@ describe('CadenceEngineService (branches)', () => {
       findDueEnrollments: jest.fn(),
       updateEnrollment: jest.fn(),
     };
-    const mockLeads = { getLead: jest.fn(), findLeadByPhone: jest.fn() };
+    // `enroll` resolves its lead first; default to a live, contactable one so
+    // the branches below exercise what they name rather than the lead guard.
+    const mockLeads = { getLead: jest.fn(async () => makeLead()), findLeadByPhone: jest.fn() };
     const mockEmitter = { emit: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -269,6 +271,7 @@ describe('CadenceEngineService (branches)', () => {
 
   describe('enroll with an emptied cadence', () => {
     it('returns null when the matched cadence has no steps', async () => {
+      leadsService.getLead.mockResolvedValue(makeLead());
       repository.findActiveCadenceByTrigger.mockResolvedValue({ id: CADENCE_ID } as never);
       repository.listStepsByCadence.mockResolvedValue([] as never);
 
