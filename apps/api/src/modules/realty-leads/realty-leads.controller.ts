@@ -97,6 +97,7 @@ export class RealtyLeadsController {
   @Post(':id/stage')
   @ApiOperation({ summary: 'Transition a lead to a new pipeline stage' })
   @ApiResponse({ status: 404, description: 'Not found, or not visible to this business' })
+  @ApiResponse({ status: 409, description: 'The lead changed stage concurrently — re-read and retry' })
   @ApiParam({ name: 'id', description: 'Lead UUID' })
   @ApiResponse({ status: 200, description: 'Lead updated' })
   @HttpCode(HttpStatus.OK)
