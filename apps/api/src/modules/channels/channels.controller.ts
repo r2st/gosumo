@@ -12,6 +12,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiParam } from "@nestjs/swagger";
 import { ChannelType } from "@gosumo/shared";
 import { Public } from "../../common/decorators/public.decorator";
 import { TenantId } from "../../common/decorators/tenant-id.decorator";
+import { CurrentUser, AuthenticatedUser } from "../../common/decorators/current-user.decorator";
 import { ChannelsService } from "./channels.service";
 import type { ChannelResponse } from "./channels.service";
 
@@ -68,6 +69,7 @@ export class ChannelsController {
   @ApiResponse({ status: 400, description: "Unrecognised channel type" })
   async connectChannel(
     @TenantId() businessId: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Param("channelType") channelTypeParam: string,
     @Body() body: ConnectChannelDto,
   ): Promise<ChannelResponse> {
@@ -79,7 +81,10 @@ export class ChannelsController {
       );
     }
 
-    return this.channelsService.connectChannel(businessId, channelType, body);
+    return this.channelsService.connectChannel(businessId, channelType, body, {
+      id: user.sub,
+      email: user.email ?? null,
+    });
   }
 
   @Delete(":channelId")
@@ -93,9 +98,13 @@ export class ChannelsController {
   @ApiResponse({ status: 404, description: "Not found, or not visible to this business" })
   async disconnectChannel(
     @TenantId() businessId: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Param("channelId") channelId: string,
   ) {
-    return this.channelsService.disconnectChannel(businessId, channelId);
+    return this.channelsService.disconnectChannel(businessId, channelId, {
+      id: user.sub,
+      email: user.email ?? null,
+    });
   }
 
   @Post(":channelId/test")

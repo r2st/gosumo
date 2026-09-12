@@ -175,9 +175,13 @@ export class TenantController {
   @ApiResponse({ status: 400, description: 'Plan limit exceeded or validation error' })
   async connectChannel(
     @TenantId() businessId: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() dto: ConnectChannelDto,
   ) {
-    return this.tenantService.connectChannel(businessId, dto);
+    return this.tenantService.connectChannel(businessId, dto, {
+      id: user.sub,
+      email: user.email ?? null,
+    });
   }
 
   @Patch('channels/:id')
@@ -203,9 +207,13 @@ export class TenantController {
   @ApiResponse({ status: 404, description: 'Channel account not found' })
   async disconnectChannel(
     @TenantId() businessId: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Param('id', UuidValidationPipe) channelAccountId: string,
   ) {
-    await this.tenantService.disconnectChannel(businessId, channelAccountId);
+    await this.tenantService.disconnectChannel(businessId, channelAccountId, {
+      id: user.sub,
+      email: user.email ?? null,
+    });
   }
 
   // ─────────────────────────────────────────────

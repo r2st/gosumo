@@ -1,7 +1,7 @@
 /**
- * TenantController — suspend / activate.
+ * TenantController — suspend / activate / connect channel / disconnect channel.
  *
- * Both routes are OWNER-gated and now write to audit_logs (G002). The service
+ * All four routes are gated and now write to audit_logs (G002). The service
  * attributes the row to whoever it is handed; the controller is the only place
  * that knows who that is, so what is pinned here is that the JWT subject and
  * email reach the service rather than being dropped on the way through.
@@ -21,14 +21,21 @@ const OWNER: AuthenticatedUser = {
   email: 'owner@example.com',
 };
 
-describe('TenantController suspend/activate', () => {
+describe('TenantController audited routes', () => {
   let controller: TenantController;
-  let tenantService: { suspendBusiness: jest.Mock; activateBusiness: jest.Mock };
+  let tenantService: {
+    suspendBusiness: jest.Mock;
+    activateBusiness: jest.Mock;
+    connectChannel: jest.Mock;
+    disconnectChannel: jest.Mock;
+  };
 
   beforeEach(() => {
     tenantService = {
       suspendBusiness: jest.fn().mockResolvedValue({ is_active: false }),
       activateBusiness: jest.fn().mockResolvedValue({ is_active: true }),
+      connectChannel: jest.fn().mockResolvedValue({ id: 'ch' }),
+      disconnectChannel: jest.fn().mockResolvedValue(undefined),
     };
     controller = new TenantController(
       tenantService as unknown as TenantService,
@@ -52,6 +59,26 @@ describe('TenantController suspend/activate', () => {
     await controller.activate(BUSINESS_ID, OWNER);
 
     expect(tenantService.activateBusiness).toHaveBeenCalledWith(BUSINESS_ID, {
+      id: OWNER_ID,
+      email: 'owner@example.com',
+    });
+  });
+
+  it('hands the acting manager to connectChannel', async () => {
+    const dto = { channelType: 'WHATSAPP', name: 'Main', externalId: 'x', credentials: {} } as never;
+
+    await controller.connectChannel(BUSINESS_ID, OWNER, dto);
+
+    expect(tenantService.connectChannel).toHaveBeenCalledWith(BUSINESS_ID, dto, {
+      id: OWNER_ID,
+      email: 'owner@example.com',
+    });
+  });
+
+  it('hands the acting manager to disconnectChannel', async () => {
+    await controller.disconnectChannel(BUSINESS_ID, OWNER, 'ch-1');
+
+    expect(tenantService.disconnectChannel).toHaveBeenCalledWith(BUSINESS_ID, 'ch-1', {
       id: OWNER_ID,
       email: 'owner@example.com',
     });

@@ -4,6 +4,15 @@ import { ChannelType } from '@gosumo/shared';
 import { ChannelsController } from './channels.controller';
 import { ChannelsService } from './channels.service';
 import type { ConnectChannelDto } from './dto';
+import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+
+const USER: AuthenticatedUser = {
+  sub: '00000000-0000-4000-a000-000000000002',
+  businessId: 'biz-001',
+  role: 'MANAGER',
+  email: 'manager@example.com',
+};
+const ACTOR = { id: USER.sub, email: 'manager@example.com' };
 
 /* ─── Mocks ─────────────────────────────────────────────────────────────── */
 
@@ -36,83 +45,90 @@ describe('ChannelsController', () => {
 
     it('should accept lowercase channel type (whatsapp)', async () => {
       mockChannelsService.connectChannel.mockResolvedValue({ id: 'ch-1' });
-      await controller.connectChannel(businessId, 'whatsapp', body);
+      await controller.connectChannel(businessId, USER, 'whatsapp', body);
       expect(mockChannelsService.connectChannel).toHaveBeenCalledWith(
         businessId,
         ChannelType.WHATSAPP,
         body,
+        ACTOR,
       );
     });
 
     it('should accept lowercase channel type (instagram)', async () => {
       mockChannelsService.connectChannel.mockResolvedValue({ id: 'ch-2' });
-      await controller.connectChannel(businessId, 'instagram', body);
+      await controller.connectChannel(businessId, USER, 'instagram', body);
       expect(mockChannelsService.connectChannel).toHaveBeenCalledWith(
         businessId,
         ChannelType.INSTAGRAM,
         body,
+        ACTOR,
       );
     });
 
     it('should accept lowercase channel type (sms)', async () => {
       mockChannelsService.connectChannel.mockResolvedValue({ id: 'ch-3' });
-      await controller.connectChannel(businessId, 'sms', body);
+      await controller.connectChannel(businessId, USER, 'sms', body);
       expect(mockChannelsService.connectChannel).toHaveBeenCalledWith(
         businessId,
         ChannelType.SMS,
         body,
+        ACTOR,
       );
     });
 
     it('should accept lowercase channel type (email)', async () => {
       mockChannelsService.connectChannel.mockResolvedValue({ id: 'ch-4' });
-      await controller.connectChannel(businessId, 'email', body);
+      await controller.connectChannel(businessId, USER, 'email', body);
       expect(mockChannelsService.connectChannel).toHaveBeenCalledWith(
         businessId,
         ChannelType.EMAIL,
         body,
+        ACTOR,
       );
     });
 
     it('should normalise kebab-case web-chat to WEB_CHAT', async () => {
       mockChannelsService.connectChannel.mockResolvedValue({ id: 'ch-5' });
-      await controller.connectChannel(businessId, 'web-chat', body);
+      await controller.connectChannel(businessId, USER, 'web-chat', body);
       expect(mockChannelsService.connectChannel).toHaveBeenCalledWith(
         businessId,
         ChannelType.WEB_CHAT,
         body,
+        ACTOR,
       );
     });
 
     it('should accept UPPER_SNAKE_CASE WEB_CHAT directly', async () => {
       mockChannelsService.connectChannel.mockResolvedValue({ id: 'ch-6' });
-      await controller.connectChannel(businessId, 'WEB_CHAT', body);
+      await controller.connectChannel(businessId, USER, 'WEB_CHAT', body);
       expect(mockChannelsService.connectChannel).toHaveBeenCalledWith(
         businessId,
         ChannelType.WEB_CHAT,
         body,
+        ACTOR,
       );
     });
 
     it('should accept snake_case web_chat', async () => {
       mockChannelsService.connectChannel.mockResolvedValue({ id: 'ch-7' });
-      await controller.connectChannel(businessId, 'web_chat', body);
+      await controller.connectChannel(businessId, USER, 'web_chat', body);
       expect(mockChannelsService.connectChannel).toHaveBeenCalledWith(
         businessId,
         ChannelType.WEB_CHAT,
         body,
+        ACTOR,
       );
     });
 
     it('should reject invalid channel types', async () => {
       await expect(
-        controller.connectChannel(businessId, 'telegram', body),
+        controller.connectChannel(businessId, USER, 'telegram', body),
       ).rejects.toThrow(BadRequestException);
     });
 
     it('should reject empty channel type', async () => {
       await expect(
-        controller.connectChannel(businessId, '', body),
+        controller.connectChannel(businessId, USER, '', body),
       ).rejects.toThrow(BadRequestException);
     });
   });
@@ -127,10 +143,24 @@ describe('ChannelsController', () => {
   });
 
   describe('disconnectChannel', () => {
-    it('should pass businessId and channelId', async () => {
+    it('should pass businessId, the actor and channelId', async () => {
       mockChannelsService.disconnectChannel.mockResolvedValue({ success: true });
-      await controller.disconnectChannel('biz-001', 'ch-1');
-      expect(mockChannelsService.disconnectChannel).toHaveBeenCalledWith('biz-001', 'ch-1');
+      await controller.disconnectChannel('biz-001', USER, 'ch-1');
+      expect(mockChannelsService.disconnectChannel).toHaveBeenCalledWith(
+        'biz-001',
+        'ch-1',
+        ACTOR,
+      );
+    });
+
+    it('passes a null email when the token carries none', async () => {
+      mockChannelsService.disconnectChannel.mockResolvedValue({ success: true });
+      const { email: _email, ...noEmail } = USER;
+      await controller.disconnectChannel('biz-001', noEmail, 'ch-1');
+      expect(mockChannelsService.disconnectChannel).toHaveBeenCalledWith('biz-001', 'ch-1', {
+        id: USER.sub,
+        email: null,
+      });
     });
   });
 

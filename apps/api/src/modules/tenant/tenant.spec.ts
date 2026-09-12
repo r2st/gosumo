@@ -9,7 +9,11 @@ import { AuditAction, TeamMemberRole, TeamMemberStatus } from '@gosumo/database'
 import { TenantService } from './tenant.service';
 import { TenantRepository } from './tenant.repository';
 import { AuditLogService } from '../../common/services/audit-log.service';
-import { BUSINESS_STATUS_RESOURCE, TEAM_MEMBER_RESOURCE } from './tenant.constants';
+import {
+  BUSINESS_STATUS_RESOURCE,
+  CHANNEL_ACCOUNT_RESOURCE,
+  TEAM_MEMBER_RESOURCE,
+} from './tenant.constants';
 import { UpdateBusinessDto } from './dto/update-business.dto';
 import { UpdateAIConfigDto } from './dto/ai-config.dto';
 import { ConnectChannelDto } from './dto/connect-channel.dto';
@@ -578,6 +582,55 @@ describe('TenantService', () => {
       );
     });
 
+    // ── audit trail ── (G002: the row stores a credential and no attribution)
+
+    it('records the connection with the actor and never the credentials', async () => {
+      repository.findBusinessById.mockResolvedValue(makeBusiness({ plan: 'starter' }));
+      repository.countChannelAccounts.mockResolvedValue(0);
+      repository.createChannelAccount.mockResolvedValue(makeChannelAccount());
+
+      await service.connectChannel(
+        BUSINESS_ID,
+        {
+          channelType: ChannelType.WHATSAPP,
+          name: 'Main WhatsApp',
+          externalId: '1234567890',
+          credentials: { apiKey: 'top-secret' },
+        },
+        { id: OWNER_ID, email: 'owner@example.com' },
+      );
+
+      expect(audit.record).toHaveBeenCalledTimes(1);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          businessId: BUSINESS_ID,
+          actorType: 'TEAM_MEMBER',
+          actorId: OWNER_ID,
+          actorEmail: 'owner@example.com',
+          action: 'CREATE',
+          resourceType: CHANNEL_ACCOUNT_RESOURCE,
+          resourceId: CHANNEL_ACCOUNT_ID,
+          after: { channel: 'WHATSAPP', name: 'Main WhatsApp', externalId: '1234567890', externalAccount: null },
+        }),
+      );
+      expect(JSON.stringify(audit.record.mock.calls[0][0])).not.toContain('top-secret');
+    });
+
+    it('records nothing when the plan limit rejects the connection', async () => {
+      repository.findBusinessById.mockResolvedValue(makeBusiness({ plan: 'starter' }));
+      repository.countChannelAccounts.mockResolvedValue(99);
+
+      await expect(
+        service.connectChannel(BUSINESS_ID, {
+          channelType: ChannelType.WHATSAPP,
+          name: 'x',
+          externalId: 'y',
+          credentials: {},
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
     it('should reject when plan channel limit is reached', async () => {
       repository.findBusinessById.mockResolvedValue(makeBusiness({ plan: 'starter' }));
       repository.countChannelAccounts.mockResolvedValue(1); // starter limit = 1
@@ -642,6 +695,32 @@ describe('TenantService', () => {
       await expect(
         service.disconnectChannel(BUSINESS_ID, CHANNEL_ACCOUNT_ID),
       ).rejects.toThrow(NotFoundException);
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('records the disconnection with the actor and a snapshot of the channel', async () => {
+      const channel = makeChannelAccount({ external_account: 'waba-1' });
+      repository.findChannelAccountById.mockResolvedValue(channel);
+      repository.softDeleteChannelAccount.mockResolvedValue({ ...channel, deleted_at: new Date() });
+
+      await service.disconnectChannel(BUSINESS_ID, CHANNEL_ACCOUNT_ID, {
+        id: OWNER_ID,
+        email: 'owner@example.com',
+      });
+
+      expect(audit.record).toHaveBeenCalledTimes(1);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          businessId: BUSINESS_ID,
+          actorType: 'TEAM_MEMBER',
+          actorId: OWNER_ID,
+          action: 'DELETE',
+          resourceType: CHANNEL_ACCOUNT_RESOURCE,
+          resourceId: CHANNEL_ACCOUNT_ID,
+          before: { channel: 'WHATSAPP', name: 'Main WhatsApp', externalId: '1234567890', externalAccount: 'waba-1' },
+        }),
+      );
+      expect(audit.record.mock.calls[0][0].before).not.toHaveProperty('credentials');
     });
   });
 

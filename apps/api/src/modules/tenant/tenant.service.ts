@@ -36,7 +36,9 @@ import { UpdateBusinessPoliciesDto, BusinessPoliciesResponse } from './dto/busin
 import {
   AI_CONFIG_DEFAULTS,
   POLICIES_DEFAULTS,
+  AuditActor,
   BUSINESS_STATUS_RESOURCE,
+  CHANNEL_ACCOUNT_RESOURCE,
   TEAM_MEMBER_RESOURCE,
   SubscriptionTier,
   resolvePlan,
@@ -155,7 +157,7 @@ export class TenantService {
   async suspendBusiness(
     businessId: string,
     dto: SuspendBusinessDto = {},
-    actor?: { id: string; email?: string | null },
+    actor?: AuditActor,
   ): Promise<businesses> {
     const business = await this.getBusinessById(businessId);
 
@@ -209,7 +211,7 @@ export class TenantService {
    */
   async activateBusiness(
     businessId: string,
-    actor?: { id: string; email?: string | null },
+    actor?: AuditActor,
   ): Promise<businesses> {
     const business = await this.getBusinessById(businessId);
 
@@ -466,6 +468,7 @@ export class TenantService {
   async connectChannel(
     businessId: string,
     dto: ConnectChannelDto,
+    actor?: AuditActor,
   ): Promise<channel_accounts> {
     const business = await this.getBusinessById(businessId);
 
@@ -499,6 +502,25 @@ export class TenantService {
       timestamp: new Date().toISOString(),
     });
 
+    // A connection stores a provider credential the row never attributes to
+    // anyone. Only the identifiers go on the trail — never `credentials`.
+    await this.audit.record({
+      businessId,
+      actorType: actor ? 'TEAM_MEMBER' : 'SYSTEM',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      action: AuditAction.CREATE,
+      resourceType: CHANNEL_ACCOUNT_RESOURCE,
+      resourceId: channelAccount.id,
+      after: {
+        channel: channelAccount.channel,
+        name: channelAccount.name,
+        externalId: channelAccount.external_id,
+        externalAccount: channelAccount.external_account,
+      },
+      description: `Connected ${dto.channelType} channel ${channelAccount.name}`,
+    });
+
     this.logger.log(
       `Channel ${dto.channelType} connected for business ${businessId}: ${channelAccount.id}`,
     );
@@ -512,6 +534,7 @@ export class TenantService {
   async disconnectChannel(
     businessId: string,
     channelAccountId: string,
+    actor?: AuditActor,
   ): Promise<void> {
     const channelAccount = await this.repository.findChannelAccountById(
       businessId,
@@ -531,6 +554,24 @@ export class TenantService {
       channelType: channelAccount.channel,
       channelAccountId,
       timestamp: new Date().toISOString(),
+    });
+
+    // Soft-deleted, so the row survives — but `deleted_at` says when, not who.
+    await this.audit.record({
+      businessId,
+      actorType: actor ? 'TEAM_MEMBER' : 'SYSTEM',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      action: AuditAction.DELETE,
+      resourceType: CHANNEL_ACCOUNT_RESOURCE,
+      resourceId: channelAccountId,
+      before: {
+        channel: channelAccount.channel,
+        name: channelAccount.name,
+        externalId: channelAccount.external_id,
+        externalAccount: channelAccount.external_account,
+      },
+      description: `Disconnected ${channelAccount.channel} channel ${channelAccount.name}`,
     });
 
     this.logger.log(

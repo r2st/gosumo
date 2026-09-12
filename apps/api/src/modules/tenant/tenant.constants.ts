@@ -293,6 +293,21 @@ export const TEAM_MEMBER_RESOURCE = 'team_member';
  */
 export const BUSINESS_STATUS_RESOURCE = 'business_status';
 
+/**
+ * `audit_logs.resource_type` for channel connections. A channel_accounts row
+ * holds an encrypted provider credential and nothing about who stored,
+ * rotated, or removed it — reconnecting an existing channel overwrites the
+ * credential in place. Shared by both connect paths (`/tenant/channels` and
+ * `/channels/:type/connect`) so one query covers the credential's history.
+ */
+export const CHANNEL_ACCOUNT_RESOURCE = 'channel_account';
+
+/** The team member an audited operation is attributed to. */
+export interface AuditActor {
+  id: string;
+  email?: string | null;
+}
+
 // ─────────────────────────────────────────────
 // Team-member skills
 // ─────────────────────────────────────────────

@@ -17,12 +17,16 @@ import { ConfigService } from '@nestjs/config';
 import { ChannelType } from '@gosumo/shared';
 
 import { ChannelsService, providerFailureMessage } from './channels.service';
+import { AuditLogService } from '../../common/services/audit-log.service';
+import { CHANNEL_ACCOUNT_RESOURCE } from '../tenant/tenant.constants';
 import { decryptJson, encryptJson } from '../../common/utils/encryption.util';
 import type { PrismaService } from '../../common/services/prisma.service';
 import type { ConnectChannelDto } from './dto';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
 const CHANNEL_ID = '00000000-0000-4000-b000-000000000001';
+const ACTOR_ID = '00000000-0000-4000-c000-000000000001';
+const ACTOR = { id: ACTOR_ID, email: 'manager@example.com' };
 
 type ChannelRow = Record<string, unknown>;
 
@@ -57,6 +61,7 @@ describe('ChannelsService', () => {
     };
   };
   let config: { get: jest.Mock };
+  let audit: { record: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -74,9 +79,12 @@ describe('ChannelsService', () => {
       ),
     };
 
+    audit = { record: jest.fn().mockResolvedValue(undefined) };
+
     service = new ChannelsService(
       prisma as unknown as PrismaService,
       config as unknown as ConfigService,
+      audit as unknown as AuditLogService,
     );
   });
 
@@ -169,6 +177,97 @@ describe('ChannelsService', () => {
           where: { id: CHANNEL_ID, business_id: BUSINESS_ID },
         }),
       );
+    });
+
+    // ── audit trail ──
+    // The row holds an encrypted credential and nothing about who stored it;
+    // a reconnect overwrites that credential in place. G002: neither was
+    // recorded.
+
+    it('records a first connection as CREATE with the actor and identifiers only', async () => {
+      prisma.channel_accounts.findFirst.mockResolvedValue(null);
+      prisma.channel_accounts.create.mockImplementation(
+        ({ data }: { data: ChannelRow }) => Promise.resolve(row(data)),
+      );
+
+      await service.connectChannel(
+        BUSINESS_ID,
+        ChannelType.WHATSAPP,
+        { phoneNumberId: 'pn-9', accessToken: 'tok-secret', wabaId: 'waba-1' } as ConnectChannelDto,
+        ACTOR,
+      );
+
+      expect(audit.record).toHaveBeenCalledTimes(1);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          businessId: BUSINESS_ID,
+          actorType: 'TEAM_MEMBER',
+          actorId: ACTOR_ID,
+          actorEmail: 'manager@example.com',
+          action: 'CREATE',
+          resourceType: CHANNEL_ACCOUNT_RESOURCE,
+          resourceId: CHANNEL_ID,
+          before: undefined,
+          after: expect.objectContaining({
+            channel: ChannelType.WHATSAPP,
+            externalId: 'pn-9',
+            externalAccount: 'waba-1',
+            credentialsReplaced: false,
+          }),
+        }),
+      );
+      expect(JSON.stringify(audit.record.mock.calls[0][0])).not.toContain('tok-secret');
+    });
+
+    it('records a reconnect as UPDATE flagged credentialsReplaced', async () => {
+      prisma.channel_accounts.findFirst.mockResolvedValue(row({ name: 'Old name' }));
+      prisma.channel_accounts.update.mockResolvedValue(row());
+
+      await service.connectChannel(
+        BUSINESS_ID,
+        ChannelType.WHATSAPP,
+        { phoneNumberId: 'pn-1', accessToken: 'rotated-secret' } as ConnectChannelDto,
+        ACTOR,
+      );
+
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'UPDATE',
+          resourceId: CHANNEL_ID,
+          before: expect.objectContaining({ name: 'Old name' }),
+          after: expect.objectContaining({ credentialsReplaced: true }),
+        }),
+      );
+      const serialised = JSON.stringify(audit.record.mock.calls[0][0]);
+      expect(serialised).not.toContain('rotated-secret');
+      expect(serialised).not.toContain('credentials"');
+    });
+
+    it('attributes a connection with no actor to SYSTEM', async () => {
+      prisma.channel_accounts.findFirst.mockResolvedValue(null);
+      prisma.channel_accounts.create.mockImplementation(
+        ({ data }: { data: ChannelRow }) => Promise.resolve(row(data)),
+      );
+
+      await service.connectChannel(BUSINESS_ID, ChannelType.WHATSAPP, {
+        phoneNumberId: 'pn-9',
+      } as ConnectChannelDto);
+
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ actorType: 'SYSTEM', actorId: null }),
+      );
+    });
+
+    it('records nothing when the write fails', async () => {
+      prisma.channel_accounts.findFirst.mockResolvedValue(null);
+      prisma.channel_accounts.create.mockRejectedValue(new Error('deadlock detected'));
+
+      await expect(
+        service.connectChannel(BUSINESS_ID, ChannelType.WHATSAPP, {
+          phoneNumberId: 'pn-9',
+        } as ConnectChannelDto),
+      ).rejects.toThrow('deadlock detected');
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it('clears deleted_at when reconnecting, so a disconnected channel revives', async () => {
@@ -687,6 +786,47 @@ describe('ChannelsService', () => {
         service.disconnectChannel(BUSINESS_ID, CHANNEL_ID),
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(prisma.channel_accounts.update).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    // ── audit trail ──
+
+    it('records the disconnection with the actor and a snapshot of the channel', async () => {
+      prisma.channel_accounts.findFirst.mockResolvedValue(
+        row({ external_account: 'waba-1' }),
+      );
+      prisma.channel_accounts.update.mockResolvedValue(row());
+
+      await service.disconnectChannel(BUSINESS_ID, CHANNEL_ID, ACTOR);
+
+      expect(audit.record).toHaveBeenCalledTimes(1);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          businessId: BUSINESS_ID,
+          actorType: 'TEAM_MEMBER',
+          actorId: ACTOR_ID,
+          actorEmail: 'manager@example.com',
+          action: 'DELETE',
+          resourceType: CHANNEL_ACCOUNT_RESOURCE,
+          resourceId: CHANNEL_ID,
+          before: expect.objectContaining({
+            channel: ChannelType.WHATSAPP,
+            externalId: 'pn-1',
+            externalAccount: 'waba-1',
+          }),
+        }),
+      );
+      expect(audit.record.mock.calls[0][0].before).not.toHaveProperty('credentials');
+    });
+
+    it('records nothing when the soft delete fails', async () => {
+      prisma.channel_accounts.findFirst.mockResolvedValue(row());
+      prisma.channel_accounts.update.mockRejectedValue(new Error('deadlock detected'));
+
+      await expect(service.disconnectChannel(BUSINESS_ID, CHANNEL_ID)).rejects.toThrow(
+        'deadlock detected',
+      );
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 

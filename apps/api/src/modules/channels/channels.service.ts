@@ -1,5 +1,8 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { AuditAction } from "@gosumo/database";
+import { AuditLogService } from "../../common/services/audit-log.service";
+import { AuditActor, CHANNEL_ACCOUNT_RESOURCE } from "../tenant/tenant.constants";
 import { ChannelType } from "@gosumo/shared";
 import { generateId } from "@gosumo/shared";
 import { PrismaService } from "../../common/services/prisma.service";
@@ -88,6 +91,7 @@ export class ChannelsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly audit: AuditLogService,
   ) {}
 
   async listChannels(businessId: string) {
@@ -104,6 +108,7 @@ export class ChannelsService {
     businessId: string,
     channelType: ChannelType,
     body: ConnectChannelDto,
+    actor?: AuditActor,
   ) {
     const creds = this.buildCredentials(channelType, body);
     const encrypted = encryptJson(creds);
@@ -169,10 +174,36 @@ export class ChannelsService {
       this.logger.log(`Created channel account ${record.id} for ${channelType}`);
     }
 
+    // Reconnecting overwrites the stored credential in place, so without this
+    // row a token rotation is indistinguishable from nothing having happened.
+    // Only identifiers are recorded — never `credentials`, encrypted or not.
+    await this.audit.record({
+      businessId,
+      actorType: actor ? "TEAM_MEMBER" : "SYSTEM",
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      action: existing ? AuditAction.UPDATE : AuditAction.CREATE,
+      resourceType: CHANNEL_ACCOUNT_RESOURCE,
+      resourceId: record.id,
+      before: existing
+        ? { name: existing.name, externalAccount: existing.external_account }
+        : undefined,
+      after: {
+        channel: channelType,
+        name: displayName,
+        externalId: externalId,
+        externalAccount: record.external_account,
+        credentialsReplaced: Boolean(existing),
+      },
+      description: existing
+        ? `Reconnected ${channelType} channel ${displayName} (credentials replaced)`
+        : `Connected ${channelType} channel ${displayName}`,
+    });
+
     return this.toChannelResponse(record);
   }
 
-  async disconnectChannel(businessId: string, channelId: string) {
+  async disconnectChannel(businessId: string, channelId: string, actor?: AuditActor) {
     const record = await this.prisma.channel_accounts.findFirst({
       where: { id: channelId, business_id: businessId, deleted_at: null },
     });
@@ -184,6 +215,23 @@ export class ChannelsService {
     await this.prisma.channel_accounts.update({
       where: { id: channelId, business_id: businessId },
       data: { deleted_at: new Date(), is_active: false },
+    });
+
+    await this.audit.record({
+      businessId,
+      actorType: actor ? "TEAM_MEMBER" : "SYSTEM",
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      action: AuditAction.DELETE,
+      resourceType: CHANNEL_ACCOUNT_RESOURCE,
+      resourceId: channelId,
+      before: {
+        channel: record.channel,
+        name: record.name,
+        externalId: record.external_id,
+        externalAccount: record.external_account,
+      },
+      description: `Disconnected ${record.channel} channel ${record.name}`,
     });
 
     return { success: true, message: "Channel disconnected" };
