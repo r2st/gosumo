@@ -13,6 +13,12 @@ import { BillingService } from './billing.service';
 import { PLAN_DEFINITIONS } from './billing.constants';
 
 const BUSINESS_ID = '00000000-0000-4000-a000-000000000001';
+const OWNER = {
+  sub: '00000000-0000-4000-c000-000000000001',
+  businessId: BUSINESS_ID,
+  role: 'OWNER' as const,
+  email: 'owner@example.com',
+};
 
 describe('BillingController', () => {
   let controller: BillingController;
@@ -55,9 +61,29 @@ describe('BillingController', () => {
     const summary = { plan: RealtyPlan.TEAM } as never;
     billing.upgradePlan.mockResolvedValue(summary);
 
-    const result = await controller.upgrade(BUSINESS_ID, { plan: RealtyPlan.TEAM });
+    const result = await controller.upgrade(BUSINESS_ID, OWNER, { plan: RealtyPlan.TEAM });
 
-    expect(billing.upgradePlan).toHaveBeenCalledWith(BUSINESS_ID, RealtyPlan.TEAM);
+    // The owner from the JWT is handed down so the audit row names them.
+    expect(billing.upgradePlan).toHaveBeenCalledWith(
+      BUSINESS_ID,
+      RealtyPlan.TEAM,
+      expect.any(Date),
+      { id: OWNER.sub, email: 'owner@example.com' },
+    );
     expect(result).toBe(summary);
+  });
+
+  it('passes a null actor email when the token carries none', async () => {
+    billing.upgradePlan.mockResolvedValue({ plan: RealtyPlan.TEAM } as never);
+    const { email: _email, ...noEmail } = OWNER;
+
+    await controller.upgrade(BUSINESS_ID, noEmail, { plan: RealtyPlan.TEAM });
+
+    expect(billing.upgradePlan).toHaveBeenCalledWith(
+      BUSINESS_ID,
+      RealtyPlan.TEAM,
+      expect.any(Date),
+      { id: OWNER.sub, email: null },
+    );
   });
 });

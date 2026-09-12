@@ -307,6 +307,23 @@ describe('ComplianceService', () => {
       );
     });
 
+    // G002: a dashboard erasure was recorded as API with no actor.
+    it('audits as the team member when the controller hands one down', async () => {
+      repo.findLeadByPhone.mockResolvedValueOnce(lead());
+      await service.erasure(BIZ_A, RAW_PHONE, 'REQUEST', NOW, {
+        id: '00000000-0000-4000-c000-000000000001',
+        email: 'manager@example.com',
+      });
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'DELETE',
+          actorType: 'TEAM_MEMBER',
+          actorId: '00000000-0000-4000-c000-000000000001',
+          actorEmail: 'manager@example.com',
+        }),
+      );
+    });
+
     it('audits as SYSTEM actor when the reason is RETENTION', async () => {
       repo.findLeadByPhone.mockResolvedValueOnce(lead());
       await service.erasure(BIZ_A, RAW_PHONE, 'RETENTION', NOW);
@@ -407,16 +424,30 @@ describe('ComplianceService', () => {
 
     it('upserts + audits on update and returns the fresh settings', async () => {
       repo.findSettings.mockResolvedValue({ retention_months: 36 });
-      const s = await service.updateSettings(BIZ_A, { retentionMonths: 36 });
+      const s = await service.updateSettings(
+        BIZ_A,
+        { retentionMonths: 36 },
+        { id: '00000000-0000-4000-c000-000000000001', email: 'owner@example.com' },
+      );
       expect(repo.upsertSettings).toHaveBeenCalledWith(BIZ_A, { retentionMonths: 36 });
       expect(audit.record).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'UPDATE',
           resourceType: 'realty_compliance_settings',
           actorType: 'TEAM_MEMBER',
+          actorId: '00000000-0000-4000-c000-000000000001',
+          actorEmail: 'owner@example.com',
         }),
       );
       expect(s.retentionMonths).toBe(36);
+    });
+
+    it('audits as SYSTEM, never an anonymous member, when no actor is given', async () => {
+      repo.findSettings.mockResolvedValue({ retention_months: 36 });
+      await service.updateSettings(BIZ_A, { retentionMonths: 36 });
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ actorType: 'SYSTEM', actorId: null }),
+      );
     });
   });
 

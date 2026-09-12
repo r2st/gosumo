@@ -10,6 +10,13 @@ import { ComplianceController } from './compliance.controller';
 
 const TENANT = '00000000-0000-4000-a000-00000000000a';
 const PHONE = '+919876543210';
+const MANAGER = {
+  sub: '00000000-0000-4000-c000-000000000001',
+  businessId: TENANT,
+  role: 'MANAGER' as const,
+  email: 'manager@example.com',
+};
+const ACTOR = { id: MANAGER.sub, email: 'manager@example.com' };
 
 describe('ComplianceController', () => {
   let compliance: {
@@ -49,9 +56,15 @@ describe('ComplianceController', () => {
     expect(compliance.correction).toHaveBeenCalledWith(TENANT, dto);
   });
 
-  it('erasure passes the REQUEST reason (system-initiated retention uses its own path)', async () => {
-    await controller.erasure(TENANT, { phone: PHONE } as never);
-    expect(compliance.erasure).toHaveBeenCalledWith(TENANT, PHONE, 'REQUEST');
+  it('erasure passes the REQUEST reason and the acting member (retention uses its own path)', async () => {
+    await controller.erasure(TENANT, MANAGER, { phone: PHONE } as never);
+    expect(compliance.erasure).toHaveBeenCalledWith(
+      TENANT,
+      PHONE,
+      'REQUEST',
+      expect.any(Date),
+      ACTOR,
+    );
   });
 
   it('consentHistory returns { phone, consents } scoped to the tenant', async () => {
@@ -65,10 +78,20 @@ describe('ComplianceController', () => {
     expect(compliance.getSettings).toHaveBeenCalledWith(TENANT);
   });
 
-  it('updateSettings forwards the tenant + dto', async () => {
+  it('updateSettings forwards the tenant + dto + acting owner', async () => {
     const dto = { retentionMonths: 12 };
-    await controller.updateSettings(TENANT, dto as never);
-    expect(compliance.updateSettings).toHaveBeenCalledWith(TENANT, dto);
+    await controller.updateSettings(TENANT, MANAGER, dto as never);
+    expect(compliance.updateSettings).toHaveBeenCalledWith(TENANT, dto, ACTOR);
+  });
+
+  it('passes a null actor email when the token carries none', async () => {
+    const { email: _email, ...noEmail } = MANAGER;
+    await controller.updateSettings(TENANT, noEmail, { retentionMonths: 12 } as never);
+    expect(compliance.updateSettings).toHaveBeenCalledWith(
+      TENANT,
+      { retentionMonths: 12 },
+      { id: MANAGER.sub, email: null },
+    );
   });
 
   it('report forwards the tenant', async () => {

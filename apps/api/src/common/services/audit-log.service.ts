@@ -6,6 +6,16 @@ import { PrismaService } from './prisma.service';
 /** Who performed the operation being audited. */
 export type AuditActorType = 'TEAM_MEMBER' | 'AI' | 'SYSTEM' | 'API';
 
+/**
+ * The team member a privileged operation is attributed to. Controllers build
+ * this from the JWT and hand it down; a service that receives none records the
+ * operation as SYSTEM rather than as an anonymous team member.
+ */
+export interface AuditActor {
+  id: string;
+  email?: string | null;
+}
+
 /** One state-changing operation to record on `audit_logs`. */
 export interface AuditLogEntry {
   businessId: string;

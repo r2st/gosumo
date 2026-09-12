@@ -11,6 +11,7 @@ import {
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { TeamMemberRole } from '@gosumo/database';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
+import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ComplianceService } from './compliance.service';
 import { ConsentService } from './consent.service';
@@ -59,8 +60,15 @@ export class ComplianceController {
   @ApiOperation({ summary: 'Right to erasure — anonymize all PII for a phone' })
   @ApiResponse({ status: 200, description: 'Erasure result' })
   @ApiResponse({ status: 403, description: 'Only OWNER or MANAGER may erase a data principal' })
-  async erasure(@TenantId() tenantId: string, @Body() dto: ErasureDto) {
-    return this.compliance.erasure(tenantId, dto.phone, 'REQUEST');
+  async erasure(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: ErasureDto,
+  ) {
+    return this.compliance.erasure(tenantId, dto.phone, 'REQUEST', new Date(), {
+      id: user.sub,
+      email: user.email ?? null,
+    });
   }
 
   @Get('consent/:phone')
@@ -90,9 +98,13 @@ export class ComplianceController {
   @ApiResponse({ status: 403, description: 'Only an owner may change compliance settings' })
   async updateSettings(
     @TenantId() tenantId: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() dto: UpdateComplianceSettingsDto,
   ) {
-    return this.compliance.updateSettings(tenantId, dto);
+    return this.compliance.updateSettings(tenantId, dto, {
+      id: user.sub,
+      email: user.email ?? null,
+    });
   }
 
   @Get('report')

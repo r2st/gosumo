@@ -302,12 +302,6 @@ export const BUSINESS_STATUS_RESOURCE = 'business_status';
  */
 export const CHANNEL_ACCOUNT_RESOURCE = 'channel_account';
 
-/** The team member an audited operation is attributed to. */
-export interface AuditActor {
-  id: string;
-  email?: string | null;
-}
-
 // ─────────────────────────────────────────────
 // Team-member skills
 // ─────────────────────────────────────────────

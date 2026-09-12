@@ -21,6 +21,7 @@ import {
   planDefinition,
 } from './billing.constants';
 import { RealtyOperationsAuditService } from '../realty-hardening/realty-operations-audit.service';
+import type { AuditActor } from '../../common/services/audit-log.service';
 
 // ─────────────────────────────────────────────
 // Response shapes
@@ -549,6 +550,7 @@ export class BillingService {
     businessId: string,
     newPlan: RealtyPlan,
     now: Date = new Date(),
+    actor?: AuditActor,
   ): Promise<UsageSummary> {
     const sub = await this.getSubscription(businessId, now);
     const def = planDefinition(newPlan);
@@ -568,9 +570,13 @@ export class BillingService {
         toPlan: newPlan,
       });
 
+      // Attributed to the owner the controller hands down; a caller with no
+      // actor is SYSTEM, never an anonymous team member.
       await this.audit.record({
         businessId,
-        actorType: 'TEAM_MEMBER',
+        actorType: actor ? 'TEAM_MEMBER' : 'SYSTEM',
+        actorId: actor?.id ?? null,
+        actorEmail: actor?.email ?? null,
         action: 'UPDATE',
         resourceType: 'business_subscription',
         resourceId: sub.id,

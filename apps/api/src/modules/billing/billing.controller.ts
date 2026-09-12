@@ -3,6 +3,7 @@ import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RealtyPlan } from '@gosumo/shared';
 import { TeamMemberRole } from '@gosumo/database';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
+import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { BillingService } from './billing.service';
 import { PLAN_DEFINITIONS } from './billing.constants';
@@ -40,7 +41,14 @@ export class BillingController {
   @ApiOperation({ summary: 'Change the subscription tier' })
   @ApiResponse({ status: 200, description: 'Updated subscription usage summary' })
   @ApiResponse({ status: 403, description: 'Only an owner may change the subscription tier' })
-  async upgrade(@TenantId() tenantId: string, @Body() dto: UpgradePlanDto) {
-    return this.billing.upgradePlan(tenantId, dto.plan as RealtyPlan);
+  async upgrade(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpgradePlanDto,
+  ) {
+    return this.billing.upgradePlan(tenantId, dto.plan as RealtyPlan, new Date(), {
+      id: user.sub,
+      email: user.email ?? null,
+    });
   }
 }

@@ -803,6 +803,43 @@ describe('BillingService', () => {
       expect(summary.leadsUsedThisCycle).toBe(50);
     });
 
+    // G002: the row was written as TEAM_MEMBER with no actor_id, so it named
+    // nobody. It now carries the actor the controller hands down.
+    it('attributes the audit row to the actor when one is given', async () => {
+      repository.findByBusiness
+        .mockResolvedValueOnce(makeSub({ plan: RealtyPlan.SOLO }))
+        .mockResolvedValueOnce(makeSub({ plan: RealtyPlan.TEAM }));
+      repository.update.mockResolvedValue(makeSub({ plan: RealtyPlan.TEAM }));
+      repository.countSeats.mockResolvedValue(1);
+
+      await service.upgradePlan(BUSINESS_ID, RealtyPlan.TEAM, CYCLE_START, {
+        id: '00000000-0000-4000-c000-000000000001',
+        email: 'owner@example.com',
+      });
+
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorType: 'TEAM_MEMBER',
+          actorId: '00000000-0000-4000-c000-000000000001',
+          actorEmail: 'owner@example.com',
+        }),
+      );
+    });
+
+    it('attributes the audit row to SYSTEM, not an anonymous member, without an actor', async () => {
+      repository.findByBusiness
+        .mockResolvedValueOnce(makeSub({ plan: RealtyPlan.SOLO }))
+        .mockResolvedValueOnce(makeSub({ plan: RealtyPlan.TEAM }));
+      repository.update.mockResolvedValue(makeSub({ plan: RealtyPlan.TEAM }));
+      repository.countSeats.mockResolvedValue(1);
+
+      await service.upgradePlan(BUSINESS_ID, RealtyPlan.TEAM, CYCLE_START);
+
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ actorType: 'SYSTEM', actorId: null }),
+      );
+    });
+
     it('is a no-op when the target plan matches the current plan', async () => {
       repository.findByBusiness.mockResolvedValue(makeSub({ plan: RealtyPlan.TEAM }));
       repository.countSeats.mockResolvedValue(1);

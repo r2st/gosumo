@@ -23,6 +23,7 @@ import {
   DEFAULT_RETENTION_MONTHS,
 } from './dpdpa.util';
 import { RealtyOperationsAuditService } from '../realty-hardening/realty-operations-audit.service';
+import type { AuditActor } from '../../common/services/audit-log.service';
 
 // ─────────────────────────────────────────────
 // Response shapes
@@ -200,6 +201,7 @@ export class ComplianceService {
     rawPhone: string,
     reason = 'REQUEST',
     now: Date = new Date(),
+    actor?: AuditActor,
   ): Promise<ErasureResult> {
     const phone = normalizeIndianPhone(rawPhone) ?? rawPhone;
     const lead = await this.repository.findLeadByPhone(businessId, phone);
@@ -209,7 +211,7 @@ export class ComplianceService {
       return { erased: false, leadId: null, messagesAnonymized: 0, consentsRevoked };
     }
 
-    return this.eraseLead(businessId, lead, reason, now, consentsRevoked);
+    return this.eraseLead(businessId, lead, reason, now, consentsRevoked, actor);
   }
 
   /** Shared erasure path (used by request + retention). */
@@ -219,6 +221,7 @@ export class ComplianceService {
     reason: string,
     now: Date,
     consentsRevoked = 0,
+    actor?: AuditActor,
   ): Promise<ErasureResult> {
     let messagesAnonymized = 0;
     if (lead.conversation_id) {
@@ -230,9 +233,14 @@ export class ComplianceService {
 
     await this.repository.anonymizeLead(businessId, lead, reason, now);
 
+    // A retention sweep is SYSTEM. A request is a team member when the
+    // controller hands one down, and API otherwise — it used to be API for
+    // every request, which recorded a dashboard erasure with no actor.
     await this.audit.record({
       businessId,
-      actorType: reason === 'RETENTION' ? 'SYSTEM' : 'API',
+      actorType: reason === 'RETENTION' ? 'SYSTEM' : actor ? 'TEAM_MEMBER' : 'API',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
       action: 'DELETE',
       resourceType: 'realty_lead',
       resourceId: lead.id,
@@ -269,11 +277,14 @@ export class ComplianceService {
   async updateSettings(
     businessId: string,
     patch: { retentionMonths?: number; dataProcessorAgreement?: boolean },
+    actor?: AuditActor,
   ): Promise<ComplianceSettingsDto> {
     await this.repository.upsertSettings(businessId, patch);
     await this.audit.record({
       businessId,
-      actorType: 'TEAM_MEMBER',
+      actorType: actor ? 'TEAM_MEMBER' : 'SYSTEM',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
       action: 'UPDATE',
       resourceType: 'realty_compliance_settings',
       description: `Updated compliance settings ${JSON.stringify(patch)}`,

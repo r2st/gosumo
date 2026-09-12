@@ -24,7 +24,7 @@ import {
   type TeamMemberRemovedEvent,
 } from '@gosumo/shared';
 import { TenantRepository } from './tenant.repository';
-import { AuditLogService } from '../../common/services/audit-log.service';
+import { AuditActor, AuditLogService } from '../../common/services/audit-log.service';
 import { roleRank } from '../auth/role-hierarchy';
 import { UpdateBusinessDto } from './dto/update-business.dto';
 import { UpdateAIConfigDto, AIConfigResponse } from './dto/ai-config.dto';
@@ -36,7 +36,6 @@ import { UpdateBusinessPoliciesDto, BusinessPoliciesResponse } from './dto/busin
 import {
   AI_CONFIG_DEFAULTS,
   POLICIES_DEFAULTS,
-  AuditActor,
   BUSINESS_STATUS_RESOURCE,
   CHANNEL_ACCOUNT_RESOURCE,
   TEAM_MEMBER_RESOURCE,

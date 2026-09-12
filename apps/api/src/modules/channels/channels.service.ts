@@ -1,8 +1,8 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { AuditAction } from "@gosumo/database";
-import { AuditLogService } from "../../common/services/audit-log.service";
-import { AuditActor, CHANNEL_ACCOUNT_RESOURCE } from "../tenant/tenant.constants";
+import { AuditActor, AuditLogService } from "../../common/services/audit-log.service";
+import { CHANNEL_ACCOUNT_RESOURCE } from "../tenant/tenant.constants";
 import { ChannelType } from "@gosumo/shared";
 import { generateId } from "@gosumo/shared";
 import { PrismaService } from "../../common/services/prisma.service";
