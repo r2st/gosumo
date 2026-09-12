@@ -87,9 +87,13 @@ export class TenantController {
   @ApiResponse({ status: 404, description: 'Business not found' })
   async suspend(
     @TenantId() businessId: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() dto: SuspendBusinessDto,
   ) {
-    return this.tenantService.suspendBusiness(businessId, dto);
+    return this.tenantService.suspendBusiness(businessId, dto, {
+      id: user.sub,
+      email: user.email ?? null,
+    });
   }
 
   @Post('activate')
@@ -98,8 +102,11 @@ export class TenantController {
   @ApiResponse({ status: 201, description: 'Business activated' })
   @ApiResponse({ status: 400, description: 'No connected channel' })
   @ApiResponse({ status: 404, description: 'Business not found' })
-  async activate(@TenantId() businessId: string) {
-    return this.tenantService.activateBusiness(businessId);
+  async activate(@TenantId() businessId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.tenantService.activateBusiness(businessId, {
+      id: user.sub,
+      email: user.email ?? null,
+    });
   }
 
   // ─────────────────────────────────────────────

@@ -285,6 +285,14 @@ export function usagePeriodKey(now: Date = new Date()): string {
  */
 export const TEAM_MEMBER_RESOURCE = 'team_member';
 
+/**
+ * `audit_logs.resource_type` for suspending and re-activating the business
+ * itself. `businesses.is_active` is one mutable flag, so without a row here
+ * the only trace of a suspension is `profile.suspendedAt` — which
+ * `activateBusiness` deletes.
+ */
+export const BUSINESS_STATUS_RESOURCE = 'business_status';
+
 // ─────────────────────────────────────────────
 // Team-member skills
 // ─────────────────────────────────────────────

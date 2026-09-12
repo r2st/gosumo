@@ -9,7 +9,7 @@ import { AuditAction, TeamMemberRole, TeamMemberStatus } from '@gosumo/database'
 import { TenantService } from './tenant.service';
 import { TenantRepository } from './tenant.repository';
 import { AuditLogService } from '../../common/services/audit-log.service';
-import { TEAM_MEMBER_RESOURCE } from './tenant.constants';
+import { BUSINESS_STATUS_RESOURCE, TEAM_MEMBER_RESOURCE } from './tenant.constants';
 import { UpdateBusinessDto } from './dto/update-business.dto';
 import { UpdateAIConfigDto } from './dto/ai-config.dto';
 import { ConnectChannelDto } from './dto/connect-channel.dto';
@@ -264,6 +264,56 @@ describe('TenantService', () => {
     it('throws NotFoundException for a missing business', async () => {
       repository.findBusinessById.mockResolvedValue(null);
       await expect(service.suspendBusiness(BUSINESS_ID)).rejects.toThrow(NotFoundException);
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    // ── audit trail ──
+    // `is_active` is one flag and the reason lives in `profile`, which the
+    // next activation deletes. G002: suspension left no record of who did it.
+
+    it('records the suspension with the acting owner and the reason', async () => {
+      repository.findBusinessById.mockResolvedValue(makeBusiness());
+      repository.updateBusiness.mockResolvedValue(makeBusiness({ is_active: false }));
+
+      await service.suspendBusiness(
+        BUSINESS_ID,
+        { reason: 'non-payment' },
+        { id: OWNER_ID, email: 'owner@example.com' },
+      );
+
+      expect(audit.record).toHaveBeenCalledTimes(1);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          businessId: BUSINESS_ID,
+          actorType: 'TEAM_MEMBER',
+          actorId: OWNER_ID,
+          actorEmail: 'owner@example.com',
+          action: 'UPDATE',
+          resourceType: BUSINESS_STATUS_RESOURCE,
+          resourceId: BUSINESS_ID,
+          before: { isActive: true },
+          after: { isActive: false, reason: 'non-payment' },
+        }),
+      );
+    });
+
+    it('attributes a suspension with no actor to SYSTEM', async () => {
+      repository.findBusinessById.mockResolvedValue(makeBusiness());
+      repository.updateBusiness.mockResolvedValue(makeBusiness({ is_active: false }));
+
+      await service.suspendBusiness(BUSINESS_ID);
+
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ actorType: 'SYSTEM', actorId: null }),
+      );
+    });
+
+    it('records nothing when the update fails', async () => {
+      repository.findBusinessById.mockResolvedValue(makeBusiness());
+      repository.updateBusiness.mockRejectedValue(new Error('deadlock detected'));
+
+      await expect(service.suspendBusiness(BUSINESS_ID)).rejects.toThrow('deadlock detected');
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 
@@ -293,6 +343,49 @@ describe('TenantService', () => {
 
       await expect(service.activateBusiness(BUSINESS_ID)).rejects.toThrow(BadRequestException);
       expect(repository.updateBusiness).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    // ── audit trail ──
+
+    it('records the activation with the actor and the reason it cleared', async () => {
+      repository.findBusinessById.mockResolvedValue(
+        makeBusiness({ is_active: false, profile: { suspendedReason: 'non-payment' } }),
+      );
+      repository.countChannelAccounts.mockResolvedValue(1);
+      repository.updateBusiness.mockResolvedValue(makeBusiness({ is_active: true }));
+
+      await service.activateBusiness(BUSINESS_ID, { id: OWNER_ID, email: 'owner@example.com' });
+
+      expect(audit.record).toHaveBeenCalledTimes(1);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          businessId: BUSINESS_ID,
+          actorType: 'TEAM_MEMBER',
+          actorId: OWNER_ID,
+          actorEmail: 'owner@example.com',
+          action: 'UPDATE',
+          resourceType: BUSINESS_STATUS_RESOURCE,
+          resourceId: BUSINESS_ID,
+          before: { isActive: false, reason: 'non-payment' },
+          after: { isActive: true },
+        }),
+      );
+    });
+
+    it('records a null reason when the business was never suspended with one', async () => {
+      repository.findBusinessById.mockResolvedValue(makeBusiness({ is_active: false }));
+      repository.countChannelAccounts.mockResolvedValue(1);
+      repository.updateBusiness.mockResolvedValue(makeBusiness({ is_active: true }));
+
+      await service.activateBusiness(BUSINESS_ID);
+
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorType: 'SYSTEM',
+          before: { isActive: false, reason: null },
+        }),
+      );
     });
   });
 

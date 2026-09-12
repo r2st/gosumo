@@ -36,6 +36,7 @@ import { UpdateBusinessPoliciesDto, BusinessPoliciesResponse } from './dto/busin
 import {
   AI_CONFIG_DEFAULTS,
   POLICIES_DEFAULTS,
+  BUSINESS_STATUS_RESOURCE,
   TEAM_MEMBER_RESOURCE,
   SubscriptionTier,
   resolvePlan,
@@ -154,6 +155,7 @@ export class TenantService {
   async suspendBusiness(
     businessId: string,
     dto: SuspendBusinessDto = {},
+    actor?: { id: string; email?: string | null },
   ): Promise<businesses> {
     const business = await this.getBusinessById(businessId);
 
@@ -174,6 +176,23 @@ export class TenantService {
       timestamp: new Date().toISOString(),
     });
 
+    // Suspension turns every channel off for the whole tenant. `is_active` is
+    // a single flag and the reason lives in `profile`, which the next
+    // activation deletes — so this row is the only durable record of who did
+    // it and why. Written after the update commits.
+    await this.audit.record({
+      businessId,
+      actorType: actor ? 'TEAM_MEMBER' : 'SYSTEM',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      action: AuditAction.UPDATE,
+      resourceType: BUSINESS_STATUS_RESOURCE,
+      resourceId: businessId,
+      before: { isActive: business.is_active },
+      after: { isActive: false, reason: dto.reason ?? null },
+      description: `Business suspended${dto.reason ? `: ${dto.reason}` : ''}`,
+    });
+
     this.logger.log(
       `Business ${businessId} suspended${dto.reason ? `: ${dto.reason}` : ''}`,
     );
@@ -188,7 +207,10 @@ export class TenantService {
    * active, per the onboarding requirement. Clears any prior suspension reason.
    * Emits `business.activated`.
    */
-  async activateBusiness(businessId: string): Promise<businesses> {
+  async activateBusiness(
+    businessId: string,
+    actor?: { id: string; email?: string | null },
+  ): Promise<businesses> {
     const business = await this.getBusinessById(businessId);
 
     const channelCount = await this.repository.countChannelAccounts(businessId);
@@ -199,6 +221,8 @@ export class TenantService {
     }
 
     const profile = this.toRecord(business.profile);
+    const clearedReason =
+      typeof profile['suspendedReason'] === 'string' ? profile['suspendedReason'] : null;
     delete profile['suspendedAt'];
     delete profile['suspendedReason'];
 
@@ -210,6 +234,21 @@ export class TenantService {
     this.eventEmitter.emit('business.activated', {
       businessId,
       timestamp: new Date().toISOString(),
+    });
+
+    // The counterpart of the suspension record above; `before` carries the
+    // reason this activation is clearing, since the profile no longer does.
+    await this.audit.record({
+      businessId,
+      actorType: actor ? 'TEAM_MEMBER' : 'SYSTEM',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      action: AuditAction.UPDATE,
+      resourceType: BUSINESS_STATUS_RESOURCE,
+      resourceId: businessId,
+      before: { isActive: business.is_active, reason: clearedReason },
+      after: { isActive: true },
+      description: 'Business activated',
     });
 
     this.logger.log(`Business ${businessId} activated`);
