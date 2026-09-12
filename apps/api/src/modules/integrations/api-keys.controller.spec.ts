@@ -14,8 +14,9 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'crypto';
 
-import { ApiKeysController } from './api-keys.controller';
+import { API_KEY_RESOURCE, ApiKeysController } from './api-keys.controller';
 import { PrismaService } from '../../common/services/prisma.service';
+import { AuditLogService } from '../../common/services/audit-log.service';
 import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { DEFAULT_API_KEY_PAGE_SIZE } from './dto/list-api-keys-query.dto';
@@ -29,6 +30,7 @@ const USER: AuthenticatedUser = {
   sub: USER_ID,
   businessId: BUSINESS_ID,
   role: 'OWNER',
+  email: 'owner@example.com',
 };
 
 function row(overrides: Record<string, unknown> = {}) {
@@ -52,22 +54,29 @@ describe('ApiKeysController', () => {
   let controller: ApiKeysController;
   let apiKeys: {
     findMany: jest.Mock;
+    findFirst: jest.Mock;
     count: jest.Mock;
     create: jest.Mock;
     deleteMany: jest.Mock;
   };
+  let audit: { record: jest.Mock };
 
   beforeEach(async () => {
     apiKeys = {
       findMany: jest.fn().mockResolvedValue([]),
+      findFirst: jest.fn().mockResolvedValue(row()),
       count: jest.fn().mockResolvedValue(0),
       create: jest.fn().mockImplementation(({ data }) => ({ id: KEY_ID, ...data })),
       deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
     };
+    audit = { record: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ApiKeysController],
-      providers: [{ provide: PrismaService, useValue: { api_keys: apiKeys } }],
+      providers: [
+        { provide: PrismaService, useValue: { api_keys: apiKeys } },
+        { provide: AuditLogService, useValue: audit },
+      ],
     }).compile();
 
     controller = module.get(ApiKeysController);
@@ -243,13 +252,61 @@ describe('ApiKeysController', () => {
         controller.create(BUSINESS_ID, USER, { name: 'CI pipeline' }),
       ).rejects.toThrow('unique constraint violated');
     });
+
+    // ── audit trail ──
+
+    it('records the issuance with the actor, scopes and expiry', async () => {
+      const result = await controller.create(BUSINESS_ID, USER, {
+        name: 'CI pipeline',
+        scopes: ['orders:read'],
+      });
+
+      expect(audit.record).toHaveBeenCalledTimes(1);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          businessId: BUSINESS_ID,
+          actorType: 'TEAM_MEMBER',
+          actorId: USER_ID,
+          actorEmail: 'owner@example.com',
+          action: 'CREATE',
+          resourceType: API_KEY_RESOURCE,
+          resourceId: KEY_ID,
+          after: {
+            name: 'CI pipeline',
+            prefix: result.prefix,
+            last4: result.last4,
+            scopes: ['orders:read'],
+            expiresAt: null,
+          },
+        }),
+      );
+    });
+
+    it('never puts the secret or its hash on the audit row', async () => {
+      const result = await controller.create(BUSINESS_ID, USER, { name: 'CI pipeline' });
+
+      const serialised = JSON.stringify(audit.record.mock.calls[0][0]);
+      expect(serialised).not.toContain(result.secret);
+      expect(serialised).not.toContain(
+        createHash('sha256').update(result.secret).digest('hex'),
+      );
+    });
+
+    it('records nothing when the insert fails', async () => {
+      apiKeys.create.mockRejectedValue(new Error('unique constraint violated'));
+
+      await expect(
+        controller.create(BUSINESS_ID, USER, { name: 'CI pipeline' }),
+      ).rejects.toThrow();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
   });
 
   // ── revoke ─────────────────────────────────────
 
   describe('revoke', () => {
     it('deletes by id AND business_id so one tenant cannot revoke another\'s key', async () => {
-      await controller.revoke(BUSINESS_ID, KEY_ID);
+      await controller.revoke(BUSINESS_ID, USER, KEY_ID);
 
       expect(apiKeys.deleteMany).toHaveBeenCalledWith({
         where: { id: KEY_ID, business_id: BUSINESS_ID },
@@ -257,23 +314,93 @@ describe('ApiKeysController', () => {
     });
 
     it('404s when the key belongs to another tenant', async () => {
+      apiKeys.findFirst.mockResolvedValue(null);
       apiKeys.deleteMany.mockResolvedValue({ count: 0 });
 
-      await expect(controller.revoke(OTHER_BUSINESS_ID, KEY_ID)).rejects.toBeInstanceOf(
+      await expect(controller.revoke(OTHER_BUSINESS_ID, USER, KEY_ID)).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
 
     it('404s when the key does not exist', async () => {
+      apiKeys.findFirst.mockResolvedValue(null);
       apiKeys.deleteMany.mockResolvedValue({ count: 0 });
 
-      await expect(controller.revoke(BUSINESS_ID, KEY_ID)).rejects.toThrow(NotFoundException);
+      await expect(controller.revoke(BUSINESS_ID, USER, KEY_ID)).rejects.toThrow(NotFoundException);
     });
 
     it('propagates a delete failure instead of silently succeeding', async () => {
       apiKeys.deleteMany.mockRejectedValue(new Error('deadlock detected'));
 
-      await expect(controller.revoke(BUSINESS_ID, KEY_ID)).rejects.toThrow('deadlock detected');
+      await expect(controller.revoke(BUSINESS_ID, USER, KEY_ID)).rejects.toThrow('deadlock detected');
+    });
+
+    // ── audit trail ──
+    // The row is hard-deleted, so after a revoke it is the only evidence the
+    // key existed. G002: neither issuance nor revocation was recorded.
+
+    it('reads the row tenant-scoped before deleting it', async () => {
+      await controller.revoke(BUSINESS_ID, USER, KEY_ID);
+
+      expect(apiKeys.findFirst).toHaveBeenCalledWith({
+        where: { id: KEY_ID, business_id: BUSINESS_ID },
+      });
+    });
+
+    it('records the revocation with the actor and a snapshot of the key', async () => {
+      apiKeys.findFirst.mockResolvedValue(
+        row({ last_used_at: new Date('2026-02-01T00:00:00Z') }),
+      );
+
+      await controller.revoke(BUSINESS_ID, USER, KEY_ID);
+
+      expect(audit.record).toHaveBeenCalledTimes(1);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          businessId: BUSINESS_ID,
+          actorType: 'TEAM_MEMBER',
+          actorId: USER_ID,
+          actorEmail: 'owner@example.com',
+          action: 'DELETE',
+          resourceType: API_KEY_RESOURCE,
+          resourceId: KEY_ID,
+          before: expect.objectContaining({
+            name: 'CI pipeline',
+            prefix: 'gs_abcdef1',
+            last4: '9876',
+            scopes: ['orders:read'],
+            createdBy: USER_ID,
+            lastUsedAt: '2026-02-01T00:00:00.000Z',
+          }),
+        }),
+      );
+    });
+
+    it('never puts the key hash on the audit row', async () => {
+      await controller.revoke(BUSINESS_ID, USER, KEY_ID);
+
+      const entry = audit.record.mock.calls[0][0];
+      expect(JSON.stringify(entry)).not.toContain('a'.repeat(64));
+      expect(entry.before).not.toHaveProperty('key_hash');
+    });
+
+    it('records nothing when the key was not found', async () => {
+      apiKeys.findFirst.mockResolvedValue(null);
+
+      await expect(controller.revoke(BUSINESS_ID, USER, KEY_ID)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(apiKeys.deleteMany).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('records nothing when a concurrent revoke removed the row first', async () => {
+      apiKeys.deleteMany.mockResolvedValue({ count: 0 });
+
+      await expect(controller.revoke(BUSINESS_ID, USER, KEY_ID)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it('rejects a non-UUID id before it reaches Prisma', () => {

@@ -6,9 +6,10 @@ import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../common/services/prisma.service';
+import { AuditLogService } from '../../common/services/audit-log.service';
 import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
 import { randomBytes, createHash } from 'crypto';
-import { TeamMemberRole } from '@gosumo/database';
+import { AuditAction, TeamMemberRole } from '@gosumo/database';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CreateApiKeyDto } from './dto/create-api-key.dto';
 import {
@@ -16,11 +17,17 @@ import {
   DEFAULT_API_KEY_PAGE_SIZE,
 } from './dto/list-api-keys-query.dto';
 
+/** `audit_logs.resource_type` for API-key issuance and revocation. */
+export const API_KEY_RESOURCE = 'api_key';
+
 @ApiTags('api-keys')
 @Controller('api-keys')
 export class ApiKeysController {
   private readonly logger = new Logger(ApiKeysController.name);
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditLogService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List API keys' })
@@ -94,6 +101,29 @@ export class ApiKeysController {
 
     this.logger.log(`Issued API key ${prefix}… for tenant ${tenantId}`);
 
+    // A key is a standing credential for the whole tenant, so issuing one is
+    // the same class of act as inviting a member — and the row records
+    // `created_by` but not the scopes it was asked for at the time, nor
+    // anything once it is revoked. Recorded after the insert commits; the
+    // secret itself is never written anywhere but the caller's response.
+    await this.audit.record({
+      businessId: tenantId,
+      actorType: 'TEAM_MEMBER',
+      actorId: user.sub,
+      actorEmail: user.email ?? null,
+      action: AuditAction.CREATE,
+      resourceType: API_KEY_RESOURCE,
+      resourceId: created.id,
+      after: {
+        name: created.name,
+        prefix,
+        last4,
+        scopes: created.scopes,
+        expiresAt: expiresAt ? expiresAt.toISOString() : null,
+      },
+      description: `Issued API key ${prefix}… (${created.name})`,
+    });
+
     return {
       id: created.id,
       name: created.name,
@@ -118,12 +148,24 @@ export class ApiKeysController {
   @ApiParam({ name: 'id', description: 'Record UUID' })
   async revoke(
     @TenantId() tenantId: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Param('id', UuidValidationPipe) id: string,
   ) {
     // Hard delete: a revoked credential must stop authenticating immediately,
     // so the soft-delete rule that governs business data does not apply here.
+    // That also means the row is the only record the key ever existed, so it
+    // is read (tenant-scoped) before it goes, and the snapshot lands on
+    // audit_logs — otherwise "who revoked the CI key, and when" has no answer.
+    const existing = await this.prisma.api_keys.findFirst({
+      where: { id, business_id: tenantId },
+    });
+    if (!existing) {
+      throw new NotFoundException(`API key ${id} not found`);
+    }
+
     // deleteMany (not delete) keeps business_id in the WHERE clause — deleting
-    // by id alone would let one tenant revoke another tenant's key.
+    // by id alone would let one tenant revoke another tenant's key. The count
+    // check also covers a concurrent revoke of the same key.
     const { count } = await this.prisma.api_keys.deleteMany({
       where: { id, business_id: tenantId },
     });
@@ -131,6 +173,26 @@ export class ApiKeysController {
     if (count === 0) {
       throw new NotFoundException(`API key ${id} not found`);
     }
+
+    await this.audit.record({
+      businessId: tenantId,
+      actorType: 'TEAM_MEMBER',
+      actorId: user.sub,
+      actorEmail: user.email ?? null,
+      action: AuditAction.DELETE,
+      resourceType: API_KEY_RESOURCE,
+      resourceId: id,
+      before: {
+        name: existing.name,
+        prefix: existing.prefix,
+        last4: existing.last4,
+        scopes: existing.scopes,
+        createdBy: existing.created_by,
+        expiresAt: existing.expires_at ? existing.expires_at.toISOString() : null,
+        lastUsedAt: existing.last_used_at ? existing.last_used_at.toISOString() : null,
+      },
+      description: `Revoked API key ${existing.prefix}… (${existing.name})`,
+    });
 
     this.logger.log(`Revoked API key ${id} for tenant ${tenantId}`);
   }
