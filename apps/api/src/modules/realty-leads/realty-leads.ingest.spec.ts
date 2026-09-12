@@ -303,6 +303,32 @@ describe('RealtyLeadsService — ingest and partial update', () => {
       expect(metadata['ingestHistory']).toHaveLength(1);
     });
 
+    it('caps the provenance trail at 50 entries, dropping the oldest', async () => {
+      // A portal sync re-pushes the same buyer on every run, each entry
+      // carrying the raw payload; unbounded, the row grows on every sync.
+      const old = Array.from({ length: 50 }, (_, i) => ({
+        source: 'PORTAL',
+        at: `2026-01-01T00:00:${String(i).padStart(2, '0')}.000Z`,
+        raw: { seq: i },
+      }));
+      repository.findByPhoneIncludingDeleted.mockResolvedValue(
+        makeLead({ metadata: { ingestHistory: old } }) as never,
+      );
+      repository.update.mockResolvedValue(makeLead() as never);
+
+      await service.ingestLead(BUSINESS_ID, {
+        whatsappPhone: PHONE,
+        source: LeadSource.PORTAL,
+        subSource: '99acres',
+      });
+
+      const metadata = updateArg()['metadata'] as Record<string, unknown>;
+      const history = metadata['ingestHistory'] as Array<{ raw?: { seq: number }; subSource?: string }>;
+      expect(history).toHaveLength(50);
+      expect(history[0]!.raw).toEqual({ seq: 1 }); // seq 0 fell off
+      expect(history[49]!.subSource).toBe('99acres');
+    });
+
     it('omits lastListingRef when the candidate carries no listing', async () => {
       repository.findByPhoneIncludingDeleted.mockResolvedValue(makeLead() as never);
       repository.update.mockResolvedValue(makeLead() as never);

@@ -321,6 +321,15 @@ describe('RealtyVisitsService', () => {
         BadRequestException,
       );
     });
+
+    it('rejects a repeat on an already NO_SHOW visit — no second event, no reminder churn', async () => {
+      repository.findById.mockResolvedValue(makeVisit({ status: 'NO_SHOW' }) as never);
+      await expect(service.markNoShow(BUSINESS_ID, VISIT_ID)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(repository.update).not.toHaveBeenCalled();
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
+    });
   });
 
   // ── Reminders ────────────────────────────────

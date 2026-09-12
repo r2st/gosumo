@@ -700,7 +700,7 @@ describe('RealtyVisitsService — retrieval, stats and degradation', () => {
       },
     );
 
-    it.each(['CANCELLED', 'COMPLETED'])(
+    it.each(['CANCELLED', 'COMPLETED', 'NO_SHOW'])(
       'refuses to mark a %s visit as a no-show',
       async (status) => {
         repository.findById.mockResolvedValue(makeVisit({ status }) as never);

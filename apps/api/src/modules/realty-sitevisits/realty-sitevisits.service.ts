@@ -400,8 +400,11 @@ export class RealtyVisitsService {
     const visit = await this.mustFind(businessId, visitId);
     if (
       visit.status === SiteVisitStatus.CANCELLED ||
-      visit.status === SiteVisitStatus.COMPLETED
+      visit.status === SiteVisitStatus.COMPLETED ||
+      visit.status === SiteVisitStatus.NO_SHOW
     ) {
+      // NO_SHOW → NO_SHOW is not a harmless repeat: it re-emits
+      // realty.visit.no_show, and every listener sees a second no-show.
       throw new BadRequestException(`Cannot mark a ${visit.status} visit as no-show`);
     }
     await this.clearReminders(visitId);

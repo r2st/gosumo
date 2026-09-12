@@ -166,8 +166,13 @@ export interface LeadStageHistoryEntry {
   note?: string;
 }
 
-/** Keep the trail bounded; the row's JSONB is read on every lead fetch. */
+/**
+ * Keep the JSONB trails bounded; the row is read on every lead fetch and every
+ * AI turn. Ingest provenance carries the portal's raw payload, and a Meta lead
+ * form or a 99acres sync re-pushes the same buyer on every run.
+ */
 const STAGE_HISTORY_CAP = 50;
+const INGEST_HISTORY_CAP = 50;
 
 /**
  * RealtyLeadsService — the AI Lead Manager's system of record (blueprint §5).
@@ -896,7 +901,9 @@ export class RealtyLeadsService {
       at: new Date().toISOString(),
       ...(candidate.raw ? { raw: candidate.raw } : {}),
     };
-    const ingestHistory = [...this.readIngestHistory(existing.metadata), provenance];
+    const ingestHistory = [...this.readIngestHistory(existing.metadata), provenance].slice(
+      -INGEST_HISTORY_CAP,
+    );
     const data: UpdateLeadData = {
       lastActivityAt: new Date(),
       metadata: {
