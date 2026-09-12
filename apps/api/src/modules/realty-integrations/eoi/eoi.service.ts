@@ -312,11 +312,10 @@ export class EoiService {
       return updated;
     }
 
-    // Advance the lead — a paid token is a strong buying signal.
+    // Advance the lead — a paid token is a strong buying signal. Forward-only:
+    // a lead already CLOSED_WON on this token must not be reopened.
     try {
-      await this.leadsService.transitionStage(businessId, eoi.lead_id, {
-        stage: PAID_LEAD_STAGE,
-      });
+      await this.leadsService.advanceStage(businessId, eoi.lead_id, PAID_LEAD_STAGE);
     } catch (err) {
       this.logger.error(
         `EOI ${eoi.id} paid but lead ${eoi.lead_id} stage transition failed: ${

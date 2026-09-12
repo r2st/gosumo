@@ -10,7 +10,7 @@ listLeads(businessId, query): Promise<PaginatedLeads>
 listLeadsForAggregation(businessId, since, cap, pageSize)  // keyset walk, narrow projection — realty-intelligence only
 getBoard(businessId): Promise<{ stage, count }[]>          // pipeline board
 applyBltcUpdate(businessId, leadId, dto): Promise<BltcUpdateResult>  // merge + rescore + auto-qualify
-transitionStage / captureMemory / assignAgent / setOptOut
+transitionStage / advanceStage / captureMemory / assignAgent / setOptOut
 setMatchedUnits(businessId, leadId, unitIds)               // called by realty-inventory matcher
 ```
 
@@ -21,6 +21,16 @@ setMatchedUnits(businessId, leadId, unitIds)               // called by realty-i
 - Score weights: budget-fit 35 · timeline 25 · engagement 20 · financing 10 · purpose 10 (`lead-scoring.util.ts`, pure + fully unit-tested).
 - Temperature bands: HOT ≥75 · WARM ≥50 · COLD ≥25 · JUNK <25.
 - 4/4 core BLTC + reachable contact ⇒ auto-transition to `QUALIFIED`.
+
+## Stage machine
+
+Pipeline: `NEW → CONTACTED → QUALIFIED → VISIT_BOOKED → VISITED → NEGOTIATING`; terminal: `CLOSED_WON` / `CLOSED_LOST`; parked: `DORMANT`.
+
+- **`transitionStage` is the operator's** — free-form (a broker closes offline, reopens a mis-click); `dto.note` is recorded.
+- **`advanceStage` is the system's** (site visit booked/completed, EOI paid, BLTC auto-qualify via `canAdvanceStage`) — forward-only, never out of a terminal stage, always out of `DORMANT`. A second visit must not drag NEGOTIATING back to VISIT_BOOKED, and a Razorpay replay must not reopen CLOSED_WON. Never call `transitionStage` from a webhook or job.
+- Both go through one compare-and-set write (`repository.transitionStage`: `updateMany … WHERE stage = <observed>`), so `stage_changed.fromStage` is always the true predecessor; a lost race is a 409 for the operator and one re-read-and-re-evaluate for the system.
+- Every change appends `{from, to, at, actor, note?}` to `metadata.stageHistory` (capped at 50).
+- Moving to a terminal stage stops every cadence enrolment unconditionally (`cadence-engine` listens).
 
 ## Events
 

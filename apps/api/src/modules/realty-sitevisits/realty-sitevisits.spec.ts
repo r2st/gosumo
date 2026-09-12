@@ -93,7 +93,7 @@ describe('RealtyVisitsService', () => {
         RealtyVisitsService,
         { provide: RealtyVisitsRepository, useValue: mockRepository },
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
-        { provide: RealtyLeadsService, useValue: { transitionStage: jest.fn().mockResolvedValue(undefined) } },
+        { provide: RealtyLeadsService, useValue: { advanceStage: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: BookingService,
           useValue: {
@@ -134,10 +134,10 @@ describe('RealtyVisitsService', () => {
       expect(repository.create).toHaveBeenCalledWith(
         expect.objectContaining({ businessId: BUSINESS_ID, leadId: LEAD_ID, projectId: PROJECT_ID }),
       );
-      expect(leadsService.transitionStage).toHaveBeenCalledWith(
+      expect(leadsService.advanceStage).toHaveBeenCalledWith(
         BUSINESS_ID,
         LEAD_ID,
-        { stage: LeadStage.VISIT_BOOKED },
+        LeadStage.VISIT_BOOKED,
       );
       expect(queue.add).toHaveBeenCalled();
       expect(eventEmitter.emit).toHaveBeenCalledWith(
@@ -290,10 +290,10 @@ describe('RealtyVisitsService', () => {
         VISIT_ID,
         expect.objectContaining({ status: SiteVisitStatus.COMPLETED, outcome: SiteVisitOutcome.INTERESTED }),
       );
-      expect(leadsService.transitionStage).toHaveBeenCalledWith(
+      expect(leadsService.advanceStage).toHaveBeenCalledWith(
         BUSINESS_ID,
         LEAD_ID,
-        { stage: LeadStage.VISITED },
+        LeadStage.VISITED,
       );
       expect(eventEmitter.emit).toHaveBeenCalledWith(
         'realty.visit.completed',

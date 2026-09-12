@@ -526,14 +526,18 @@ export class RealtyVisitsService {
     }
   }
 
-  /** Transition the lead pipeline without letting a lead error abort the visit op. */
+  /**
+   * Advance the lead pipeline without letting a lead error abort the visit op.
+   * `advanceStage` is forward-only, so a repeat visit for a NEGOTIATING or
+   * closed lead leaves its stage alone instead of dragging it back.
+   */
   private async transitionLeadSafely(
     businessId: string,
     leadId: string,
     stage: LeadStage,
   ): Promise<void> {
     try {
-      await this.leadsService.transitionStage(businessId, leadId, { stage });
+      await this.leadsService.advanceStage(businessId, leadId, stage);
     } catch (err) {
       this.logger.warn(
         `Could not transition lead ${leadId} to ${stage}: ${

@@ -25,7 +25,7 @@ describe('RealtyLeadsRepository', () => {
   let repository: RealtyLeadsRepository;
   let prisma: {
     realty_leads: Record<
-      'findFirst' | 'findMany' | 'count' | 'groupBy' | 'create' | 'update',
+      'findFirst' | 'findMany' | 'count' | 'groupBy' | 'create' | 'update' | 'updateMany',
       jest.Mock
     >;
   };
@@ -39,6 +39,7 @@ describe('RealtyLeadsRepository', () => {
         groupBy: jest.fn().mockResolvedValue([]),
         create: jest.fn().mockResolvedValue({ id: LEAD_ID }),
         update: jest.fn().mockResolvedValue({ id: LEAD_ID }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };
 
@@ -147,6 +148,36 @@ describe('RealtyLeadsRepository', () => {
         where: { id: LEAD_ID, business_id: BUSINESS_ID },
         data: { deleted_at: null },
       });
+    });
+  });
+
+  describe('transitionStage', () => {
+    it('compare-and-sets on the observed stage, tenant-scoped, skipping tombstones', async () => {
+      const when = new Date('2026-08-10T00:00:00Z');
+      prisma.realty_leads.findFirst.mockResolvedValue({ id: LEAD_ID, stage: 'VISIT_BOOKED' });
+
+      const row = await repository.transitionStage(BUSINESS_ID, LEAD_ID, 'QUALIFIED', 'VISIT_BOOKED', {
+        lastActivityAt: when,
+        metadata: { stageHistory: [] },
+      });
+
+      expect(prisma.realty_leads.updateMany).toHaveBeenCalledWith({
+        where: { id: LEAD_ID, business_id: BUSINESS_ID, stage: 'QUALIFIED', deleted_at: null },
+        data: { stage: 'VISIT_BOOKED', last_activity_at: when, metadata: { stageHistory: [] } },
+      });
+      expect(prisma.realty_leads.findFirst).toHaveBeenCalledWith({
+        where: { id: LEAD_ID, business_id: BUSINESS_ID, deleted_at: null },
+      });
+      expect(row).toEqual({ id: LEAD_ID, stage: 'VISIT_BOOKED' });
+    });
+
+    it('returns null without re-reading when the row is no longer at the observed stage', async () => {
+      prisma.realty_leads.updateMany.mockResolvedValue({ count: 0 });
+
+      const row = await repository.transitionStage(BUSINESS_ID, LEAD_ID, 'QUALIFIED', 'VISIT_BOOKED');
+
+      expect(row).toBeNull();
+      expect(prisma.realty_leads.findFirst).not.toHaveBeenCalled();
     });
   });
 

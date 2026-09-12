@@ -712,6 +712,8 @@ export interface RealtyLeadStageChangedEvent extends BaseEvent {
   leadId: string;
   fromStage: string;
   toStage: string;
+  /** Operator's reason, when one was given (e.g. why a lead was lost). */
+  note?: string;
 }
 
 /**

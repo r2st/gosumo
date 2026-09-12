@@ -72,7 +72,7 @@ describe('EoiService', () => {
     } as unknown as jest.Mocked<RealtyIntegrationsRepository>;
     leads = {
       getLead: jest.fn(),
-      transitionStage: jest.fn(),
+      advanceStage: jest.fn(),
     } as unknown as jest.Mocked<RealtyLeadsService>;
     razorpay = {
       createPaymentLink: jest.fn(),
@@ -243,9 +243,7 @@ describe('EoiService', () => {
         'pay_1',
         expect.any(Date),
       );
-      expect(leads.transitionStage).toHaveBeenCalledWith(BUSINESS_ID, LEAD_ID, {
-        stage: LeadStage.NEGOTIATING,
-      });
+      expect(leads.advanceStage).toHaveBeenCalledWith(BUSINESS_ID, LEAD_ID, LeadStage.NEGOTIATING);
       expect(emitter.emit).toHaveBeenCalledWith(
         'realty.eoi.paid',
         expect.objectContaining({ eoiId: EOI_ID, gatewayPaymentId: 'pay_1' }),
@@ -282,7 +280,7 @@ describe('EoiService', () => {
       const res = await service.reconcileEoi(BUSINESS_ID, EOI_ID);
 
       expect(res.status).toBe(RealtyEoiStatus.PAID);
-      expect(leads.transitionStage).toHaveBeenCalled();
+      expect(leads.advanceStage).toHaveBeenCalled();
     });
 
     it('is a no-op for an already-paid EOI (idempotent)', async () => {
@@ -317,7 +315,7 @@ describe('EoiService', () => {
 
       expect(res.status).toBe(RealtyEoiStatus.LINK_SENT);
       expect(repo.updateEoi).not.toHaveBeenCalled();
-      expect(leads.transitionStage).not.toHaveBeenCalled();
+      expect(leads.advanceStage).not.toHaveBeenCalled();
     });
 
     it('404s for an EOI belonging to another tenant', async () => {
@@ -529,7 +527,7 @@ describe('EoiService', () => {
 
       // Still a 2xx — the event *was* handled, just not by this caller.
       expect(res).toEqual({ handled: true });
-      expect(leads.transitionStage).not.toHaveBeenCalled();
+      expect(leads.advanceStage).not.toHaveBeenCalled();
       expect(emitter.emit).not.toHaveBeenCalledWith('realty.eoi.paid', expect.anything());
     });
 
@@ -603,7 +601,7 @@ describe('EoiService', () => {
         eoi: makeEoi({ status: RealtyEoiStatus.PAID }),
         claimed: true,
       });
-      leads.transitionStage.mockRejectedValue(new Error('illegal stage transition'));
+      leads.advanceStage.mockRejectedValue(new Error('illegal stage transition'));
 
       const res = await service.handleRazorpayWebhook(
         JSON.stringify({

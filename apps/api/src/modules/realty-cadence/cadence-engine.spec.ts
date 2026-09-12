@@ -353,6 +353,25 @@ describe('CadenceEngineService', () => {
       expect(enrollSpy).toHaveBeenCalledWith(BUSINESS_ID, LEAD_ID, CadenceTrigger.DORMANT);
     });
 
+    it.each([LeadStage.CLOSED_WON, LeadStage.CLOSED_LOST])(
+      'onStageChanged to %s stops every enrolment unconditionally and enrols nothing',
+      async (toStage) => {
+        const pauseSpy = jest.spyOn(engine, 'pauseForLead').mockResolvedValue(2);
+        const stopSpy = jest.spyOn(engine, 'stopForLead').mockResolvedValue(0);
+        const enrollSpy = jest.spyOn(engine, 'enroll').mockResolvedValue(null);
+        await engine.onStageChanged({
+          businessId: BUSINESS_ID,
+          leadId: LEAD_ID,
+          fromStage: LeadStage.NEGOTIATING,
+          toStage,
+        } as never);
+        expect(pauseSpy).toHaveBeenCalledWith(BUSINESS_ID, LEAD_ID, 'lead_closed');
+        // Per-step stop_on must not get a say — a closed lead is closed.
+        expect(stopSpy).not.toHaveBeenCalled();
+        expect(enrollSpy).not.toHaveBeenCalled();
+      },
+    );
+
     it('onOptedOut stops all cadences', async () => {
       const stopSpy = jest.spyOn(engine, 'stopForLead').mockResolvedValue(1);
       await engine.onOptedOut({ businessId: BUSINESS_ID, leadId: LEAD_ID } as never);

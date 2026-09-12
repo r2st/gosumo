@@ -21,7 +21,7 @@ import type {
 } from '@gosumo/shared';
 import { RealtyCadenceRepository } from './realty-cadence.repository';
 import type { StepWithTemplate } from './realty-cadence.repository';
-import { RealtyLeadsService } from '../realty-leads/realty-leads.service';
+import { RealtyLeadsService, isTerminalStage } from '../realty-leads/realty-leads.service';
 import type { LeadResponseDto } from '../realty-leads/realty-leads.service';
 import { evaluateCompliance } from './compliance.util';
 
@@ -411,12 +411,19 @@ export class CadenceEngineService {
   }
 
   /**
-   * Stage changes: a move to DORMANT enrols the reactivation cadence; any other
-   * move stops enrolments whose current step declares STAGE_CHANGE.
+   * Stage changes: a move to DORMANT enrols the reactivation cadence; a move to
+   * CLOSED_WON / CLOSED_LOST stops every enrolment unconditionally (there is
+   * nothing left to nurture, and a chase message to a buyer who just paid is
+   * the worst kind of noise); any other move stops enrolments whose current
+   * step declares STAGE_CHANGE.
    */
   @OnEvent('realty.lead.stage_changed')
   async onStageChanged(event: RealtyLeadStageChangedEvent): Promise<void> {
     await this.safe(async () => {
+      if (isTerminalStage(event.toStage)) {
+        await this.pauseForLead(event.businessId, event.leadId, 'lead_closed');
+        return;
+      }
       await this.stopForLead(event.businessId, event.leadId, CadenceStopOn.STAGE_CHANGE, 'stage_change');
       if (event.toStage === LeadStage.DORMANT) {
         await this.enroll(event.businessId, event.leadId, CadenceTrigger.DORMANT);

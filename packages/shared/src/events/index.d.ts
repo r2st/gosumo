@@ -586,6 +586,8 @@ export interface RealtyLeadStageChangedEvent extends BaseEvent {
     leadId: string;
     fromStage: string;
     toStage: string;
+    /** Operator's reason, when one was given (e.g. why a lead was lost). */
+    note?: string;
 }
 /**
  * Emitted when a lead crosses the hot threshold — triggers the broker's

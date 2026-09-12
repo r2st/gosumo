@@ -232,6 +232,31 @@ export class RealtyLeadsRepository {
     return this.prisma.realty_leads.update({ where: { id: leadId, business_id: businessId }, data: d });
   }
 
+  /**
+   * Compare-and-set pipeline stage. The write lands only when the row still
+   * sits at `fromStage` (and is not soft-deleted), so two racing transitions
+   * cannot both "succeed" from the same snapshot — the loser sees `null` and
+   * must re-read. Returns the fresh row on success.
+   */
+  async transitionStage(
+    businessId: string,
+    leadId: string,
+    fromStage: realty_leads['stage'],
+    toStage: realty_leads['stage'],
+    data: Pick<UpdateLeadData, 'lastActivityAt' | 'metadata'> = {},
+  ): Promise<realty_leads | null> {
+    const d: Record<string, unknown> = { stage: toStage };
+    if (data.lastActivityAt !== undefined) d['last_activity_at'] = data.lastActivityAt;
+    if (data.metadata !== undefined) d['metadata'] = data.metadata;
+
+    const { count } = await this.prisma.realty_leads.updateMany({
+      where: { id: leadId, business_id: businessId, stage: fromStage, deleted_at: null },
+      data: d,
+    });
+    if (count === 0) return null;
+    return this.findById(businessId, leadId);
+  }
+
   async softDelete(businessId: string, leadId: string): Promise<realty_leads> {
     return this.prisma.realty_leads.update({
       where: { id: leadId, business_id: businessId },

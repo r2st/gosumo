@@ -88,7 +88,7 @@ describe('RealtyVisitsService — retrieval, stats and degradation', () => {
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
         {
           provide: RealtyLeadsService,
-          useValue: { transitionStage: jest.fn().mockResolvedValue(undefined) },
+          useValue: { advanceStage: jest.fn().mockResolvedValue(undefined) },
         },
         {
           provide: BookingService,
@@ -400,7 +400,7 @@ describe('RealtyVisitsService — retrieval, stats and degradation', () => {
     it('books the visit even when the lead transition fails', async () => {
       const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
       repository.create.mockResolvedValue(makeVisit() as never);
-      leadsService.transitionStage.mockRejectedValue(new Error('lead locked'));
+      leadsService.advanceStage.mockRejectedValue(new Error('lead locked'));
 
       const result = await service.bookVisit(BUSINESS_ID, {
         leadId: LEAD_ID,
@@ -423,17 +423,17 @@ describe('RealtyVisitsService — retrieval, stats and degradation', () => {
       repository.update.mockResolvedValue(
         makeVisit({ status: 'COMPLETED', outcome: 'INTERESTED' }) as never,
       );
-      leadsService.transitionStage.mockRejectedValue(new Error('lead gone'));
+      leadsService.advanceStage.mockRejectedValue(new Error('lead gone'));
 
       const result = await service.completeVisit(BUSINESS_ID, VISIT_ID, {
         outcome: SiteVisitOutcome.INTERESTED,
       });
 
       expect(result.status).toBe('COMPLETED');
-      expect(leadsService.transitionStage).toHaveBeenCalledWith(
+      expect(leadsService.advanceStage).toHaveBeenCalledWith(
         BUSINESS_ID,
         LEAD_ID,
-        { stage: LeadStage.VISITED },
+        LeadStage.VISITED,
       );
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('lead gone'));
       warn.mockRestore();

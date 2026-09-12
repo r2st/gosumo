@@ -124,6 +124,52 @@ function decimalToPaise(d: Prisma.Decimal | null): number | null {
 }
 
 /**
+ * Pipeline order for system-driven advances. `DORMANT` is a parking state —
+ * any forward signal (BLTC complete, visit booked, token paid) reactivates it —
+ * and the two `CLOSED_*` stages are terminal: only an operator's explicit
+ * `transitionStage` may move a closed lead, so a late site-visit completion or
+ * a Razorpay webhook replay can never reopen a deal that has already been won
+ * or lost.
+ */
+const PIPELINE_ORDER: readonly LeadStage[] = [
+  LeadStage.NEW,
+  LeadStage.CONTACTED,
+  LeadStage.QUALIFIED,
+  LeadStage.VISIT_BOOKED,
+  LeadStage.VISITED,
+  LeadStage.NEGOTIATING,
+];
+const TERMINAL_STAGES: ReadonlySet<string> = new Set([LeadStage.CLOSED_WON, LeadStage.CLOSED_LOST]);
+
+export function isTerminalStage(stage: string): boolean {
+  return TERMINAL_STAGES.has(stage);
+}
+
+/**
+ * Whether a system-driven advance from `from` to `to` is allowed: forward only
+ * along the pipeline, never out of a terminal stage, always out of `DORMANT`.
+ */
+export function canAdvanceStage(from: string, to: LeadStage): boolean {
+  if (from === to || isTerminalStage(from)) return false;
+  if (from === LeadStage.DORMANT) return PIPELINE_ORDER.includes(to);
+  const fromRank = PIPELINE_ORDER.indexOf(from as LeadStage);
+  const toRank = PIPELINE_ORDER.indexOf(to);
+  return fromRank >= 0 && toRank > fromRank;
+}
+
+/** One entry of `metadata.stageHistory` — the audit trail behind the pipeline board. */
+export interface LeadStageHistoryEntry {
+  from: string;
+  to: string;
+  at: string;
+  actor: 'operator' | 'system';
+  note?: string;
+}
+
+/** Keep the trail bounded; the row's JSONB is read on every lead fetch. */
+const STAGE_HISTORY_CAP = 50;
+
+/**
  * RealtyLeadsService — the AI Lead Manager's system of record (blueprint §5).
  *
  * Owns lead capture with attribution, conversational BLTC qualification with
@@ -489,8 +535,7 @@ export class RealtyLeadsService {
     const score = scoreLead(next, engagementTurns);
     const complete = isBltcComplete(next);
     const reachable = Boolean(lead.whatsapp_phone) && !lead.opt_out;
-    const shouldQualify =
-      complete && reachable && this.stageRank(lead.stage) < this.stageRank(LeadStage.QUALIFIED);
+    const shouldQualify = complete && reachable && canAdvanceStage(lead.stage, LeadStage.QUALIFIED);
 
     const metadata = {
       ...(lead.metadata as Record<string, unknown>),
@@ -554,6 +599,12 @@ export class RealtyLeadsService {
   // STAGE / MEMORY / ASSIGNMENT / OPT-OUT
   // ─────────────────────────────────────────────
 
+  /**
+   * Operator transition — free-form, because a broker closes deals offline and
+   * reopens mis-clicked ones. Concurrent moves are serialised by the
+   * compare-and-set write: the loser gets a 409 rather than a stale
+   * `fromStage` in the event stream.
+   */
   async transitionStage(
     businessId: string,
     leadId: string,
@@ -562,20 +613,84 @@ export class RealtyLeadsService {
     const lead = await this.mustFind(businessId, leadId);
     if (lead.stage === dto.stage) return this.mapResponse(lead);
 
-    const updated = await this.repository.update(businessId, leadId, {
-      stage: dto.stage as realty_leads['stage'],
-      lastActivityAt: new Date(),
-    });
+    const updated = await this.commitTransition(businessId, lead, dto.stage, 'operator', dto.note);
+    if (!updated) {
+      throw new ConflictException(`Lead ${leadId} changed stage concurrently — retry`);
+    }
+    return this.mapResponse(updated);
+  }
+
+  /**
+   * System-driven advance (site visit booked/completed, token paid). Forward
+   * only: a lead already at or past `stage`, or closed, is left untouched and
+   * returned as-is — so a second visit never drags NEGOTIATING back to
+   * VISIT_BOOKED and a webhook replay never reopens CLOSED_WON. A lost race
+   * re-reads once and re-evaluates against the winner's stage.
+   */
+  async advanceStage(
+    businessId: string,
+    leadId: string,
+    stage: LeadStage,
+    note?: string,
+  ): Promise<LeadResponseDto> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const lead = await this.mustFind(businessId, leadId);
+      if (!canAdvanceStage(lead.stage, stage)) {
+        if (lead.stage !== stage) {
+          this.logger.log(`Lead ${leadId}: ${lead.stage} ↛ ${stage} (system advance suppressed)`);
+        }
+        return this.mapResponse(lead);
+      }
+      const updated = await this.commitTransition(businessId, lead, stage, 'system', note);
+      if (updated) return this.mapResponse(updated);
+    }
+    throw new ConflictException(`Lead ${leadId} changed stage concurrently — retry`);
+  }
+
+  /**
+   * The single write path for a stage change: compare-and-set on the stage the
+   * caller observed, append to `metadata.stageHistory`, emit once. Returns
+   * `null` when the row had already moved.
+   */
+  private async commitTransition(
+    businessId: string,
+    lead: realty_leads,
+    toStage: LeadStage,
+    actor: LeadStageHistoryEntry['actor'],
+    note?: string,
+  ): Promise<realty_leads | null> {
+    const entry: LeadStageHistoryEntry = {
+      from: lead.stage,
+      to: toStage,
+      at: new Date().toISOString(),
+      actor,
+      ...(note ? { note } : {}),
+    };
+    const history = [...this.readStageHistory(lead.metadata), entry].slice(-STAGE_HISTORY_CAP);
+    const metadata = { ...(lead.metadata as Record<string, unknown>), stageHistory: history };
+
+    const updated = await this.repository.transitionStage(
+      businessId,
+      lead.id,
+      lead.stage,
+      toStage as realty_leads['stage'],
+      { lastActivityAt: new Date(), metadata: metadata as unknown as Prisma.InputJsonValue },
+    );
+    if (!updated) {
+      this.logger.warn(`Lead ${lead.id}: ${lead.stage} → ${toStage} lost a concurrent transition`);
+      return null;
+    }
 
     this.emit<RealtyLeadStageChangedEvent>('realty.lead.stage_changed', {
       ...this.baseEvent(businessId),
       type: 'realty.lead.stage_changed',
-      leadId,
+      leadId: lead.id,
       fromStage: lead.stage,
-      toStage: dto.stage,
+      toStage,
+      ...(note ? { note } : {}),
     });
-    this.logger.log(`Lead ${leadId}: ${lead.stage} → ${dto.stage}`);
-    return this.mapResponse(updated);
+    this.logger.log(`Lead ${lead.id}: ${lead.stage} → ${toStage} (${actor})`);
+    return updated;
   }
 
   /** Append to the lead's permanent memory — facts, objections, promises. */
@@ -889,8 +1004,9 @@ export class RealtyLeadsService {
     return Array.isArray(history) ? (history as Record<string, unknown>[]) : [];
   }
 
-  private stageRank(stage: string): number {
-    return Object.values(LeadStage).indexOf(stage as LeadStage);
+  private readStageHistory(metadata: unknown): LeadStageHistoryEntry[] {
+    const history = (metadata as Record<string, unknown>)?.['stageHistory'];
+    return Array.isArray(history) ? (history as LeadStageHistoryEntry[]) : [];
   }
 
   private baseEvent(businessId: string): {

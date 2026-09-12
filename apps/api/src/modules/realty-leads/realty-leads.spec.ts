@@ -26,7 +26,7 @@ import {
 } from '@gosumo/shared';
 import type { MessageReceivedEvent } from '@gosumo/shared';
 
-import { RealtyLeadsService } from './realty-leads.service';
+import { RealtyLeadsService, canAdvanceStage, isTerminalStage } from './realty-leads.service';
 import { RealtyLeadsRepository } from './realty-leads.repository';
 import { TenantService } from '../tenant/tenant.service';
 
@@ -95,6 +95,7 @@ describe('RealtyLeadsService', () => {
       findByPhoneIncludingDeleted: jest.fn(),
       revive: jest.fn(),
       update: jest.fn(),
+      transitionStage: jest.fn(),
       softDelete: jest.fn(),
       list: jest.fn(),
       listForAggregation: jest.fn().mockResolvedValue([]),
@@ -437,6 +438,38 @@ describe('RealtyLeadsService', () => {
       );
     });
 
+    it.each([
+      ['DORMANT', true], // a parked buyer who comes back with a full profile is active again
+      ['CLOSED_LOST', false], // a lost deal never silently reopens on a BLTC fill
+      ['CLOSED_WON', false],
+      ['NEGOTIATING', false], // already past QUALIFIED
+    ])('auto-qualify from %s → %s', async (stage, expectQualify) => {
+      repository.findById.mockResolvedValue(makeLead({ stage }) as never);
+      repository.update.mockImplementation(async (_b, _id, data) =>
+        makeLead({ stage: (data as { stage?: string }).stage ?? stage }) as never,
+      );
+
+      const result = await service.applyBltcUpdate(BUSINESS_ID, LEAD_ID, {
+        budgetMinPaise: 900000000,
+        budgetMaxPaise: 950000000,
+        localities: ['Baner'],
+        timelineMonths: 6,
+        config: '2BHK',
+        engagementTurns: 5,
+      });
+
+      expect(result.qualified).toBe(expectQualify);
+      expect(repository.update).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        LEAD_ID,
+        expect.objectContaining({ stage: expectQualify ? LeadStage.QUALIFIED : undefined }),
+      );
+      const stageEvents = eventEmitter.emit.mock.calls.filter(
+        ([name]) => name === 'realty.lead.stage_changed' || name === 'realty.lead.qualified',
+      );
+      expect(stageEvents).toHaveLength(expectQualify ? 2 : 0);
+    });
+
     it('surfaces a contradiction instead of overwriting a filled slot', async () => {
       repository.findById.mockResolvedValue(
         makeLead({ budget_max: new Prisma.Decimal('9500000') }) as never, // 950000000 paise
@@ -500,23 +533,212 @@ describe('RealtyLeadsService', () => {
 
   // ── Stage ──
   describe('transitionStage', () => {
-    it('emits stage_changed and persists the new stage', async () => {
+    it('compare-and-sets from the observed stage, records the note, emits stage_changed', async () => {
       repository.findById.mockResolvedValue(makeLead({ stage: 'QUALIFIED' }) as never);
-      repository.update.mockResolvedValue(makeLead({ stage: 'VISIT_BOOKED' }) as never);
+      repository.transitionStage.mockResolvedValue(makeLead({ stage: 'VISIT_BOOKED' }) as never);
 
-      await service.transitionStage(BUSINESS_ID, LEAD_ID, { stage: LeadStage.VISIT_BOOKED });
+      await service.transitionStage(BUSINESS_ID, LEAD_ID, {
+        stage: LeadStage.VISIT_BOOKED,
+        note: 'booked on the phone',
+      });
 
+      expect(repository.transitionStage).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        LEAD_ID,
+        'QUALIFIED',
+        'VISIT_BOOKED',
+        expect.objectContaining({
+          lastActivityAt: expect.any(Date),
+          metadata: expect.objectContaining({
+            stageHistory: [
+              expect.objectContaining({
+                from: 'QUALIFIED',
+                to: 'VISIT_BOOKED',
+                actor: 'operator',
+                note: 'booked on the phone',
+              }),
+            ],
+          }),
+        }),
+      );
+      expect(repository.update).not.toHaveBeenCalled();
       expect(eventEmitter.emit).toHaveBeenCalledWith(
         'realty.lead.stage_changed',
-        expect.objectContaining({ fromStage: 'QUALIFIED', toStage: 'VISIT_BOOKED' }),
+        expect.objectContaining({
+          fromStage: 'QUALIFIED',
+          toStage: 'VISIT_BOOKED',
+          note: 'booked on the phone',
+        }),
       );
     });
 
     it('is a no-op when the stage is unchanged', async () => {
       repository.findById.mockResolvedValue(makeLead({ stage: 'NEW' }) as never);
       await service.transitionStage(BUSINESS_ID, LEAD_ID, { stage: LeadStage.NEW });
+      expect(repository.transitionStage).not.toHaveBeenCalled();
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
+    });
+
+    it('lets an operator reopen a closed lead (terminal stages bind only system advances)', async () => {
+      repository.findById.mockResolvedValue(makeLead({ stage: 'CLOSED_LOST' }) as never);
+      repository.transitionStage.mockResolvedValue(makeLead({ stage: 'NEGOTIATING' }) as never);
+
+      const res = await service.transitionStage(BUSINESS_ID, LEAD_ID, { stage: LeadStage.NEGOTIATING });
+
+      expect(res.stage).toBe('NEGOTIATING');
+      expect(repository.transitionStage).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        LEAD_ID,
+        'CLOSED_LOST',
+        'NEGOTIATING',
+        expect.anything(),
+      );
+    });
+
+    it('appends to an existing stageHistory and caps it at 50 entries', async () => {
+      const history = Array.from({ length: 50 }, (_, i) => ({
+        from: 'NEW',
+        to: 'CONTACTED',
+        at: `2026-01-01T00:00:${String(i).padStart(2, '0')}Z`,
+        actor: 'system',
+      }));
+      repository.findById.mockResolvedValue(
+        makeLead({ stage: 'CONTACTED', metadata: { engagementTurns: 3, stageHistory: history } }) as never,
+      );
+      repository.transitionStage.mockResolvedValue(makeLead({ stage: 'QUALIFIED' }) as never);
+
+      await service.transitionStage(BUSINESS_ID, LEAD_ID, { stage: LeadStage.QUALIFIED });
+
+      const metadata = repository.transitionStage.mock.calls[0]![4]!.metadata as {
+        engagementTurns: number;
+        stageHistory: Array<{ to: string }>;
+      };
+      expect(metadata.engagementTurns).toBe(3); // sibling keys survive the merge
+      expect(metadata.stageHistory).toHaveLength(50);
+      expect(metadata.stageHistory[49]!.to).toBe('QUALIFIED');
+    });
+
+    it('throws 409 when the row moved between the read and the write, and emits nothing', async () => {
+      repository.findById.mockResolvedValue(makeLead({ stage: 'QUALIFIED' }) as never);
+      repository.transitionStage.mockResolvedValue(null);
+
+      await expect(
+        service.transitionStage(BUSINESS_ID, LEAD_ID, { stage: LeadStage.CLOSED_LOST }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('advanceStage (system-driven, forward-only)', () => {
+    it('advances a lead forward along the pipeline and tags the history entry as system', async () => {
+      repository.findById.mockResolvedValue(makeLead({ stage: 'QUALIFIED' }) as never);
+      repository.transitionStage.mockResolvedValue(makeLead({ stage: 'VISIT_BOOKED' }) as never);
+
+      const res = await service.advanceStage(BUSINESS_ID, LEAD_ID, LeadStage.VISIT_BOOKED);
+
+      expect(res.stage).toBe('VISIT_BOOKED');
+      expect(repository.transitionStage).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        LEAD_ID,
+        'QUALIFIED',
+        'VISIT_BOOKED',
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            stageHistory: [expect.objectContaining({ actor: 'system', to: 'VISIT_BOOKED' })],
+          }),
+        }),
+      );
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'realty.lead.stage_changed',
+        expect.objectContaining({ fromStage: 'QUALIFIED', toStage: 'VISIT_BOOKED' }),
+      );
+    });
+
+    it.each([
+      ['NEGOTIATING', LeadStage.VISIT_BOOKED], // second visit for a lead already negotiating
+      ['VISITED', LeadStage.VISIT_BOOKED], // re-booking after a visit
+      ['CLOSED_WON', LeadStage.VISITED], // late completion of a visit on a won deal
+      ['CLOSED_WON', LeadStage.NEGOTIATING], // Razorpay webhook replay after close
+      ['CLOSED_LOST', LeadStage.VISIT_BOOKED], // visit booked on a lost lead
+    ])('never regresses %s to %s — returns the lead untouched and emits nothing', async (from, to) => {
+      repository.findById.mockResolvedValue(makeLead({ stage: from }) as never);
+
+      const res = await service.advanceStage(BUSINESS_ID, LEAD_ID, to);
+
+      expect(res.stage).toBe(from);
+      expect(repository.transitionStage).not.toHaveBeenCalled();
       expect(repository.update).not.toHaveBeenCalled();
       expect(eventEmitter.emit).not.toHaveBeenCalled();
+    });
+
+    it('reactivates a DORMANT lead on a forward signal', async () => {
+      repository.findById.mockResolvedValue(makeLead({ stage: 'DORMANT' }) as never);
+      repository.transitionStage.mockResolvedValue(makeLead({ stage: 'VISIT_BOOKED' }) as never);
+
+      const res = await service.advanceStage(BUSINESS_ID, LEAD_ID, LeadStage.VISIT_BOOKED);
+
+      expect(res.stage).toBe('VISIT_BOOKED');
+      expect(repository.transitionStage).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        LEAD_ID,
+        'DORMANT',
+        'VISIT_BOOKED',
+        expect.anything(),
+      );
+    });
+
+    it('re-reads after a lost race and re-evaluates against the winner', async () => {
+      // First read: QUALIFIED → try VISIT_BOOKED; the CAS loses because an
+      // operator closed the lead meanwhile. Second read sees CLOSED_LOST and
+      // the advance is (correctly) suppressed instead of overwriting it.
+      repository.findById
+        .mockResolvedValueOnce(makeLead({ stage: 'QUALIFIED' }) as never)
+        .mockResolvedValueOnce(makeLead({ stage: 'CLOSED_LOST' }) as never);
+      repository.transitionStage.mockResolvedValueOnce(null);
+
+      const res = await service.advanceStage(BUSINESS_ID, LEAD_ID, LeadStage.VISIT_BOOKED);
+
+      expect(res.stage).toBe('CLOSED_LOST');
+      expect(repository.transitionStage).toHaveBeenCalledTimes(1);
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
+    });
+
+    it('gives up with 409 when the row keeps moving', async () => {
+      repository.findById.mockResolvedValue(makeLead({ stage: 'QUALIFIED' }) as never);
+      repository.transitionStage.mockResolvedValue(null);
+
+      await expect(
+        service.advanceStage(BUSINESS_ID, LEAD_ID, LeadStage.VISIT_BOOKED),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(repository.transitionStage).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('stage policy', () => {
+    it('marks only CLOSED_WON / CLOSED_LOST as terminal', () => {
+      const terminal = Object.values(LeadStage).filter((s) => isTerminalStage(s));
+      expect(terminal.sort()).toEqual(['CLOSED_LOST', 'CLOSED_WON']);
+    });
+
+    it('allows every forward pipeline hop and refuses every backward or terminal-exit hop', () => {
+      const pipeline = ['NEW', 'CONTACTED', 'QUALIFIED', 'VISIT_BOOKED', 'VISITED', 'NEGOTIATING'];
+      for (let i = 0; i < pipeline.length; i++) {
+        for (let j = 0; j < pipeline.length; j++) {
+          expect(canAdvanceStage(pipeline[i]!, pipeline[j] as LeadStage)).toBe(j > i);
+        }
+      }
+      for (const stage of pipeline) {
+        expect(canAdvanceStage('CLOSED_WON', stage as LeadStage)).toBe(false);
+        expect(canAdvanceStage('CLOSED_LOST', stage as LeadStage)).toBe(false);
+        expect(canAdvanceStage('DORMANT', stage as LeadStage)).toBe(true);
+      }
+    });
+
+    it('never lets a system advance close or park a lead', () => {
+      for (const to of [LeadStage.CLOSED_WON, LeadStage.CLOSED_LOST, LeadStage.DORMANT]) {
+        expect(canAdvanceStage('NEGOTIATING', to)).toBe(false);
+        expect(canAdvanceStage('DORMANT', to)).toBe(false);
+      }
     });
   });
 
