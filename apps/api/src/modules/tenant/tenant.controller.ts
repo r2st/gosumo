@@ -312,9 +312,13 @@ export class TenantController {
   @ApiResponse({ status: 400, description: 'Downgrade blocked by current usage' })
   async changePlan(
     @TenantId() businessId: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() dto: ChangePlanDto,
   ) {
-    return this.subscriptionService.changePlan(businessId, dto);
+    return this.subscriptionService.changePlan(businessId, dto, {
+      id: user.sub,
+      email: user.email ?? null,
+    });
   }
 
   // ─────────────────────────────────────────────

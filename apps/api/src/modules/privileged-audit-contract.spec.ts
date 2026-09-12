@@ -20,7 +20,7 @@
  *                       asserts it takes `@CurrentUser()`, since an audit row
  *                       without an actor answers "what" but not "who".
  *   NO_STATE_CHANGE   — the route reads or probes; there is nothing to record.
- *   NOT_YET_AUDITED   — known gaps, each with a reason. This is documented
+ *   NOT_YET_AUDITED   — 15 known gaps, each with a reason. This is documented
  *                       debt, not a waiver: adding a route here is allowed,
  *                       silently omitting it is not.
  *
@@ -89,6 +89,10 @@ const AUDITED: Record<string, AuditedRoute> = {
     handler: { file: 'billing/billing.controller.ts', method: 'upgrade' },
     writer: { file: 'billing/billing.service.ts', method: 'upgradePlan' },
   },
+  'POST /tenant/subscription/change': {
+    handler: { file: 'tenant/tenant.controller.ts', method: 'changePlan' },
+    writer: { file: 'tenant/services/subscription.service.ts', method: 'changePlan' },
+  },
 
   // Irreversible destruction of customer data, and its policy.
   'POST /compliance/erasure': {
@@ -136,6 +140,12 @@ const NO_STATE_CHANGE: Record<string, string> = {
   'POST /integrations/credentials/:provider/test':
     'Probes the provider with the stored credential and reports the result; ' +
     'writes nothing.',
+  'PUT /integrations/credentials/:provider':
+    'Stub: logs and returns a canned response, stores nothing. Move to ' +
+    'AUDITED the day it persists a credential.',
+  'POST /integrations/google-calendar/connect':
+    'Stub: returns a placeholder message, stores nothing.',
+  'DELETE /integrations/google-calendar': 'Stub: logs and returns, stores nothing.',
   'POST /compliance/retention/run':
     'Triggers the retention sweep, whose erasures are each recorded by ' +
     'ComplianceService.eraseLead as SYSTEM. The trigger itself changes no row.',
@@ -153,19 +163,11 @@ const NOT_YET_AUDITED: Record<string, string> = {
   'POST /ai/knowledge': 'Knowledge ingestion; rows carry created_at but no actor.',
   'DELETE /ai/knowledge/:entryId': 'Knowledge removal.',
   'PATCH /tenant/channels/:id': 'Pause/resume a channel; toggles is_active only.',
-  'PUT /integrations/credentials/:provider':
-    'Stores a provider credential the same way channel connect does — the ' +
-    'row is overwritten in place. Same class as the channel fix; next round.',
-  'POST /integrations/google-calendar/connect': 'Stores an OAuth grant.',
-  'DELETE /integrations/google-calendar': 'Removes an OAuth grant.',
   'POST /realty/integrations/crm/connect':
     'Stores a CRM credential. RealtyAuditInterceptor may cover this route; ' +
     'confirm before adding an explicit record.',
   'DELETE /realty/integrations/crm/:provider': 'Removes a CRM credential; as above.',
   'DELETE /realty/integrations/sheets': 'Removes a Sheets connection; as above.',
-  'POST /tenant/subscription/change':
-    'Plan change through SubscriptionService rather than BillingService; ' +
-    'the billing route is audited, this alias is not.',
   'POST /sla/policies': 'SLA policy create.',
   'PATCH /sla/policies/:id': 'SLA policy edit.',
   'DELETE /sla/policies/:id': 'SLA policy delete (soft).',

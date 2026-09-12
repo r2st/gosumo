@@ -1,11 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
-import { SubscriptionService } from './subscription.service';
+import { SUBSCRIPTION_RESOURCE, SubscriptionService } from './subscription.service';
+import { AuditLogService } from '../../../common/services/audit-log.service';
 import { TenantRepository } from '../tenant.repository';
 import { SubscriptionTier } from '../tenant.constants';
 
 const BUSINESS_ID = '11111111-1111-1111-1111-111111111111';
+const OWNER_ID = '33333333-3333-3333-3333-333333333333';
 
 function makeBusiness(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -34,16 +36,19 @@ describe('SubscriptionService', () => {
   let service: SubscriptionService;
   let repository: ReturnType<typeof createMockRepository>;
   let eventEmitter: { emit: jest.Mock };
+  let audit: { record: jest.Mock };
 
   beforeEach(async () => {
     repository = createMockRepository();
     eventEmitter = { emit: jest.fn() };
+    audit = { record: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SubscriptionService,
         { provide: TenantRepository, useValue: repository },
         { provide: EventEmitter2, useValue: eventEmitter },
+        { provide: AuditLogService, useValue: audit },
       ],
     }).compile();
 
@@ -106,6 +111,63 @@ describe('SubscriptionService', () => {
         'business.plan.changed',
         expect.objectContaining({ businessId: BUSINESS_ID, fromPlan: 'starter', toPlan: 'growth' }),
       );
+    });
+
+    // ── audit trail ── (G002: the billing route was audited, this alias was not)
+
+    it('records the tier change with the acting owner and before/after plans', async () => {
+      repository.findBusinessById.mockResolvedValue(makeBusiness({ plan: 'starter' }));
+      repository.countChannelAccounts.mockResolvedValue(1);
+      repository.countTeamMembers.mockResolvedValue(2);
+      repository.updateBusiness.mockResolvedValue(makeBusiness({ plan: 'growth' }));
+
+      await service.changePlan(
+        BUSINESS_ID,
+        { plan: SubscriptionTier.GROWTH, reason: 'more seats' },
+        { id: OWNER_ID, email: 'owner@example.com' },
+      );
+
+      expect(audit.record).toHaveBeenCalledTimes(1);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          businessId: BUSINESS_ID,
+          actorType: 'TEAM_MEMBER',
+          actorId: OWNER_ID,
+          actorEmail: 'owner@example.com',
+          action: 'UPDATE',
+          resourceType: SUBSCRIPTION_RESOURCE,
+          resourceId: BUSINESS_ID,
+          before: { plan: 'starter' },
+          after: expect.objectContaining({ plan: 'growth', reason: 'more seats' }),
+        }),
+      );
+    });
+
+    it('attributes a change with no actor to SYSTEM', async () => {
+      repository.findBusinessById.mockResolvedValue(makeBusiness({ plan: 'starter' }));
+      repository.countChannelAccounts.mockResolvedValue(1);
+      repository.countTeamMembers.mockResolvedValue(2);
+      repository.updateBusiness.mockResolvedValue(makeBusiness({ plan: 'growth' }));
+
+      await service.changePlan(BUSINESS_ID, { plan: SubscriptionTier.GROWTH });
+
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ actorType: 'SYSTEM', actorId: null }),
+      );
+    });
+
+    it('records nothing for a no-op change or a blocked downgrade', async () => {
+      repository.findBusinessById.mockResolvedValue(makeBusiness({ plan: 'starter' }));
+      await service.changePlan(BUSINESS_ID, { plan: SubscriptionTier.STARTER });
+      expect(audit.record).not.toHaveBeenCalled();
+
+      repository.findBusinessById.mockResolvedValue(makeBusiness({ plan: 'growth' }));
+      repository.countChannelAccounts.mockResolvedValue(99);
+      repository.countTeamMembers.mockResolvedValue(99);
+      await expect(
+        service.changePlan(BUSINESS_ID, { plan: SubscriptionTier.STARTER }),
+      ).rejects.toThrow();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it('is a no-op when the target plan equals the current plan', async () => {

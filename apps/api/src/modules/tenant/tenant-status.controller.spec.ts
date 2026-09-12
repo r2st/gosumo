@@ -1,7 +1,7 @@
 /**
- * TenantController — suspend / activate / connect channel / disconnect channel.
+ * TenantController — suspend / activate / connect channel / disconnect channel / change plan.
  *
- * All four routes are gated and now write to audit_logs (G002). The service
+ * All five routes are gated and now write to audit_logs (G002). The service
  * attributes the row to whoever it is handed; the controller is the only place
  * that knows who that is, so what is pinned here is that the JWT subject and
  * email reach the service rather than being dropped on the way through.
@@ -29,6 +29,7 @@ describe('TenantController audited routes', () => {
     connectChannel: jest.Mock;
     disconnectChannel: jest.Mock;
   };
+  let subscriptionService: { changePlan: jest.Mock };
 
   beforeEach(() => {
     tenantService = {
@@ -37,9 +38,10 @@ describe('TenantController audited routes', () => {
       connectChannel: jest.fn().mockResolvedValue({ id: 'ch' }),
       disconnectChannel: jest.fn().mockResolvedValue(undefined),
     };
+    subscriptionService = { changePlan: jest.fn().mockResolvedValue({ plan: 'growth' }) };
     controller = new TenantController(
       tenantService as unknown as TenantService,
-      {} as never,
+      subscriptionService as never,
       {} as never,
       {} as never,
     );
@@ -79,6 +81,17 @@ describe('TenantController audited routes', () => {
     await controller.disconnectChannel(BUSINESS_ID, OWNER, 'ch-1');
 
     expect(tenantService.disconnectChannel).toHaveBeenCalledWith(BUSINESS_ID, 'ch-1', {
+      id: OWNER_ID,
+      email: 'owner@example.com',
+    });
+  });
+
+  it('hands the acting owner to changePlan', async () => {
+    const dto = { plan: 'growth' } as never;
+
+    await controller.changePlan(BUSINESS_ID, OWNER, dto);
+
+    expect(subscriptionService.changePlan).toHaveBeenCalledWith(BUSINESS_ID, dto, {
       id: OWNER_ID,
       email: 'owner@example.com',
     });

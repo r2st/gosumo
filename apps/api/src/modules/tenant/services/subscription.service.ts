@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
+import { AuditAction } from '@gosumo/database';
+import { AuditActor, AuditLogService } from '../../../common/services/audit-log.service';
 import { TenantRepository } from '../tenant.repository';
 import {
   PLAN_CATALOG,
@@ -27,6 +29,9 @@ import {
  * upgrades/downgrades. Downgrades are validated against live resource usage so
  * a business can never drop to a tier it already exceeds.
  */
+/** `audit_logs.resource_type` for tier changes on `businesses.plan`. */
+export const SUBSCRIPTION_RESOURCE = 'business_subscription';
+
 @Injectable()
 export class SubscriptionService {
   private readonly logger = new Logger(SubscriptionService.name);
@@ -34,6 +39,7 @@ export class SubscriptionService {
   constructor(
     private readonly repository: TenantRepository,
     private readonly eventEmitter: EventEmitter2,
+    private readonly audit: AuditLogService,
   ) {}
 
   /**
@@ -61,6 +67,7 @@ export class SubscriptionService {
   async changePlan(
     businessId: string,
     dto: ChangePlanDto,
+    actor?: AuditActor,
   ): Promise<SubscriptionResponse> {
     const business = await this.getBusinessOrThrow(businessId);
     const target = PLAN_CATALOG[dto.plan];
@@ -84,6 +91,21 @@ export class SubscriptionService {
       toPlan: target.id,
       reason: dto.reason,
       timestamp: new Date().toISOString(),
+    });
+
+    // `businesses.plan` is one mutable column; the billing route that changes
+    // the realty subscription is audited and this alias was not.
+    await this.audit.record({
+      businessId,
+      actorType: actor ? 'TEAM_MEMBER' : 'SYSTEM',
+      actorId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      action: AuditAction.UPDATE,
+      resourceType: SUBSCRIPTION_RESOURCE,
+      resourceId: businessId,
+      before: { plan: fromPlan },
+      after: { plan: target.id, limits: target.limits, reason: dto.reason ?? null },
+      description: `Subscription changed ${fromPlan} → ${target.id}`,
     });
 
     this.logger.log(
