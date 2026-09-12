@@ -73,6 +73,7 @@ interface Harness {
   isRealtyTenant: jest.Mock;
   load: jest.Mock;
   ensureLeadByPhone: jest.Mock;
+  setOptOut: jest.Mock;
   processTurn: jest.Mock;
   evaluateAutonomy: jest.Mock;
   createApproval: jest.Mock;
@@ -86,6 +87,7 @@ function makeHarness(): Harness {
     triggerMessage: { direction: 'INBOUND' },
   });
   const ensureLeadByPhone = jest.fn().mockResolvedValue(makeLead());
+  const setOptOut = jest.fn().mockResolvedValue(makeLead({ optOut: true }));
   const processTurn = jest.fn().mockResolvedValue(makeDecision());
   const evaluateAutonomy = jest.fn().mockResolvedValue({ autoSend: true, reason: 'confidence_ok' });
   const createApproval = jest.fn().mockResolvedValue({ id: 'appr-1' });
@@ -94,7 +96,7 @@ function makeHarness(): Harness {
   const bridge = new RealtyMessageBridgeService(
     { isRealtyTenant } as unknown as RealtyTenantService,
     { load } as unknown as ContextLoaderService,
-    { ensureLeadByPhone } as unknown as RealtyLeadsService,
+    { ensureLeadByPhone, setOptOut } as unknown as RealtyLeadsService,
     { processTurn } as unknown as RealtyAiService,
     { evaluateAutonomy, createApproval } as unknown as RealtyBrokerService,
     { sendMessage } as unknown as ChannelAdapterService,
@@ -106,6 +108,7 @@ function makeHarness(): Harness {
     isRealtyTenant,
     load,
     ensureLeadByPhone,
+    setOptOut,
     processTurn,
     evaluateAutonomy,
     createApproval,
@@ -203,6 +206,37 @@ describe('RealtyMessageBridgeService', () => {
       await h.bridge.handleMessageReceived(makeEvent());
 
       expect(h.processTurn).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('"Reply STOP to opt out"', () => {
+    it.each(['STOP', 'stop.', 'Unsubscribe', 'band karo'])(
+      '%j opts the lead out, runs no AI turn and sends nothing back',
+      async (text) => {
+        const h = makeHarness();
+        h.load.mockResolvedValue({ messageText: text, triggerMessage: { direction: 'INBOUND' } });
+
+        await h.bridge.handleMessageReceived(makeEvent());
+
+        expect(h.ensureLeadByPhone).toHaveBeenCalled();
+        expect(h.setOptOut).toHaveBeenCalledWith('biz-1', 'lead-1', 'buyer_reply');
+        expect(h.processTurn).not.toHaveBeenCalled();
+        expect(h.sendMessage).not.toHaveBeenCalled();
+        expect(h.createApproval).not.toHaveBeenCalled();
+      },
+    );
+
+    it('a message that merely contains "stop" is a normal turn', async () => {
+      const h = makeHarness();
+      h.load.mockResolvedValue({
+        messageText: 'can we stop by the site on Sunday?',
+        triggerMessage: { direction: 'INBOUND' },
+      });
+
+      await h.bridge.handleMessageReceived(makeEvent());
+
+      expect(h.setOptOut).not.toHaveBeenCalled();
+      expect(h.processTurn).toHaveBeenCalled();
     });
   });
 

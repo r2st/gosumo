@@ -9,6 +9,7 @@ import {
 import type { MessageReceivedEvent, OutboundMessage } from '@gosumo/shared';
 import { ContextLoaderService } from '../pipeline/context-loader.service';
 import { ChannelAdapterService } from '../../channel-adapter/channel-adapter.service';
+import { isOptOutMessage } from '../../realty-leads/opt-out-keywords.util';
 import { RealtyLeadsService, LeadResponseDto } from '../../realty-leads/realty-leads.service';
 import { RealtyBrokerService } from '../../realty-broker/realty-broker.service';
 import { RealtyTenantService } from './realty-tenant.service';
@@ -131,6 +132,17 @@ export class RealtyMessageBridgeService {
       this.logger.warn(
         `[${traceId}] Could not resolve a lead for "${event.senderExternalId}" — skipping realty turn`,
       );
+      return;
+    }
+
+    // 2b) "Reply STOP to opt out" — the DPDPA notice promises it, so honour it
+    //     before the AI gets a say. Whole-message match only (see the util);
+    //     the lead's opt_out flag is what every downstream guard reads, and
+    //     nothing is sent back: an opted-out number gets no automated message,
+    //     confirmation included.
+    if (isOptOutMessage(messageText)) {
+      await this.leads.setOptOut(event.businessId, lead.id, 'buyer_reply');
+      this.logger.log(`[${traceId}] Lead ${lead.id} opted out by reply — realty turn suppressed`);
       return;
     }
 

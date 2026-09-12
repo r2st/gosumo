@@ -777,6 +777,28 @@ describe('RealtyLeadsService', () => {
         expect.objectContaining({ type: 'realty.lead.opted_out', whatsappPhone: PHONE }),
       );
     });
+
+    it('records who opted the buyer out on the consent log', async () => {
+      repository.findById.mockResolvedValue(
+        makeLead({ consent_log: [{ text: 'dpdpa_notice_sent', at: '2026-07-01T00:00:00Z' }] }) as never,
+      );
+      repository.update.mockResolvedValue(makeLead({ opt_out: true }) as never);
+
+      await service.setOptOut(BUSINESS_ID, LEAD_ID, 'buyer_reply');
+
+      const data = repository.update.mock.calls[0]![2] as { consentLog: Array<{ text: string }> };
+      expect(data.consentLog.map((e) => e.text)).toEqual(['dpdpa_notice_sent', 'opted_out:buyer_reply']);
+    });
+
+    it('is idempotent — an already opted-out lead is returned untouched, no write, no event', async () => {
+      repository.findById.mockResolvedValue(makeLead({ opt_out: true }) as never);
+
+      const res = await service.setOptOut(BUSINESS_ID, LEAD_ID, 'buyer_reply');
+
+      expect(res.optOut).toBe(true);
+      expect(repository.update).not.toHaveBeenCalled();
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
+    });
   });
 
   // ── Ingest ──

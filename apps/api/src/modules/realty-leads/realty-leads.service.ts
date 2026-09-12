@@ -731,12 +731,22 @@ export class RealtyLeadsService {
     return this.mapResponse(updated);
   }
 
-  /** Honor an opt-out: halt automation and emit so cadence engines stop sending. */
-  async setOptOut(businessId: string, leadId: string): Promise<LeadResponseDto> {
+  /**
+   * Honor an opt-out: halt automation and emit so cadence engines stop sending.
+   * Idempotent — a buyer who types STOP twice (or an operator clicking after the
+   * buyer already did) must not double the consent log or re-fan-out the
+   * cascade. `source` is what the consent ledger records as the actor.
+   */
+  async setOptOut(
+    businessId: string,
+    leadId: string,
+    source: 'operator' | 'buyer_reply' = 'operator',
+  ): Promise<LeadResponseDto> {
     const lead = await this.mustFind(businessId, leadId);
+    if (lead.opt_out) return this.mapResponse(lead);
     const consentLog = [
       ...this.readMemory(lead.consent_log),
-      { text: 'opted_out', at: new Date().toISOString() },
+      { text: `opted_out:${source}`, at: new Date().toISOString() },
     ];
     const updated = await this.repository.update(businessId, leadId, {
       optOut: true,
@@ -750,7 +760,7 @@ export class RealtyLeadsService {
       leadId,
       whatsappPhone: lead.whatsapp_phone,
     });
-    this.logger.warn(`Lead ${leadId} opted out — automation halted`);
+    this.logger.warn(`Lead ${leadId} opted out (${source}) — automation halted`);
     return this.mapResponse(updated);
   }
 
