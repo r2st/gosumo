@@ -1184,8 +1184,10 @@ export class AiEngineService {
     try {
       await this.channelAdapter.sendMessage(context.channel as ChannelType, outbound, businessId, traceId);
     } catch (err) {
-      this.logger.warn(
-        `[${traceId}] Outbound delivery failed: ${err instanceof Error ? err.message : String(err)}`,
+      this.logger.error(
+        `[${traceId}] Outbound delivery failed — customer will not receive the AI response: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
       );
     }
   }

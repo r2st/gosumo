@@ -1416,6 +1416,20 @@ describe('AiEngineService — delivery and event handling', () => {
     expect(result.outcome).toBe('AUTO_EXECUTED');
   });
 
+  it('logs delivery failure at ERROR level, not WARN (G003)', async () => {
+    const h = makeHarness();
+    h.context.value = makeContext('kal 3 baje book karna hai');
+    h.sendMessage.mockRejectedValueOnce(new Error('channel offline'));
+    const errorSpy = jest.spyOn(h.service['logger'], 'error').mockImplementation();
+
+    await h.service.processMessage('b1', dto);
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Outbound delivery failed'),
+    );
+    errorSpy.mockRestore();
+  });
+
   it('emits an alternative intent when the classifier produced a secondary one', async () => {
     const h = makeHarness();
     h.context.value = makeContext('kal 3 baje book karna hai aur price bhi batao');
