@@ -236,7 +236,7 @@ describe('app.config', () => {
       expect(load().openrouter).toEqual({
         apiKey: undefined,
         baseUrl: 'https://openrouter.ai/api/v1/chat/completions',
-        referer: 'https://gosumo.aiknol.com',
+        referer: 'https://gosumo.doaide.com',
         title: 'GoSumo',
       });
     });

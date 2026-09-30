@@ -24,7 +24,7 @@ export const metadata: Metadata = {
     template: '%s · GoSumo',
   },
   description:
-    'GoSumo unifies WhatsApp, Instagram, SMS, Web Chat and Email into one AI-powered inbox for small businesses in India.',
+    'GoSumo, a DoAide product, unifies WhatsApp, Instagram, SMS, Web Chat and Email into one AI-powered inbox for small businesses in India.',
   applicationName: 'GoSumo',
   manifest: '/manifest.json',
   appleWebApp: {

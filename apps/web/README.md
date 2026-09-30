@@ -1,7 +1,7 @@
 # @gosumo/web
 
 The GoSumo operator dashboard — a Next.js 14 (App Router) + React + Tailwind CSS frontend
-for the AI-powered client management platform.
+for the AI-powered client management platform. GoSumo is a [DoAide](https://doaide.com) product.
 
 ## Stack
 

@@ -34,5 +34,5 @@ export const DEPRECATION_POLICY = {
   /** Minimum notice between announcing a deprecation and its sunset. */
   minimumNoticeDays: 180,
   /** Where the deprecation notes live, linked from every deprecated response. */
-  documentationUrl: 'https://gosumo.aiknol.com/docs/api/deprecations',
+  documentationUrl: 'https://gosumo.doaide.com/docs/api/deprecations',
 } as const;

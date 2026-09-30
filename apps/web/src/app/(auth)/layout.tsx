@@ -36,7 +36,15 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             </li>
           </ul>
         </div>
-        <p className="relative text-xs text-indigo-200">© {new Date().getFullYear()} GoSumo. All rights reserved.</p>
+        <p className="relative text-xs text-indigo-200">
+          © {new Date().getFullYear()} GoSumo. All rights reserved.
+          <span className="mx-1.5">·</span>
+          A{' '}
+          <a href="https://doaide.com" target="_blank" rel="noopener noreferrer" className="font-medium hover:underline">
+            DoAide
+          </a>{' '}
+          product
+        </p>
       </div>
 
       {/* Form panel */}

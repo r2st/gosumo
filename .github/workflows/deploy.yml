@@ -1,5 +1,5 @@
 # ============================================================
-# GoSumo — CI/CD: build, test, publish image, deploy to Hetzner
+# GoSumo (a DoAide product) — CI/CD: build, test, publish image, deploy to Hetzner
 #
 # Flow:
 #   push to main  ->  lint + test  ->  build & push image to GHCR

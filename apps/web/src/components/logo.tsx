@@ -29,15 +29,33 @@ export function LogoMark({ className }: { className?: string }) {
 export function Logo({
   className,
   showWordmark = true,
+  showParentBrand = false,
 }: {
   className?: string;
   showWordmark?: boolean;
+  showParentBrand?: boolean;
 }) {
   return (
     <div className={cn('flex items-center gap-2.5', className)}>
       <LogoMark className="h-8 w-8 shadow-sm rounded-[0.45rem]" />
       {showWordmark && (
-        <span className="text-lg font-extrabold tracking-tight text-foreground">GoSumo</span>
+        <div className="flex flex-col">
+          <span className="text-lg font-extrabold tracking-tight text-foreground">GoSumo</span>
+          {showParentBrand && (
+            <span className="text-[10px] font-medium tracking-wide text-muted-foreground">
+              A{' '}
+              <a
+                href="https://doaide.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold hover:underline"
+              >
+                DoAide
+              </a>{' '}
+              Product
+            </span>
+          )}
+        </div>
       )}
     </div>
   );

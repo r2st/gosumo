@@ -358,7 +358,7 @@ async function bootstrap() {
   if (swaggerEnabled()) {
     const config = new DocumentBuilder()
       .setTitle('GoSumo API')
-      .setDescription('AI-powered client management platform API')
+      .setDescription('AI-powered client management platform API — a DoAide product')
       .setVersion('1.0')
       .addBearerAuth(
         { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },

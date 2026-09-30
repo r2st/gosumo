@@ -35,7 +35,8 @@ describe('Sidebar', () => {
     // A duplicated or missing route here is invisible in review but leaves a
     // whole surface unreachable from the shell.
     renderSidebar();
-    const hrefs = screen.getAllByRole('link').map((el) => el.getAttribute('href'));
+    const nav = screen.getByRole('navigation');
+    const hrefs = Array.from(nav.querySelectorAll('a')).map((el) => el.getAttribute('href'));
     const expected = [...NAV_TOP, ...NAV_SECTIONS.flatMap((s) => s.items)].map((i) => i.href);
     expect(hrefs).toEqual(expected);
     expect(new Set(hrefs).size).toBe(hrefs.length);
@@ -137,5 +138,12 @@ describe('Sidebar', () => {
     // Rendered copy comes from t(labelKey), not the hardcoded `label`.
     expect(screen.getByText('Dashboard')).toBeInTheDocument();
     expect(screen.getByText('Leads')).toBeInTheDocument();
+  });
+
+  it('credits DoAide in the sidebar footer', () => {
+    renderSidebar();
+    const doaideLink = screen.getByRole('link', { name: 'DoAide' });
+    expect(doaideLink).toHaveAttribute('href', 'https://doaide.com');
+    expect(doaideLink).toHaveAttribute('target', '_blank');
   });
 });

@@ -124,12 +124,14 @@ describe('landing page structure', () => {
     }
   });
 
-  it('dates the footer to the current year', () => {
+  it('dates the footer to the current year and credits DoAide', () => {
     render(<Home />);
 
     expect(
       screen.getByText(new RegExp(`© ${new Date().getFullYear()} GoSumo`)),
     ).toBeInTheDocument();
+    const footer = screen.getByText(new RegExp(`© ${new Date().getFullYear()} GoSumo`)).closest('p')!;
+    expect(footer.textContent).toContain('DoAide');
   });
 
   it('describes the product as realty-first in its page metadata', () => {

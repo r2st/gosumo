@@ -106,7 +106,7 @@ function fillCredentials() {
 }
 
 describe('AuthLayout', () => {
-  it('frames the form with the brand panel and the current year', () => {
+  it('frames the form with the brand panel, current year and DoAide attribution', () => {
     render(
       <AuthLayout>
         <p>form goes here</p>
@@ -117,9 +117,9 @@ describe('AuthLayout', () => {
     expect(
       screen.getByText(/WhatsApp-native AI that qualifies buyers/),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(new RegExp(`© ${new Date().getFullYear()} GoSumo`)),
-    ).toBeInTheDocument();
+    const copyright = screen.getByText(new RegExp(`© ${new Date().getFullYear()} GoSumo`));
+    expect(copyright).toBeInTheDocument();
+    expect(copyright.closest('p')!.textContent).toContain('DoAide');
   });
 });
 

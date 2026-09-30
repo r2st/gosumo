@@ -2,7 +2,8 @@
   "name": "gosumo",
   "version": "0.1.0",
   "private": true,
-  "description": "GoSumo - AI-powered client management platform",
+  "description": "GoSumo - AI-powered client management platform (a DoAide product)",
+  "homepage": "https://gosumo.doaide.com",
   "packageManager": "pnpm@11.9.0",
   "scripts": {
     "build": "turbo build",

@@ -83,6 +83,17 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         <div className="border-t border-sidebar-border p-4 text-xs text-sidebar-muted">
           <p className="font-semibold text-sidebar-foreground">GoSumo</p>
           <p>AI client management</p>
+          <p className="mt-1 text-[10px]">
+            Powered by{' '}
+            <a
+              href="https://doaide.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-sidebar-foreground hover:underline"
+            >
+              DoAide
+            </a>
+          </p>
         </div>
       </aside>
     </>

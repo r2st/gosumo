@@ -71,7 +71,7 @@ export class RealtySheetsController {
     await this.sheets.completeOAuth(businessId, code);
     const dashboardUrl = this.config.get<string>(
       'DASHBOARD_URL',
-      'https://gosumo.aiknol.com',
+      'https://gosumo.doaide.com',
     );
     res.redirect(`${dashboardUrl}/settings/integrations?sheets=connected`);
   }

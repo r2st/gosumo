@@ -361,7 +361,20 @@ export default function Home() {
               Start free trial
             </Link>
           </nav>
-          <p className="text-sm text-slate-400">© {year} GoSumo. All rights reserved.</p>
+          <p className="text-sm text-slate-400">
+            © {year} GoSumo. All rights reserved.
+            <span className="mx-1.5">·</span>
+            A{' '}
+            <a
+              href="https://doaide.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium transition-colors hover:text-slate-900"
+            >
+              DoAide
+            </a>{' '}
+            product
+          </p>
         </div>
       </footer>
     </div>

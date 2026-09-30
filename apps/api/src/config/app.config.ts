@@ -39,7 +39,7 @@ export default registerAs('app', () => ({
     apiKey: process.env['OPENROUTER_API_KEY'],
     baseUrl: process.env['OPENROUTER_BASE_URL'] ?? 'https://openrouter.ai/api/v1/chat/completions',
     // Attribution headers OpenRouter uses for its dashboard/rankings.
-    referer: process.env['OPENROUTER_REFERER'] ?? 'https://gosumo.aiknol.com',
+    referer: process.env['OPENROUTER_REFERER'] ?? 'https://gosumo.doaide.com',
     title: process.env['OPENROUTER_TITLE'] ?? 'GoSumo',
   },
 
