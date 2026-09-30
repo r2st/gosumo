@@ -557,7 +557,7 @@ describe('CadenceEngineService', () => {
       // Deleted between the enrolment query and the lead query: absent from the
       // prefetch, and the read-through finds nothing either.
       leadsService.getLeadsByIds.mockResolvedValue(new Map() as never);
-      leadsService.getLead.mockRejectedValue(new Error('Lead not found'));
+      leadsService.getLead.mockRejectedValue(new NotFoundException('Lead not found'));
 
       const result = await engine.processDueEnrollments(NOW);
 

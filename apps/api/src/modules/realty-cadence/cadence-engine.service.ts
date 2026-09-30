@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import type { realty_cadence_enrollments } from '@prisma/client';
 import {
@@ -270,10 +270,16 @@ export class CadenceEngineService {
     if (!lead) {
       try {
         lead = await this.leadsService.getLead(businessId, enrollment.lead_id);
-      } catch {
-        // Lead vanished (deleted) — stop the cadence.
-        await this.finish(businessId, enrollment, 'STOPPED', 'lead_missing');
-        return 'stopped';
+      } catch (err) {
+        if (err instanceof NotFoundException) {
+          await this.finish(businessId, enrollment, 'STOPPED', 'lead_missing');
+          return 'stopped';
+        }
+        this.logger.error(
+          `Cadence step deferred: could not load lead ${enrollment.lead_id} ` +
+            `(business ${businessId}): ${err instanceof Error ? err.message : String(err)}`,
+        );
+        throw err;
       }
     }
 

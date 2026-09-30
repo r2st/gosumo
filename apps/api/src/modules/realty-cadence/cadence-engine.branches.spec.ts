@@ -23,7 +23,7 @@
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { Logger } from '@nestjs/common';
+import { Logger, NotFoundException } from '@nestjs/common';
 import { CadenceTrigger, CadenceStopOn, LeadStage } from '@gosumo/shared';
 
 import { CadenceEngineService } from './cadence-engine.service';
@@ -334,10 +334,10 @@ describe('CadenceEngineService (branches)', () => {
   });
 
   describe('processDueEnrollments with a vanished lead', () => {
-    it('stops the enrolment with lead_missing when the lead lookup throws', async () => {
+    it('stops the enrolment with lead_missing when the lead is not found', async () => {
       repository.findDueEnrollments.mockResolvedValue([makeEnrollment()] as never);
       repository.listStepsByCadence.mockResolvedValue([makeStep()] as never);
-      leadsService.getLead.mockRejectedValue(new Error('Lead not found'));
+      leadsService.getLead.mockRejectedValue(new NotFoundException('Lead not found'));
 
       const result = await engine.processDueEnrollments(NOW);
 
@@ -346,6 +346,19 @@ describe('CadenceEngineService (branches)', () => {
         BUSINESS_ID,
         'enr-1',
         expect.objectContaining({ status: 'STOPPED', stopReason: 'lead_missing' }),
+      );
+    });
+
+    it('propagates a transient error instead of stopping the cadence (G003)', async () => {
+      repository.findDueEnrollments.mockResolvedValue([makeEnrollment()] as never);
+      repository.listStepsByCadence.mockResolvedValue([makeStep()] as never);
+      leadsService.getLead.mockRejectedValue(new Error('ECONNREFUSED'));
+
+      await expect(engine.processDueEnrollments(NOW)).rejects.toThrow('ECONNREFUSED');
+      expect(repository.updateEnrollment).not.toHaveBeenCalledWith(
+        BUSINESS_ID,
+        'enr-1',
+        expect.objectContaining({ stopReason: 'lead_missing' }),
       );
     });
 
