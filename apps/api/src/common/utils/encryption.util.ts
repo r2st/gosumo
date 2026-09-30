@@ -164,8 +164,13 @@ export function decryptJson(encoded: string): Record<string, unknown> {
         return parsed as Record<string, unknown>;
       }
     } catch {
-      // ignore
+      // Both decryption and plain-JSON parse failed — the stored value is
+      // unrecoverable with the current key material.
     }
+    const preview = encoded.length > 8 ? encoded.slice(0, 8) + '…' : encoded;
+    console.warn(
+      `[decryptJson] Failed to decrypt or parse credential (starts "${preview}"); returning empty object`,
+    );
     return {};
   }
 }
