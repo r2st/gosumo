@@ -147,5 +147,15 @@ describe('BusinessController', () => {
       expect(result.currentPeriodStart).toBeDefined();
       expect(result.currentPeriodEnd).toBeDefined();
     });
+
+    it('should log an error when the subscription service throws (G003)', async () => {
+      const errorSpy = jest.spyOn(controller['logger'], 'error').mockImplementation();
+      subscriptionService.getSubscription.mockRejectedValue(new Error('DB connection lost'));
+      await controller.getSubscription(BIZ_ID);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('DB connection lost'),
+      );
+      errorSpy.mockRestore();
+    });
   });
 });

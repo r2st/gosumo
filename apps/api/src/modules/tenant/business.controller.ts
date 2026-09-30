@@ -87,7 +87,11 @@ export class BusinessController {
         trialEndsAt: null,
         usage: [],
       };
-    } catch {
+    } catch (err) {
+      this.logger.error(
+        `Failed to load subscription for business ${businessId}; ` +
+          `returning STARTER fallback: ${err instanceof Error ? err.message : String(err)}`,
+      );
       return {
         plan: 'STARTER',
         status: 'ACTIVE',
