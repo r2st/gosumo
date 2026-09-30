@@ -1480,7 +1480,11 @@ export class BookingService {
           avatarUrl: m.avatar_url ?? null,
         })),
       };
-    } catch {
+    } catch (err) {
+      this.logger.warn(
+        `Staff roster query failed for business ${businessId}; ` +
+          `returning empty: ${err instanceof Error ? err.message : String(err)}`,
+      );
       return { staff: [] };
     }
   }

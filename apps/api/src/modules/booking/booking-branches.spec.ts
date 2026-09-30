@@ -1237,6 +1237,18 @@ describe('BookingService — branch coverage', () => {
       await expect(service.getStaffMembers(BUSINESS_ID)).resolves.toEqual({ staff: [] });
     });
 
+    it('logs a warning when the roster query fails (G003)', async () => {
+      const warnSpy = jest.spyOn(service['logger'], 'warn').mockImplementation();
+      teamMembers.findMany.mockRejectedValue(new Error('connection reset'));
+
+      await service.getStaffMembers(BUSINESS_ID);
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('connection reset'),
+      );
+      warnSpy.mockRestore();
+    });
+
     it('degrades to an empty roster when the query returns nothing', async () => {
       teamMembers.findMany.mockResolvedValue(null);
 
