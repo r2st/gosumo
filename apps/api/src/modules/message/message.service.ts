@@ -424,7 +424,7 @@ export class MessageService {
         {},
       );
     } catch (error) {
-      this.logger.debug(
+      this.logger.warn(
         `Could not apply message.sent for ${event.externalMessageId}: ${this.errMsg(error)}`,
       );
     }
@@ -448,7 +448,7 @@ export class MessageService {
         { failedAt: new Date().toISOString(), failureReason: event.reason },
       );
     } catch (error) {
-      this.logger.debug(
+      this.logger.warn(
         `Could not apply message.failed for ${event.messageId}: ${this.errMsg(error)}`,
       );
     }

@@ -595,6 +595,22 @@ describe('MessageService — features', () => {
       await expect(service.handleMessageSent(sentEvent())).resolves.toBeUndefined();
     });
 
+    it('logs delivery-status failures at WARN, not DEBUG (G003)', async () => {
+      repository.findByExternalId.mockRejectedValue(new Error('db down'));
+      const warnSpy = jest.spyOn(service['logger'], 'warn');
+      const debugSpy = jest.spyOn(service['logger'], 'debug');
+      await service.handleMessageSent(sentEvent());
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('db down'));
+      expect(debugSpy).not.toHaveBeenCalledWith(expect.stringContaining('db down'));
+
+      warnSpy.mockClear();
+      debugSpy.mockClear();
+      repository.findById.mockRejectedValue(new Error('timeout'));
+      await service.handleMessageFailed(failedEvent());
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('timeout'));
+      expect(debugSpy).not.toHaveBeenCalledWith(expect.stringContaining('timeout'));
+    });
+
     it('ignores a failed event for a message this tenant cannot see', async () => {
       repository.findById.mockResolvedValue(null);
       await service.handleMessageFailed(failedEvent());
