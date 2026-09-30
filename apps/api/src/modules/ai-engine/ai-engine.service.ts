@@ -960,7 +960,11 @@ export class AiEngineService {
         autoExecute: numberOr(s['autoExecuteThreshold'], DEFAULT_AUTO_EXECUTE_THRESHOLD),
         draftReview: numberOr(s['reviewThreshold'], DEFAULT_DRAFT_REVIEW_THRESHOLD),
       };
-    } catch {
+    } catch (err) {
+      this.logger.warn(
+        `Could not read confidence thresholds for business ${businessId}; ` +
+          `returning defaults: ${err instanceof Error ? err.message : String(err)}`,
+      );
       return {
         autoExecute: DEFAULT_AUTO_EXECUTE_THRESHOLD,
         draftReview: DEFAULT_DRAFT_REVIEW_THRESHOLD,

@@ -1291,6 +1291,19 @@ describe('AiEngineService — confidence thresholds', () => {
     });
   });
 
+  it('logs a warning when falling back to defaults (G003)', async () => {
+    const h = makeHarness();
+    const warnSpy = jest.spyOn(h.service['logger'], 'warn').mockImplementation();
+    h.businesses.findUniqueOrThrow.mockRejectedValueOnce(new Error('DB timeout'));
+
+    await h.service.getConfidenceThresholds('b1');
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('DB timeout'),
+    );
+    warnSpy.mockRestore();
+  });
+
   it('merges a partial update against the stored settings', async () => {
     const h = makeHarness();
     h.businesses.findUniqueOrThrow.mockResolvedValueOnce({
