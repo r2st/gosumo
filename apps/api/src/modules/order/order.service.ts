@@ -903,7 +903,7 @@ export class OrderService {
       const currentStatus = order.status as OrderStatus;
 
       if (currentStatus !== OrderStatus.CANCELLED) {
-        this.logger.debug(
+        this.logger.warn(
           `Order ${order.order_number} is in status ${currentStatus}, ` +
             'skipping refund transition (expected CANCELLED)',
         );
@@ -952,7 +952,7 @@ export class OrderService {
 
       const currentStatus = order.status as OrderStatus;
       if (currentStatus !== OrderStatus.SHIPPED) {
-        this.logger.debug(
+        this.logger.warn(
           `Order ${order.order_number} is in status ${currentStatus}, ` +
             'skipping delivered transition (expected SHIPPED)',
         );
