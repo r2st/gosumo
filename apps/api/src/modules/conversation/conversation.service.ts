@@ -1079,7 +1079,7 @@ export class ConversationService {
         event.conversationId,
       );
     } catch (error) {
-      this.logger.debug(
+      this.logger.warn(
         `Could not increment human_message_count for ${event.conversationId}: ${this.errMsg(error)}`,
       );
     }
