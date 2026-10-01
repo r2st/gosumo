@@ -80,8 +80,8 @@ export class OnboardingController {
 
   @Post('chat')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Ask the AI onboarding assistant a question' })
-  @ApiResponse({ status: 200, description: 'Assistant reply returned' })
+  @ApiOperation({ summary: 'Ask the AI onboarding digital robot a question' })
+  @ApiResponse({ status: 200, description: 'Digital robot reply returned' })
   async chat(
     @TenantId() businessId: string,
     @Body() dto: OnboardingChatDto,

@@ -490,7 +490,7 @@ export class RealtyExchangeService {
       );
       const result = await this.llm.complete({
         system:
-          'You are a co-broking desk assistant for Indian real estate. In 2 sentences, ' +
+          'You are a co-broking desk digital robot for Indian real estate. In 2 sentences, ' +
           'advise a broker which network match to syndicate first and why, weighing buyer ' +
           'fit against counterparty reliability. Be concrete and concise.',
         user:

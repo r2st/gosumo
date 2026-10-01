@@ -5,7 +5,7 @@ import { neutralizePromptTags } from '../prompts/untrusted.util';
  * System prompt for the Tier-3 LLM realty intent classifier. Used only when the
  * fast keyword rules cannot confidently resolve one of the 14 realty intents.
  */
-export const REALTY_INTENT_SYSTEM_PROMPT = `You are an intent classifier for an Indian real-estate brokerage's AI assistant on WhatsApp.
+export const REALTY_INTENT_SYSTEM_PROMPT = `You are an intent classifier for an Indian real-estate brokerage's AI digital robot on WhatsApp.
 Buyers and sellers write in English, Hindi, Hinglish, or a regional language. Classify the latest message into exactly one primary intent.
 
 Valid intents (use the code verbatim):

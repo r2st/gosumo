@@ -271,7 +271,7 @@ function BehaviourForm() {
       <ReadOnlyFieldset readOnly={!canManage}>
         <SettingsCard
           title="AI behaviour & tone"
-          description="Control how autonomously the assistant replies and the voice it uses."
+          description="Control how autonomously the digital robot replies and the voice it uses."
           footer={
             canManage ? (
               <SaveButton

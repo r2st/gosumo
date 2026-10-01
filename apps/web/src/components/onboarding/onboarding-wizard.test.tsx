@@ -402,7 +402,7 @@ describe('OnboardingChat', () => {
 
   it('sends a typed question with the active step and clears the box', () => {
     render(<OnboardingChat {...props} />);
-    const input = screen.getByPlaceholderText('Ask the assistant…');
+    const input = screen.getByPlaceholderText('Ask the digital robot…');
     fireEvent.change(input, { target: { value: 'Is SMS supported?' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
 
@@ -428,17 +428,17 @@ describe('OnboardingChat', () => {
     expect(screen.queryByRole('button', { name: 'How do I verify?' })).toBeNull();
   });
 
-  it('says so in the thread when the assistant is unreachable', () => {
+  it('says so in the thread when the digital robot is unreachable', () => {
     render(<OnboardingChat {...props} />);
     fireEvent.click(screen.getByRole('button', { name: 'What number format?' }));
     act(() => chatMutate.mock.calls[0][1].onError());
-    expect(screen.getByText(/couldn't reach the assistant/)).toBeInTheDocument();
+    expect(screen.getByText(/couldn't reach the digital robot/)).toBeInTheDocument();
   });
 
   it('keeps the send button disabled for an empty box', () => {
     render(<OnboardingChat {...props} />);
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
-    fireEvent.change(screen.getByPlaceholderText('Ask the assistant…'), {
+    fireEvent.change(screen.getByPlaceholderText('Ask the digital robot…'), {
       target: { value: '   ' },
     });
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
@@ -446,7 +446,7 @@ describe('OnboardingChat', () => {
 
   it('caps the history it sends at the last six turns', () => {
     render(<OnboardingChat {...props} />);
-    const input = screen.getByPlaceholderText('Ask the assistant…');
+    const input = screen.getByPlaceholderText('Ask the digital robot…');
     for (let i = 1; i <= 8; i++) {
       fireEvent.change(input, { target: { value: `q${i}` } });
       fireEvent.click(screen.getByRole('button', { name: 'Send' }));

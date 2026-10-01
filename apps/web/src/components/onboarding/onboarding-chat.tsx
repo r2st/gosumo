@@ -9,7 +9,7 @@ import { useOnboardingChat } from '@/hooks/use-onboarding';
 import type { OnboardingChatMessage, OnboardingStepId } from '@/lib/onboarding-types';
 
 /**
- * OnboardingChat — the contextual AI assistant sidebar. It knows the current
+ * OnboardingChat — the contextual AI digital robot sidebar. It knows the current
  * wizard step and answers setup questions ("What WhatsApp number format do I
  * need?"). Suggested questions for the active step are shown as quick chips.
  */
@@ -55,7 +55,7 @@ export function OnboardingChat({
             ...m,
             {
               role: 'assistant',
-              content: "I couldn't reach the assistant just now. Please try again in a moment.",
+              content: "I couldn't reach the digital robot just now. Please try again in a moment.",
             },
           ]);
         },
@@ -70,7 +70,7 @@ export function OnboardingChat({
           <Sparkles className="h-4 w-4" />
         </span>
         <div className="min-w-0">
-          <p className="text-sm font-semibold leading-tight">Setup Assistant</p>
+          <p className="text-sm font-semibold leading-tight">Setup Digital Robot</p>
           <p className="truncate text-xs text-muted-foreground">Help with: {stepTitle}</p>
         </div>
       </div>
@@ -131,7 +131,7 @@ export function OnboardingChat({
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask the assistant…"
+          placeholder="Ask the digital robot…"
           className="h-9 flex-1 rounded-md border border-input bg-card px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
         <Button type="submit" size="icon" disabled={!input.trim() || chat.isPending} aria-label="Send">

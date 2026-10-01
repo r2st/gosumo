@@ -69,7 +69,7 @@ describe('OnboardingChat, while a reply is in flight', () => {
     // guard inside send() is the thing that actually holds.
     chat.isPending = true;
     const { container } = render(<OnboardingChat {...props} />);
-    fireEvent.change(screen.getByPlaceholderText('Ask the assistant…'), {
+    fireEvent.change(screen.getByPlaceholderText('Ask the digital robot…'), {
       target: { value: 'second question' },
     });
     fireEvent.submit(container.querySelector('form')!);
@@ -83,7 +83,7 @@ describe('OnboardingChat, while a reply is in flight', () => {
 describe('OnboardingChat, degenerate input and replies', () => {
   it('ignores a submit with nothing but whitespace in the box', () => {
     const { container } = render(<OnboardingChat {...props} />);
-    fireEvent.change(screen.getByPlaceholderText('Ask the assistant…'), {
+    fireEvent.change(screen.getByPlaceholderText('Ask the digital robot…'), {
       target: { value: '   ' },
     });
     fireEvent.submit(container.querySelector('form')!);
@@ -98,7 +98,7 @@ describe('OnboardingChat, degenerate input and replies', () => {
 
   it('trims the question before sending it', () => {
     render(<OnboardingChat {...props} />);
-    fireEvent.change(screen.getByPlaceholderText('Ask the assistant…'), {
+    fireEvent.change(screen.getByPlaceholderText('Ask the digital robot…'), {
       target: { value: '  Is SMS supported?  ' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
@@ -156,7 +156,7 @@ describe('OnboardingChat, across steps', () => {
     render(<OnboardingChat {...props} suggestedQuestions={[]} />);
     expect(screen.queryByRole('button', { name: 'What number format?' })).toBeNull();
     // The composer is still there — an operator can always type.
-    expect(screen.getByPlaceholderText('Ask the assistant…')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Ask the digital robot…')).toBeInTheDocument();
   });
 
   it('sends the step the operator is actually on', () => {
