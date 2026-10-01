@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter, Noto_Sans_Devanagari } from 'next/font/google';
+import Script from 'next/script';
 import './globals.css';
 import { AuthProvider } from '@/providers/auth-provider';
 import { QueryProvider } from '@/providers/query-provider';
@@ -58,6 +59,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Apply the saved theme + UI language before paint to avoid a flash. */}
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <script dangerouslySetInnerHTML={{ __html: langInitScript }} />
+        <Script
+          defer
+          src="https://analytics.doaide.com/script.js"
+          data-website-id="98200829-3da5-474b-8ddd-88ef54b947e6"
+          strategy="afterInteractive"
+        />
       </head>
       <body>
         <ThemeProvider>

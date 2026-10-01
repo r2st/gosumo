@@ -93,6 +93,7 @@ describe('securityHeaders', () => {
     const list = securityHeaders({ nodeEnv: 'production' });
 
     expect(header(list, 'Content-Security-Policy')).toContain("connect-src 'self'");
+    expect(header(list, 'Content-Security-Policy')).toContain('https://analytics.doaide.com');
   });
 });
 
@@ -141,8 +142,10 @@ describe('buildContentSecurityPolicy', () => {
     expect(prodCsp()['connect-src']).toContain('wss://api.gosumo.aiknol.com');
   });
 
-  it('narrows connect-src to self when no API origin is configured', () => {
-    expect(directives(buildContentSecurityPolicy({}))['connect-src']).toBe("'self'");
+  it('narrows connect-src to self and analytics when no API origin is configured', () => {
+    expect(directives(buildContentSecurityPolicy({}))['connect-src']).toBe(
+      "'self' https://analytics.doaide.com",
+    );
   });
 
   it('does not repeat an origin when the API and socket share a host', () => {
@@ -159,6 +162,13 @@ describe('buildContentSecurityPolicy', () => {
     const csp = directives(buildContentSecurityPolicy({ dev: true }));
 
     expect(csp['script-src']).toContain("'unsafe-eval'");
+  });
+
+  it('allows the Umami analytics script and beacon', () => {
+    const csp = prodCsp();
+
+    expect(csp['script-src']).toContain('https://analytics.doaide.com');
+    expect(csp['connect-src']).toContain('https://analytics.doaide.com');
   });
 
   it('permits the inline theme and language init scripts', () => {

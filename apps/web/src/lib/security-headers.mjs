@@ -82,14 +82,17 @@ export function buildContentSecurityPolicy({ apiOrigin, wsOrigin, dev = false } 
   // alone would block every fetch the dashboard makes. Sockets need the ws://
   // and wss:// forms of the same host, which `connect-src` treats as distinct
   // schemes.
-  const connect = new Set(["'self'"]);
+  const analytics = 'https://analytics.doaide.com';
+  const connect = new Set(["'self'", analytics]);
   for (const origin of [apiOrigin, wsOrigin]) {
     if (!origin) continue;
     connect.add(origin);
     connect.add(origin.replace(/^http/, 'ws'));
   }
 
-  const script = dev ? "'self' 'unsafe-inline' 'unsafe-eval'" : "'self' 'unsafe-inline'";
+  const script = dev
+    ? `'self' 'unsafe-inline' 'unsafe-eval' ${analytics}`
+    : `'self' 'unsafe-inline' ${analytics}`;
 
   return [
     "default-src 'self'",
