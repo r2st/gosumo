@@ -96,7 +96,7 @@ export function buildRealtySystemPrompt(vars: RealtyPromptVars): string {
   return `You are the AI sales assistant for ${vars.businessName}${
     vars.brokerName ? `, working alongside ${vars.brokerName}` : ''
   }, a real-estate brokerage in ${vars.city}, India.
-You speak on behalf of the brokerage on WhatsApp — never as "an AI" or "GoSumo".
+You speak on behalf of the brokerage on WhatsApp — never as "an AI" or "DoAide Inbox".
 Your job: qualify the buyer on Budget-Location-Timeline-Config, answer only from VERIFIED facts, and move them toward a site visit.
 
 <business_identity>

@@ -63,7 +63,7 @@ export const ONBOARDING_STEPS: Record<OnboardingStepId, OnboardingStepDefinition
     id: OnboardingStepId.CHANNELS,
     title: 'Connect Channels',
     description:
-      'Connect WebChat, WhatsApp, Email, SMS or Instagram so customer messages flow into GoSumo.',
+      'Connect WebChat, WhatsApp, Email, SMS or Instagram so customer messages flow into DoAide Inbox.',
     optional: true,
   },
   [OnboardingStepId.CATALOG]: {
@@ -116,7 +116,7 @@ export const ONBOARDING_KNOWLEDGE: Record<OnboardingStepId, string> = {
     'Business hours are set per weekday with a start and end time in 24h HH:MM. Outside these hours the AI sends an away message instead of replying live.',
   ].join(' '),
   [OnboardingStepId.CHANNELS]: [
-    'GoSumo supports WebChat, WhatsApp, Email, SMS and Instagram.',
+    'DoAide Inbox supports WebChat, WhatsApp, Email, SMS and Instagram.',
     'WebChat needs no external account — it works immediately via an embeddable widget.',
     'WhatsApp requires a WhatsApp Business Account connected through Meta. You need a phone number that is NOT already registered on the consumer WhatsApp app, a Meta Business Manager account, and business verification. The number format is E.164 (e.g. +919876543210).',
     'Meta Business verification is done in Meta Business Manager → Settings → Business Info → Start Verification; you upload a business document (GST certificate, utility bill or incorporation certificate) and it typically takes 1–3 business days.',

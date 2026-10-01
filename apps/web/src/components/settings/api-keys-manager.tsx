@@ -36,8 +36,8 @@ export function ApiKeysManager() {
 
   return (
     <SettingsCard
-      title="GoSumo API keys"
-      description="Authenticate programmatic access to the GoSumo API. Treat keys like passwords."
+      title="DoAide Inbox API keys"
+      description="Authenticate programmatic access to the DoAide Inbox API. Treat keys like passwords."
     >
       {canManage && (
         <div className="flex justify-end">
@@ -55,7 +55,7 @@ export function ApiKeysManager() {
         <EmptyState
           icon={KeyRound}
           title="No API keys yet"
-          description="Generate a key to call the GoSumo API from your own systems."
+          description="Generate a key to call the DoAide Inbox API from your own systems."
         />
       ) : (
         <div className="overflow-hidden rounded-lg border border-border">

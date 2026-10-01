@@ -35,13 +35,13 @@ beforeEach(() => {
 describe('OnboardingChat, before anything is asked', () => {
   it('explains what it can help with instead of showing an empty pane', () => {
     render(<OnboardingChat {...props} />);
-    expect(screen.getByText(/Ask me anything about setting up GoSumo/)).toBeInTheDocument();
+    expect(screen.getByText(/Ask me anything about setting up DoAide Inbox/)).toBeInTheDocument();
   });
 
   it('drops the primer once the thread has a turn in it', () => {
     render(<OnboardingChat {...props} />);
     fireEvent.click(screen.getByRole('button', { name: 'What number format?' }));
-    expect(screen.queryByText(/Ask me anything about setting up GoSumo/)).toBeNull();
+    expect(screen.queryByText(/Ask me anything about setting up DoAide Inbox/)).toBeNull();
   });
 });
 

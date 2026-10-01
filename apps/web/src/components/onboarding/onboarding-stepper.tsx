@@ -23,7 +23,7 @@ export function OnboardingStepper({
     <div className="flex h-full flex-col gap-5 p-5">
       <div>
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Getting started</p>
-        <h2 className="mt-1 text-lg font-bold tracking-tight">Set up GoSumo</h2>
+        <h2 className="mt-1 text-lg font-bold tracking-tight">Set up DoAide Inbox</h2>
         <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted">
           <div
             className="h-full rounded-full bg-primary transition-all"

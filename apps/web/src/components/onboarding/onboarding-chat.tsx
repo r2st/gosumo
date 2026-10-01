@@ -78,7 +78,7 @@ export function OnboardingChat({
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4 scrollbar-thin">
         {messages.length === 0 && (
           <div className="rounded-lg border border-dashed border-border bg-card p-3 text-sm text-muted-foreground">
-            Ask me anything about setting up GoSumo — connecting channels, WhatsApp verification, AI settings, and more.
+            Ask me anything about setting up DoAide Inbox — connecting channels, WhatsApp verification, AI settings, and more.
           </div>
         )}
         {messages.map((m, i) => (

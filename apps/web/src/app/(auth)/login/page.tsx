@@ -81,7 +81,7 @@ function LoginForm() {
       <GoogleButton />
 
       <p className="doaide-auth-switch">
-        New to GoSumo?{' '}
+        New to DoAide Inbox?{' '}
         <Link href="/register" className="doaide-auth-link">Create a business account</Link>
       </p>
     </div>

@@ -312,7 +312,7 @@ export class ComplianceService {
       businessId,
       generatedAt: new Date().toISOString(),
       dataFiduciary: await this.repository.getBusinessName(businessId),
-      dataProcessor: 'GoSumo Realty',
+      dataProcessor: 'DoAide Inbox',
       retentionMonths: settings.retentionMonths,
       dataProcessorAgreement: settings.dataProcessorAgreement,
       dataProcessorAgreedAt: settings.dataProcessorAgreedAt,

@@ -212,7 +212,7 @@ function CompletedView({ onClose }: { onClose: () => void }) {
       <div>
         <h2 className="text-xl font-bold tracking-tight">You&apos;re all set! 🎉</h2>
         <p className="mt-1 max-w-md text-sm text-muted-foreground">
-          Your GoSumo workspace is ready. You can revisit this setup anytime from Settings → Setup Wizard.
+          Your DoAide Inbox workspace is ready. You can revisit this setup anytime from Settings → Setup Wizard.
         </p>
       </div>
       <Button onClick={onClose}>Go to dashboard</Button>

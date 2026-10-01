@@ -128,14 +128,14 @@ describe('landing page structure', () => {
     render(<Home />);
 
     expect(
-      screen.getByText(new RegExp(`© ${new Date().getFullYear()} GoSumo`)),
+      screen.getByText(new RegExp(`© ${new Date().getFullYear()} DoAide Inbox`)),
     ).toBeInTheDocument();
-    const footer = screen.getByText(new RegExp(`© ${new Date().getFullYear()} GoSumo`)).closest('p')!;
+    const footer = screen.getByText(new RegExp(`© ${new Date().getFullYear()} DoAide Inbox`)).closest('p')!;
     expect(footer.textContent).toContain('DoAide');
   });
 
   it('describes the product as realty-first in its page metadata', () => {
-    expect(homeMetadata.title).toBe('GoSumo Realty — AI lead manager for real estate');
+    expect(homeMetadata.title).toBe('DoAide Inbox — AI lead manager for real estate');
     expect(String(homeMetadata.description)).toContain('Budget-Location-Timeline-Configuration');
   });
 });
@@ -171,15 +171,15 @@ describe('RootLayout', () => {
 
   it('declares the PWA metadata the installable app depends on', () => {
     expect(rootMetadata.manifest).toBe('/manifest.json');
-    expect(rootMetadata.applicationName).toBe('GoSumo');
-    expect(rootMetadata.appleWebApp).toMatchObject({ capable: true, title: 'GoSumo' });
-    expect(viewport.themeColor).toBe('#4F46E5');
+    expect(rootMetadata.applicationName).toBe('DoAide Inbox');
+    expect(rootMetadata.appleWebApp).toMatchObject({ capable: true, title: 'DoAide Inbox' });
+    expect(viewport.themeColor).toBe('#0A0A0B');
   });
 
   it('templates child page titles under the product name', () => {
     expect(rootMetadata.title).toMatchObject({
-      default: 'GoSumo — AI Client Management',
-      template: '%s · GoSumo',
+      default: 'DoAide Inbox',
+      template: '%s · DoAide Inbox',
     });
   });
 });

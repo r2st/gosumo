@@ -16,14 +16,14 @@ const GENERIC = 'Something went wrong on our end. Please try again in a moment.'
 
 describe('friendlyError — offline and unreachable', () => {
   it('tells the reader to check their connection when fetch never got a response', () => {
-    const err = new ApiError(0, 'NETWORK_ERROR', 'Unable to reach the GoSumo API. Is it running?');
+    const err = new ApiError(0, 'NETWORK_ERROR', 'Unable to reach the DoAide Inbox API. Is it running?');
     expect(friendlyError(err)).toBe(
-      'Can’t reach GoSumo. Check your internet connection and try again.',
+      'Can’t reach DoAide Inbox. Check your internet connection and try again.',
     );
   });
 
   it('never shows the api-client’s developer-facing "Is it running?" copy', () => {
-    const err = new ApiError(0, 'NETWORK_ERROR', 'Unable to reach the GoSumo API. Is it running?');
+    const err = new ApiError(0, 'NETWORK_ERROR', 'Unable to reach the DoAide Inbox API. Is it running?');
     expect(friendlyError(err)).not.toMatch(/Is it running/);
   });
 
@@ -109,7 +109,7 @@ describe('friendlyError — server trouble and rate limits', () => {
     );
   });
 
-  it('says GoSumo is temporarily unavailable on 503', () => {
+  it('says DoAide Inbox is temporarily unavailable on 503', () => {
     expect(friendlyError(new ApiError(503, 'UNAVAILABLE', 'Service Unavailable'))).toMatch(
       /temporarily unavailable/,
     );

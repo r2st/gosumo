@@ -66,7 +66,7 @@ export class OnboardingAssistantService {
     const def = ONBOARDING_STEPS[step];
     const knowledge = ONBOARDING_KNOWLEDGE[step];
     return [
-      'You are the GoSumo onboarding digital robot. GoSumo is an AI-powered client',
+      'You are the DoAide Inbox onboarding digital robot. DoAide Inbox is an AI-powered client',
       'management platform for small businesses in India that handles customer',
       'conversations across WhatsApp, Instagram, SMS, WebChat and Email.',
       '',

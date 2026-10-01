@@ -9,17 +9,17 @@ import { ToastProvider } from '@/providers/toast-provider';
 
 export const metadata: Metadata = {
   title: {
-    default: 'DoAide CRM',
-    template: '%s · DoAide CRM',
+    default: 'DoAide Inbox',
+    template: '%s · DoAide Inbox',
   },
   description:
-    'DoAide CRM unifies WhatsApp, Instagram, SMS, Web Chat and Email into one AI-powered inbox for small businesses in India.',
-  applicationName: 'DoAide CRM',
+    'DoAide Inbox unifies WhatsApp, Instagram, SMS, Web Chat and Email into one AI-powered inbox for small businesses in India.',
+  applicationName: 'DoAide Inbox',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'DoAide CRM',
+    title: 'DoAide Inbox',
   },
   icons: {
     icon: [

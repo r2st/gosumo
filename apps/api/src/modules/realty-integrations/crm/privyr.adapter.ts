@@ -43,15 +43,15 @@ export class PrivyrAdapter extends CrmAdapter {
       lead.localities.length ? `Localities: ${lead.localities.join(', ')}` : null,
       lead.timelineMonths ? `Timeline: ${lead.timelineMonths} months` : null,
       lead.listingRef ? `Listing: ${lead.listingRef}` : null,
-      `GoSumo sync: ${reason}`,
+      `DoAide Inbox sync: ${reason}`,
     ]
       .filter(Boolean)
       .join('\n');
     return {
-      name: lead.name ?? 'GoSumo Lead',
+      name: lead.name ?? 'DoAide Inbox Lead',
       phone_number: lead.phone,
       email: lead.email ?? undefined,
-      source: 'GoSumo',
+      source: 'DoAide Inbox',
       remarks,
       external_id: lead.leadId,
     };

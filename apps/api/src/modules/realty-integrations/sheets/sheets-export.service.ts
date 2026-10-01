@@ -195,7 +195,7 @@ export class SheetsExportService {
 
       const ensured = await this.sheets.ensureSpreadsheet(
         creds,
-        `GoSumo Realty — ${businessId.slice(0, 8)}`,
+        `DoAide Inbox — ${businessId.slice(0, 8)}`,
       );
 
       const leadRows = buildLeadsSheet(leads);

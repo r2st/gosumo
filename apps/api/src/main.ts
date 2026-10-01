@@ -357,7 +357,7 @@ async function bootstrap() {
   // Swagger — development only unless explicitly re-enabled.
   if (swaggerEnabled()) {
     const config = new DocumentBuilder()
-      .setTitle('GoSumo API')
+      .setTitle('DoAide Inbox API')
       .setDescription('AI-powered client management platform API — a DoAide product')
       .setVersion('1.0')
       .addBearerAuth(

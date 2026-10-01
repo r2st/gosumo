@@ -15,7 +15,7 @@ function makeAdapter(): EmailAdapter {
   const configService = {
     get: jest.fn((key: string, fallback: string) => {
       if (key === 'sendgrid.fromEmail') return 'no-reply@gosumo.test';
-      if (key === 'sendgrid.fromName') return 'GoSumo';
+      if (key === 'sendgrid.fromName') return 'DoAide Inbox';
       if (key === 'sendgrid.apiKey') return 'SG.test-key';
       return fallback;
     }),

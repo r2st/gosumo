@@ -36,13 +36,13 @@ export class LeadSquaredAdapter extends CrmAdapter {
       if (value === null || value === undefined || value === '') return;
       attrs.push({ Attribute: attribute, Value: String(value) });
     };
-    const [firstName, ...rest] = (lead.name ?? 'GoSumo Lead').split(' ');
+    const [firstName, ...rest] = (lead.name ?? 'DoAide Inbox Lead').split(' ');
     add('FirstName', firstName);
     add('LastName', rest.join(' ') || undefined);
     add('Phone', lead.phone);
     add('Mobile', lead.altPhone ?? undefined);
     add('EmailAddress', lead.email ?? undefined);
-    add('Source', 'GoSumo');
+    add('Source', 'DoAide Inbox');
     add('SearchBy', lead.source);
     add('mx_Budget_Min', paiseToRupees(lead.budgetMinPaise));
     add('mx_Budget_Max', paiseToRupees(lead.budgetMaxPaise));

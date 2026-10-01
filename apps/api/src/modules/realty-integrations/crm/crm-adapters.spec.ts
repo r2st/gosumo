@@ -191,7 +191,7 @@ describe('CRM adapters given a bare lead', () => {
       lead: Record<string, unknown>;
     };
 
-    expect(payload.lead.name).toBe('GoSumo Lead');
+    expect(payload.lead.name).toBe('DoAide Inbox Lead');
     for (const key of [
       'alternate_phone',
       'email',
@@ -219,7 +219,7 @@ describe('CRM adapters given a bare lead', () => {
     };
     const present = payload.attributes.map((a) => a.Attribute);
 
-    // `LastName` is present here — the placeholder name "GoSumo Lead" splits
+    // `LastName` is present here — the placeholder name "DoAide Inbox Lead" splits
     // into two parts. The single-word and placeholder cases are pinned
     // separately below.
     expect(present).not.toContain('Mobile');
@@ -248,8 +248,8 @@ describe('CRM adapters given a bare lead', () => {
     };
     const byAttr = Object.fromEntries(payload.attributes.map((a) => [a.Attribute, a.Value]));
 
-    expect(byAttr.FirstName).toBe('GoSumo');
-    expect(byAttr.LastName).toBe('Lead');
+    expect(byAttr.FirstName).toBe('DoAide');
+    expect(byAttr.LastName).toBe('Inbox Lead');
   });
 
   it('LeadSquared sends a zero score rather than dropping it', () => {
@@ -299,7 +299,7 @@ describe('CRM adapters given a bare lead', () => {
       unknown
     >;
 
-    expect(payload.name).toBe('GoSumo Lead');
+    expect(payload.name).toBe('DoAide Inbox Lead');
     expect(payload.email).toBeUndefined();
   });
 });

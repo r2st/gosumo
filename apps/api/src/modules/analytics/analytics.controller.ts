@@ -236,7 +236,7 @@ export class AnalyticsController {
   // ─────────────────────────────────────────────
 
   @Get('ai/autonomy')
-  @ApiOperation({ summary: 'AI autonomy rate — the primary GoSumo KPI' })
+  @ApiOperation({ summary: 'AI autonomy rate — the primary DoAide Inbox KPI' })
   @ApiResponse({ status: 200, description: 'Autonomy metrics' })
   async getAutonomy(
     @TenantId() tenantId: string,

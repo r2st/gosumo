@@ -40,7 +40,7 @@ export default registerAs('app', () => ({
     baseUrl: process.env['OPENROUTER_BASE_URL'] ?? 'https://openrouter.ai/api/v1/chat/completions',
     // Attribution headers OpenRouter uses for its dashboard/rankings.
     referer: process.env['OPENROUTER_REFERER'] ?? 'https://gosumo.doaide.com',
-    title: process.env['OPENROUTER_TITLE'] ?? 'GoSumo',
+    title: process.env['OPENROUTER_TITLE'] ?? 'DoAide Inbox',
   },
 
   // Qdrant vector DB
