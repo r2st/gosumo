@@ -140,7 +140,7 @@ describe('landing page — branding', () => {
   it('shows the tagline', () => {
     render(<LandingPage />);
 
-    const taglines = screen.getAllByText('AI lead manager for real estate');
+    const taglines = screen.getAllByText('AI-powered client management across every channel');
     expect(taglines.length).toBeGreaterThan(0);
   });
 
@@ -155,8 +155,8 @@ describe('landing page — branding', () => {
 
 describe('landing page — metadata', () => {
   it('describes the product as realty-first in its page metadata', () => {
-    expect(homeMetadata.title).toBe('DoAide Desk — AI lead manager for real estate');
-    expect(String(homeMetadata.description)).toContain('Budget-Location-Timeline-Configuration');
+    expect(homeMetadata.title).toBe('DoAide Desk — AI-powered client management across every channel');
+    expect(String(homeMetadata.description)).toContain('AI-driven interface');
   });
 });
 

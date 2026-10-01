@@ -337,7 +337,7 @@ export function LandingPage() {
             <span className="landing-title-brand">DoAide</span>{' '}
             <span className="landing-title-product">Desk</span>
           </h1>
-          <p className="landing-tagline">AI lead manager for real estate</p>
+          <p className="landing-tagline">AI-powered client management across every channel</p>
 
           <div className="landing-features">
             {FEATURES.map((f, i) => (
@@ -377,7 +377,7 @@ export function LandingPage() {
                 <span className="landing-title-brand">DoAide</span>{' '}
                 <span className="landing-title-product">Desk</span>
               </h1>
-              <p className="landing-mobile-tagline">AI lead manager for real estate</p>
+              <p className="landing-mobile-tagline">AI-powered client management across every channel</p>
             </div>
           </div>
 
