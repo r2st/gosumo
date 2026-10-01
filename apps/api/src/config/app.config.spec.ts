@@ -237,7 +237,7 @@ describe('app.config', () => {
         apiKey: undefined,
         baseUrl: 'https://openrouter.ai/api/v1/chat/completions',
         referer: 'https://gosumo.doaide.com',
-        title: 'DoAide Inbox',
+        title: 'DoAide Desk',
       });
     });
 
@@ -247,13 +247,13 @@ describe('app.config', () => {
           OPENROUTER_API_KEY: 'sk-or-1',
           OPENROUTER_BASE_URL: 'https://proxy.test/v1/chat/completions',
           OPENROUTER_REFERER: 'https://staging.test',
-          OPENROUTER_TITLE: 'DoAide Inbox Staging',
+          OPENROUTER_TITLE: 'DoAide Desk Staging',
         }).openrouter,
       ).toEqual({
         apiKey: 'sk-or-1',
         baseUrl: 'https://proxy.test/v1/chat/completions',
         referer: 'https://staging.test',
-        title: 'DoAide Inbox Staging',
+        title: 'DoAide Desk Staging',
       });
     });
 

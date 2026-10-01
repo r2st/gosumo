@@ -24,7 +24,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         {/* Title */}
         <h1 className="doaide-auth-title">
           <span className="doaide-auth-title-brand">DoAide</span>{' '}
-          <span className="doaide-auth-title-product">Inbox</span>
+          <span className="doaide-auth-title-product">Desk</span>
         </h1>
         <p className="doaide-auth-subtitle">
           AI-powered client management across every channel
@@ -36,7 +36,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         </div>
 
         <p className="doaide-auth-footer">
-          © {new Date().getFullYear()} DoAide Inbox · A{' '}
+          © {new Date().getFullYear()} DoAide Desk · A{' '}
           <a href="https://doaide.com" target="_blank" rel="noopener noreferrer">DoAide</a>{' '}
           product
         </p>

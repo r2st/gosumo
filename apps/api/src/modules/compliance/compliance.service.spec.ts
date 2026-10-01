@@ -471,7 +471,7 @@ describe('ComplianceService', () => {
       expect(report).toMatchObject({
         businessId: BIZ_A,
         dataFiduciary: 'Acme Realty',
-        dataProcessor: 'DoAide Inbox',
+        dataProcessor: 'DoAide Desk',
         retentionMonths: 24,
         dataProcessorAgreement: true,
       });

@@ -474,7 +474,7 @@ export class LlmClientService {
           authorization: `Bearer ${apiKey}`,
           // OpenRouter attribution headers (optional but recommended).
           'http-referer': this.configService.get<string>('openrouter.referer', 'https://gosumo.aiknol.com'),
-          'x-title': this.configService.get<string>('openrouter.title', 'DoAide Inbox'),
+          'x-title': this.configService.get<string>('openrouter.title', 'DoAide Desk'),
         },
         body: JSON.stringify(body),
       },

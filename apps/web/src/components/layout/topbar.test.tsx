@@ -81,7 +81,7 @@ describe('Topbar', () => {
     it('falls back to a generic workspace name before the business loads', () => {
       business = null;
       renderTopbar();
-      expect(screen.getByText('DoAide Inbox Workspace')).toBeInTheDocument();
+      expect(screen.getByText('DoAide Desk Workspace')).toBeInTheDocument();
     });
 
     it('says "Free plan" when the business carries neither plan nor industry', () => {

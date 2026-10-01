@@ -1,6 +1,6 @@
 {
-  "name": "GoSumo",
-  "short_name": "GoSumo",
+  "name": "DoAide Desk",
+  "short_name": "DoAide Desk",
   "description": "AI lead manager and co-broking exchange for Indian real estate. A DoAide product.",
   "start_url": "/dashboard",
   "scope": "/",

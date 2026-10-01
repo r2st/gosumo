@@ -81,7 +81,7 @@ function LoginForm() {
       <GoogleButton />
 
       <p className="doaide-auth-switch">
-        New to DoAide Inbox?{' '}
+        New to DoAide Desk?{' '}
         <Link href="/register" className="doaide-auth-link">Create a business account</Link>
       </p>
     </div>

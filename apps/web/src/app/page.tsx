@@ -16,7 +16,7 @@ import { Logo } from '@/components/logo';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'DoAide Inbox — AI lead manager for real estate',
+  title: 'DoAide Desk — AI lead manager for real estate',
   description:
     'Every lead answered in 30 seconds. Every buyer qualified on Budget-Location-Timeline-Configuration. Every follow-up kept for 90 days. WhatsApp-native AI for Indian real estate brokers.',
 };
@@ -173,7 +173,7 @@ export default function Home() {
               </span>
             </h1>
             <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground">
-              DoAide Inbox is the AI lead manager that replies instantly, qualifies buyers on
+              DoAide Desk is the AI lead manager that replies instantly, qualifies buyers on
               Budget-Location-Timeline-Configuration, books site visits and nurtures every prospect
               for 90 days — so you never lose a deal to a slow follow-up again.
             </p>
@@ -205,7 +205,7 @@ export default function Home() {
               Five jobs, done for you
             </h2>
             <p className="mt-4 text-lg text-muted-foreground">
-              DoAide Inbox handles the work that costs brokers deals — the speed, the qualifying, the
+              DoAide Desk handles the work that costs brokers deals — the speed, the qualifying, the
               chasing — so you can focus on closing.
             </p>
           </div>
@@ -327,7 +327,7 @@ export default function Home() {
               Stop losing deals to slow follow-ups.
             </h2>
             <p className="relative mx-auto mt-4 max-w-xl text-lg text-muted-foreground">
-              Let DoAide Inbox answer, qualify and nurture every lead — while you close.
+              Let DoAide Desk answer, qualify and nurture every lead — while you close.
             </p>
             <Link
               href="/register"
@@ -362,7 +362,7 @@ export default function Home() {
             </Link>
           </nav>
           <p className="text-sm text-muted-foreground/60">
-            © {year} DoAide Inbox. All rights reserved.
+            © {year} DoAide Desk. All rights reserved.
             <span className="mx-1.5">·</span>
             A{' '}
             <a

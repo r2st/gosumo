@@ -200,7 +200,7 @@ describe('GoogleSheetsClient.ensureSpreadsheet', () => {
   it('returns the existing spreadsheet without creating a new one', async () => {
     const result = await makeClient().ensureSpreadsheet(
       { ...CREDS, spreadsheetId: 'sheet-1' },
-      'DoAide Inbox Export',
+      'DoAide Desk Export',
     );
 
     expect(result).toEqual({
@@ -219,10 +219,10 @@ describe('GoogleSheetsClient.ensureSpreadsheet', () => {
       },
     });
 
-    const result = await makeClient().ensureSpreadsheet(CREDS, 'DoAide Inbox Export');
+    const result = await makeClient().ensureSpreadsheet(CREDS, 'DoAide Desk Export');
 
     expect(spreadsheetsCreate).toHaveBeenCalledWith({
-      requestBody: { properties: { title: 'DoAide Inbox Export' } },
+      requestBody: { properties: { title: 'DoAide Desk Export' } },
     });
     expect(result).toEqual({
       spreadsheetId: 'new-sheet',

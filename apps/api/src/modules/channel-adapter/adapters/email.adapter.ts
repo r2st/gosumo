@@ -41,7 +41,7 @@ export class EmailAdapter extends BaseChannelAdapter {
     super("EmailAdapter", { breaker: registry?.get(SENDGRID_BREAKER) });
     this.apiKey = this.configService.get<string>("sendgrid.apiKey", "");
     this.fromEmail = this.configService.get<string>("sendgrid.fromEmail", "");
-    this.fromName = this.configService.get<string>("sendgrid.fromName", "DoAide Inbox");
+    this.fromName = this.configService.get<string>("sendgrid.fromName", "DoAide Desk");
     this.inboundSecret = this.configService.get<string>("channelWebhook.emailSecret", "");
     this.isProduction = isProductionEnv(this.configService);
   }
@@ -151,7 +151,7 @@ export class EmailAdapter extends BaseChannelAdapter {
         },
         subject:
           (message as OutboundMessage & { subject?: string }).subject ||
-          "Message from DoAide Inbox",
+          "Message from DoAide Desk",
         content: [
           { type: "text/plain", value: textContent },
           { type: "text/html", value: htmlContent },

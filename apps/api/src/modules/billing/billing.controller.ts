@@ -19,7 +19,7 @@ export class BillingController {
   constructor(private readonly billing: BillingService) {}
 
   @Get('plans')
-  @ApiOperation({ summary: 'List the available DoAide Inbox pricing tiers' })
+  @ApiOperation({ summary: 'List the available DoAide Desk pricing tiers' })
   @ApiResponse({ status: 200, description: 'Plan catalogue' })
   plans() {
     return { plans: Object.values(PLAN_DEFINITIONS) };

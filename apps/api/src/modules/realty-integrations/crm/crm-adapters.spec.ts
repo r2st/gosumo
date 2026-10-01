@@ -191,7 +191,7 @@ describe('CRM adapters given a bare lead', () => {
       lead: Record<string, unknown>;
     };
 
-    expect(payload.lead.name).toBe('DoAide Inbox Lead');
+    expect(payload.lead.name).toBe('DoAide Desk Lead');
     for (const key of [
       'alternate_phone',
       'email',
@@ -219,7 +219,7 @@ describe('CRM adapters given a bare lead', () => {
     };
     const present = payload.attributes.map((a) => a.Attribute);
 
-    // `LastName` is present here — the placeholder name "DoAide Inbox Lead" splits
+    // `LastName` is present here — the placeholder name "DoAide Desk Lead" splits
     // into two parts. The single-word and placeholder cases are pinned
     // separately below.
     expect(present).not.toContain('Mobile');
@@ -299,7 +299,7 @@ describe('CRM adapters given a bare lead', () => {
       unknown
     >;
 
-    expect(payload.name).toBe('DoAide Inbox Lead');
+    expect(payload.name).toBe('DoAide Desk Lead');
     expect(payload.email).toBeUndefined();
   });
 });

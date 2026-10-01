@@ -21,7 +21,7 @@ const PLANS: {
   {
     plan: 'FREE',
     priceMonthly: '₹0',
-    tagline: 'Try DoAide Inbox',
+    tagline: 'Try DoAide Desk',
     features: ['1 channel', '500 conversations/mo', 'Basic AI replies'],
   },
   {

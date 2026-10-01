@@ -22,7 +22,7 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
       </button>
 
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-foreground">{business?.name ?? 'DoAide Inbox Workspace'}</p>
+        <p className="truncate text-sm font-semibold text-foreground">{business?.name ?? 'DoAide Desk Workspace'}</p>
         {business && (
           <p className="truncate text-xs text-muted-foreground">
             {[

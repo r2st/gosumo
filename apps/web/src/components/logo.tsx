@@ -6,7 +6,7 @@ export function LogoMark({ className }: { className?: string }) {
       viewBox="0 0 512 512"
       className={cn('h-8 w-8', className)}
       role="img"
-      aria-label="DoAide Inbox"
+      aria-label="DoAide Desk"
     >
       <rect width="512" height="512" rx="116" ry="116" fill="#F0B429" />
       <g fill="none" stroke="#0A0A0B" strokeWidth="66" strokeLinecap="round" strokeLinejoin="round">
@@ -32,7 +32,7 @@ export function Logo({
       {showWordmark && (
         <div className="flex flex-col">
           <span className="font-heading text-lg tracking-tight text-foreground">
-            DoAide <span className="italic text-primary">Inbox</span>
+            DoAide <span className="italic text-primary">Desk</span>
           </span>
           {showParentBrand && (
             <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">

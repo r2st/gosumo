@@ -43,15 +43,15 @@ export class PrivyrAdapter extends CrmAdapter {
       lead.localities.length ? `Localities: ${lead.localities.join(', ')}` : null,
       lead.timelineMonths ? `Timeline: ${lead.timelineMonths} months` : null,
       lead.listingRef ? `Listing: ${lead.listingRef}` : null,
-      `DoAide Inbox sync: ${reason}`,
+      `DoAide Desk sync: ${reason}`,
     ]
       .filter(Boolean)
       .join('\n');
     return {
-      name: lead.name ?? 'DoAide Inbox Lead',
+      name: lead.name ?? 'DoAide Desk Lead',
       phone_number: lead.phone,
       email: lead.email ?? undefined,
-      source: 'DoAide Inbox',
+      source: 'DoAide Desk',
       remarks,
       external_id: lead.leadId,
     };

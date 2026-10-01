@@ -94,7 +94,7 @@ export default function ApiKeysPage() {
   return (
     <div className="space-y-8">
       <p className="text-sm text-muted-foreground">
-        Bring your own credentials for the services DoAide Inbox uses on your behalf. Secrets are encrypted at rest and never
+        Bring your own credentials for the services DoAide Desk uses on your behalf. Secrets are encrypted at rest and never
         shown again after saving.
       </p>
 

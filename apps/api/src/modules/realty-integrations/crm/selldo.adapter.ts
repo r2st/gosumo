@@ -33,12 +33,12 @@ export class SellDoAdapter extends CrmAdapter {
     const budgetMax = paiseToRupees(lead.budgetMaxPaise);
     return {
       lead: {
-        name: lead.name ?? 'DoAide Inbox Lead',
+        name: lead.name ?? 'DoAide Desk Lead',
         phone: lead.phone,
         alternate_phone: lead.altPhone ?? undefined,
         email: lead.email ?? undefined,
         // Sell.Do attribution
-        source: 'DoAide Inbox',
+        source: 'DoAide Desk',
         sub_source: lead.source,
         campaign: lead.subSource ?? undefined,
         // Requirement (BLTC)
@@ -53,7 +53,7 @@ export class SellDoAdapter extends CrmAdapter {
         stage: lead.stage,
         temperature: lead.temperature,
         score: lead.qualScore,
-        note: `DoAide Inbox sync (${reason}) — ${lead.listingRef ?? 'no listing'} · score ${lead.qualScore}`,
+        note: `DoAide Desk sync (${reason}) — ${lead.listingRef ?? 'no listing'} · score ${lead.qualScore}`,
         external_id: lead.leadId,
       },
     };

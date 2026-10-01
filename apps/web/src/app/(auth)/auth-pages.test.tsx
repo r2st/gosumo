@@ -117,7 +117,7 @@ describe('AuthLayout', () => {
     expect(
       screen.getByText(/AI-powered client management across every channel/),
     ).toBeInTheDocument();
-    const copyright = screen.getByText(new RegExp(`© ${new Date().getFullYear()} DoAide Inbox`));
+    const copyright = screen.getByText(new RegExp(`© ${new Date().getFullYear()} DoAide Desk`));
     expect(copyright).toBeInTheDocument();
     expect(copyright.closest('p')!.textContent).toContain('DoAide');
   });

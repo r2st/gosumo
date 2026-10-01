@@ -312,7 +312,7 @@ export class ComplianceService {
       businessId,
       generatedAt: new Date().toISOString(),
       dataFiduciary: await this.repository.getBusinessName(businessId),
-      dataProcessor: 'DoAide Inbox',
+      dataProcessor: 'DoAide Desk',
       retentionMonths: settings.retentionMonths,
       dataProcessorAgreement: settings.dataProcessorAgreement,
       dataProcessorAgreedAt: settings.dataProcessorAgreedAt,

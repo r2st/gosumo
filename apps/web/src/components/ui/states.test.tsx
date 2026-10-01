@@ -73,7 +73,7 @@ describe('ErrorState — derived from the thrown error', () => {
   it('turns a network failure into connection advice, not transport copy', () => {
     render(
       <ErrorState
-        error={new ApiError(0, 'NETWORK_ERROR', 'Unable to reach the DoAide Inbox API. Is it running?')}
+        error={new ApiError(0, 'NETWORK_ERROR', 'Unable to reach the DoAide Desk API. Is it running?')}
       />,
     );
 
