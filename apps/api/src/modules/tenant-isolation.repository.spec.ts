@@ -354,7 +354,7 @@ const CASES: Case[] = [
   {
     name: 'OrderRepository.updateOrderStatus',
     repo: OrderRepository,
-    run: (r: OrderRepository, b, id) => r.updateOrderStatus(b, id, 'CONFIRMED' as never),
+    run: (r: OrderRepository, b, id) => r.updateOrderStatus(b, id, 'DRAFT' as never, 'CONFIRMED' as never),
   },
   {
     name: 'PaymentRepository.updatePaymentStatus',

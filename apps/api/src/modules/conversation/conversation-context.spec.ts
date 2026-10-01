@@ -93,6 +93,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
   let queue: { add: jest.Mock };
   let tenantService: { assertAssignableTeamMember: jest.Mock; filterAssignableTeamMembers: jest.Mock };
   let errorSpy: jest.SpyInstance;
+  let warnSpy: jest.SpyInstance;
   let debugSpy: jest.SpyInstance;
 
   beforeEach(async () => {
@@ -140,11 +141,13 @@ describe('ConversationService — context, notes and handler resilience', () => 
 
     service = module.get<ConversationService>(ConversationService);
     errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     debugSpy = jest.spyOn(Logger.prototype, 'debug').mockImplementation();
   });
 
   afterEach(() => {
     errorSpy.mockRestore();
+    warnSpy.mockRestore();
     debugSpy.mockRestore();
   });
 
@@ -465,7 +468,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
       );
 
       await expect(service.handleMessageStored(stored())).resolves.toBeUndefined();
-      expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('row locked'));
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('row locked'));
     });
   });
 

@@ -52,6 +52,7 @@ describe('OrderRepository', () => {
       findMany: jest.Mock;
       count: jest.Mock;
       update: jest.Mock;
+      updateMany: jest.Mock;
       groupBy: jest.Mock;
     };
   };
@@ -64,6 +65,7 @@ describe('OrderRepository', () => {
         findMany: jest.fn().mockResolvedValue([]),
         count: jest.fn().mockResolvedValue(0),
         update: jest.fn().mockResolvedValue({ id: ORDER_ID }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         groupBy: jest.fn().mockResolvedValue([]),
       },
     };
@@ -338,67 +340,64 @@ describe('OrderRepository', () => {
   // ─────────────────────────────────────────────
 
   describe('updateOrderStatus', () => {
-    it('refuses to write when the order is not visible to the tenant', async () => {
-      // This read is the cross-tenant guard — without it a foreign order id
-      // would be mutated by the update below.
-      prisma.orders.findFirst.mockResolvedValue(null);
+    it('returns null when the CAS guard fails (order not in expected status)', async () => {
+      prisma.orders.updateMany.mockResolvedValue({ count: 0 });
 
-      const error = await repository
-        .updateOrderStatus(OTHER_BUSINESS, ORDER_ID, OrderStatus.CANCELLED)
-        .then(
-          () => null,
-          (err: unknown) => err,
-        );
+      const result = await repository.updateOrderStatus(
+        BUSINESS_ID, ORDER_ID, OrderStatus.DRAFT, OrderStatus.CANCELLED,
+      );
 
-      // The order id and the tenant that asked for it live in log-only
-      // context; the message itself stays free of both.
-      expect(error).toBeInstanceOf(ResourceNotFoundError);
-      expect((error as ResourceNotFoundError).message).toBe('Order not found');
-      expect((error as ResourceNotFoundError).context).toEqual({
-        resource: 'Order',
-        resourceId: ORDER_ID,
-        businessId: OTHER_BUSINESS,
-      });
-      expect(prisma.orders.update).not.toHaveBeenCalled();
+      expect(result).toBeNull();
     });
 
-    it('checks visibility under the tenant scope before writing', async () => {
-      await repository.updateOrderStatus(BUSINESS_ID, ORDER_ID, OrderStatus.PROCESSING);
+    it('includes expectedStatus in the WHERE clause (CAS guard)', async () => {
+      await repository.updateOrderStatus(
+        BUSINESS_ID, ORDER_ID, OrderStatus.CONFIRMED, OrderStatus.PROCESSING,
+      );
 
-      expect(prisma.orders.findFirst).toHaveBeenCalledWith({
-        where: { id: ORDER_ID, business_id: BUSINESS_ID, deleted_at: null },
+      expect(prisma.orders.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: ORDER_ID,
+          business_id: BUSINESS_ID,
+          status: OrderStatus.CONFIRMED,
+          deleted_at: null,
+        },
+        data: { status: OrderStatus.PROCESSING },
       });
     });
 
     it('writes the status alone when no extra fields are supplied', async () => {
-      await repository.updateOrderStatus(BUSINESS_ID, ORDER_ID, OrderStatus.PROCESSING);
-
-      expect(prisma.orders.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: ORDER_ID, business_id: BUSINESS_ID },
-          data: { status: OrderStatus.PROCESSING },
-        }),
+      await repository.updateOrderStatus(
+        BUSINESS_ID, ORDER_ID, OrderStatus.CONFIRMED, OrderStatus.PROCESSING,
       );
+
+      expect(prisma.orders.updateMany.mock.calls[0]![0].data).toEqual({
+        status: OrderStatus.PROCESSING,
+      });
     });
 
     it('stamps confirmed_at when supplied', async () => {
       const confirmedAt = new Date('2026-03-01T10:00:00Z');
 
-      await repository.updateOrderStatus(BUSINESS_ID, ORDER_ID, OrderStatus.CONFIRMED, {
-        confirmedAt,
-      });
+      await repository.updateOrderStatus(
+        BUSINESS_ID, ORDER_ID, OrderStatus.DRAFT, OrderStatus.CONFIRMED,
+        { confirmedAt },
+      );
 
-      expect(prisma.orders.update.mock.calls[0]![0].data).toMatchObject({ confirmed_at: confirmedAt });
+      expect(prisma.orders.updateMany.mock.calls[0]![0].data).toMatchObject({
+        confirmed_at: confirmedAt,
+      });
     });
 
     it('stamps delivered_at when supplied', async () => {
       const deliveredAt = new Date('2026-03-05T10:00:00Z');
 
-      await repository.updateOrderStatus(BUSINESS_ID, ORDER_ID, OrderStatus.DELIVERED, {
-        deliveredAt,
-      });
+      await repository.updateOrderStatus(
+        BUSINESS_ID, ORDER_ID, OrderStatus.SHIPPED, OrderStatus.DELIVERED,
+        { deliveredAt },
+      );
 
-      expect(prisma.orders.update.mock.calls[0]![0].data).toMatchObject({
+      expect(prisma.orders.updateMany.mock.calls[0]![0].data).toMatchObject({
         delivered_at: deliveredAt,
       });
     });
@@ -406,12 +405,12 @@ describe('OrderRepository', () => {
     it('records the cancellation timestamp and reason together', async () => {
       const cancelledAt = new Date('2026-03-02T10:00:00Z');
 
-      await repository.updateOrderStatus(BUSINESS_ID, ORDER_ID, OrderStatus.CANCELLED, {
-        cancelledAt,
-        cancellationReason: 'Out of stock',
-      });
+      await repository.updateOrderStatus(
+        BUSINESS_ID, ORDER_ID, OrderStatus.CONFIRMED, OrderStatus.CANCELLED,
+        { cancelledAt, cancellationReason: 'Out of stock' },
+      );
 
-      expect(prisma.orders.update.mock.calls[0]![0].data).toMatchObject({
+      expect(prisma.orders.updateMany.mock.calls[0]![0].data).toMatchObject({
         cancelled_at: cancelledAt,
         cancellation_reason: 'Out of stock',
       });
@@ -420,31 +419,34 @@ describe('OrderRepository', () => {
     it('records the return timestamp and reason together', async () => {
       const returnedAt = new Date('2026-03-10T10:00:00Z');
 
-      await repository.updateOrderStatus(BUSINESS_ID, ORDER_ID, OrderStatus.REFUNDED, {
-        returnedAt,
-        returnReason: 'Damaged',
-      });
+      await repository.updateOrderStatus(
+        BUSINESS_ID, ORDER_ID, OrderStatus.CANCELLED, OrderStatus.REFUNDED,
+        { returnedAt, returnReason: 'Damaged' },
+      );
 
-      expect(prisma.orders.update.mock.calls[0]![0].data).toMatchObject({
+      expect(prisma.orders.updateMany.mock.calls[0]![0].data).toMatchObject({
         returned_at: returnedAt,
         return_reason: 'Damaged',
       });
     });
 
     it('records an internal note', async () => {
-      await repository.updateOrderStatus(BUSINESS_ID, ORDER_ID, OrderStatus.PROCESSING, {
-        internalNote: 'Called the buyer',
-      });
+      await repository.updateOrderStatus(
+        BUSINESS_ID, ORDER_ID, OrderStatus.CONFIRMED, OrderStatus.PROCESSING,
+        { internalNote: 'Called the buyer' },
+      );
 
-      expect(prisma.orders.update.mock.calls[0]![0].data).toMatchObject({
+      expect(prisma.orders.updateMany.mock.calls[0]![0].data).toMatchObject({
         internal_note: 'Called the buyer',
       });
     });
 
     it('ignores an empty extra object', async () => {
-      await repository.updateOrderStatus(BUSINESS_ID, ORDER_ID, OrderStatus.PROCESSING, {});
+      await repository.updateOrderStatus(
+        BUSINESS_ID, ORDER_ID, OrderStatus.CONFIRMED, OrderStatus.PROCESSING, {},
+      );
 
-      expect(prisma.orders.update.mock.calls[0]![0].data).toEqual({
+      expect(prisma.orders.updateMany.mock.calls[0]![0].data).toEqual({
         status: OrderStatus.PROCESSING,
       });
     });
@@ -452,17 +454,20 @@ describe('OrderRepository', () => {
     it('writes every extra field at once', async () => {
       const now = new Date('2026-03-02T10:00:00Z');
 
-      await repository.updateOrderStatus(BUSINESS_ID, ORDER_ID, OrderStatus.REFUNDED, {
-        confirmedAt: now,
-        deliveredAt: now,
-        cancelledAt: now,
-        cancellationReason: 'reason',
-        returnedAt: now,
-        returnReason: 'return',
-        internalNote: 'note',
-      });
+      await repository.updateOrderStatus(
+        BUSINESS_ID, ORDER_ID, OrderStatus.CANCELLED, OrderStatus.REFUNDED,
+        {
+          confirmedAt: now,
+          deliveredAt: now,
+          cancelledAt: now,
+          cancellationReason: 'reason',
+          returnedAt: now,
+          returnReason: 'return',
+          internalNote: 'note',
+        },
+      );
 
-      expect(prisma.orders.update.mock.calls[0]![0].data).toEqual({
+      expect(prisma.orders.updateMany.mock.calls[0]![0].data).toEqual({
         status: OrderStatus.REFUNDED,
         confirmed_at: now,
         delivered_at: now,
@@ -474,10 +479,16 @@ describe('OrderRepository', () => {
       });
     });
 
-    it('hydrates the full order on the way out', async () => {
-      await repository.updateOrderStatus(BUSINESS_ID, ORDER_ID, OrderStatus.PROCESSING);
+    it('re-reads with full includes after a successful CAS write', async () => {
+      await repository.updateOrderStatus(
+        BUSINESS_ID, ORDER_ID, OrderStatus.CONFIRMED, OrderStatus.PROCESSING,
+      );
 
-      expect(prisma.orders.update.mock.calls[0]![0].include).toEqual({
+      const reReadCall = prisma.orders.findFirst.mock.calls.find(
+        (c: unknown[]) => (c[0] as Record<string, unknown>).include,
+      );
+      expect(reReadCall).toBeDefined();
+      expect(reReadCall![0].include).toEqual({
         client: true,
         shipping_address: true,
         shipments: true,

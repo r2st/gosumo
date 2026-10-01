@@ -106,6 +106,7 @@ const VALID_TRANSITIONS: Record<ConversationStatus, ConversationStatus[]> = {
   [ConversationStatus.SNOOZED]: [
     ConversationStatus.OPEN,
     ConversationStatus.ESCALATED,
+    ConversationStatus.RESOLVED,
   ],
 };
 

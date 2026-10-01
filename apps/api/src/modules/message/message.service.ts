@@ -48,6 +48,18 @@ import {
 } from '../../common/utils/storage-key.util';
 
 // ─────────────────────────────────────────────
+// Delivery status rank — forward-only progression
+// ─────────────────────────────────────────────
+
+const STATUS_RANK: Record<MessageStatus, number> = {
+  [MessageStatus.PENDING]: 0,
+  [MessageStatus.SENT]: 1,
+  [MessageStatus.DELIVERED]: 2,
+  [MessageStatus.READ]: 3,
+  [MessageStatus.FAILED]: 4,
+};
+
+// ─────────────────────────────────────────────
 // Response interface for paginated messages
 // ─────────────────────────────────────────────
 
@@ -237,16 +249,36 @@ export class MessageService {
 
   /**
    * Update delivery status and associated timestamps on a message.
+   *
+   * Status can only move forward (PENDING → SENT → DELIVERED → READ), never
+   * backward. FAILED is terminal and accepted from any non-FAILED state.
+   * A late webhook delivering SENT after DELIVERED is silently dropped.
    */
   async updateDeliveryStatus(
     businessId: string,
     messageId: string,
     dto: UpdateDeliveryStatusDto,
   ): Promise<messages> {
-    // Verify the message exists and belongs to this business
     const existing = await this.repository.findById(businessId, messageId);
     if (!existing) {
       throw new NotFoundException(`Message ${messageId} not found`);
+    }
+
+    const currentRank = STATUS_RANK[existing.status as MessageStatus] ?? 0;
+    const targetRank = STATUS_RANK[dto.status] ?? 0;
+
+    if (targetRank <= currentRank && dto.status !== MessageStatus.FAILED) {
+      this.logger.debug(
+        `Dropping ${existing.status} → ${dto.status} for message ${messageId} (not a forward transition)`,
+      );
+      return existing;
+    }
+
+    if (existing.status === MessageStatus.FAILED) {
+      this.logger.debug(
+        `Message ${messageId} is already FAILED; ignoring ${dto.status}`,
+      );
+      return existing;
     }
 
     return this.repository.updateStatus(businessId, messageId, dto.status, {
@@ -417,6 +449,8 @@ export class MessageService {
         event.externalMessageId,
       );
       if (!message) return;
+      const currentRank = STATUS_RANK[message.status as MessageStatus] ?? 0;
+      if (currentRank >= STATUS_RANK[MessageStatus.SENT]) return;
       await this.repository.updateStatus(
         event.businessId,
         message.id,
@@ -441,6 +475,7 @@ export class MessageService {
         event.messageId,
       );
       if (!message) return;
+      if (message.status === MessageStatus.FAILED) return;
       await this.repository.updateStatus(
         event.businessId,
         message.id,

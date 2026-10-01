@@ -866,6 +866,7 @@ describe('OrderService', () => {
       expect(repository.updateOrderStatus).toHaveBeenCalledWith(
         BUSINESS_ID,
         ORDER_ID,
+        OrderStatus.DRAFT,
         OrderStatus.CONFIRMED,
         expect.objectContaining({ confirmedAt: expect.any(Date) }),
       );
@@ -951,6 +952,7 @@ describe('OrderService', () => {
       expect(repository.updateOrderStatus).toHaveBeenCalledWith(
         BUSINESS_ID,
         ORDER_ID,
+        OrderStatus.CANCELLED,
         OrderStatus.REFUNDED,
       );
     });
@@ -998,6 +1000,7 @@ describe('OrderService', () => {
       expect(repository.updateOrderStatus).toHaveBeenCalledWith(
         BUSINESS_ID,
         ORDER_ID,
+        OrderStatus.SHIPPED,
         OrderStatus.DELIVERED,
         expect.objectContaining({ deliveredAt: expect.any(Date) }),
       );

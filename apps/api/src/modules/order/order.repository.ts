@@ -176,12 +176,16 @@ export class OrderRepository {
   }
 
   /**
-   * Update order status and optional fields.
-   * Verifies business_id scoping before update.
+   * Update order status and optional fields, guarded by expected current status.
+   *
+   * Uses `updateMany` with `expectedStatus` in the WHERE clause so the state-
+   * machine check and the write are one atomic statement (CAS). Returns `null`
+   * when the row was not in `expectedStatus` — the caller lost the race.
    */
   async updateOrderStatus(
     businessId: string,
     orderId: string,
+    expectedStatus: OrderStatus,
     status: OrderStatus,
     extra?: {
       confirmedAt?: Date;
@@ -192,50 +196,47 @@ export class OrderRepository {
       returnReason?: string;
       internalNote?: string;
     },
-  ): Promise<orders> {
-    const existing = await this.prisma.orders.findFirst({
-      where: {
-        id: orderId,
-        business_id: businessId,
-        deleted_at: null,
-      },
-    });
-
-    if (!existing) {
-      throw new ResourceNotFoundError('Order', orderId, {
-        context: { businessId },
-      });
-    }
-
-    const updateData: Prisma.ordersUpdateInput = {
+  ): Promise<orders | null> {
+    const data: Prisma.ordersUpdateManyMutationInput = {
       status: status as unknown as PrismaOrderStatus,
     };
 
     if (extra?.confirmedAt) {
-      updateData.confirmed_at = extra.confirmedAt;
+      data.confirmed_at = extra.confirmedAt;
     }
     if (extra?.deliveredAt) {
-      updateData.delivered_at = extra.deliveredAt;
+      data.delivered_at = extra.deliveredAt;
     }
     if (extra?.cancelledAt) {
-      updateData.cancelled_at = extra.cancelledAt;
+      data.cancelled_at = extra.cancelledAt;
     }
     if (extra?.cancellationReason) {
-      updateData.cancellation_reason = extra.cancellationReason;
+      data.cancellation_reason = extra.cancellationReason;
     }
     if (extra?.returnedAt) {
-      updateData.returned_at = extra.returnedAt;
+      data.returned_at = extra.returnedAt;
     }
     if (extra?.returnReason) {
-      updateData.return_reason = extra.returnReason;
+      data.return_reason = extra.returnReason;
     }
     if (extra?.internalNote) {
-      updateData.internal_note = extra.internalNote;
+      data.internal_note = extra.internalNote;
     }
 
-    return this.prisma.orders.update({
+    const result = await this.prisma.orders.updateMany({
+      where: {
+        id: orderId,
+        business_id: businessId,
+        status: expectedStatus as unknown as PrismaOrderStatus,
+        deleted_at: null,
+      },
+      data,
+    });
+
+    if (result.count === 0) return null;
+
+    return this.prisma.orders.findFirst({
       where: { id: orderId, business_id: businessId },
-      data: updateData,
       include: {
         client: true,
         shipping_address: true,

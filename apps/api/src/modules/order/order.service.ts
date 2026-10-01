@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import type { orders } from '@prisma/client';
@@ -67,13 +68,13 @@ const VALID_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   [OrderStatus.DRAFT]: [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
   [OrderStatus.CONFIRMED]: [OrderStatus.PROCESSING, OrderStatus.CANCELLED],
   [OrderStatus.PROCESSING]: [OrderStatus.PACKED, OrderStatus.CANCELLED],
-  [OrderStatus.PACKED]: [OrderStatus.SHIPPED],
+  [OrderStatus.PACKED]: [OrderStatus.SHIPPED, OrderStatus.CANCELLED],
   [OrderStatus.SHIPPED]: [OrderStatus.DELIVERED, OrderStatus.RETURNED],
-  [OrderStatus.DELIVERED]: [OrderStatus.RETURNED],
+  [OrderStatus.DELIVERED]: [OrderStatus.RETURNED, OrderStatus.PARTIALLY_REFUNDED],
   [OrderStatus.CANCELLED]: [OrderStatus.REFUNDED],
   [OrderStatus.REFUNDED]: [],
-  [OrderStatus.PARTIALLY_REFUNDED]: [],
-  [OrderStatus.RETURNED]: [],
+  [OrderStatus.PARTIALLY_REFUNDED]: [OrderStatus.REFUNDED],
+  [OrderStatus.RETURNED]: [OrderStatus.REFUNDED, OrderStatus.PARTIALLY_REFUNDED],
 };
 
 // ─────────────────────────────────────────────
@@ -462,9 +463,11 @@ export class OrderService {
     const updated = await this.repository.updateOrderStatus(
       businessId,
       orderId,
+      currentStatus,
       dto.status,
       { internalNote: dto.note },
     );
+    this.assertCasResult(updated, orderId, currentStatus, dto.status);
 
     this.logger.log(
       `Order ${order.order_number} status changed: ${currentStatus} -> ${dto.status}`,
@@ -492,36 +495,21 @@ export class OrderService {
 
     const currentStatus = order.status as OrderStatus;
 
-    if (
-      currentStatus === OrderStatus.SHIPPED ||
-      currentStatus === OrderStatus.DELIVERED
-    ) {
-      throw new BadRequestException(
-        `Cannot cancel order in status ${currentStatus}. ` +
-          'Orders that are SHIPPED or DELIVERED cannot be cancelled.',
-      );
-    }
-
-    if (
-      currentStatus === OrderStatus.CANCELLED ||
-      currentStatus === OrderStatus.REFUNDED
-    ) {
-      throw new BadRequestException(
-        `Order is already ${currentStatus}.`,
-      );
-    }
+    this.validateTransition(currentStatus, OrderStatus.CANCELLED);
 
     const now = new Date();
 
     const updated = await this.repository.updateOrderStatus(
       businessId,
       orderId,
+      currentStatus,
       OrderStatus.CANCELLED,
       {
         cancelledAt: now,
         cancellationReason: dto.reason,
       },
     );
+    this.assertCasResult(updated, orderId, currentStatus, OrderStatus.CANCELLED);
 
     // Restore stock for cancelled items
     await this.restoreStock(
@@ -575,9 +563,11 @@ export class OrderService {
     const updated = await this.repository.updateOrderStatus(
       businessId,
       orderId,
+      currentStatus,
       OrderStatus.PACKED,
       { internalNote: dto.note },
     );
+    this.assertCasResult(updated, orderId, currentStatus, OrderStatus.PACKED);
 
     const event: OrderPackedEvent = {
       type: 'order.packed',
@@ -639,8 +629,10 @@ export class OrderService {
     const updated = await this.repository.updateOrderStatus(
       businessId,
       orderId,
+      currentStatus,
       OrderStatus.SHIPPED,
     );
+    this.assertCasResult(updated, orderId, currentStatus, OrderStatus.SHIPPED);
 
     const event: OrderShippedEvent = {
       type: 'order.shipped',
@@ -689,9 +681,11 @@ export class OrderService {
     const updated = await this.repository.updateOrderStatus(
       businessId,
       orderId,
+      currentStatus,
       OrderStatus.RETURNED,
       { returnedAt: now, returnReason: dto.reason },
     );
+    this.assertCasResult(updated, orderId, currentStatus, OrderStatus.RETURNED);
 
     // Restore stock for returned items
     await this.restoreStock(
@@ -845,12 +839,20 @@ export class OrderService {
         return;
       }
 
-      await this.repository.updateOrderStatus(
+      const updated = await this.repository.updateOrderStatus(
         event.businessId,
         event.orderId,
+        currentStatus,
         OrderStatus.CONFIRMED,
         { confirmedAt: new Date() },
       );
+
+      if (!updated) {
+        this.logger.warn(
+          `Order ${order.order_number} status changed concurrently during payment confirmation`,
+        );
+        return;
+      }
 
       const confirmedEvent: OrderConfirmedEvent = {
         type: 'order.confirmed',
@@ -902,19 +904,32 @@ export class OrderService {
 
       const currentStatus = order.status as OrderStatus;
 
-      if (currentStatus !== OrderStatus.CANCELLED) {
+      if (
+        currentStatus !== OrderStatus.CANCELLED &&
+        currentStatus !== OrderStatus.RETURNED &&
+        currentStatus !== OrderStatus.PARTIALLY_REFUNDED
+      ) {
         this.logger.warn(
           `Order ${order.order_number} is in status ${currentStatus}, ` +
-            'skipping refund transition (expected CANCELLED)',
+            'skipping refund transition (expected CANCELLED, RETURNED, or PARTIALLY_REFUNDED)',
         );
         return;
       }
 
-      await this.repository.updateOrderStatus(
+      const targetStatus = OrderStatus.REFUNDED;
+      const updated = await this.repository.updateOrderStatus(
         event.businessId,
         event.orderId,
-        OrderStatus.REFUNDED,
+        currentStatus,
+        targetStatus,
       );
+
+      if (!updated) {
+        this.logger.warn(
+          `Order ${order.order_number} status changed concurrently during refund completion`,
+        );
+        return;
+      }
 
       this.logger.log(
         `Order ${order.order_number} marked as REFUNDED after refund ${event.refundId}`,
@@ -963,12 +978,20 @@ export class OrderService {
         ? new Date(event.deliveredAt)
         : new Date();
 
-      await this.repository.updateOrderStatus(
+      const updated = await this.repository.updateOrderStatus(
         event.businessId,
         event.orderId,
+        currentStatus,
         OrderStatus.DELIVERED,
         { deliveredAt },
       );
+
+      if (!updated) {
+        this.logger.warn(
+          `Order ${order.order_number} status changed concurrently during delivery confirmation`,
+        );
+        return;
+      }
 
       const deliveredEvent: OrderDeliveredEvent = {
         type: 'order.delivered',
@@ -1087,6 +1110,24 @@ export class OrderService {
       throw new BadRequestException(
         `Invalid order status transition: ${currentStatus} -> ${targetStatus}. ` +
           `Allowed transitions from ${currentStatus}: ${allowed?.join(', ') || 'none'}`,
+      );
+    }
+  }
+
+  /**
+   * Assert that the CAS write landed, or throw a ConflictException naming the
+   * status that beat us — the same pattern the conversation module uses.
+   */
+  private assertCasResult(
+    result: orders | null,
+    orderId: string,
+    from: OrderStatus,
+    to: OrderStatus,
+  ): asserts result is orders {
+    if (!result) {
+      throw new ConflictException(
+        `Order ${orderId} is no longer ${from}; ` +
+          `the ${from} → ${to} transition was not applied`,
       );
     }
   }

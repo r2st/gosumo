@@ -816,6 +816,7 @@ describe('OrderService — branches', () => {
       expect(repository.updateOrderStatus).toHaveBeenCalledWith(
         BUSINESS_ID,
         ORDER_ID,
+        OrderStatus.SHIPPED,
         OrderStatus.DELIVERED,
         { deliveredAt: new Date('2026-07-04T12:00:00.000Z') },
       );

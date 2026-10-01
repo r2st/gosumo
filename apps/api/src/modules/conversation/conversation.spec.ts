@@ -9,7 +9,7 @@
  *  5.  updateStatus: valid OPEN → PENDING_HUMAN transition
  *  6.  updateStatus: valid RESOLVED → OPEN (reopen)
  *  7.  updateStatus: invalid RESOLVED → ESCALATED throws BadRequestException
- *  8.  updateStatus: invalid SNOOZED → RESOLVED throws BadRequestException
+ *  8.  updateStatus: SNOOZED → RESOLVED transition is allowed
  *  9.  updateStatus: throws NotFoundException for missing conversation
  *  10. updateStatus: sets resolved_at when resolving
  *  11. listConversations: applies status filter
@@ -352,19 +352,23 @@ describe('ConversationService', () => {
       expect(repository.transitionStatus).not.toHaveBeenCalled();
     });
 
-    it('should throw BadRequestException for invalid SNOOZED → RESOLVED transition', async () => {
+    it('should allow SNOOZED → RESOLVED transition', async () => {
       const conversation = makeConversation({ status: ConversationStatus.SNOOZED });
+      const updated = makeConversation({
+        status: ConversationStatus.RESOLVED,
+        resolved_at: new Date(),
+      });
       repository.findById.mockResolvedValue(conversation);
+      repository.transitionStatus.mockResolvedValue(updated);
 
-      await expect(
-        service.updateStatus(
-          BUSINESS_ID,
-          CONVERSATION_ID,
-          ConversationStatus.RESOLVED,
-        ),
-      ).rejects.toThrow(BadRequestException);
+      const result = await service.updateStatus(
+        BUSINESS_ID,
+        CONVERSATION_ID,
+        ConversationStatus.RESOLVED,
+      );
 
-      expect(repository.transitionStatus).not.toHaveBeenCalled();
+      expect(result.status).toBe(ConversationStatus.RESOLVED);
+      expect(repository.transitionStatus).toHaveBeenCalled();
     });
 
     it('should throw NotFoundException for missing conversation', async () => {
