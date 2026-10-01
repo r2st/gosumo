@@ -118,6 +118,7 @@ export class SmsAdapter extends BaseChannelAdapter {
     const text = body.Body || body.body || "";
     const messageSid = body.MessageSid || body.messageSid || generateId();
     const numMedia = parseInt(body.NumMedia || body.numMedia || "0", 10);
+    const timestamp = this.parseTwilioTimestamp(body.DateCreated || body.DateSent) ?? new Date();
 
     if (numMedia > 0 && body.MediaUrl0) {
       return {
@@ -133,7 +134,7 @@ export class SmsAdapter extends BaseChannelAdapter {
           caption: text || undefined,
           mimeType: body.MediaContentType0 || "image/jpeg",
         },
-        timestamp: new Date(),
+        timestamp,
         metadata: { from, to, numMedia, messageSid },
       };
     }
@@ -149,7 +150,7 @@ export class SmsAdapter extends BaseChannelAdapter {
         type: MessageContentType.TEXT,
         text,
       },
-      timestamp: new Date(),
+      timestamp,
       metadata: { from, to, messageSid },
     };
   }
@@ -239,6 +240,12 @@ export class SmsAdapter extends BaseChannelAdapter {
 
   async sendInteractive(_interactive: InteractiveMessage): Promise<SendResult> {
     return { success: false, error: "SMS does not support interactive messages" };
+  }
+
+  private parseTwilioTimestamp(raw: unknown): Date | null {
+    if (!raw || typeof raw !== 'string') return null;
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime()) ? null : d;
   }
 
   getCapabilities(): ChannelCapabilities {

@@ -149,6 +149,29 @@ export function normalizedSentAt(value: unknown, now: Date = new Date()): Date |
 /** How far ahead of our own clock a provider timestamp may be and still be believed. */
 export const SENT_AT_MAX_SKEW_MS = 60 * 60 * 1000;
 
+/**
+ * Catches adapters that produce a NormalizedMessage with missing required
+ * fields — a gap that would otherwise travel silently through the pipeline
+ * until it hits a null-column constraint or a broken AI prompt.
+ */
+export function validateNormalizedMessage(msg: NormalizedMessage): string[] {
+  const issues: string[] = [];
+  if (!msg.id) issues.push('id is empty');
+  if (!msg.externalId) issues.push('externalId is empty');
+  if (!msg.channel) issues.push('channel is empty');
+  if (!msg.channelAccountId) issues.push('channelAccountId is empty');
+  if (!msg.direction) issues.push('direction is empty');
+  if (!msg.sender?.externalId) issues.push('sender.externalId is empty');
+  if (!msg.content?.type) issues.push('content.type is empty');
+  if (msg.content?.type === 'TEXT' && !('text' in msg.content)) {
+    issues.push('TEXT content missing text field');
+  }
+  if (!(msg.timestamp instanceof Date) || Number.isNaN(msg.timestamp.getTime())) {
+    issues.push('timestamp is not a valid Date');
+  }
+  return issues;
+}
+
 /** Outcome of recording a delivery in `webhook_events`. */
 interface DeliveryRecord {
   duplicate: boolean;
@@ -418,6 +441,17 @@ export class ChannelAdapterService implements OnModuleInit {
         adapter.parseInbound(req);
         throw new PayloadParseError(adapter.channelType, 'payload carried no inbound message');
       }
+
+      for (const msg of parsed) {
+        const issues = validateNormalizedMessage(msg);
+        if (issues.length > 0) {
+          this.logger.warn(
+            `[${traceId}] ${adapter.channelType} adapter produced an incomplete NormalizedMessage ` +
+              `(externalId=${msg.externalId ?? '?'}): ${issues.join(', ')}`,
+          );
+        }
+      }
+
       return parsed;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

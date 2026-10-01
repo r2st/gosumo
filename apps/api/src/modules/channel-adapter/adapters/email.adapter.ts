@@ -85,6 +85,7 @@ export class EmailAdapter extends BaseChannelAdapter {
       body?: string;
       html?: string;
       messageId?: string;
+      date?: string;
       attachments?: Array<{ filename: string; url: string; mimeType: string }>;
     };
 
@@ -93,6 +94,7 @@ export class EmailAdapter extends BaseChannelAdapter {
     const subject = body.subject || "";
     const emailBody = body.body || body.html || "";
     const messageId = body.messageId || generateId();
+    const timestamp = this.parseEmailDate(body.date) ?? new Date();
 
     // Combine subject and body
     const fullText = subject ? "Subject: " + subject + "\n\n" + emailBody : emailBody;
@@ -111,7 +113,7 @@ export class EmailAdapter extends BaseChannelAdapter {
         type: MessageContentType.TEXT,
         text: fullText,
       },
-      timestamp: new Date(),
+      timestamp,
       metadata: {
         from,
         to,
@@ -243,6 +245,12 @@ export class EmailAdapter extends BaseChannelAdapter {
       success: false,
       error: "Email does not support interactive messages",
     };
+  }
+
+  private parseEmailDate(raw: unknown): Date | null {
+    if (!raw || typeof raw !== 'string') return null;
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime()) ? null : d;
   }
 
   getCapabilities(): ChannelCapabilities {
