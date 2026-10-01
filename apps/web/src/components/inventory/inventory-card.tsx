@@ -53,7 +53,7 @@ export function InventoryCard({ project }: { project: RealtyProject }) {
           <span
             className={cn(
               'absolute bottom-2.5 left-2.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium',
-              fresh.stale ? 'bg-rose-100 text-rose-700' : 'bg-sky-100 text-sky-700',
+              fresh.stale ? 'bg-rose-500/15 text-rose-400' : 'bg-sky-500/15 text-sky-400',
             )}
           >
             <span className={cn('h-1.5 w-1.5 rounded-full', fresh.stale ? 'bg-rose-500' : 'bg-sky-500')} />

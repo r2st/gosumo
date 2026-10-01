@@ -62,14 +62,14 @@ export function NorthStarKpi() {
             <span
               className={cn(
                 'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold',
-                onTarget ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700',
+                onTarget ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400',
               )}
             >
               <Target className="h-3.5 w-3.5" />
               Goal ≥ {NORTH_STAR_GOAL}
             </span>
             {!loading && (
-              <span className={cn('text-xs font-medium', onTarget ? 'text-emerald-600' : 'text-amber-600')}>
+              <span className={cn('text-xs font-medium', onTarget ? 'text-emerald-400' : 'text-amber-400')}>
                 {onTarget ? 'On target' : 'Below target'}
               </span>
             )}

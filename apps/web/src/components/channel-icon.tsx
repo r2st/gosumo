@@ -3,11 +3,11 @@ import type { ChannelType } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 const CONFIG: Record<ChannelType, { icon: typeof Globe; label: string; className: string }> = {
-  WHATSAPP: { icon: MessageCircle, label: 'WhatsApp', className: 'text-emerald-600 bg-emerald-50' },
-  INSTAGRAM: { icon: Instagram, label: 'Instagram', className: 'text-pink-600 bg-pink-50' },
-  SMS: { icon: Phone, label: 'SMS', className: 'text-sky-600 bg-sky-50' },
-  WEB_CHAT: { icon: Globe, label: 'Web Chat', className: 'text-violet-600 bg-violet-50' },
-  EMAIL: { icon: Mail, label: 'Email', className: 'text-amber-600 bg-amber-50' },
+  WHATSAPP: { icon: MessageCircle, label: 'WhatsApp', className: 'text-emerald-400 bg-emerald-500/15' },
+  INSTAGRAM: { icon: Instagram, label: 'Instagram', className: 'text-pink-400 bg-pink-500/15' },
+  SMS: { icon: Phone, label: 'SMS', className: 'text-sky-400 bg-sky-500/15' },
+  WEB_CHAT: { icon: Globe, label: 'Web Chat', className: 'text-violet-400 bg-violet-500/15' },
+  EMAIL: { icon: Mail, label: 'Email', className: 'text-amber-400 bg-amber-500/15' },
 };
 
 export function ChannelIcon({ channel, className }: { channel: ChannelType; className?: string }) {

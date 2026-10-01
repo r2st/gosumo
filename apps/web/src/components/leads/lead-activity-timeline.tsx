@@ -31,15 +31,15 @@ const KIND_ICON: Record<LeadTimelineKind, LucideIcon> = {
 };
 
 const KIND_TONE: Record<LeadTimelineKind, string> = {
-  captured: 'bg-indigo-100 text-indigo-600',
-  contact: 'bg-sky-100 text-sky-600',
-  fact: 'bg-sky-100 text-sky-600',
-  objection: 'bg-amber-100 text-amber-600',
-  promise: 'bg-emerald-100 text-emerald-600',
-  visit: 'bg-violet-100 text-violet-600',
-  stage: 'bg-indigo-100 text-indigo-600',
-  activity: 'bg-slate-100 text-slate-600',
-  followup: 'bg-amber-100 text-amber-600',
+  captured: 'bg-primary/15 text-primary',
+  contact: 'bg-sky-500/15 text-sky-400',
+  fact: 'bg-sky-500/15 text-sky-400',
+  objection: 'bg-amber-500/15 text-amber-400',
+  promise: 'bg-emerald-500/15 text-emerald-400',
+  visit: 'bg-violet-500/15 text-violet-400',
+  stage: 'bg-primary/15 text-primary',
+  activity: 'bg-muted text-muted-foreground',
+  followup: 'bg-amber-500/15 text-amber-400',
 };
 
 /**
@@ -84,7 +84,7 @@ export function LeadActivityTimeline({ lead }: { lead: Lead }) {
               <div className="flex flex-wrap items-center gap-x-2">
                 <p className="text-sm font-medium text-foreground">{e.title}</p>
                 {e.future && (
-                  <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                  <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400">
                     Upcoming
                   </span>
                 )}

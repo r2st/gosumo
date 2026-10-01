@@ -38,10 +38,10 @@ const ICON: Record<NotificationType, LucideIcon> = {
 const ICON_TONE: Record<NotificationType, string> = {
   TASK_CREATED: 'bg-accent text-primary',
   TASK_ASSIGNED: 'bg-accent text-primary',
-  CONVERSATION_ESCALATED: 'bg-amber-50 text-amber-600',
-  PAYMENT_RECEIVED: 'bg-emerald-50 text-emerald-600',
-  BOOKING_CREATED: 'bg-sky-50 text-sky-600',
-  CHANNEL_ERROR: 'bg-rose-50 text-rose-600',
+  CONVERSATION_ESCALATED: 'bg-amber-500/15 text-amber-400',
+  PAYMENT_RECEIVED: 'bg-emerald-500/15 text-emerald-400',
+  BOOKING_CREATED: 'bg-sky-500/15 text-sky-400',
+  CHANNEL_ERROR: 'bg-rose-500/15 text-rose-400',
   SYSTEM: 'bg-muted text-muted-foreground',
 };
 

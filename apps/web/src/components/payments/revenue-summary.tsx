@@ -27,26 +27,26 @@ export function RevenueSummary() {
         label="Total revenue"
         value={paiseToCompactRupees(data.totalRevenue)}
         icon={IndianRupee}
-        iconClassName="bg-emerald-50 text-emerald-600"
+        iconClassName="bg-emerald-500/15 text-emerald-400"
         hint={`${formatNumber(data.totalTransactions)} transactions`}
       />
       <KpiCard
         label="Success rate"
         value={formatRatioPct(data.successRate)}
         icon={CheckCircle2}
-        iconClassName="bg-sky-50 text-sky-600"
+        iconClassName="bg-sky-500/15 text-sky-400"
       />
       <KpiCard
         label="Avg transaction"
         value={paiseToRupees(data.avgTransactionValue)}
         icon={Receipt}
-        iconClassName="bg-violet-50 text-violet-600"
+        iconClassName="bg-violet-500/15 text-violet-400"
       />
       <KpiCard
         label="Refunded"
         value={paiseToCompactRupees(data.refundedAmount)}
         icon={RotateCcw}
-        iconClassName="bg-amber-50 text-amber-600"
+        iconClassName="bg-amber-500/15 text-amber-400"
         hint={`${formatNumber(data.refundCount)} refunds`}
       />
     </div>

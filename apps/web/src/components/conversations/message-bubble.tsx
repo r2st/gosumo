@@ -28,9 +28,9 @@ export function aiConfidenceBadge(message: Message): AiConfidence | null {
     num(message.aiConfidence) ?? num(meta.aiConfidence) ?? num(meta.confidence);
   if (score == null) return null;
 
-  if (score >= 90) return { label: 'Auto', dot: 'bg-emerald-500', text: 'text-emerald-700', score };
-  if (score >= 70) return { label: 'Draft', dot: 'bg-amber-500', text: 'text-amber-700', score };
-  return { label: 'Escalated', dot: 'bg-rose-500', text: 'text-rose-700', score };
+  if (score >= 90) return { label: 'Auto', dot: 'bg-emerald-500', text: 'text-emerald-400', score };
+  if (score >= 70) return { label: 'Draft', dot: 'bg-amber-500', text: 'text-amber-400', score };
+  return { label: 'Escalated', dot: 'bg-rose-500', text: 'text-rose-400', score };
 }
 
 function AiConfidenceBadge({ message }: { message: Message }) {
@@ -163,10 +163,10 @@ function StatusTick({ message }: { message: Message }) {
   if (message.status === 'FAILED') return <AlertCircle className="h-3.5 w-3.5 text-rose-500" />;
   if (message.status === 'READ') return <CheckCheck className="h-3.5 w-3.5 text-sky-500" />;
   if (message.status === 'DELIVERED')
-    return <CheckCheck className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />;
+    return <CheckCheck className="h-3.5 w-3.5 text-muted-foreground" />;
   if (message.status === 'SENT')
-    return <Check className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />;
-  return <Clock className="h-3 w-3 text-slate-400" />;
+    return <Check className="h-3.5 w-3.5 text-muted-foreground" />;
+  return <Clock className="h-3 w-3 text-muted-foreground" />;
 }
 
 /**
@@ -189,7 +189,7 @@ export function MessageBubble({ message }: { message: Message }) {
   if (message.direction === 'INTERNAL') {
     return (
       <div className="flex justify-center">
-        <div className="max-w-md rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <div className="max-w-md rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
           <span className="font-semibold">Internal note · </span>
           <MessageBody message={message} />
         </div>
@@ -207,7 +207,7 @@ export function MessageBubble({ message }: { message: Message }) {
           // WhatsApp bubbles: outbound light-green, inbound white/card. The
           // squared top corner on the tail side seats the little tail triangle.
           outbound
-            ? 'rounded-2xl rounded-tr-md bg-[#DCF8C6] text-slate-900 dark:bg-[#005C4B] dark:text-slate-50'
+            ? 'rounded-2xl rounded-tr-md bg-[#005C4B] text-slate-50'
             : 'rounded-2xl rounded-tl-md border border-border bg-card text-card-foreground',
         )}
       >
@@ -217,7 +217,7 @@ export function MessageBubble({ message }: { message: Message }) {
           className={cn(
             'absolute top-0 h-3 w-3 rotate-45',
             outbound
-              ? '-right-1 bg-[#DCF8C6] dark:bg-[#005C4B]'
+              ? '-right-1 bg-[#005C4B]'
               : '-left-1 border-l border-t border-border bg-card',
           )}
         />
@@ -230,7 +230,7 @@ export function MessageBubble({ message }: { message: Message }) {
         <div
           className={cn(
             'mt-0.5 flex items-center justify-end gap-1 text-[10px]',
-            outbound ? 'text-emerald-900/60 dark:text-slate-200/70' : 'text-muted-foreground',
+            outbound ? 'text-slate-200/70' : 'text-muted-foreground',
           )}
         >
           {message.sentByAi && (

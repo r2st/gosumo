@@ -1,12 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, Languages, LogOut, Menu, Moon, Settings, Sun, User } from 'lucide-react';
+import { ChevronDown, Languages, LogOut, Menu, Settings, User } from 'lucide-react';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { NotificationCenter } from '@/components/notifications/notification-center';
 import { useAuth } from '@/providers/auth-provider';
-import { useTheme } from '@/providers/theme-provider';
 import { useLanguage } from '@/providers/language-provider';
 import { UI_LANGUAGE_LABELS } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -17,15 +16,13 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border bg-card/80 px-4 backdrop-blur lg:px-6">
-      {/* Tablet-only drawer trigger. On mobile the bottom nav's "More" tab opens the sidebar,
-          so the hamburger is hidden below md; on desktop the sidebar is always visible. */}
-      <button onClick={onMenuClick} className="hidden rounded-md p-2 hover:bg-muted md:inline-flex lg:hidden">
+    <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur lg:px-6">
+      <button onClick={onMenuClick} className="hidden rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground md:inline-flex lg:hidden">
         <Menu className="h-5 w-5" />
       </button>
 
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold">{business?.name ?? 'GoSumo Workspace'}</p>
+        <p className="truncate text-sm font-semibold text-foreground">{business?.name ?? 'DoAide Workspace'}</p>
         {business && (
           <p className="truncate text-xs text-muted-foreground">
             {[
@@ -38,22 +35,16 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
         )}
       </div>
 
-      {/* Language switcher */}
       <LanguageToggle />
 
-      {/* Theme toggle */}
-      <ThemeToggle />
-
-      {/* Notifications */}
       <NotificationCenter />
 
-      {/* User menu */}
       <div className="relative">
         <button
           onClick={() => {
             setMenuOpen((v) => !v);
           }}
-          className="flex items-center gap-2 rounded-md p-1 pr-2 hover:bg-muted"
+          className="flex items-center gap-2 rounded-md p-1 pr-2 text-foreground hover:bg-muted"
         >
           <Avatar name={user?.name ?? 'User'} src={user?.avatarUrl} size="sm" />
           <span className="hidden text-sm font-medium sm:block">{user?.name ?? 'User'}</span>
@@ -63,7 +54,7 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
         {menuOpen && (
           <DropdownPanel onClose={() => setMenuOpen(false)} className="w-56">
             <div className="border-b border-border px-4 py-3">
-              <p className="truncate text-sm font-medium">{user?.name}</p>
+              <p className="truncate text-sm font-medium text-foreground">{user?.name}</p>
               <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
               {user && <Badge tone="primary" className="mt-2">{user.role}</Badge>}
             </div>
@@ -103,21 +94,6 @@ function LanguageToggle() {
   );
 }
 
-function ThemeToggle() {
-  const { theme, toggleTheme } = useTheme();
-  const isDark = theme === 'dark';
-  return (
-    <button
-      onClick={toggleTheme}
-      className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-      title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-    >
-      {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-    </button>
-  );
-}
-
 function MenuLink({
   href,
   icon: Icon,
@@ -130,7 +106,7 @@ function MenuLink({
   onClick: () => void;
 }) {
   return (
-    <Link href={href} onClick={onClick} className="flex items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-muted">
+    <Link href={href} onClick={onClick} className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground hover:bg-muted">
       <Icon className="h-4 w-4 text-muted-foreground" /> {label}
     </Link>
   );

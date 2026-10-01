@@ -73,7 +73,7 @@ export default function DashboardPage() {
                 value={formatDuration(conv?.avgFirstResponseTimeMs)}
                 hint="First response"
                 icon={Clock}
-                iconClassName="bg-sky-50 text-sky-600"
+                iconClassName="bg-sky-500/15 text-sky-400"
                 loading={metricsQ.isLoading}
               />
               <KpiCard
@@ -81,7 +81,7 @@ export default function DashboardPage() {
                 value={formatRatioPct(resolutionRate)}
                 hint={`${conv?.resolved ?? 0} resolved`}
                 icon={Target}
-                iconClassName="bg-emerald-50 text-emerald-600"
+                iconClassName="bg-emerald-500/15 text-emerald-400"
                 loading={metricsQ.isLoading}
               />
               <KpiCard
@@ -89,7 +89,7 @@ export default function DashboardPage() {
                 value={paiseToCompactRupees(m?.revenue.total)}
                 hint={`${m?.revenue.orders ?? 0} orders`}
                 icon={IndianRupee}
-                iconClassName="bg-amber-50 text-amber-600"
+                iconClassName="bg-amber-500/15 text-amber-400"
                 loading={metricsQ.isLoading}
               />
               <KpiCard
@@ -97,7 +97,7 @@ export default function DashboardPage() {
                 value={String(bookingsQ.data?.pagination.total ?? 0)}
                 hint="Confirmed upcoming"
                 icon={CalendarCheck}
-                iconClassName="bg-violet-50 text-violet-600"
+                iconClassName="bg-violet-500/15 text-violet-400"
                 loading={bookingsQ.isLoading}
               />
             </div>

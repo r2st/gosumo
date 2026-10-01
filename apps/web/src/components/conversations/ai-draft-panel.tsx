@@ -28,22 +28,22 @@ export function AiDraftPanel({ task }: { task: HitlTask }) {
   const busy = approve.isPending || reject.isPending;
 
   return (
-    <div className="border-t border-amber-200 bg-amber-50/60 p-4">
+    <div className="border-t border-amber-500/20 bg-amber-500/10 p-4">
       <div className="mb-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500/15 text-amber-400">
             <Bot className="h-4 w-4" />
           </span>
           <div>
-            <p className="text-sm font-semibold text-amber-900">AI draft awaiting review</p>
-            <p className="text-xs text-amber-700">{task.title}</p>
+            <p className="text-sm font-semibold text-amber-300">AI draft awaiting review</p>
+            <p className="text-xs text-amber-400">{task.title}</p>
           </div>
         </div>
         <Badge tone={confidenceTone}>{confidence}% confidence</Badge>
       </div>
 
       {task.aiReasoning && (
-        <p className="mb-2 rounded-md bg-white/60 px-3 py-2 text-xs text-amber-900">
+        <p className="mb-2 rounded-md bg-muted/60 px-3 py-2 text-xs text-amber-300">
           <span className="font-medium">Reasoning: </span>
           {task.aiReasoning}
         </p>
@@ -54,12 +54,12 @@ export function AiDraftPanel({ task }: { task: HitlTask }) {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           rows={4}
-          className="w-full resize-none rounded-md border border-amber-300 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="w-full resize-none rounded-md border border-amber-500/30 bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
       ) : (
         <div
           className={cn(
-            'rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-foreground',
+            'rounded-md border border-amber-500/20 bg-card px-3 py-2 text-sm text-foreground',
           )}
         >
           {draft || <span className="italic text-muted-foreground">No draft provided.</span>}

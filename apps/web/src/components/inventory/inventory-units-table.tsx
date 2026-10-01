@@ -30,7 +30,7 @@ function VerifiedCell({ unit }: { unit: RealtyUnit }) {
     <span
       className={cn(
         'inline-flex items-center gap-1 whitespace-nowrap text-xs font-medium',
-        fresh.stale ? 'text-rose-600' : 'text-sky-600',
+        fresh.stale ? 'text-rose-400' : 'text-sky-400',
       )}
       title={new Date(unit.verifiedAt as string).toLocaleString('en-IN')}
     >

@@ -182,7 +182,7 @@ export function SourceRoiSection({ range }: { range: DateRange }) {
       {best && (
         <Card>
           <CardContent className="flex flex-wrap items-center gap-3 py-4">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-400">
               <Award className="h-5 w-5" />
             </span>
             <div className="min-w-0">
@@ -252,7 +252,7 @@ export function SourceRoiSection({ range }: { range: DateRange }) {
               {rows.map((r) => {
                 const isBest = best?.key === r.key;
                 return (
-                  <TR key={r.key} className={cn(isBest && 'bg-emerald-50/60 dark:bg-emerald-500/5')}>
+                  <TR key={r.key} className={cn(isBest && 'bg-emerald-500/5')}>
                     <TD className="font-medium">
                       <span className="flex items-center gap-2">
                         {r.key}

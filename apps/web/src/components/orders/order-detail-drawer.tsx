@@ -31,13 +31,13 @@ interface TimelineStep {
 
 function buildTimeline(order: OrderDetail): TimelineStep[] {
   const steps: TimelineStep[] = [
-    { label: 'Order placed', at: order.createdAt, icon: ShoppingCart, tone: 'text-sky-600 bg-sky-50' },
-    { label: 'Confirmed', at: order.confirmedAt, icon: CheckCircle2, tone: 'text-emerald-600 bg-emerald-50' },
-    { label: 'Shipped', at: order.shippedAt, icon: Truck, tone: 'text-violet-600 bg-violet-50' },
-    { label: 'Delivered', at: order.deliveredAt, icon: Package, tone: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Order placed', at: order.createdAt, icon: ShoppingCart, tone: 'text-sky-400 bg-sky-500/15' },
+    { label: 'Confirmed', at: order.confirmedAt, icon: CheckCircle2, tone: 'text-emerald-400 bg-emerald-500/15' },
+    { label: 'Shipped', at: order.shippedAt, icon: Truck, tone: 'text-violet-400 bg-violet-500/15' },
+    { label: 'Delivered', at: order.deliveredAt, icon: Package, tone: 'text-emerald-400 bg-emerald-500/15' },
   ];
   if (order.cancelledAt) {
-    steps.push({ label: 'Cancelled', at: order.cancelledAt, icon: Ban, tone: 'text-rose-600 bg-rose-50' });
+    steps.push({ label: 'Cancelled', at: order.cancelledAt, icon: Ban, tone: 'text-rose-400 bg-rose-500/15' });
   }
   return steps.filter((s) => s.at);
 }

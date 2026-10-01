@@ -88,7 +88,7 @@ export function FunnelSection() {
       <Card>
         <CardContent className="flex flex-col items-center gap-1 py-6 text-center">
           <p className="text-sm text-muted-foreground">Overall conversion</p>
-          <p className="text-3xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
+          <p className="text-3xl font-bold tracking-tight text-emerald-400">
             {conversion.toFixed(1)}%
           </p>
           <p className="text-sm text-muted-foreground">

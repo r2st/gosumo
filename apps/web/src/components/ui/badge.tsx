@@ -6,10 +6,10 @@ export type BadgeTone = 'neutral' | 'primary' | 'success' | 'warning' | 'danger'
 const tones: Record<BadgeTone, string> = {
   neutral: 'bg-muted text-muted-foreground',
   primary: 'bg-accent text-accent-foreground',
-  success: 'bg-emerald-100 text-emerald-700',
-  warning: 'bg-amber-100 text-amber-700',
-  danger: 'bg-rose-100 text-rose-700',
-  info: 'bg-sky-100 text-sky-700',
+  success: 'bg-emerald-500/15 text-emerald-400',
+  warning: 'bg-amber-500/15 text-amber-400',
+  danger: 'bg-rose-500/15 text-rose-400',
+  info: 'bg-sky-500/15 text-sky-400',
 };
 
 export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {

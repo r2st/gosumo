@@ -42,7 +42,7 @@ export function BltcQualBars({ bltc }: { bltc: BltcProfile }) {
               <span
                 className={cn(
                   'flex h-5 w-5 items-center justify-center rounded text-[10px] font-bold',
-                  p.filled ? 'bg-emerald-100 text-emerald-700' : 'bg-muted text-muted-foreground',
+                  p.filled ? 'bg-emerald-500/15 text-emerald-400' : 'bg-muted text-muted-foreground',
                 )}
               >
                 {p.key}
@@ -61,7 +61,7 @@ export function BltcQualBars({ bltc }: { bltc: BltcProfile }) {
           </div>
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
             <div
-              className={cn('h-full rounded-full', p.filled ? 'bg-emerald-500' : 'bg-slate-200')}
+              className={cn('h-full rounded-full', p.filled ? 'bg-emerald-500' : 'bg-muted')}
               style={{ width: p.filled ? '100%' : '10%' }}
             />
           </div>

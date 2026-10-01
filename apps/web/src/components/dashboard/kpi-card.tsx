@@ -9,7 +9,7 @@ interface KpiCardProps {
   icon: LucideIcon;
   iconClassName?: string;
   hint?: string;
-  trend?: number; // percentage; positive = up
+  trend?: number;
   loading?: boolean;
 }
 
@@ -18,18 +18,18 @@ export function KpiCard({ label, value, icon: Icon, iconClassName, hint, trend, 
     <Card className="p-5">
       <div className="flex items-start justify-between">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-muted-foreground">{label}</p>
+          <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
           {loading ? (
             <Skeleton className="mt-2 h-8 w-24" />
           ) : (
-            <p className="mt-1 text-2xl font-bold tracking-tight">{value}</p>
+            <p className="mt-1 text-2xl font-bold tracking-tight text-foreground">{value}</p>
           )}
           {hint && !loading && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
           {typeof trend === 'number' && !loading && (
             <div
               className={cn(
                 'mt-2 inline-flex items-center gap-1 text-xs font-medium',
-                trend >= 0 ? 'text-emerald-600' : 'text-rose-600',
+                trend >= 0 ? 'text-emerald-400' : 'text-rose-400',
               )}
             >
               {trend >= 0 ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}

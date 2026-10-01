@@ -61,7 +61,7 @@ export function OverviewSection({ range }: { range: DateRange }) {
           label="Net revenue"
           value={paiseToCompactRupees(m?.revenue.total)}
           icon={IndianRupee}
-          iconClassName="bg-amber-50 text-amber-600"
+          iconClassName="bg-amber-500/15 text-amber-400"
           hint={`${formatNumber(m?.revenue.orders)} orders · AOV ${paiseToRupees(m?.revenue.avgOrderValue)}`}
           loading={isLoading}
         />
@@ -69,7 +69,7 @@ export function OverviewSection({ range }: { range: DateRange }) {
           label="AI autonomy"
           value={formatRatioPct(m?.ai.autonomyRate)}
           icon={Bot}
-          iconClassName="bg-violet-50 text-violet-600"
+          iconClassName="bg-violet-500/15 text-violet-400"
           hint={`avg confidence ${formatRatioPct(m?.ai.avgConfidence)}`}
           loading={isLoading}
         />
@@ -77,7 +77,7 @@ export function OverviewSection({ range }: { range: DateRange }) {
           label="Clients"
           value={formatNumber(m?.clients.total)}
           icon={Users}
-          iconClassName="bg-emerald-50 text-emerald-600"
+          iconClassName="bg-emerald-500/15 text-emerald-400"
           hint={`${formatNumber(m?.clients.newThisPeriod)} new · ${formatNumber(m?.clients.churnRisk)} at risk`}
           loading={isLoading}
         />

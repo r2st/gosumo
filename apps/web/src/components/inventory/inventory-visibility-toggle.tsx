@@ -41,7 +41,7 @@ export function InventoryVisibilityToggle({ project }: { project: RealtyProject 
         <span
           className={cn(
             'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
-            onExchange ? 'bg-indigo-50 text-indigo-600' : 'bg-muted text-muted-foreground',
+            onExchange ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
           )}
         >
           {onExchange ? <Globe className="h-4 w-4" /> : <Lock className="h-4 w-4" />}

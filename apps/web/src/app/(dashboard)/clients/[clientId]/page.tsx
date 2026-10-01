@@ -84,25 +84,25 @@ export default function ClientDetailPage() {
               icon={Wallet}
               label="Lifetime value"
               value={client.ltvScore != null ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(client.ltvScore) : '—'}
-              tone="text-emerald-600 bg-emerald-50"
+              tone="text-emerald-400 bg-emerald-500/15"
             />
             <MetricTile
               icon={ShoppingCart}
               label="Total orders"
               value={String(client.totalOrders ?? 0)}
-              tone="text-sky-600 bg-sky-50"
+              tone="text-sky-400 bg-sky-500/15"
             />
             <MetricTile
               icon={Wallet}
               label="Total spent"
               value={paiseToRupees(client.totalSpentPaise)}
-              tone="text-violet-600 bg-violet-50"
+              tone="text-violet-400 bg-violet-500/15"
             />
             <MetricTile
               icon={TrendingDown}
               label="Churn risk"
               value={client.churnRisk != null ? `${(client.churnRisk * 100).toFixed(0)}%` : '—'}
-              tone="text-amber-600 bg-amber-50"
+              tone="text-amber-400 bg-amber-500/15"
               badge={client.churnRisk != null ? (client.churnRisk > 0.6 ? 'HIGH' : client.churnRisk > 0.3 ? 'MEDIUM' : 'LOW') : undefined}
             />
           </div>

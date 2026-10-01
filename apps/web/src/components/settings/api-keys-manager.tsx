@@ -276,7 +276,7 @@ function RevealKeyModal({
       footer={<Button onClick={onClose}>Done</Button>}
     >
       <div className="space-y-3">
-        <div className="flex items-start gap-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-amber-700">
+        <div className="flex items-start gap-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-amber-400">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
             Store this somewhere safe. For security, we don’t keep a copy — if you lose it, generate

@@ -52,7 +52,7 @@ export function TeamSection({ range }: { range: DateRange }) {
                         <span
                           className={cn(
                             'flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold text-white',
-                            idx === 0 ? 'bg-amber-500' : idx === 1 ? 'bg-slate-400' : 'bg-amber-700',
+                            idx === 0 ? 'bg-primary' : idx === 1 ? 'bg-zinc-400' : 'bg-amber-700',
                           )}
                         >
                           {idx + 1}

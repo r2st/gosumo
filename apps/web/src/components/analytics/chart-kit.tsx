@@ -39,7 +39,9 @@ export const tooltipStyle = {
   borderRadius: 8,
   border: '1px solid hsl(var(--border))',
   fontSize: 12,
-  boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+  boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+  backgroundColor: 'hsl(var(--card))',
+  color: 'hsl(var(--foreground))',
 };
 
 export const AXIS = { fontSize: 11, fill: 'hsl(var(--muted-foreground))' } as const;

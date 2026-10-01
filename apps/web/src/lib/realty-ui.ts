@@ -167,7 +167,7 @@ export function bltcCompletion(bltc: BltcProfile): BltcCompletion {
 export const BLTC_FILL: Record<BltcCompletion['state'], string> = {
   confirmed: 'bg-emerald-500',
   partial: 'bg-amber-400',
-  empty: 'bg-slate-300',
+  empty: 'bg-muted-foreground/30',
 };
 
 // ── Unit match score ──────────────────────────────────────────────────────────
@@ -176,7 +176,7 @@ export const BLTC_FILL: Record<BltcCompletion['state'], string> = {
 export function matchBorder(fitScore: number): string {
   if (fitScore >= 85) return 'border-l-emerald-500';
   if (fitScore >= 70) return 'border-l-amber-400';
-  return 'border-l-slate-300';
+  return 'border-l-muted-foreground/30';
 }
 
 export function matchTone(fitScore: number): BadgeTone {

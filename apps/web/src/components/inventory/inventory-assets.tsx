@@ -25,11 +25,11 @@ const ASSET_ICON: Record<RealtyAssetType, LucideIcon> = {
 };
 
 const ASSET_ICON_TINT: Record<RealtyAssetType, string> = {
-  BROCHURE: 'bg-indigo-50 text-indigo-600',
-  FLOORPLAN: 'bg-sky-50 text-sky-600',
-  PRICESHEET: 'bg-emerald-50 text-emerald-600',
-  VIDEO: 'bg-rose-50 text-rose-600',
-  PIN: 'bg-amber-50 text-amber-600',
+  BROCHURE: 'bg-primary/15 text-primary',
+  FLOORPLAN: 'bg-sky-500/15 text-sky-400',
+  PRICESHEET: 'bg-emerald-500/15 text-emerald-400',
+  VIDEO: 'bg-rose-500/15 text-rose-400',
+  PIN: 'bg-amber-500/15 text-amber-400',
 };
 
 function AssetRow({ asset }: { asset: RealtyAsset }) {

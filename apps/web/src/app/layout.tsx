@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter, Noto_Sans_Devanagari } from 'next/font/google';
 import Script from 'next/script';
 import './globals.css';
 import { AuthProvider } from '@/providers/auth-provider';
@@ -8,30 +7,19 @@ import { LanguageProvider, langInitScript } from '@/providers/language-provider'
 import { ThemeProvider, themeInitScript } from '@/providers/theme-provider';
 import { ToastProvider } from '@/providers/toast-provider';
 
-const inter = Inter({ subsets: ['latin'], variable: '--font-sans', display: 'swap' });
-
-// Devanagari face for Hindi UI labels. Inter has no Devanagari glyphs, so the font
-// stack (see tailwind.config.ts) falls through to this for any Hindi codepoints.
-const notoDevanagari = Noto_Sans_Devanagari({
-  subsets: ['devanagari', 'latin'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-devanagari',
-  display: 'swap',
-});
-
 export const metadata: Metadata = {
   title: {
-    default: 'GoSumo — AI Client Management',
-    template: '%s · GoSumo',
+    default: 'DoAide CRM',
+    template: '%s · DoAide CRM',
   },
   description:
-    'GoSumo, a DoAide product, unifies WhatsApp, Instagram, SMS, Web Chat and Email into one AI-powered inbox for small businesses in India.',
-  applicationName: 'GoSumo',
+    'DoAide CRM unifies WhatsApp, Instagram, SMS, Web Chat and Email into one AI-powered inbox for small businesses in India.',
+  applicationName: 'DoAide CRM',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'GoSumo',
+    title: 'DoAide CRM',
   },
   icons: {
     icon: [
@@ -50,13 +38,8 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html
-      lang="en"
-      className={`${inter.variable} ${notoDevanagari.variable}`}
-      suppressHydrationWarning
-    >
+    <html lang="en" className="dark" suppressHydrationWarning>
       <head>
-        {/* Apply the saved theme + UI language before paint to avoid a flash. */}
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <script dangerouslySetInnerHTML={{ __html: langInitScript }} />
         <Script

@@ -120,32 +120,32 @@ export default function Home() {
   const year = new Date().getFullYear();
 
   return (
-    <div className="min-h-screen bg-white text-slate-900">
+    <div className="min-h-screen bg-background text-foreground">
       {/* Nav */}
-      <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/80 backdrop-blur">
+      <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5">
-          <Logo className="[&_span]:text-slate-900" />
-          <nav className="hidden items-center gap-8 text-sm font-medium text-slate-600 md:flex">
-            <a href="#features" className="transition-colors hover:text-slate-900">
+          <Logo />
+          <nav className="hidden items-center gap-8 text-sm font-medium text-muted-foreground md:flex">
+            <a href="#features" className="transition-colors hover:text-foreground">
               Features
             </a>
-            <a href="#how" className="transition-colors hover:text-slate-900">
+            <a href="#how" className="transition-colors hover:text-foreground">
               How it works
             </a>
-            <a href="#pricing" className="transition-colors hover:text-slate-900">
+            <a href="#pricing" className="transition-colors hover:text-foreground">
               Pricing
             </a>
           </nav>
           <div className="flex items-center gap-2">
             <Link
               href="/login"
-              className="hidden rounded-md px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 sm:inline-flex"
+              className="hidden rounded-md px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:inline-flex"
             >
               Sign in
             </Link>
             <Link
               href="/register"
-              className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-500"
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
             >
               Start free trial
               <ArrowRight className="h-4 w-4" />
@@ -156,23 +156,23 @@ export default function Home() {
 
       {/* Hero */}
       <section className="relative overflow-hidden">
-        <div className="pointer-events-none absolute -right-32 -top-40 h-96 w-96 rounded-full bg-indigo-200/40 blur-3xl" />
-        <div className="pointer-events-none absolute -left-32 top-32 h-96 w-96 rounded-full bg-violet-200/40 blur-3xl" />
+        <div className="pointer-events-none absolute -right-32 -top-40 h-96 w-96 rounded-full bg-primary/10 blur-3xl" />
+        <div className="pointer-events-none absolute -left-32 top-32 h-96 w-96 rounded-full bg-primary/5 blur-3xl" />
         <div className="mx-auto max-w-6xl px-5 pb-20 pt-20 sm:pt-28">
           <div className="mx-auto max-w-3xl text-center">
-            <span className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-3.5 py-1.5 text-xs font-semibold text-indigo-700">
-              <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+            <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3.5 py-1.5 text-xs font-semibold text-primary">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary" />
               WhatsApp-native AI for Indian real estate
             </span>
-            <h1 className="mt-6 text-4xl font-extrabold leading-[1.1] tracking-tight text-slate-900 sm:text-5xl md:text-6xl">
+            <h1 className="mt-6 font-heading text-4xl font-extrabold leading-[1.1] tracking-tight sm:text-5xl md:text-6xl">
               Every lead answered in 30 seconds.
               <br className="hidden sm:block" />
-              <span className="bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">
+              <span className="text-primary">
                 {' '}
                 Every buyer qualified. Every follow-up kept.
               </span>
             </h1>
-            <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-slate-600">
+            <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground">
               GoSumo Realty is the AI lead manager that replies instantly, qualifies buyers on
               Budget-Location-Timeline-Configuration, books site visits and nurtures every prospect
               for 90 days — so you never lose a deal to a slow follow-up again.
@@ -180,31 +180,31 @@ export default function Home() {
             <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link
                 href="/register"
-                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-7 py-3.5 text-base font-semibold text-white shadow-sm transition-colors hover:bg-indigo-500 sm:w-auto"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-7 py-3.5 text-base font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 sm:w-auto"
               >
                 Start free trial
                 <ArrowRight className="h-5 w-5" />
               </Link>
               <a
                 href="#how"
-                className="inline-flex w-full items-center justify-center rounded-lg border border-slate-200 bg-white px-7 py-3.5 text-base font-semibold text-slate-700 transition-colors hover:bg-slate-50 sm:w-auto"
+                className="inline-flex w-full items-center justify-center rounded-lg border border-border bg-card px-7 py-3.5 text-base font-semibold text-foreground transition-colors hover:bg-muted sm:w-auto"
               >
                 See how it works
               </a>
             </div>
-            <p className="mt-4 text-sm text-slate-400">No credit card required · Live in minutes</p>
+            <p className="mt-4 text-sm text-muted-foreground/60">No credit card required · Live in minutes</p>
           </div>
         </div>
       </section>
 
       {/* Features — the Five Jobs */}
-      <section id="features" className="border-t border-slate-100 bg-slate-50/60 py-20">
+      <section id="features" className="border-t border-border bg-card/60 py-20">
         <div className="mx-auto max-w-6xl px-5">
           <div className="mx-auto max-w-2xl text-center">
-            <h2 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
+            <h2 className="font-heading text-3xl font-bold tracking-tight sm:text-4xl">
               Five jobs, done for you
             </h2>
-            <p className="mt-4 text-lg text-slate-600">
+            <p className="mt-4 text-lg text-muted-foreground">
               GoSumo handles the work that costs brokers deals — the speed, the qualifying, the
               chasing — so you can focus on closing.
             </p>
@@ -213,18 +213,18 @@ export default function Home() {
             {FEATURES.map((f) => (
               <div
                 key={f.title}
-                className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition-shadow hover:shadow-md"
+                className="group rounded-2xl border border-border bg-card p-6 shadow-sm transition-shadow hover:shadow-md"
               >
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-sm">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
                   <f.icon className="h-5 w-5" />
                 </div>
                 <div className="mt-5 flex items-center gap-2">
-                  <h3 className="text-lg font-semibold text-slate-900">{f.title}</h3>
-                  <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
+                  <h3 className="text-lg font-semibold">{f.title}</h3>
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
                     {f.tag}
                   </span>
                 </div>
-                <p className="mt-2 text-sm leading-relaxed text-slate-600">{f.body}</p>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{f.body}</p>
               </div>
             ))}
           </div>
@@ -235,24 +235,24 @@ export default function Home() {
       <section id="how" className="py-20">
         <div className="mx-auto max-w-6xl px-5">
           <div className="mx-auto max-w-2xl text-center">
-            <h2 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
+            <h2 className="font-heading text-3xl font-bold tracking-tight sm:text-4xl">
               How it works
             </h2>
-            <p className="mt-4 text-lg text-slate-600">
+            <p className="mt-4 text-lg text-muted-foreground">
               From first ping to signed deal — three steps, most of them automatic.
             </p>
           </div>
           <div className="mt-14 grid gap-6 md:grid-cols-3">
             {STEPS.map((s, i) => (
               <div key={s.step} className="relative">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-600 text-lg font-bold text-white shadow-sm">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-lg font-bold text-primary-foreground shadow-sm">
                   {s.step}
                 </div>
                 {i < STEPS.length - 1 && (
-                  <ArrowRight className="absolute right-6 top-3 hidden h-6 w-6 text-slate-300 md:block lg:right-4" />
+                  <ArrowRight className="absolute right-6 top-3 hidden h-6 w-6 text-muted-foreground/40 md:block lg:right-4" />
                 )}
-                <h3 className="mt-5 text-lg font-semibold text-slate-900">{s.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-slate-600">{s.body}</p>
+                <h3 className="mt-5 text-lg font-semibold">{s.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{s.body}</p>
               </div>
             ))}
           </div>
@@ -260,13 +260,13 @@ export default function Home() {
       </section>
 
       {/* Pricing */}
-      <section id="pricing" className="border-t border-slate-100 bg-slate-50/60 py-20">
+      <section id="pricing" className="border-t border-border bg-card/60 py-20">
         <div className="mx-auto max-w-6xl px-5">
           <div className="mx-auto max-w-2xl text-center">
-            <h2 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
+            <h2 className="font-heading text-3xl font-bold tracking-tight sm:text-4xl">
               Simple, transparent pricing
             </h2>
-            <p className="mt-4 text-lg text-slate-600">
+            <p className="mt-4 text-lg text-muted-foreground">
               Pick a plan that matches your pipeline. Upgrade or downgrade any time.
             </p>
           </div>
@@ -276,37 +276,37 @@ export default function Home() {
                 key={plan.name}
                 className={
                   plan.featured
-                    ? 'relative rounded-2xl border-2 border-indigo-600 bg-white p-8 shadow-lg'
-                    : 'relative rounded-2xl border border-slate-200 bg-white p-8 shadow-sm'
+                    ? 'relative rounded-2xl border-2 border-primary bg-card p-8 shadow-lg'
+                    : 'relative rounded-2xl border border-border bg-card p-8 shadow-sm'
                 }
               >
                 {plan.featured && (
-                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-indigo-600 px-3 py-1 text-xs font-semibold text-white">
+                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
                     Most popular
                   </span>
                 )}
-                <h3 className="text-lg font-semibold text-slate-900">{plan.name}</h3>
-                <p className="mt-1 text-sm text-slate-500">{plan.tagline}</p>
+                <h3 className="text-lg font-semibold">{plan.name}</h3>
+                <p className="mt-1 text-sm text-muted-foreground">{plan.tagline}</p>
                 <div className="mt-5 flex items-baseline gap-1">
-                  <span className="text-4xl font-extrabold tracking-tight text-slate-900">
+                  <span className="text-4xl font-extrabold tracking-tight">
                     ₹{plan.price}
                   </span>
-                  <span className="text-sm font-medium text-slate-500">/mo</span>
+                  <span className="text-sm font-medium text-muted-foreground">/mo</span>
                 </div>
                 <Link
                   href="/register"
                   className={
                     plan.featured
-                      ? 'mt-6 inline-flex w-full items-center justify-center rounded-lg bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-500'
-                      : 'mt-6 inline-flex w-full items-center justify-center rounded-lg border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50'
+                      ? 'mt-6 inline-flex w-full items-center justify-center rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90'
+                      : 'mt-6 inline-flex w-full items-center justify-center rounded-lg border border-border bg-card px-5 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-muted'
                   }
                 >
                   Start free trial
                 </Link>
                 <ul className="mt-7 space-y-3">
                   {plan.features.map((feat) => (
-                    <li key={feat} className="flex items-start gap-2.5 text-sm text-slate-600">
-                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
+                    <li key={feat} className="flex items-start gap-2.5 text-sm text-muted-foreground">
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                       {feat}
                     </li>
                   ))}
@@ -320,18 +320,18 @@ export default function Home() {
       {/* CTA banner */}
       <section className="py-20">
         <div className="mx-auto max-w-5xl px-5">
-          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-violet-800 px-8 py-14 text-center shadow-lg">
-            <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
-            <div className="pointer-events-none absolute -bottom-20 -left-12 h-64 w-64 rounded-full bg-violet-400/20 blur-3xl" />
-            <h2 className="relative text-3xl font-bold tracking-tight text-white sm:text-4xl">
+          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-primary/20 via-primary/10 to-card px-8 py-14 text-center shadow-lg border border-primary/30">
+            <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
+            <div className="pointer-events-none absolute -bottom-20 -left-12 h-64 w-64 rounded-full bg-primary/5 blur-3xl" />
+            <h2 className="relative font-heading text-3xl font-bold tracking-tight sm:text-4xl">
               Stop losing deals to slow follow-ups.
             </h2>
-            <p className="relative mx-auto mt-4 max-w-xl text-lg text-indigo-100">
+            <p className="relative mx-auto mt-4 max-w-xl text-lg text-muted-foreground">
               Let GoSumo answer, qualify and nurture every lead — while you close.
             </p>
             <Link
               href="/register"
-              className="relative mt-8 inline-flex items-center gap-2 rounded-lg bg-white px-7 py-3.5 text-base font-semibold text-indigo-700 shadow-sm transition-colors hover:bg-indigo-50"
+              className="relative mt-8 inline-flex items-center gap-2 rounded-lg bg-primary px-7 py-3.5 text-base font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
             >
               Start free trial
               <ArrowRight className="h-5 w-5" />
@@ -341,27 +341,27 @@ export default function Home() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-slate-200 bg-white">
+      <footer className="border-t border-border bg-card">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-6 px-5 py-10 sm:flex-row">
-          <Logo className="[&_span]:text-slate-900" />
-          <nav className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-slate-500">
-            <a href="#features" className="transition-colors hover:text-slate-900">
+          <Logo />
+          <nav className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
+            <a href="#features" className="transition-colors hover:text-foreground">
               Features
             </a>
-            <a href="#how" className="transition-colors hover:text-slate-900">
+            <a href="#how" className="transition-colors hover:text-foreground">
               How it works
             </a>
-            <a href="#pricing" className="transition-colors hover:text-slate-900">
+            <a href="#pricing" className="transition-colors hover:text-foreground">
               Pricing
             </a>
-            <Link href="/login" className="transition-colors hover:text-slate-900">
+            <Link href="/login" className="transition-colors hover:text-foreground">
               Sign in
             </Link>
-            <Link href="/register" className="transition-colors hover:text-slate-900">
+            <Link href="/register" className="transition-colors hover:text-foreground">
               Start free trial
             </Link>
           </nav>
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-muted-foreground/60">
             © {year} GoSumo. All rights reserved.
             <span className="mx-1.5">·</span>
             A{' '}
@@ -369,7 +369,7 @@ export default function Home() {
               href="https://doaide.com"
               target="_blank"
               rel="noopener noreferrer"
-              className="font-medium transition-colors hover:text-slate-900"
+              className="font-medium transition-colors hover:text-foreground"
             >
               DoAide
             </a>{' '}

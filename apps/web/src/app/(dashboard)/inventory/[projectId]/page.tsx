@@ -182,7 +182,7 @@ function ProjectHeader({
     <Card>
       <CardContent className="flex flex-col gap-4 p-5">
         <div className="flex items-start gap-4">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
             <Building2 className="h-6 w-6" />
           </span>
           <div className="min-w-0 flex-1">

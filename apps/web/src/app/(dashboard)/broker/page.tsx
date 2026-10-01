@@ -70,21 +70,21 @@ export default function BrokerConsolePage() {
             label="Hot leads"
             value={String(m?.hotLeads ?? 0)}
             icon={Flame}
-            iconClassName="bg-rose-100 text-rose-600"
+            iconClassName="bg-rose-500/15 text-rose-400"
             loading={consoleQ.isLoading}
           />
           <KpiCard
             label="To approve"
             value={String(m?.pendingApprovals ?? 0)}
             icon={CheckSquare}
-            iconClassName="bg-amber-100 text-amber-600"
+            iconClassName="bg-amber-500/15 text-amber-400"
             loading={consoleQ.isLoading}
           />
           <KpiCard
             label="Follow-ups due"
             value={String(m?.followupsDueToday ?? 0)}
             icon={Clock}
-            iconClassName="bg-sky-100 text-sky-600"
+            iconClassName="bg-sky-500/15 text-sky-400"
             loading={consoleQ.isLoading}
           />
           <KpiCard
@@ -97,7 +97,7 @@ export default function BrokerConsolePage() {
             label="AI-handled"
             value={`${m?.aiHandledPct ?? 0}%`}
             icon={ShieldAlert}
-            iconClassName="bg-emerald-100 text-emerald-600"
+            iconClassName="bg-emerald-500/15 text-emerald-400"
             loading={consoleQ.isLoading}
           />
         </div>

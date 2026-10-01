@@ -144,9 +144,9 @@ function LeadsBoard() {
 
       {/* Today's stats */}
       <div className="flex flex-wrap gap-3 px-4 pt-4 lg:px-6">
-        <StatChip icon={UserPlus} label="New today" value={newToday} tone="text-indigo-600" />
-        <StatChip icon={Sparkles} label="Qualified" value={qualifiedCount} tone="text-emerald-600" />
-        <StatChip icon={Flame} label="Hot leads" value={hotCount} tone="text-rose-600" />
+        <StatChip icon={UserPlus} label="New today" value={newToday} tone="text-primary" />
+        <StatChip icon={Sparkles} label="Qualified" value={qualifiedCount} tone="text-emerald-400" />
+        <StatChip icon={Flame} label="Hot leads" value={hotCount} tone="text-rose-400" />
       </div>
 
       {/* Filter bar */}
