@@ -893,7 +893,7 @@ describe('InstagramAdapter — downloadMedia', () => {
 
     // 410 is terminal — the CDN link is dead, not briefly unavailable.
     expect(error).toBeInstanceOf(ExternalServiceError);
-    expect((error as ExternalServiceError).message).toBe('Instagram Media: download failed');
+    expect((error as ExternalServiceError).message).toBe('download failed');
     expect((error as ExternalServiceError).retryable).toBe(false);
     expect((error as ExternalServiceError).context).toEqual({
       service: 'Instagram Media',

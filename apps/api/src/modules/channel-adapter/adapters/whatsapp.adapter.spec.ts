@@ -891,7 +891,7 @@ describe('WhatsAppAdapter', () => {
       );
 
       expect(error).toBeInstanceOf(ExternalServiceError);
-      expect((error as ExternalServiceError).message).toBe('WhatsApp Media: URL fetch failed');
+      expect((error as ExternalServiceError).message).toBe('URL fetch failed');
       expect((error as ExternalServiceError).retryable).toBe(false);
       expect((error as ExternalServiceError).context).toEqual({
         service: 'WhatsApp Media',
@@ -913,7 +913,7 @@ describe('WhatsAppAdapter', () => {
       );
 
       expect(error).toBeInstanceOf(ExternalServiceError);
-      expect((error as ExternalServiceError).message).toBe('WhatsApp Media: download failed');
+      expect((error as ExternalServiceError).message).toBe('download failed');
       expect((error as ExternalServiceError).retryable).toBe(false);
       expect((error as ExternalServiceError).context).toEqual({
         service: 'WhatsApp Media',
@@ -945,7 +945,7 @@ describe('WhatsAppAdapter', () => {
       // The provider's body is log-only context now — it can echo customer
       // content, so it must not reach an HTTP response.
       expect(error).toBeInstanceOf(ExternalServiceError);
-      expect((error as ExternalServiceError).message).toBe('WhatsApp Media: upload failed');
+      expect((error as ExternalServiceError).message).toBe('upload failed');
       expect((error as ExternalServiceError).context).toEqual({
         service: 'WhatsApp Media',
         status: 413,

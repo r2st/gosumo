@@ -374,7 +374,7 @@ describe('RazorpayService', () => {
       // The status moved from the message into the context, and with it the
       // retry decision: a 400 will fail identically forever.
       expect(error).toBeInstanceOf(ExternalServiceError);
-      expect((error as ExternalServiceError).message).toBe('Razorpay: API error Bad Request');
+      expect((error as ExternalServiceError).message).toBe('API error Bad Request');
       expect((error as ExternalServiceError).retryable).toBe(false);
       expect((error as ExternalServiceError).context).toMatchObject({
         service: 'Razorpay',

@@ -150,7 +150,9 @@ export class LlmClientService {
   async complete(request: LlmCompletionRequest): Promise<LlmCompletionResult> {
     const apiKey = this.configService.get<string>('openrouter.apiKey', '');
     if (!apiKey) {
-      throw new LlmUnavailableError('OPENROUTER_API_KEY is not configured');
+      throw new LlmUnavailableError('LLM provider API key is not configured', {
+        context: { configKey: 'OPENROUTER_API_KEY' },
+      });
     }
 
     // Fail fast while the provider is known to be down. The callers all treat
@@ -261,8 +263,7 @@ export class LlmClientService {
     // provider signal rather than a synthetic one; the chain is carried in
     // context for the log.
     throw new LlmUnavailableError(
-      `every model failed (${attempted.join(', ')}): ` +
-        `${lastError?.message ?? 'no completion'}`,
+      'All LLM models exhausted without a usable completion',
       {
         cause: lastError,
         status:
@@ -379,7 +380,7 @@ export class LlmClientService {
     // an outage rather than a bad request. Deliberately carries no `status`,
     // which is how `isOutageFailure` recognises it.
     throw new LlmUnavailableError(
-      lastError?.message ?? `OpenRouter completion failed for ${model} after all retries`,
+      'LLM completion failed after all retries',
       { cause: lastError, context: { model } },
     );
   }

@@ -111,7 +111,7 @@ describe('TranscriptionService', () => {
 
       await expect(
         service.transcribe('https://cdn.test/a.ogg', 'audio/ogg'),
-      ).rejects.toThrow('TRANSCRIPTION_API_KEY is not configured');
+      ).rejects.toThrow('Transcription API key is not configured');
     });
 
     it('posts to the configured endpoint with a bearer token', async () => {
@@ -178,7 +178,7 @@ describe('TranscriptionService', () => {
 
       await expect(
         service.transcribe('https://cdn.test/a.ogg', 'audio/ogg'),
-      ).rejects.toThrow('Audio download failed: ECONNREFUSED');
+      ).rejects.toThrow('Audio download failed');
     });
 
     it('stringifies a non-Error download rejection', async () => {
@@ -186,7 +186,7 @@ describe('TranscriptionService', () => {
 
       await expect(
         service.transcribe('https://cdn.test/a.ogg', 'audio/ogg'),
-      ).rejects.toThrow('Audio download failed: socket hang up');
+      ).rejects.toThrow('Audio download failed');
     });
 
     it('reports a non-OK audio download by status', async () => {
@@ -194,7 +194,7 @@ describe('TranscriptionService', () => {
 
       await expect(
         service.transcribe('https://cdn.test/a.ogg', 'audio/ogg'),
-      ).rejects.toThrow('Audio download failed: 404');
+      ).rejects.toThrow('Audio download failed');
     });
   });
 
@@ -241,7 +241,7 @@ describe('TranscriptionService', () => {
 
       await expect(
         service.transcribe('https://cdn.test/a.ogg', 'audio/ogg'),
-      ).rejects.toThrow(/unexpected content-type text\/html/);
+      ).rejects.toThrow('Audio download failed');
       // Never reached the STT call.
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
@@ -253,7 +253,7 @@ describe('TranscriptionService', () => {
 
       await expect(
         service.transcribe('https://cdn.test/a.ogg', 'audio/ogg'),
-      ).rejects.toThrow(/over the \d+-byte limit/);
+      ).rejects.toThrow('Audio download failed');
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
@@ -296,7 +296,7 @@ describe('TranscriptionService', () => {
 
       await expect(
         service.transcribe('whatsapp-media://m1', 'audio/ogg'),
-      ).rejects.toThrow('Transcription request failed: timeout');
+      ).rejects.toThrow('Transcription request failed');
     });
 
     it('stringifies a non-Error STT rejection', async () => {
@@ -304,10 +304,10 @@ describe('TranscriptionService', () => {
 
       await expect(
         service.transcribe('whatsapp-media://m1', 'audio/ogg'),
-      ).rejects.toThrow('Transcription request failed: aborted');
+      ).rejects.toThrow('Transcription request failed');
     });
 
-    it('surfaces an STT API error with its status and body', async () => {
+    it('surfaces an STT API error with its status', async () => {
       fetchMock.mockResolvedValueOnce({
         ok: false,
         status: 429,
@@ -316,7 +316,7 @@ describe('TranscriptionService', () => {
 
       await expect(
         service.transcribe('whatsapp-media://m1', 'audio/ogg'),
-      ).rejects.toThrow('Transcription API error 429: rate limited');
+      ).rejects.toThrow('Transcription service returned an error (429)');
     });
 
     it('falls back to the status when the error body cannot be read', async () => {
@@ -328,7 +328,7 @@ describe('TranscriptionService', () => {
 
       await expect(
         service.transcribe('whatsapp-media://m1', 'audio/ogg'),
-      ).rejects.toThrow('Transcription API error 500: status 500');
+      ).rejects.toThrow('Transcription service returned an error (500)');
     });
 
     it('treats a missing text field as a failure, not an empty transcript', async () => {

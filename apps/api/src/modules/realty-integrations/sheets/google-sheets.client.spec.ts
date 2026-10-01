@@ -254,7 +254,7 @@ describe('GoogleSheetsClient.ensureSpreadsheet', () => {
     // Not retryable: creating again would just make a second orphan sheet.
     expect(error).toBeInstanceOf(ExternalServiceError);
     expect((error as ExternalServiceError).message).toBe(
-      'Google Sheets: create returned no spreadsheetId',
+      'create returned no spreadsheetId',
     );
     expect((error as ExternalServiceError).retryable).toBe(false);
   });

@@ -230,13 +230,7 @@ export class BookingService {
       byWeekday: dto.recurrence.byWeekday,
     };
 
-    try {
-      validateRecurrenceRule(rule);
-    } catch (err) {
-      throw new BadRequestException(
-        err instanceof Error ? err.message : 'Invalid recurrence rule',
-      );
-    }
+    validateRecurrenceRule(rule);
 
     const occurrences = expandRecurrence(
       rule,

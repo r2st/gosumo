@@ -8,7 +8,7 @@ import { PrismaService } from '../../common/services/prisma.service';
 import { GoogleCalendarService } from './google-calendar.service';
 import { TenantService } from '../tenant/tenant.service';
 import { BOOKING_QUEUE, BOOKING_JOBS } from './booking.constants';
-import { BookingStatus, BookingActor, RecurrenceFrequency } from '@gosumo/shared';
+import { BookingStatus, BookingActor, RecurrenceFrequency, ValidationError } from '@gosumo/shared';
 import type { PaymentSuccessEvent } from '@gosumo/shared';
 
 // ─────────────────────────────────────────────
@@ -346,7 +346,7 @@ describe('BookingService', () => {
           durationMinutes: 30,
           recurrence: { frequency: RecurrenceFrequency.DAILY },
         }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(ValidationError);
     });
   });
 

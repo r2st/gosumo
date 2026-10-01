@@ -134,11 +134,11 @@ describe('LlmClientService', () => {
     });
   });
 
-  /** A rejection that is not an Error must still reach the caller as a message. */
+  /** A rejection that is not an Error must still reach the caller as an LlmUnavailableError. */
   it('wraps a non-Error rejection rather than reporting "[object Object]"', async () => {
     jest.spyOn(global, 'fetch').mockRejectedValue('socket hang up');
 
-    await expect(makeClient().complete(req)).rejects.toThrow('socket hang up');
+    await expect(makeClient().complete(req)).rejects.toThrow(LlmUnavailableError);
   }, 10_000);
 
   describe('extractJson', () => {

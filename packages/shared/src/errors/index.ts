@@ -195,7 +195,7 @@ export class ExternalServiceError extends GoSumoError {
     message: string,
     options: GoSumoErrorOptions & { status?: number; retryable?: boolean } = {},
   ) {
-    super(`${service}: ${message}`, {
+    super(message, {
       cause: options.cause,
       context: { service, status: options.status, ...options.context },
     });

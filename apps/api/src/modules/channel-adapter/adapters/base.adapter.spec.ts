@@ -206,7 +206,7 @@ describe('BaseChannelAdapter', () => {
       expect(result).toEqual({
         success: false,
         attempts: 3,
-        error: 'WhatsApp: service unavailable',
+        error: 'service unavailable',
       });
     });
 

@@ -159,7 +159,7 @@ describe('GoogleCalendarService', () => {
 
       // A 404 from Calendar is permanent — deleting again won't find it either.
       expect(error).toBeInstanceOf(ExternalServiceError);
-      expect((error as ExternalServiceError).message).toBe('Google Calendar: API error 404');
+      expect((error as ExternalServiceError).message).toBe('API error 404');
       expect((error as ExternalServiceError).retryable).toBe(false);
       expect((error as ExternalServiceError).context).toMatchObject({
         service: 'Google Calendar',

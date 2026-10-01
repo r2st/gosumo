@@ -861,7 +861,7 @@ export class AiEngineService {
     const removed = await this.knowledgeIngestion.remove(businessId, entryId);
     if (!removed) {
       throw new ServiceUnavailableException(
-        `Could not remove the vectors for knowledge entry ${entryId} — entry left intact, retry once the vector store is reachable`,
+        'Knowledge entry could not be deleted — please try again later',
       );
     }
 

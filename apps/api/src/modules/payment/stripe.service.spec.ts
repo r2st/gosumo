@@ -353,7 +353,7 @@ describe('StripeService', () => {
       // A 400 means Stripe rejected the request itself — replaying it is
       // pointless, so the queue must not retry.
       expect(error).toBeInstanceOf(ExternalServiceError);
-      expect((error as ExternalServiceError).message).toBe('Stripe: API error Error');
+      expect((error as ExternalServiceError).message).toBe('API error Error');
       expect((error as ExternalServiceError).retryable).toBe(false);
       expect((error as ExternalServiceError).context).toMatchObject({
         service: 'Stripe',

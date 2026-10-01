@@ -116,7 +116,7 @@ describe('CircuitBreaker', () => {
       const error = await breaker.run(async () => 'never').catch((e: unknown) => e);
 
       expect(error).toBeInstanceOf(CircuitOpenError);
-      expect((error as CircuitOpenError).message).toContain('Acme');
+      expect((error as CircuitOpenError).context).toMatchObject({ service: 'Acme' });
       // A queue consumer must treat this as "later", not "never" — the
       // dependency is expected back.
       expect((error as CircuitOpenError).retryable).toBe(true);

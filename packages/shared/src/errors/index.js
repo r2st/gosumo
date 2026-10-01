@@ -174,7 +174,7 @@ class ExternalServiceError extends GoSumoError {
     httpStatus = 502;
     retryable;
     constructor(service, message, options = {}) {
-        super(`${service}: ${message}`, {
+        super(message, {
             cause: options.cause,
             context: { service, status: options.status, ...options.context },
         });

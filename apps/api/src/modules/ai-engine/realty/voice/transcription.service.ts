@@ -58,7 +58,9 @@ export class TranscriptionService {
   async transcribe(mediaUrl: string, mimeType: string): Promise<string> {
     const apiKey = this.configService.get<string>('transcription.apiKey', '');
     if (!apiKey) {
-      throw new TranscriptionUnavailableError('TRANSCRIPTION_API_KEY is not configured');
+      throw new TranscriptionUnavailableError('Transcription API key is not configured', {
+        context: { configKey: 'TRANSCRIPTION_API_KEY' },
+      });
     }
 
     const audio = await this.fetchAudio(mediaUrl);
@@ -84,15 +86,14 @@ export class TranscriptionService {
         { service: 'Transcription', timeoutMs: MEDIA_HTTP_TIMEOUT_MS },
       );
     } catch (err) {
-      throw new TranscriptionUnavailableError(
-        `Transcription request failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      throw new TranscriptionUnavailableError('Transcription request failed', { cause: err });
     }
 
     if (!response.ok) {
       const detail = await safeText(response);
       throw new TranscriptionUnavailableError(
-        `Transcription API error ${response.status}: ${detail}`,
+        `Transcription service returned an error (${response.status})`,
+        { context: { status: response.status, detail } },
       );
     }
 
@@ -134,20 +135,18 @@ export class TranscriptionService {
         { service: 'Audio download', timeoutMs: MEDIA_HTTP_TIMEOUT_MS },
       );
     } catch (err) {
-      throw new TranscriptionUnavailableError(
-        `Audio download failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      throw new TranscriptionUnavailableError('Audio download failed', { cause: err });
     }
     if (!resp.ok) {
-      throw new TranscriptionUnavailableError(`Audio download failed: ${resp.status}`);
+      throw new TranscriptionUnavailableError('Audio download failed', {
+        context: { status: resp.status },
+      });
     }
     try {
       assertContentType('Audio download', resp.headers.get('content-type'));
       return await readBodyWithLimit(resp, { service: 'Audio download' });
     } catch (err) {
-      throw new TranscriptionUnavailableError(
-        `Audio download failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      throw new TranscriptionUnavailableError('Audio download failed', { cause: err });
     }
   }
 }

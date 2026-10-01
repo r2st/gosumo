@@ -379,7 +379,7 @@ describe("InstagramAdapter", () => {
       );
 
       expect(error).toBeInstanceOf(ExternalServiceError);
-      expect((error as ExternalServiceError).message).toBe("Instagram Media: download failed");
+      expect((error as ExternalServiceError).message).toBe("download failed");
     });
   });
 });

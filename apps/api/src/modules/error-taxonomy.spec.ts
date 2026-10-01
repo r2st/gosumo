@@ -237,9 +237,9 @@ describe('context stays out of the message', () => {
 });
 
 describe('ExternalServiceError retryability', () => {
-  it('prefixes the service name onto the message', () => {
+  it('keeps the service name out of the client-facing message', () => {
     expect(new ExternalServiceError('razorpay', 'timed out').message).toBe(
-      'razorpay: timed out',
+      'timed out',
     );
   });
 

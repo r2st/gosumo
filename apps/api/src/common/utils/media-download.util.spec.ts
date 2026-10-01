@@ -90,9 +90,12 @@ describe('readBodyWithLimit', () => {
   it('reports the service it was downloading for', async () => {
     const { response } = streamingResponse([bytes(9)]);
 
-    await expect(
-      readBodyWithLimit(response, { service: 'WhatsApp Media', maxBytes: 2 }),
-    ).rejects.toThrow(/WhatsApp Media/);
+    const error = await readBodyWithLimit(response, { service: 'WhatsApp Media', maxBytes: 2 }).then(
+      () => null,
+      (err: unknown) => err,
+    );
+    expect(error).toBeInstanceOf(MediaTooLargeError);
+    expect((error as MediaTooLargeError).context).toMatchObject({ service: 'WhatsApp Media' });
   });
 
   it('treats a body-less response as empty rather than an error', async () => {
