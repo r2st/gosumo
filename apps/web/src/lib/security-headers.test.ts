@@ -33,8 +33,8 @@ function directives(csp: string): Record<string, string> {
 }
 
 const PROD = {
-  apiUrl: 'https://api.gosumo.aiknol.com',
-  wsUrl: 'https://api.gosumo.aiknol.com',
+  apiUrl: 'https://api.desk.doaide.com',
+  wsUrl: 'https://api.desk.doaide.com',
   nodeEnv: 'production',
 };
 
@@ -116,8 +116,8 @@ describe('buildContentSecurityPolicy', () => {
   const prodCsp = () =>
     directives(
       buildContentSecurityPolicy({
-        apiOrigin: 'https://api.gosumo.aiknol.com',
-        wsOrigin: 'https://api.gosumo.aiknol.com',
+        apiOrigin: 'https://api.desk.doaide.com',
+        wsOrigin: 'https://api.desk.doaide.com',
         dev: false,
       }),
     );
@@ -134,12 +134,12 @@ describe('buildContentSecurityPolicy', () => {
   });
 
   it('lets the API through connect-src, or the dashboard cannot load anything', () => {
-    expect(prodCsp()['connect-src']).toContain('https://api.gosumo.aiknol.com');
+    expect(prodCsp()['connect-src']).toContain('https://api.desk.doaide.com');
   });
 
   it('lets the socket through under its own scheme', () => {
     // `connect-src` matches on scheme, so an https entry does not cover wss.
-    expect(prodCsp()['connect-src']).toContain('wss://api.gosumo.aiknol.com');
+    expect(prodCsp()['connect-src']).toContain('wss://api.desk.doaide.com');
   });
 
   it('narrows connect-src to self and analytics when no API origin is configured', () => {
@@ -206,16 +206,16 @@ describe('buildContentSecurityPolicy', () => {
 
 describe('toOrigin', () => {
   it.each([
-    ['https://api.gosumo.aiknol.com', 'https://api.gosumo.aiknol.com'],
-    ['https://api.gosumo.aiknol.com/', 'https://api.gosumo.aiknol.com'],
+    ['https://api.desk.doaide.com', 'https://api.desk.doaide.com'],
+    ['https://api.desk.doaide.com/', 'https://api.desk.doaide.com'],
     ['http://localhost:3000', 'http://localhost:3000'],
   ])('reduces %s to its origin', (input, expected) => {
     expect(toOrigin(input)).toBe(expected);
   });
 
   it('strips a path — a CSP source with a path matches by prefix, not exactly', () => {
-    expect(toOrigin('https://api.gosumo.aiknol.com/v1')).toBe(
-      'https://api.gosumo.aiknol.com',
+    expect(toOrigin('https://api.desk.doaide.com/v1')).toBe(
+      'https://api.desk.doaide.com',
     );
   });
 

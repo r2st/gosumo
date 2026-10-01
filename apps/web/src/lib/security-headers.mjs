@@ -78,7 +78,7 @@ const HSTS_MAX_AGE_SECONDS = 31_536_000;
  */
 export function buildContentSecurityPolicy({ apiOrigin, wsOrigin, dev = false } = {}) {
   // The API is a different origin in every environment that matters
-  // (api.gosumo.aiknol.com in production, :3000 in development), so `'self'`
+  // (api.desk.doaide.com in production, :3000 in development), so `'self'`
   // alone would block every fetch the dashboard makes. Sockets need the ws://
   // and wss:// forms of the same host, which `connect-src` treats as distinct
   // schemes.
