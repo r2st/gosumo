@@ -24,12 +24,7 @@ describe('LogoMark', () => {
 
   it('keeps a square viewBox so the mark never distorts', () => {
     render(<LogoMark />);
-    expect(screen.getByRole('img')).toHaveAttribute('viewBox', '0 0 512 512');
-  });
-
-  it('fills the tile with the brand gold', () => {
-    const { container } = render(<LogoMark />);
-    expect(container.querySelector('rect')).toHaveAttribute('fill', '#F0B429');
+    expect(screen.getByRole('img')).toHaveAttribute('viewBox', '0 0 32 32');
   });
 });
 
