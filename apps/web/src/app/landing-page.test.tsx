@@ -1,16 +1,12 @@
 /**
- * The marketing page at `/` and the root layout that wraps every route.
+ * The redesigned marketing page at `/` with embedded auth form.
  *
- * The landing page is static markup, so the assertions worth writing are the
- * ones a copy edit or a careless refactor would break in a way that costs
- * money: every call to action has to reach `/register` (a dead CTA on the
- * pricing card is invisible in review), exactly one plan may carry the
- * "Most popular" ribbon, and the anchor nav has to point at sections that
- * actually exist on the page. The layout test pins the provider nesting —
- * React Query must sit inside the theme/language providers and outside the
- * auth provider, because the auth provider issues queries on mount.
+ * The landing page combines the product showcase and auth form into one
+ * split-layout view. Tests verify structural integrity: the auth form
+ * functions, feature highlights are present, tabs switch correctly, and
+ * the mobile-first layout has the right pieces.
  */
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, fireEvent } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('next/link', () => ({
@@ -21,8 +17,10 @@ vi.mock('next/link', () => ({
   ),
 }));
 
-// next/font/google reaches out to Google's CDN at module load, which is neither
-// available nor meaningful here; the layout only uses the returned CSS variable.
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: vi.fn() }),
+}));
+
 vi.mock('next/font/google', () => ({
   Inter: () => ({ variable: '--font-sans' }),
   Noto_Sans_Devanagari: () => ({ variable: '--font-devanagari' }),
@@ -54,86 +52,108 @@ vi.mock('@/providers/auth-provider', () => ({
   AuthProvider: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="auth-provider">{children}</div>
   ),
+  useAuth: () => ({
+    login: vi.fn(),
+    register: vi.fn(),
+    status: 'unauthenticated' as const,
+  }),
 }));
 
+vi.mock('@/components/google-button', () => ({
+  GoogleButton: ({ label }: { label?: string }) => (
+    <button type="button">{label ?? 'Continue with Google'}</button>
+  ),
+}));
+
+import { LandingPage } from './landing-page';
 import Home, { metadata as homeMetadata } from './page';
 import RootLayout, { metadata as rootMetadata, viewport } from './layout';
 
-describe('landing page structure', () => {
-  it('lists all five jobs the product claims to do', () => {
-    render(<Home />);
+describe('landing page — auth form', () => {
+  it('defaults to the Sign Up tab with all registration fields', () => {
+    render(<LandingPage />);
 
-    const section = document.getElementById('features')!;
-    for (const job of ['Speed', 'Qualification', 'Site visits', 'Follow-up', 'Memory']) {
-      expect(within(section).getByRole('heading', { name: job })).toBeInTheDocument();
+    const signupTab = screen.getAllByRole('tab', { name: 'Sign Up' });
+    expect(signupTab.length).toBeGreaterThan(0);
+    expect(signupTab[0]).toHaveAttribute('aria-selected', 'true');
+
+    expect(screen.getByLabelText('Business name')).toBeInTheDocument();
+    expect(screen.getByLabelText('Your name')).toBeInTheDocument();
+    expect(screen.getByLabelText('Email')).toBeInTheDocument();
+    expect(screen.getByLabelText('Password')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create Account' })).toBeInTheDocument();
+  });
+
+  it('switches to the Log In tab with login fields', () => {
+    render(<LandingPage />);
+
+    const loginTab = screen.getAllByRole('tab', { name: 'Log In' });
+    fireEvent.click(loginTab[0]);
+
+    expect(loginTab[0]).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByLabelText('Email')).toBeInTheDocument();
+    expect(screen.getByLabelText('Password')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign In' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Business name')).not.toBeInTheDocument();
+  });
+
+  it('shows the forgot password link only in login mode', () => {
+    render(<LandingPage />);
+
+    expect(screen.queryByText('Forgot?')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole('tab', { name: 'Log In' })[0]);
+    const forgotLink = screen.getByText('Forgot?');
+    expect(forgotLink).toHaveAttribute('href', '/forgot-password');
+  });
+
+  it('shows the Google auth button in both tabs', () => {
+    render(<LandingPage />);
+    expect(screen.getByText('Sign up with Google')).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole('tab', { name: 'Log In' })[0]);
+    expect(screen.getByText('Continue with Google')).toBeInTheDocument();
+  });
+});
+
+describe('landing page — feature highlights', () => {
+  it('lists all four feature highlights', () => {
+    render(<LandingPage />);
+
+    for (const label of ['30s response', 'BLTC scoring', 'Auto site visits', '90-day nurture']) {
+      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
     }
   });
+});
 
-  it('walks the three steps in order', () => {
-    render(<Home />);
+describe('landing page — branding', () => {
+  it('shows DoAide Desk branding', () => {
+    render(<LandingPage />);
 
-    const section = document.getElementById('how')!;
-    const steps = within(section).getAllByRole('heading', { level: 3 });
-    expect(steps.map((h) => h.textContent)).toEqual([
-      'Capture leads from any source',
-      'AI qualifies and matches inventory',
-      'Broker closes deals',
-    ]);
+    const doaideTexts = screen.getAllByText('DoAide');
+    expect(doaideTexts.length).toBeGreaterThan(0);
+
+    const deskTexts = screen.getAllByText('Desk');
+    expect(deskTexts.length).toBeGreaterThan(0);
   });
 
-  it('prices three plans and highlights exactly one', () => {
-    render(<Home />);
+  it('shows the tagline', () => {
+    render(<LandingPage />);
 
-    const section = document.getElementById('pricing')!;
-    expect(within(section).getByRole('heading', { name: 'Solo' })).toBeInTheDocument();
-    expect(within(section).getByText('₹9,999')).toBeInTheDocument();
-    expect(within(section).getByRole('heading', { name: 'Developer' })).toBeInTheDocument();
-
-    // Two ribbons would make the pricing table read as a mistake.
-    expect(within(section).getAllByText('Most popular')).toHaveLength(1);
-  });
-
-  it('sends every call to action to the signup route', () => {
-    render(<Home />);
-
-    const ctas = screen.getAllByRole('link', { name: /Start free trial/ });
-    // Header, hero, three pricing cards, the banner and the footer.
-    expect(ctas).toHaveLength(7);
-    for (const cta of ctas) expect(cta).toHaveAttribute('href', '/register');
-  });
-
-  it('offers sign-in for an existing customer', () => {
-    render(<Home />);
-
-    const signIn = screen.getAllByRole('link', { name: 'Sign in' });
-    expect(signIn.length).toBeGreaterThan(0);
-    for (const link of signIn) expect(link).toHaveAttribute('href', '/login');
-  });
-
-  it('anchors the nav at sections that exist on the page', () => {
-    render(<Home />);
-
-    const anchors = screen
-      .getAllByRole('link')
-      .map((a) => a.getAttribute('href'))
-      .filter((href): href is string => Boolean(href?.startsWith('#')));
-
-    expect(new Set(anchors)).toEqual(new Set(['#features', '#how', '#pricing']));
-    for (const anchor of new Set(anchors)) {
-      expect(document.getElementById(anchor.slice(1))).not.toBeNull();
-    }
+    const taglines = screen.getAllByText('AI lead manager for real estate');
+    expect(taglines.length).toBeGreaterThan(0);
   });
 
   it('dates the footer to the current year and credits DoAide', () => {
-    render(<Home />);
+    render(<LandingPage />);
 
     expect(
       screen.getByText(new RegExp(`© ${new Date().getFullYear()} DoAide Desk`)),
     ).toBeInTheDocument();
-    const footer = screen.getByText(new RegExp(`© ${new Date().getFullYear()} DoAide Desk`)).closest('p')!;
-    expect(footer.textContent).toContain('DoAide');
   });
+});
 
+describe('landing page — metadata', () => {
   it('describes the product as realty-first in its page metadata', () => {
     expect(homeMetadata.title).toBe('DoAide Desk — AI lead manager for real estate');
     expect(String(homeMetadata.description)).toContain('Budget-Location-Timeline-Configuration');
@@ -148,9 +168,6 @@ describe('RootLayout', () => {
       </RootLayout>,
     );
 
-    // AuthProvider fires `api.auth.me()` on mount, so it must be inside the
-    // query provider; the theme and language providers wrap everything so the
-    // pre-paint scripts and the rendered tree agree.
     const theme = screen.getByTestId('theme-provider');
     const query = within(theme).getByTestId('query-provider');
     const auth = within(query).getByTestId('auth-provider');
