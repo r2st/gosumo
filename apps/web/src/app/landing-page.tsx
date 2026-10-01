@@ -398,11 +398,18 @@ export function LandingPage() {
         </div>
       </div>
 
-      <footer className="landing-footer">
-        <p>
-          © {year} DoAide Desk · A{' '}
-          <a href="https://doaide.com" target="_blank" rel="noopener noreferrer">DoAide</a>{' '}
-          product
+      <footer className="doaide-footer">
+        <div className="doaide-footer-products">
+          <a href="https://desk.doaide.com" className="doaide-footer-active">Desk</a>
+          <a href="https://herald.doaide.com" target="_blank" rel="noopener noreferrer">Herald</a>
+          <a href="https://409.doaide.com" target="_blank" rel="noopener noreferrer">409A</a>
+          <a href="https://job.doaide.com" target="_blank" rel="noopener noreferrer">AutoApply</a>
+          <a href="https://homenex.doaide.com" target="_blank" rel="noopener noreferrer">Realty</a>
+        </div>
+        <p className="doaide-footer-copy">
+          © {year}{' '}
+          <a href="https://doaide.com" target="_blank" rel="noopener noreferrer">DoAide</a>
+          {' '}· AI tools for small businesses
         </p>
       </footer>
     </div>

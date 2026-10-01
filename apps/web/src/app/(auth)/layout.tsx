@@ -36,9 +36,9 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         </div>
 
         <p className="doaide-auth-footer">
-          © {new Date().getFullYear()} DoAide Desk · A{' '}
-          <a href="https://doaide.com" target="_blank" rel="noopener noreferrer">DoAide</a>{' '}
-          product
+          © {new Date().getFullYear()}{' '}
+          <a href="https://doaide.com" target="_blank" rel="noopener noreferrer">DoAide</a>
+          {' '}· AI tools for small businesses
         </p>
       </div>
     </div>
