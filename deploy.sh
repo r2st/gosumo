@@ -37,10 +37,14 @@ echo "[6/8] Building Web..."
 npx turbo build --filter=@gosumo/web
 
 echo "[7/8] Copying static assets to standalone..."
+rm -rf apps/web/.next/standalone/apps/web/.next/static
 cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static
 if [ -d apps/web/public ]; then
+  rm -rf apps/web/.next/standalone/apps/web/public
   cp -r apps/web/public apps/web/.next/standalone/apps/web/public
 fi
+ls apps/web/.next/standalone/apps/web/.next/static/css/*.css >/dev/null 2>&1 \
+  || { echo "FATAL: static CSS missing from standalone build"; exit 1; }
 
 echo "[8/8] Restarting services..."
 systemctl restart gosumo gosumo-web
@@ -74,4 +78,4 @@ fi
 echo ""
 echo "=== Deploy complete ==="
 echo "API: https://api.gosumo.aiknol.com"
-echo "Web: https://gosumo.aiknol.com"
+echo "Web: https://desk.doaide.com"
