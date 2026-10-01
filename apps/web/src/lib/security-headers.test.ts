@@ -192,8 +192,11 @@ describe('buildContentSecurityPolicy', () => {
     expect(img).toContain('blob:');
   });
 
-  it('serves fonts from the origin, since next/font self-hosts at build time', () => {
-    expect(prodCsp()['font-src']).toBe("'self' data:");
+  it('allows fonts from origin, data URIs, and Google Fonts', () => {
+    const fontSrc = prodCsp()['font-src'] ?? '';
+    expect(fontSrc).toContain("'self'");
+    expect(fontSrc).toContain('data:');
+    expect(fontSrc).toContain('https://fonts.gstatic.com');
   });
 
   it('starts from a default-src that is not a wildcard', () => {

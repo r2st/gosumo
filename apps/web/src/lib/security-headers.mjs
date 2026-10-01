@@ -97,15 +97,12 @@ export function buildContentSecurityPolicy({ apiOrigin, wsOrigin, dev = false } 
   return [
     "default-src 'self'",
     `script-src ${script}`,
-    // Tailwind's build output is a stylesheet, but `next/font` injects inline
-    // `<style>` for its font-face declarations and React inlines style props.
-    "style-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     // `next.config.mjs` allows remote images from any https host, so the CSP
     // has to as well or configured avatars and catalog images break. `blob:`
     // covers client-side object URLs; `data:` covers inlined icons.
     "img-src 'self' data: blob: https:",
-    // `next/font/google` self-hosts at build time, so fonts come from origin.
-    "font-src 'self' data:",
+    "font-src 'self' data: https://fonts.gstatic.com",
     `connect-src ${[...connect].join(' ')}`,
     "object-src 'none'",
     "base-uri 'self'",

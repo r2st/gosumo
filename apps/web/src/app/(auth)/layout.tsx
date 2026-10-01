@@ -1,60 +1,49 @@
-import { Bot, ShieldCheck, Sparkles } from 'lucide-react';
-import { Logo } from '@/components/logo';
-
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen">
-      {/* Brand panel */}
-      <div className="relative hidden w-1/2 flex-col justify-between overflow-hidden bg-gradient-to-br from-indigo-600 via-indigo-700 to-violet-800 p-12 text-white lg:flex">
-        {/* Soft glow accents */}
-        <div className="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-white/10 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-32 -left-20 h-80 w-80 rounded-full bg-violet-400/20 blur-3xl" />
+    <div className="doaide-auth-page">
+      <div className="doaide-auth-container">
+        {/* Robot logo */}
+        <svg viewBox="0 0 48 48" className="doaide-auth-robot" aria-hidden="true">
+          <g fill="none">
+            <line x1="24" y1="8" x2="24" y2="3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            <circle cx="24" cy="2" r="1.8" fill="currentColor" opacity="0.9" />
+            <circle cx="24" cy="2" r="2.8" fill="currentColor" opacity="0.25" />
+            <rect x="14" y="8" width="20" height="14" rx="4" fill="currentColor" />
+            <circle cx="19.5" cy="14" r="2.2" fill="#0A0A0B" />
+            <circle cx="28.5" cy="14" r="2.2" fill="#0A0A0B" />
+            <path d="M20 18.5 Q24 21.5 28 18.5" stroke="#0A0A0B" strokeWidth="1.4" fill="none" strokeLinecap="round" />
+            <rect x="16" y="23" width="16" height="12" rx="3" fill="currentColor" />
+            <rect x="8" y="24" width="7" height="3.5" rx="1.8" fill="currentColor" />
+            <rect x="33" y="24" width="7" height="3.5" rx="1.8" fill="currentColor" />
+            <rect x="19" y="36" width="3.5" height="5" rx="1.5" fill="currentColor" />
+            <rect x="25.5" y="36" width="3.5" height="5" rx="1.5" fill="currentColor" />
+            <g transform="translate(36, 28)">
+              <rect x="-2.5" y="0" width="7" height="5.5" rx="1" fill="#0A0A0B" stroke="currentColor" strokeWidth="0.8" />
+              <path d="M-0.5 0 v-1.2 a1.2 1.2 0 0 1 1.2-1.2 h0.6 a1.2 1.2 0 0 1 1.2 1.2 v1.2" stroke="currentColor" strokeWidth="0.7" fill="none" />
+              <rect x="0" y="2" width="2" height="1" rx="0.3" fill="currentColor" />
+            </g>
+          </g>
+        </svg>
 
-        <div className="relative">
-          <Logo className="[&_span]:text-white" />
-        </div>
-        <div className="relative space-y-6">
-          <h1 className="text-3xl font-bold leading-tight tracking-tight">
-            Every lead answered in 30 seconds. Every buyer qualified. Every follow-up kept.
-          </h1>
-          <p className="max-w-md text-indigo-100">
-            WhatsApp-native AI that qualifies buyers on Budget-Location-Timeline-Configuration, books
-            site visits, and follows up for 90 days.
-          </p>
-          <ul className="space-y-3 text-sm text-indigo-50">
-            <li className="flex items-center gap-3">
-              <Bot className="h-5 w-5 text-indigo-200" />
-              AI qualifies buyers against your live inventory in real-time
-            </li>
-            <li className="flex items-center gap-3">
-              <Sparkles className="h-5 w-5 text-indigo-200" />
-              Site visits booked, confirmed, and reminded automatically
-            </li>
-            <li className="flex items-center gap-3">
-              <ShieldCheck className="h-5 w-5 text-indigo-200" />
-              90-day follow-up cadences — no lead forgotten, ever
-            </li>
-          </ul>
-        </div>
-        <p className="relative text-xs text-indigo-200">
-          © {new Date().getFullYear()} GoSumo. All rights reserved.
-          <span className="mx-1.5">·</span>
-          A{' '}
-          <a href="https://doaide.com" target="_blank" rel="noopener noreferrer" className="font-medium hover:underline">
-            DoAide
-          </a>{' '}
-          product
+        {/* Title */}
+        <h1 className="doaide-auth-title">
+          <span className="doaide-auth-title-brand">DoAide</span>{' '}
+          <span className="doaide-auth-title-product">GoSumo</span>
+        </h1>
+        <p className="doaide-auth-subtitle">
+          AI-powered client management across every channel
         </p>
-      </div>
 
-      {/* Form panel */}
-      <div className="flex w-full items-center justify-center p-6 lg:w-1/2">
-        <div className="w-full max-w-sm">
-          <div className="mb-8 lg:hidden">
-            <Logo />
-          </div>
+        {/* Card */}
+        <div className="doaide-auth-card">
           {children}
         </div>
+
+        <p className="doaide-auth-footer">
+          © {new Date().getFullYear()} GoSumo · A{' '}
+          <a href="https://doaide.com" target="_blank" rel="noopener noreferrer">DoAide</a>{' '}
+          product
+        </p>
       </div>
     </div>
   );

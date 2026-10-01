@@ -115,7 +115,7 @@ describe('AuthLayout', () => {
 
     expect(screen.getByText('form goes here')).toBeInTheDocument();
     expect(
-      screen.getByText(/WhatsApp-native AI that qualifies buyers/),
+      screen.getByText(/AI-powered client management across every channel/),
     ).toBeInTheDocument();
     const copyright = screen.getByText(new RegExp(`© ${new Date().getFullYear()} GoSumo`));
     expect(copyright).toBeInTheDocument();

@@ -2,9 +2,6 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { ArrowLeft, MailCheck } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { api, ApiError } from '@/lib/api-client';
 
 export default function ForgotPasswordPage() {
@@ -29,46 +26,41 @@ export default function ForgotPasswordPage() {
 
   if (sent) {
     return (
-      <div className="animate-fade-in text-center">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-accent">
-          <MailCheck className="h-6 w-6 text-accent-foreground" />
+      <div className="doaide-auth-fade-up" style={{ textAlign: 'center' }}>
+        <div className="doaide-auth-icon-circle">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 13V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12c0 1.1.9 2 2 2h8" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" /><path d="m16 19 2 2 4-4" /></svg>
         </div>
-        <h2 className="text-2xl font-bold tracking-tight">Check your email</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          If an account exists for <span className="font-medium text-foreground">{email}</span>, we&apos;ve
-          sent a password reset link.
+        <h2 className="doaide-auth-heading">Check your email</h2>
+        <p className="doaide-auth-hint" style={{ marginTop: '8px' }}>
+          If an account exists for <strong style={{ color: '#E5E7EB' }}>{email}</strong>, we&apos;ve sent a password reset link.
         </p>
-        <Link href="/login" className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
-          <ArrowLeft className="h-4 w-4" /> Back to sign in
+        <Link href="/login" className="doaide-auth-back-link">
+          ← Back to sign in
         </Link>
       </div>
     );
   }
 
   return (
-    <div className="animate-fade-in">
-      <h2 className="text-2xl font-bold tracking-tight">Reset your password</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Enter your email and we&apos;ll send you a reset link.
-      </p>
+    <div className="doaide-auth-fade-up">
+      <h2 className="doaide-auth-heading">Reset your password</h2>
+      <p className="doaide-auth-hint">Enter your email and we&apos;ll send you a reset link.</p>
 
-      <form onSubmit={onSubmit} className="mt-6 space-y-4">
-        <div className="space-y-1.5">
-          <label htmlFor="email" className="text-sm font-medium">
-            Email
-          </label>
-          <Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@business.com" />
+      <form onSubmit={onSubmit} className="doaide-auth-form">
+        <div className="doaide-auth-field">
+          <label htmlFor="email" className="doaide-auth-label">Email</label>
+          <input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@business.com" className="doaide-auth-input" />
         </div>
 
-        {error && <p className="text-sm text-danger">{error}</p>}
+        {error && <p className="doaide-auth-error">{error}</p>}
 
-        <Button type="submit" className="w-full" loading={submitting}>
-          Send reset link
-        </Button>
+        <button type="submit" disabled={submitting} className="doaide-auth-button">
+          {submitting ? 'Sending…' : 'Send reset link'}
+        </button>
       </form>
 
-      <Link href="/login" className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
-        <ArrowLeft className="h-4 w-4" /> Back to sign in
+      <Link href="/login" className="doaide-auth-back-link">
+        ← Back to sign in
       </Link>
     </div>
   );

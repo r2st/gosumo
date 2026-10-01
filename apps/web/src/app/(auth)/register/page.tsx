@@ -3,8 +3,6 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { GoogleButton } from '@/components/google-button';
 import { useAuth } from '@/providers/auth-provider';
 import { ApiError } from '@/lib/api-client';
@@ -40,64 +38,47 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="animate-fade-in">
-      <h2 className="text-2xl font-bold tracking-tight">Create your workspace</h2>
-      <p className="mt-1 text-sm text-muted-foreground">Start handling customers with AI in minutes.</p>
-
-      <form onSubmit={onSubmit} className="mt-6 space-y-4">
-        <div className="space-y-1.5">
-          <label htmlFor="businessName" className="text-sm font-medium">
-            Business name
-          </label>
-          <Input id="businessName" required value={form.businessName} onChange={update('businessName')} placeholder="Sharma Salon & Spa" />
+    <div className="doaide-auth-fade-up">
+      <form onSubmit={onSubmit} className="doaide-auth-form">
+        <div className="doaide-auth-field">
+          <label htmlFor="businessName" className="doaide-auth-label">Business name</label>
+          <input id="businessName" required value={form.businessName} onChange={update('businessName')} placeholder="Sharma Realty" className="doaide-auth-input" />
         </div>
-        <div className="space-y-1.5">
-          <label htmlFor="name" className="text-sm font-medium">
-            Your name
-          </label>
-          <Input id="name" required value={form.name} onChange={update('name')} placeholder="Priya Sharma" />
+        <div className="doaide-auth-field">
+          <label htmlFor="name" className="doaide-auth-label">Your name</label>
+          <input id="name" required value={form.name} onChange={update('name')} placeholder="Priya Sharma" className="doaide-auth-input" />
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <label htmlFor="email" className="text-sm font-medium">
-              Email
-            </label>
-            <Input id="email" type="email" required value={form.email} onChange={update('email')} placeholder="you@business.com" />
+        <div className="doaide-auth-row">
+          <div className="doaide-auth-field">
+            <label htmlFor="email" className="doaide-auth-label">Email</label>
+            <input id="email" type="email" required value={form.email} onChange={update('email')} placeholder="you@business.com" className="doaide-auth-input" />
           </div>
-          <div className="space-y-1.5">
-            <label htmlFor="phone" className="text-sm font-medium">
-              Phone
-            </label>
-            <Input id="phone" type="tel" value={form.phone} onChange={update('phone')} placeholder="+91 98765 43210" />
+          <div className="doaide-auth-field">
+            <label htmlFor="phone" className="doaide-auth-label">Phone</label>
+            <input id="phone" type="tel" value={form.phone} onChange={update('phone')} placeholder="+91 98765 43210" className="doaide-auth-input" />
           </div>
         </div>
-        <div className="space-y-1.5">
-          <label htmlFor="password" className="text-sm font-medium">
-            Password
-          </label>
-          <Input id="password" type="password" required minLength={8} value={form.password} onChange={update('password')} placeholder="At least 8 characters" />
+        <div className="doaide-auth-field">
+          <label htmlFor="password" className="doaide-auth-label">Password</label>
+          <input id="password" type="password" required minLength={8} value={form.password} onChange={update('password')} placeholder="At least 8 characters" className="doaide-auth-input" />
         </div>
 
-        {error && <p className="text-sm text-danger">{error}</p>}
+        {error && <p className="doaide-auth-error">{error}</p>}
 
-        <Button type="submit" className="w-full" loading={submitting}>
-          Create account
-        </Button>
+        <button type="submit" disabled={submitting} className="doaide-auth-button">
+          {submitting ? 'Creating account…' : 'Create account'}
+        </button>
       </form>
 
-      <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
-        <div className="h-px flex-1 bg-border" />
-        OR
-        <div className="h-px flex-1 bg-border" />
+      <div className="doaide-auth-divider">
+        <span>OR</span>
       </div>
 
       <GoogleButton label="Sign up with Google" />
 
-      <p className="mt-6 text-center text-sm text-muted-foreground">
+      <p className="doaide-auth-switch">
         Already have an account?{' '}
-        <Link href="/login" className="font-medium text-primary hover:underline">
-          Sign in
-        </Link>
+        <Link href="/login" className="doaide-auth-link">Sign in</Link>
       </p>
     </div>
   );

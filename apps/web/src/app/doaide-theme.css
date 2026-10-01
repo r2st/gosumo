@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Schibsted+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 :root {
   --doaide-bg: #0A0A0B; --doaide-bg-alt: #111113; --doaide-surface: #1A1A1D;
   --doaide-surface-hover: #222225; --doaide-border: #2A2A2D; --doaide-border-light: #333336;
@@ -41,3 +41,278 @@ nav, [class*="sidebar"], [class*="nav-"] { background-color: var(--doaide-bg) !i
 [class*="badge"] { background-color: var(--doaide-gold-bg) !important; color: var(--doaide-gold) !important; }
 ::selection { background-color: var(--doaide-gold) !important; color: var(--doaide-text-on-gold) !important; }
 [class*="backdrop"], [class*="overlay"] { background-color: rgba(0,0,0,0.7) !important; }
+
+/* ── Auth pages ── */
+
+.doaide-auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0A0A0B;
+  padding: 24px 16px;
+}
+
+.doaide-auth-container {
+  width: 100%;
+  max-width: 380px;
+  text-align: center;
+}
+
+.doaide-auth-robot {
+  width: 48px;
+  height: 48px;
+  color: #F0B429;
+  margin: 0 auto 20px;
+}
+
+.doaide-auth-title {
+  font-size: 42px;
+  font-weight: 400;
+  line-height: 1.1;
+  margin: 0 0 8px;
+}
+
+.doaide-auth-title-brand {
+  font-family: 'Instrument Serif', serif;
+  color: #ffffff;
+}
+
+.doaide-auth-title-product {
+  font-family: 'Instrument Serif', serif;
+  font-style: italic;
+  color: #F0B429;
+}
+
+.doaide-auth-subtitle {
+  font-family: 'Schibsted Grotesk', sans-serif;
+  font-size: 13px;
+  color: rgba(255,255,255,0.4);
+  margin: 0 0 32px;
+}
+
+.doaide-auth-card {
+  background: rgba(16,16,18,0.8);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 1px 0 0 rgba(255,255,255,.04) inset, 0 8px 24px -12px rgba(0,0,0,.9);
+}
+
+.doaide-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.doaide-auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+
+.doaide-auth-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: rgba(255,255,255,0.35);
+}
+
+.doaide-auth-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.doaide-auth-input {
+  background: rgba(10,10,11,0.6) !important;
+  border: 1px solid rgba(255,255,255,0.12) !important;
+  border-radius: 8px !important;
+  padding: 10px 14px !important;
+  font-family: 'IBM Plex Mono', monospace !important;
+  font-size: 13px !important;
+  color: #E5E7EB !important;
+  width: 100%;
+  outline: none;
+  transition: border-color 150ms ease;
+}
+
+.doaide-auth-input:focus {
+  border-color: rgba(240,180,41,0.5) !important;
+  box-shadow: none !important;
+}
+
+.doaide-auth-input::placeholder {
+  color: rgba(255,255,255,0.2) !important;
+}
+
+.doaide-auth-button {
+  width: 100%;
+  background: #F0B429 !important;
+  color: #0A0A0B !important;
+  border: none !important;
+  border-radius: 8px !important;
+  padding: 10px 16px !important;
+  font-family: 'Schibsted Grotesk', sans-serif !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  cursor: pointer;
+  transition: background 150ms ease;
+  margin-top: 4px;
+}
+
+.doaide-auth-button:hover:not(:disabled) {
+  background: #F7D070 !important;
+}
+
+.doaide-auth-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.doaide-auth-error {
+  font-size: 13px;
+  color: #F87171;
+  margin: 0;
+}
+
+.doaide-auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+  color: rgba(255,255,255,0.2);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.doaide-auth-divider::before,
+.doaide-auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(255,255,255,0.07);
+}
+
+.doaide-auth-switch {
+  margin-top: 20px;
+  font-size: 13px;
+  color: rgba(255,255,255,0.4);
+  text-align: center;
+}
+
+.doaide-auth-link {
+  color: #F0B429 !important;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.doaide-auth-link:hover {
+  color: #F7D070 !important;
+}
+
+.doaide-auth-link-small {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(255,255,255,0.3) !important;
+  text-decoration: none;
+}
+
+.doaide-auth-link-small:hover {
+  color: #F0B429 !important;
+}
+
+.doaide-auth-footer {
+  margin-top: 32px;
+  font-size: 11px;
+  color: rgba(255,255,255,0.2);
+}
+
+.doaide-auth-footer a {
+  color: rgba(255,255,255,0.3) !important;
+}
+
+.doaide-auth-footer a:hover {
+  color: #F0B429 !important;
+}
+
+.doaide-auth-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 420px) {
+  .doaide-auth-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.doaide-auth-heading {
+  font-family: 'Schibsted Grotesk', sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  color: #E5E7EB;
+  margin: 0 0 4px;
+  text-align: left;
+}
+
+.doaide-auth-hint {
+  font-size: 13px;
+  color: rgba(255,255,255,0.4);
+  margin: 0 0 16px;
+  text-align: left;
+}
+
+.doaide-auth-back-link {
+  display: inline-block;
+  margin-top: 16px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.3) !important;
+  text-decoration: none;
+}
+
+.doaide-auth-back-link:hover {
+  color: #F0B429 !important;
+}
+
+.doaide-auth-icon-circle {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(240,180,41,0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+  color: #F0B429;
+}
+
+.doaide-auth-card button:not(.doaide-auth-button) {
+  background: rgba(10,10,11,0.6) !important;
+  border: 1px solid rgba(255,255,255,0.12) !important;
+  border-radius: 8px !important;
+  color: rgba(255,255,255,0.7) !important;
+  font-family: 'Schibsted Grotesk', sans-serif !important;
+}
+
+.doaide-auth-card button:not(.doaide-auth-button):hover {
+  background: rgba(255,255,255,0.05) !important;
+  border-color: rgba(255,255,255,0.2) !important;
+}
+
+.doaide-auth-fade-up {
+  animation: doaideAuthFadeUp 0.4s ease-out both;
+}
+
+@keyframes doaideAuthFadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}

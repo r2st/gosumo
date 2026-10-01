@@ -3,9 +3,6 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { api, ApiError } from '@/lib/api-client';
 import { tokenStore } from '@/lib/token-store';
 
@@ -29,7 +26,6 @@ function ResetPasswordForm() {
     setSubmitting(true);
     try {
       const tokens = await api.auth.resetPassword(token, password);
-      // The reset endpoint returns a fresh token pair — log the user straight in.
       tokenStore.setAccessToken(tokens.accessToken);
       tokenStore.setRefreshToken(tokens.refreshToken);
       router.replace('/dashboard');
@@ -42,40 +38,41 @@ function ResetPasswordForm() {
 
   if (!token) {
     return (
-      <div className="animate-fade-in text-center">
-        <h2 className="text-2xl font-bold tracking-tight">Invalid reset link</h2>
-        <p className="mt-2 text-sm text-muted-foreground">This password reset link is missing or invalid.</p>
-        <Link href="/forgot-password" className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
-          <ArrowLeft className="h-4 w-4" /> Request a new link
+      <div className="doaide-auth-fade-up" style={{ textAlign: 'center' }}>
+        <div className="doaide-auth-icon-circle">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
+        </div>
+        <h2 className="doaide-auth-heading" style={{ textAlign: 'center' }}>Invalid reset link</h2>
+        <p className="doaide-auth-hint" style={{ textAlign: 'center', marginTop: '8px' }}>
+          This password reset link is missing or invalid.
+        </p>
+        <Link href="/forgot-password" className="doaide-auth-back-link">
+          ← Request a new link
         </Link>
       </div>
     );
   }
 
   return (
-    <div className="animate-fade-in">
-      <h2 className="text-2xl font-bold tracking-tight">Set a new password</h2>
-      <p className="mt-1 text-sm text-muted-foreground">Choose a strong password you don&apos;t use elsewhere.</p>
+    <div className="doaide-auth-fade-up">
+      <h2 className="doaide-auth-heading">Set a new password</h2>
+      <p className="doaide-auth-hint">Choose a strong password you don&apos;t use elsewhere.</p>
 
-      <form onSubmit={onSubmit} className="mt-6 space-y-4">
-        <div className="space-y-1.5">
-          <label htmlFor="password" className="text-sm font-medium">
-            New password
-          </label>
-          <Input id="password" type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 8 characters" />
+      <form onSubmit={onSubmit} className="doaide-auth-form">
+        <div className="doaide-auth-field">
+          <label htmlFor="password" className="doaide-auth-label">New password</label>
+          <input id="password" type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 8 characters" className="doaide-auth-input" />
         </div>
-        <div className="space-y-1.5">
-          <label htmlFor="confirm" className="text-sm font-medium">
-            Confirm password
-          </label>
-          <Input id="confirm" type="password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Re-enter password" />
+        <div className="doaide-auth-field">
+          <label htmlFor="confirm" className="doaide-auth-label">Confirm password</label>
+          <input id="confirm" type="password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Re-enter password" className="doaide-auth-input" />
         </div>
 
-        {error && <p className="text-sm text-danger">{error}</p>}
+        {error && <p className="doaide-auth-error">{error}</p>}
 
-        <Button type="submit" className="w-full" loading={submitting}>
-          Reset password
-        </Button>
+        <button type="submit" disabled={submitting} className="doaide-auth-button">
+          {submitting ? 'Resetting…' : 'Reset password'}
+        </button>
       </form>
     </div>
   );

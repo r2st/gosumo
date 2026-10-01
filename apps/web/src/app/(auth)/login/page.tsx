@@ -3,8 +3,6 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { GoogleButton } from '@/components/google-button';
 import { useAuth } from '@/providers/auth-provider';
 import { ApiError } from '@/lib/api-client';
@@ -27,7 +25,6 @@ function LoginForm() {
       if (ok) {
         router.replace(params?.get('next') ?? '/dashboard');
       } else {
-        // 2FA required — the verify screen is out of scope for this build.
         setError('Two-factor authentication is required for this account.');
       }
     } catch (err) {
@@ -38,16 +35,11 @@ function LoginForm() {
   }
 
   return (
-    <div className="animate-fade-in">
-      <h2 className="text-2xl font-bold tracking-tight">Welcome back</h2>
-      <p className="mt-1 text-sm text-muted-foreground">Sign in to your GoSumo workspace.</p>
-
-      <form onSubmit={onSubmit} className="mt-6 space-y-4">
-        <div className="space-y-1.5">
-          <label htmlFor="email" className="text-sm font-medium">
-            Email
-          </label>
-          <Input
+    <div className="doaide-auth-fade-up">
+      <form onSubmit={onSubmit} className="doaide-auth-form">
+        <div className="doaide-auth-field">
+          <label htmlFor="email" className="doaide-auth-label">Email</label>
+          <input
             id="email"
             type="email"
             autoComplete="email"
@@ -55,18 +47,15 @@ function LoginForm() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@business.com"
+            className="doaide-auth-input"
           />
         </div>
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <label htmlFor="password" className="text-sm font-medium">
-              Password
-            </label>
-            <Link href="/forgot-password" className="text-xs font-medium text-primary hover:underline">
-              Forgot password?
-            </Link>
+        <div className="doaide-auth-field">
+          <div className="doaide-auth-label-row">
+            <label htmlFor="password" className="doaide-auth-label">Password</label>
+            <Link href="/forgot-password" className="doaide-auth-link-small">Forgot?</Link>
           </div>
-          <Input
+          <input
             id="password"
             type="password"
             autoComplete="current-password"
@@ -74,29 +63,26 @@ function LoginForm() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••••"
+            className="doaide-auth-input"
           />
         </div>
 
-        {error && <p className="text-sm text-danger">{error}</p>}
+        {error && <p className="doaide-auth-error">{error}</p>}
 
-        <Button type="submit" className="w-full" loading={submitting}>
-          Sign in
-        </Button>
+        <button type="submit" disabled={submitting} className="doaide-auth-button">
+          {submitting ? 'Signing in…' : 'Sign in'}
+        </button>
       </form>
 
-      <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
-        <div className="h-px flex-1 bg-border" />
-        OR
-        <div className="h-px flex-1 bg-border" />
+      <div className="doaide-auth-divider">
+        <span>OR</span>
       </div>
 
       <GoogleButton />
 
-      <p className="mt-6 text-center text-sm text-muted-foreground">
+      <p className="doaide-auth-switch">
         New to GoSumo?{' '}
-        <Link href="/register" className="font-medium text-primary hover:underline">
-          Create a business account
-        </Link>
+        <Link href="/register" className="doaide-auth-link">Create a business account</Link>
       </p>
     </div>
   );
