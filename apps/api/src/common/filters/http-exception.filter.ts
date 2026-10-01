@@ -11,7 +11,7 @@ import { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { GoSumoError, ErrorCode, errorCodeForStatus } from '@gosumo/shared';
 import { CORRELATION_ID_HEADER } from '../context/correlation-id.util';
-import { getCorrelationId } from '../context/request-context';
+import { getCorrelationId, getRequestContext } from '../context/request-context';
 
 /**
  * Prisma error codes that correspond to a client mistake rather than a server
@@ -141,14 +141,17 @@ export class HttpExceptionFilter implements ExceptionFilter {
       ? ` ${JSON.stringify(context)}`
       : '';
 
+    const reqCtx = getRequestContext();
+    const tenant = reqCtx?.businessId ? ` biz=${reqCtx.businessId}` : '';
+
     if (statusCode >= HttpStatus.INTERNAL_SERVER_ERROR) {
       this.logger.error(
-        `[${traceId}] ${request.method} ${request.url} → ${statusCode}${detail}`,
+        `[${traceId}]${tenant} ${request.method} ${request.url} → ${statusCode}${detail}`,
         exception instanceof Error ? exception.stack : String(exception),
       );
     } else {
       this.logger.warn(
-        `[${traceId}] ${request.method} ${request.url} → ${statusCode}: ${JSON.stringify(message)}${detail}`,
+        `[${traceId}]${tenant} ${request.method} ${request.url} → ${statusCode}: ${JSON.stringify(message)}${detail}`,
       );
     }
 

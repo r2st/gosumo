@@ -12,7 +12,7 @@ import {
   CORRELATION_ID_HEADER,
   resolveCorrelationId,
 } from '../context/correlation-id.util';
-import { getCorrelationId } from '../context/request-context';
+import { getCorrelationId, getRequestContext } from '../context/request-context';
 
 /**
  * The request/response access log.
@@ -52,8 +52,10 @@ export class LoggingInterceptor implements NestInterceptor {
         next: () => {
           const duration = Date.now() - startTime;
           const statusCode = response.statusCode;
+          const bizId = getRequestContext()?.businessId;
+          const tenant = bizId ? ` biz=${bizId}` : '';
           this.logger.log(
-            `[${correlationId}] ← ${method} ${url} | ${statusCode} | ${duration}ms`,
+            `[${correlationId}]${tenant} ← ${method} ${url} | ${statusCode} | ${duration}ms`,
           );
         },
         error: (err: unknown) => {
@@ -74,8 +76,10 @@ export class LoggingInterceptor implements NestInterceptor {
            * that carries the *duration* of a failed request, which is what
            * distinguishes a rejected request from a slow one that then failed.
            */
+          const bizId = getRequestContext()?.businessId;
+          const tenant = bizId ? ` biz=${bizId}` : '';
           this.logger.debug(
-            `[${correlationId}] ← ${method} ${url} | ${statusCode} | ${duration}ms | ERROR`,
+            `[${correlationId}]${tenant} ← ${method} ${url} | ${statusCode} | ${duration}ms | ERROR`,
           );
         },
       }),

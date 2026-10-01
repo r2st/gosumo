@@ -33,6 +33,7 @@ import {
 } from '@gosumo/shared';
 
 import { HttpExceptionFilter, ApiError } from './http-exception.filter';
+import * as requestContext from '../context/request-context';
 
 function makeHost(
   headers: Record<string, string> = { 'x-correlation-id': 'trace-123' },
@@ -426,6 +427,32 @@ describe('HttpExceptionFilter', () => {
         expect.stringContaining('razorpay'),
         expect.anything(),
       );
+    });
+
+    it('includes businessId from request context in the log line', () => {
+      jest.spyOn(requestContext, 'getRequestContext').mockReturnValue({
+        correlationId: 'trace-123',
+        businessId: 'biz_tenant42',
+      });
+      const ctx = makeHost();
+      const warnSpy = jest.spyOn(filter['logger'], 'warn');
+      filter.catch(new NotFoundException('gone'), ctx.host);
+
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('biz=biz_tenant42'));
+      jest.restoreAllMocks();
+    });
+
+    it('omits the tenant tag when no businessId is in the context', () => {
+      jest.spyOn(requestContext, 'getRequestContext').mockReturnValue({
+        correlationId: 'trace-123',
+      });
+      const ctx = makeHost();
+      const warnSpy = jest.spyOn(filter['logger'], 'warn');
+      filter.catch(new NotFoundException('gone'), ctx.host);
+
+      const line = warnSpy.mock.calls[0]![0] as string;
+      expect(line).not.toContain('biz=');
+      jest.restoreAllMocks();
     });
   });
 
