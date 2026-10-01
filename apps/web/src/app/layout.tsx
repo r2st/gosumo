@@ -30,6 +30,19 @@ export const metadata: Metadata = {
     shortcut: ['/favicon.ico'],
     apple: [{ url: '/favicon-192x192.png', sizes: '192x192', type: 'image/png' }],
   },
+  openGraph: {
+    title: 'DoAide Desk — AI-Powered Client Management',
+    description:
+      'Manage customer conversations across WhatsApp, Instagram, SMS, Web Chat, and Email through a single AI-driven interface.',
+    url: 'https://desk.doaide.com',
+    siteName: 'DoAide',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'DoAide Desk — AI-Powered Client Management',
+    description: 'AI-powered omnichannel inbox for small businesses.',
+  },
 };
 
 export const viewport: Viewport = {

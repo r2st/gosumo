@@ -90,6 +90,16 @@ describe('HealthService — liveness', () => {
     expect(new Date(report.timestamp).toISOString()).toBe(report.timestamp);
   });
 
+  it('includes the product name and environment', () => {
+    const { service } = makeService();
+
+    const report = service.liveness();
+
+    expect(report.product).toBe('DoAide Desk');
+    expect(typeof report.environment).toBe('string');
+    expect(report.environment.length).toBeGreaterThan(0);
+  });
+
   it('stays ok even when both dependencies are unreachable', () => {
     const { service } = makeService({
       query: jest.fn().mockRejectedValue(new Error('down')),

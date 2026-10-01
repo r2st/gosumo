@@ -65,6 +65,8 @@ export interface DependencyReport {
 
 export interface LivenessReport {
   status: 'ok';
+  product: string;
+  environment: string;
   uptimeSeconds: number;
   timestamp: string;
 }
@@ -184,6 +186,8 @@ export class HealthService {
   liveness(): LivenessReport {
     return {
       status: 'ok',
+      product: 'DoAide Desk',
+      environment: process.env['NODE_ENV'] ?? 'production',
       uptimeSeconds: Math.floor(process.uptime()),
       timestamp: new Date().toISOString(),
     };
