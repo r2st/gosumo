@@ -358,9 +358,10 @@ describe('PaymentService', () => {
       repository.findPaymentByLinkId.mockResolvedValue(
         createMockPayment() as never,
       );
-      repository.updatePaymentStatus.mockResolvedValue(
-        createMockPayment({ status: 'SUCCESS' }) as never,
-      );
+      repository.claimPaymentSuccess.mockResolvedValue({
+        payment: createMockPayment({ status: 'SUCCESS' }) as never,
+        claimed: true,
+      });
 
       await service.handleRazorpayWebhook(validPayload, 'valid_sig');
 
@@ -378,12 +379,11 @@ describe('PaymentService', () => {
         }),
       );
 
-      // Verify payment was updated to SUCCESS
-      expect(repository.updatePaymentStatus).toHaveBeenCalledWith(
+      // Verify payment was claimed via CAS
+      expect(repository.claimPaymentSuccess).toHaveBeenCalledWith(
         BUSINESS_ID,
         PAYMENT_ID,
         expect.objectContaining({
-          status: PaymentStatus.SUCCESS,
           gatewayPaymentId: 'pay_test456',
         }),
       );
@@ -887,9 +887,10 @@ describe('PaymentService', () => {
       repository.findPaymentByLinkId.mockResolvedValue(
         createMockPayment({ status: 'PENDING', gateway: 'STRIPE' }) as never,
       );
-      repository.updatePaymentStatus.mockResolvedValue(
-        createMockPayment({ status: 'SUCCESS' }) as never,
-      );
+      repository.claimPaymentSuccess.mockResolvedValue({
+        payment: createMockPayment({ status: 'SUCCESS' }) as never,
+        claimed: true,
+      });
 
       await replay(
         {
@@ -901,7 +902,7 @@ describe('PaymentService', () => {
       );
 
       expect(stripe.verifyWebhookSignature).not.toHaveBeenCalled();
-      expect(repository.updatePaymentStatus).toHaveBeenCalled();
+      expect(repository.claimPaymentSuccess).toHaveBeenCalled();
     });
   });
 
@@ -1651,9 +1652,10 @@ describe('PaymentService', () => {
       repository.findPaymentByLinkId.mockResolvedValue(
         createMockPayment({ gateway: 'STRIPE', currency: 'USD' }) as never,
       );
-      repository.updatePaymentStatus.mockResolvedValue(
-        createMockPayment({ status: 'SUCCESS' }) as never,
-      );
+      repository.claimPaymentSuccess.mockResolvedValue({
+        payment: createMockPayment({ status: 'SUCCESS' }) as never,
+        claimed: true,
+      });
 
       await service.handleStripeWebhook(completedPayload, 't=1,v1=sig');
 
@@ -1664,11 +1666,10 @@ describe('PaymentService', () => {
       expect(repository.recordWebhookEvent).toHaveBeenCalledWith(
         expect.objectContaining({ source: 'STRIPE', externalId: 'evt_stripe_1' }),
       );
-      expect(repository.updatePaymentStatus).toHaveBeenCalledWith(
+      expect(repository.claimPaymentSuccess).toHaveBeenCalledWith(
         BUSINESS_ID,
         PAYMENT_ID,
         expect.objectContaining({
-          status: PaymentStatus.SUCCESS,
           gatewayPaymentId: 'pi_test_123',
         }),
       );
@@ -2135,21 +2136,24 @@ describe('PaymentService', () => {
         'sig',
       );
 
-      expect(repository.updatePaymentStatus).not.toHaveBeenCalled();
+      expect(repository.claimPaymentSuccess).not.toHaveBeenCalled();
     });
 
     it('records nulls when payment_link.paid carries no payment entity', async () => {
       repository.findPaymentByLinkId.mockResolvedValue(
         createMockPayment({ order_id: null }) as never,
       );
-      repository.updatePaymentStatus.mockResolvedValue(createMockPayment() as never);
+      repository.claimPaymentSuccess.mockResolvedValue({
+        payment: createMockPayment() as never,
+        claimed: true,
+      });
 
       await service.handleRazorpayWebhook(
         rzpPayload('payment_link.paid', { payment_link: { entity: { id: 'plink_x' } } }),
         'sig',
       );
 
-      expect(repository.updatePaymentStatus).toHaveBeenCalledWith(
+      expect(repository.claimPaymentSuccess).toHaveBeenCalledWith(
         BUSINESS_ID,
         PAYMENT_ID,
         expect.objectContaining({ method: null, gatewayPaymentId: null }),
@@ -2333,14 +2337,17 @@ describe('PaymentService', () => {
       repository.findPaymentByLinkId.mockResolvedValue(
         createMockPayment({ status: 'PENDING', order_id: null, gateway: 'STRIPE' }) as never,
       );
-      repository.updatePaymentStatus.mockResolvedValue(createMockPayment() as never);
+      repository.claimPaymentSuccess.mockResolvedValue({
+        payment: createMockPayment() as never,
+        claimed: true,
+      });
 
       await service.handleStripeWebhook(
         stripePayload('checkout.session.completed', { id: 'cs_1' }),
         'sig',
       );
 
-      expect(repository.updatePaymentStatus).toHaveBeenCalledWith(
+      expect(repository.claimPaymentSuccess).toHaveBeenCalledWith(
         BUSINESS_ID,
         PAYMENT_ID,
         expect.objectContaining({ method: null, gatewayPaymentId: null }),

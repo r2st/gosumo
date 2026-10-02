@@ -1161,12 +1161,10 @@ export class PaymentService implements OnModuleInit {
       return;
     }
 
-    // Update payment status
-    await this.repository.updatePaymentStatus(
+    const { claimed } = await this.repository.claimPaymentSuccess(
       payment.business_id,
       payment.id,
       {
-        status: PaymentStatus.SUCCESS,
         method: paymentEntity?.method ?? null,
         gatewayPaymentId: paymentEntity?.id ?? null,
         capturedAt: new Date(),
@@ -1174,7 +1172,13 @@ export class PaymentService implements OnModuleInit {
       },
     );
 
-    // Emit payment.success
+    if (!claimed) {
+      this.logger.debug(
+        `Payment ${payment.id} was already settled — skipping payment_link.paid`,
+      );
+      return;
+    }
+
     const event: PaymentSuccessEvent = {
       type: 'payment.success',
       id: generateId(),
@@ -1295,6 +1299,19 @@ export class PaymentService implements OnModuleInit {
       return;
     }
 
+    const currentStatus = payment.status as string;
+    if (
+      currentStatus === PaymentStatus.SUCCESS ||
+      currentStatus === PaymentStatus.REFUNDED ||
+      currentStatus === PaymentStatus.PARTIALLY_REFUNDED ||
+      currentStatus === PaymentStatus.EXPIRED
+    ) {
+      this.logger.debug(
+        `Payment ${payment.id} is already ${currentStatus} — skipping failed webhook`,
+      );
+      return;
+    }
+
     const failureReason =
       paymentEntity.error_description ?? paymentEntity.error_code ?? 'Payment failed';
 
@@ -1346,21 +1363,26 @@ export class PaymentService implements OnModuleInit {
       return;
     }
 
-    if (payment.status === PaymentStatus.SUCCESS) {
-      this.logger.debug(`Payment ${payment.id} already SUCCESS — skipping Stripe webhook`);
-      return;
-    }
-
     const paymentIntentId = session.payment_intent ?? null;
     const method = session.payment_method_types?.[0] ?? null;
 
-    await this.repository.updatePaymentStatus(payment.business_id, payment.id, {
-      status: PaymentStatus.SUCCESS,
-      method,
-      gatewayPaymentId: paymentIntentId,
-      capturedAt: new Date(),
-      gatewayResponse: event as unknown as Record<string, unknown>,
-    });
+    const { claimed } = await this.repository.claimPaymentSuccess(
+      payment.business_id,
+      payment.id,
+      {
+        method,
+        gatewayPaymentId: paymentIntentId,
+        capturedAt: new Date(),
+        gatewayResponse: event as unknown as Record<string, unknown>,
+      },
+    );
+
+    if (!claimed) {
+      this.logger.debug(
+        `Payment ${payment.id} was already settled — skipping Stripe checkout.session.completed`,
+      );
+      return;
+    }
 
     const successEvent: PaymentSuccessEvent = {
       type: 'payment.success',
@@ -1395,9 +1417,13 @@ export class PaymentService implements OnModuleInit {
     if (!payment) {
       return;
     }
+    const currentStatus = payment.status as string;
     if (
-      payment.status === PaymentStatus.SUCCESS ||
-      payment.status === PaymentStatus.EXPIRED
+      currentStatus === PaymentStatus.SUCCESS ||
+      currentStatus === PaymentStatus.REFUNDED ||
+      currentStatus === PaymentStatus.PARTIALLY_REFUNDED ||
+      currentStatus === PaymentStatus.EXPIRED ||
+      currentStatus === PaymentStatus.FAILED
     ) {
       return;
     }
@@ -1420,6 +1446,19 @@ export class PaymentService implements OnModuleInit {
     const payment = await this.repository.findPaymentByGatewayId(intent.id);
     if (!payment) {
       this.logger.warn(`No payment found for Stripe PaymentIntent ${intent.id}`);
+      return;
+    }
+
+    const currentStatus = payment.status as string;
+    if (
+      currentStatus === PaymentStatus.SUCCESS ||
+      currentStatus === PaymentStatus.REFUNDED ||
+      currentStatus === PaymentStatus.PARTIALLY_REFUNDED ||
+      currentStatus === PaymentStatus.EXPIRED
+    ) {
+      this.logger.debug(
+        `Payment ${payment.id} is already ${currentStatus} — skipping Stripe payment_intent.payment_failed`,
+      );
       return;
     }
 

@@ -246,10 +246,10 @@ describe('gateway webhook states', () => {
         't=1,v1=sig',
       );
 
-      expect(repository.updatePaymentStatus).toHaveBeenCalledWith(
+      expect(repository.claimPaymentSuccess).toHaveBeenCalledWith(
         BUSINESS_ID,
         PAYMENT_ID,
-        expect.objectContaining({ status: PaymentStatus.SUCCESS, gatewayPaymentId: 'pi_1' }),
+        expect.objectContaining({ gatewayPaymentId: 'pi_1' }),
       );
       expect(emitted('payment.success')).toHaveLength(1);
     });
