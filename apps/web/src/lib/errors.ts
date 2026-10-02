@@ -31,8 +31,10 @@ function usableServerMessage(message: string | undefined): string | undefined {
   if (/^request failed with status/i.test(trimmed)) return undefined;
   if (/^(bad request|unauthorized|forbidden|not found|conflict|internal server error)$/i.test(trimmed))
     return undefined;
-  // Anything that looks like a stack frame or a bare exception name.
+  // Anything that looks like a stack frame, a bare exception name, or an
+  // internal error class (e.g. PrismaClientKnownRequestError).
   if (/\b(at\s+\w+\.|Error:|ECONNREFUSED|ETIMEDOUT|socket hang up)\b/.test(trimmed)) return undefined;
+  if (/\w+Error[:.]/.test(trimmed)) return undefined;
   return trimmed;
 }
 

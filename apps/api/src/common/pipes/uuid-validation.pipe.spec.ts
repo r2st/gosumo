@@ -64,7 +64,12 @@ describe('UuidValidationPipe', () => {
     expect(() => pipe.transform('', meta(undefined))).toThrow('Parameter is required');
   });
 
-  it('echoes the received value so a caller can see their typo', () => {
-    expect(() => pipe.transform('abc', meta('id'))).toThrow(/received: "abc"/);
+  it('does not echo the received value back in the error message', () => {
+    expect(() => pipe.transform('abc', meta('id'))).toThrow('id must be a valid UUID');
+    try {
+      pipe.transform('<script>alert(1)</script>', meta('id'));
+    } catch (err) {
+      expect((err as BadRequestException).message).not.toContain('<script>');
+    }
   });
 });

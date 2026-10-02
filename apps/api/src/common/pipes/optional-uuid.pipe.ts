@@ -15,7 +15,7 @@ export class OptionalUuidPipe implements PipeTransform<string | undefined, strin
 
     if (!isUuid(value)) {
       throw new BadRequestException(
-        `${metadata.data ?? 'Parameter'} must be a valid UUID (received: "${value}")`,
+        `${metadata.data ?? 'Parameter'} must be a valid UUID`,
       );
     }
 

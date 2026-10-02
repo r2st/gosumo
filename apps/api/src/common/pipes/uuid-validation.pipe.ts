@@ -24,7 +24,7 @@ export class UuidValidationPipe implements PipeTransform<string, string> {
 
     if (!isUuid(value)) {
       throw new BadRequestException(
-        `${metadata.data ?? 'Parameter'} must be a valid UUID (received: "${value}")`,
+        `${metadata.data ?? 'Parameter'} must be a valid UUID`,
       );
     }
 

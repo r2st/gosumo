@@ -150,6 +150,11 @@ describe('friendlyError — never leaks developer-facing text', () => {
     expect(friendlyError(new Error('TypeError: x is not a function at Module.foo'))).toBe(GENERIC);
   });
 
+  it('drops internal error class names like PrismaClientKnownRequestError', () => {
+    expect(friendlyError(new Error('PrismaClientKnownRequestError: Invalid `prisma.query`'))).toBe(GENERIC);
+    expect(friendlyError(new Error('ValidationError: body.name should not be empty'))).toBe(GENERIC);
+  });
+
   it('drops whitespace-only server messages', () => {
     expect(friendlyError(new ApiError(400, 'BAD_REQUEST', '   '))).toMatch(/weren’t accepted/);
   });

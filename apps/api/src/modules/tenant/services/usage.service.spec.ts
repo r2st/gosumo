@@ -113,6 +113,16 @@ describe('UsageService', () => {
       ).rejects.toBeInstanceOf(QuotaExceededException);
     });
 
+    it('uses a user-friendly label in the quota message', async () => {
+      repository.findBusinessById.mockResolvedValue(
+        makeBusiness({ profile: { usage: { [PERIOD]: { conversations: 1000 } } } }),
+      );
+
+      await expect(
+        service.assertWithinQuota(BUSINESS_ID, UsageMetric.CONVERSATIONS, 1, NOW),
+      ).rejects.toThrow(/conversations this month/);
+    });
+
     it('enforces resource quotas from live counts', async () => {
       repository.findBusinessById.mockResolvedValue(makeBusiness({ plan: 'starter' }));
       repository.countChannelAccounts.mockResolvedValue(1); // starter limit = 1

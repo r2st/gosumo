@@ -23,17 +23,26 @@ import {
   UsageSnapshotResponse,
 } from '../dto/usage.dto';
 
+const METRIC_LABELS: Record<UsageMetric, string> = {
+  [UsageMetric.CHANNELS]: 'connected channels',
+  [UsageMetric.TEAM_MEMBERS]: 'team members',
+  [UsageMetric.CONVERSATIONS]: 'conversations this month',
+  [UsageMetric.CAMPAIGNS]: 'campaigns this month',
+  [UsageMetric.AI_RESPONSES]: 'AI responses this month',
+};
+
 /**
  * Thrown when an action would exceed a plan quota. Maps to HTTP 402
  * (Payment Required) — the tenant must upgrade to proceed.
  */
 export class QuotaExceededException extends HttpException {
   constructor(metric: UsageMetric, limit: number) {
+    const label = METRIC_LABELS[metric] ?? metric;
     super(
       {
         statusCode: HttpStatus.PAYMENT_REQUIRED,
         error: 'PLAN_LIMIT_EXCEEDED',
-        message: `Quota exceeded for "${metric}". Plan limit is ${limit}. Upgrade your plan to continue.`,
+        message: `You've reached the limit of ${limit} ${label} on your current plan. Upgrade your plan to continue.`,
         metric,
         limit,
       },
