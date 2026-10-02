@@ -93,7 +93,7 @@ describe('ContextLoaderService', () => {
     await makeService(prisma).load(BUSINESS_ID, CONVERSATION_ID, MESSAGE_ID);
 
     expect(prisma.conversations.findFirst).toHaveBeenCalledWith({
-      where: { id: CONVERSATION_ID, business_id: BUSINESS_ID },
+      where: { id: CONVERSATION_ID, business_id: BUSINESS_ID, deleted_at: null },
     });
     expect(prisma.messages.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -107,7 +107,7 @@ describe('ContextLoaderService', () => {
       }),
     );
     expect(prisma.clients.findFirst).toHaveBeenCalledWith({
-      where: { id: CLIENT_ID, business_id: BUSINESS_ID },
+      where: { id: CLIENT_ID, business_id: BUSINESS_ID, deleted_at: null },
     });
   });
 

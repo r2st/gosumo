@@ -140,7 +140,7 @@ export class SlaRepository {
     conversationId: string,
   ): Promise<{ channel: ChannelType; tags: string[]; createdAt: Date } | null> {
     const conversation = await this.prisma.conversations.findFirst({
-      where: { id: conversationId, business_id: businessId },
+      where: { id: conversationId, business_id: businessId, deleted_at: null },
       select: { channel: true, tags: true, created_at: true },
     });
     if (!conversation) return null;

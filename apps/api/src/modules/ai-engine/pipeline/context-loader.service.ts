@@ -97,7 +97,7 @@ export class ContextLoaderService {
   ): Promise<EnrichedContext> {
     const [conversationR, triggerR, historyR, businessR, rulesR] = await Promise.allSettled([
       this.prisma.conversations.findFirst({
-        where: { id: conversationId, business_id: businessId },
+        where: { id: conversationId, business_id: businessId, deleted_at: null },
       }),
       this.prisma.messages.findFirst({
         where: { id: messageId, business_id: businessId },
@@ -127,7 +127,7 @@ export class ContextLoaderService {
     if (conversation?.client_id) {
       const clientR = await Promise.allSettled([
         this.prisma.clients.findFirst({
-          where: { id: conversation.client_id, business_id: businessId },
+          where: { id: conversation.client_id, business_id: businessId, deleted_at: null },
         }),
       ]);
       client = settled(clientR[0]!, null);

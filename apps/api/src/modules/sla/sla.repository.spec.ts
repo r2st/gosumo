@@ -259,7 +259,7 @@ describe('SlaRepository', () => {
         createdAt: NOW,
       });
       expect(prisma.conversations.findFirst).toHaveBeenCalledWith({
-        where: { id: CONVERSATION_ID, business_id: BUSINESS_ID },
+        where: { id: CONVERSATION_ID, business_id: BUSINESS_ID, deleted_at: null },
         select: { channel: true, tags: true, created_at: true },
       });
     });
