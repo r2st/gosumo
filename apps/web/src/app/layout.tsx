@@ -37,6 +37,14 @@ export const metadata: Metadata = {
     url: 'https://desk.doaide.com',
     siteName: 'DoAide',
     type: 'website',
+    images: [
+      {
+        url: 'https://desk.doaide.com/og-image.png',
+        width: 1200,
+        height: 630,
+        alt: 'DoAide Desk — AI-Powered Client Management',
+      },
+    ],
   },
   twitter: {
     card: 'summary',
@@ -60,6 +68,27 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           src="https://analytics.doaide.com/script.js"
           data-website-id="98200829-3da5-474b-8ddd-88ef54b947e6"
           strategy="afterInteractive"
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              '@context': 'https://schema.org',
+              '@type': 'SoftwareApplication',
+              name: 'DoAide Desk',
+              description:
+                'AI-powered client management platform for small businesses in India.',
+              url: 'https://desk.doaide.com',
+              applicationCategory: 'BusinessApplication',
+              operatingSystem: 'Web',
+              offers: { '@type': 'Offer', price: '0', priceCurrency: 'INR' },
+              author: {
+                '@type': 'Organization',
+                name: 'Apprend Technologies',
+                url: 'https://doaide.com',
+              },
+            }),
+          }}
         />
       </head>
       <body>
