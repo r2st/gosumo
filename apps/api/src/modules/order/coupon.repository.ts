@@ -127,7 +127,7 @@ export class CouponRepository {
       this.prisma.coupons.count({ where }),
     ]);
 
-    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+    return { data, total, page, limit, totalPages: limit > 0 ? Math.ceil(total / limit) : 1 };
   }
 
   async update(

@@ -174,7 +174,7 @@ export class ContactRepository {
       this.prisma.clients.count({ where }),
     ]);
 
-    return { data, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) };
+    return { data, total, page, limit, totalPages: limit > 0 ? Math.max(1, Math.ceil(total / limit)) : 1 };
   }
 
   private buildWhere(businessId: string, filters: ContactListFilters): Prisma.clientsWhereInput {
@@ -344,7 +344,7 @@ export class ContactRepository {
       this.prisma.clients.count({ where }),
     ]);
 
-    return { data, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) };
+    return { data, total, page, limit, totalPages: limit > 0 ? Math.max(1, Math.ceil(total / limit)) : 1 };
   }
 
   async countBySegmentFilter(businessId: string, filter: SegmentFilter): Promise<number> {

@@ -27,6 +27,7 @@ export function generateCorrelationId(): string {
  * @returns Integer paise value
  */
 export function currencyToPaise(amount: number): number {
+  if (!Number.isFinite(amount)) return 0;
   return Math.round(amount * 100);
 }
 

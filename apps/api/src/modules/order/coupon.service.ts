@@ -15,6 +15,12 @@ import {
   DiscountResult,
 } from './dto/coupon.dto';
 
+/** Prisma Decimal/null → finite number (NaN and null both become 0). */
+function dec(value: unknown): number {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function toCouponDto(c: coupons): CouponDto {
   return {
     id: c.id,
@@ -22,11 +28,11 @@ function toCouponDto(c: coupons): CouponDto {
     code: c.code,
     description: c.description,
     type: c.type as unknown as DiscountType,
-    value: Number(c.value),
+    value: dec(c.value),
     minOrderValuePaise:
-      c.min_order_value === null ? null : currencyToPaise(Number(c.min_order_value)),
+      c.min_order_value === null ? null : currencyToPaise(dec(c.min_order_value)),
     maxDiscountPaise:
-      c.max_discount === null ? null : currencyToPaise(Number(c.max_discount)),
+      c.max_discount === null ? null : currencyToPaise(dec(c.max_discount)),
     usageLimit: c.usage_limit,
     perClientLimit: c.per_client_limit,
     usageCount: c.usage_count,
@@ -205,11 +211,11 @@ export class CouponService {
     }
 
     if (coupon.min_order_value !== null) {
-      const minPaise = currencyToPaise(Number(coupon.min_order_value));
+      const minPaise = currencyToPaise(dec(coupon.min_order_value));
       if (subtotalPaise < minPaise) {
         throw new BadRequestException(
           `Coupon ${coupon.code} requires a minimum order of ` +
-            `INR ${Number(coupon.min_order_value)}`,
+            `INR ${dec(coupon.min_order_value)}`,
         );
       }
     }
@@ -218,13 +224,13 @@ export class CouponService {
     let discountPaise: number;
 
     if (type === DiscountType.PERCENT) {
-      discountPaise = Math.round((subtotalPaise * Number(coupon.value)) / 100);
+      discountPaise = Math.round((subtotalPaise * dec(coupon.value)) / 100);
       if (coupon.max_discount !== null) {
-        const capPaise = currencyToPaise(Number(coupon.max_discount));
+        const capPaise = currencyToPaise(dec(coupon.max_discount));
         discountPaise = Math.min(discountPaise, capPaise);
       }
     } else {
-      discountPaise = currencyToPaise(Number(coupon.value));
+      discountPaise = currencyToPaise(dec(coupon.value));
     }
 
     // A discount can never exceed the subtotal.
@@ -234,7 +240,7 @@ export class CouponService {
       couponId: coupon.id,
       code: coupon.code,
       type,
-      value: Number(coupon.value),
+      value: dec(coupon.value),
       discountPaise,
     };
   }

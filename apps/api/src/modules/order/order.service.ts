@@ -81,6 +81,12 @@ const VALID_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
 // Helper to convert Prisma order to OrderDto
 // ─────────────────────────────────────────────
 
+/** Prisma Decimal/null → finite number (NaN and null both become 0). */
+function dec(value: unknown): number {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function toOrderDto(order: orders): OrderDto {
   const lineItems = order.line_items as unknown as OrderLineItem[];
   return {
@@ -91,11 +97,11 @@ function toOrderDto(order: orders): OrderDto {
     orderNumber: order.order_number,
     status: order.status as OrderStatus,
     lineItems,
-    subtotalPaise: currencyToPaise(Number(order.subtotal)),
-    discountAmountPaise: currencyToPaise(Number(order.discount_amount)),
-    taxAmountPaise: currencyToPaise(Number(order.tax_amount)),
-    shippingFeePaise: currencyToPaise(Number(order.shipping_fee)),
-    totalPaise: currencyToPaise(Number(order.total)),
+    subtotalPaise: currencyToPaise(dec(order.subtotal)),
+    discountAmountPaise: currencyToPaise(dec(order.discount_amount)),
+    taxAmountPaise: currencyToPaise(dec(order.tax_amount)),
+    shippingFeePaise: currencyToPaise(dec(order.shipping_fee)),
+    totalPaise: currencyToPaise(dec(order.total)),
     currency: order.currency,
     discountCode: order.discount_code,
     discountType: order.discount_type,
@@ -204,12 +210,12 @@ export class OrderService {
           );
         }
         unitPriceRupees = variant.price
-          ? Number(variant.price)
-          : Number(catalogItem.price);
+          ? dec(variant.price)
+          : dec(catalogItem.price);
         sku = variant.sku ?? catalogItem.sku;
         name = `${catalogItem.name} - ${variant.name}`;
       } else {
-        unitPriceRupees = Number(catalogItem.price);
+        unitPriceRupees = dec(catalogItem.price);
         sku = catalogItem.sku;
         name = catalogItem.name;
       }
@@ -218,7 +224,7 @@ export class OrderService {
       const totalPricePaise = unitPricePaise * item.quantity;
 
       // Tax is calculated on the effective price
-      const taxRate = Number(catalogItem.tax_rate);
+      const taxRate = Math.max(0, dec(catalogItem.tax_rate));
       let taxAmountPaise: number;
 
       if (catalogItem.tax_inclusive) {
@@ -742,7 +748,7 @@ export class OrderService {
           orderId: o.id,
           orderNumber: o.order_number,
           status: o.status as OrderStatus,
-          totalPaise: currencyToPaise(Number(o.total)),
+          totalPaise: currencyToPaise(dec(o.total)),
           itemCount: items.length,
           placedAt: o.placed_at.toISOString(),
         };
@@ -768,7 +774,7 @@ export class OrderService {
           orderId: order.id,
           orderNumber: order.order_number,
           status: order.status as OrderStatus,
-          totalPaise: currencyToPaise(Number(order.total)),
+          totalPaise: currencyToPaise(dec(order.total)),
           currency: order.currency,
           itemCount: items.length,
           placedAt: order.placed_at.toISOString(),
@@ -1053,14 +1059,14 @@ export class OrderService {
 
     if (option.min_order_value_for_free !== null) {
       const freeThresholdPaise = currencyToPaise(
-        Number(option.min_order_value_for_free),
+        dec(option.min_order_value_for_free),
       );
       if (subtotalPaise >= freeThresholdPaise) {
         return 0;
       }
     }
 
-    return currencyToPaise(Number(option.base_fee));
+    return currencyToPaise(dec(option.base_fee));
   }
 
   /**

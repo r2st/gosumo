@@ -726,13 +726,13 @@ export class ClientIntelligenceService {
     const profile = (client.profile as Record<string, unknown>) ?? {};
     const sentimentHistory = (profile['sentimentHistory'] as SentimentEntry[]) ?? [];
     if (sentimentHistory.length > 0) {
-      const recentSentiments = sentimentHistory.slice(-5);
-      const avgSentiment =
-        recentSentiments.reduce((sum, e) => sum + e.score, 0) /
-        recentSentiments.length;
-      const sentimentLabel =
-        avgSentiment >= 0.3 ? 'positive' : avgSentiment <= -0.3 ? 'negative' : 'neutral';
-      parts.push(`Mood: ${sentimentLabel}`);
+      const scores = sentimentHistory.slice(-5).map((e) => e.score).filter(Number.isFinite);
+      if (scores.length > 0) {
+        const avgSentiment = scores.reduce((sum, s) => sum + s, 0) / scores.length;
+        const sentimentLabel =
+          avgSentiment >= 0.3 ? 'positive' : avgSentiment <= -0.3 ? 'negative' : 'neutral';
+        parts.push(`Mood: ${sentimentLabel}`);
+      }
     }
 
     // Order stats

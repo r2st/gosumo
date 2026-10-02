@@ -84,7 +84,7 @@ export class TeamController {
         total: mapped.length,
         limit,
         page: 1,
-        totalPages: Math.max(1, Math.ceil(mapped.length / limit)),
+        totalPages: limit > 0 ? Math.max(1, Math.ceil(mapped.length / limit)) : 1,
       },
     };
   }

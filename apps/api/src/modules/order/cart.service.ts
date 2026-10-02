@@ -6,6 +6,12 @@ import {
 } from '@nestjs/common';
 import type { cart_items } from '@prisma/client';
 import { CartStatus, DiscountType, currencyToPaise } from '@gosumo/shared';
+
+/** Prisma Decimal/null → finite number (NaN and null both become 0). */
+function dec(value: unknown): number {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
 import { PrismaService } from '../../common/services/prisma.service';
 import { CartRepository, CartWithItems } from './cart.repository';
 import { CouponService } from './coupon.service';
@@ -289,8 +295,8 @@ export class CartService {
         );
       }
       const priceRupees = variant.price
-        ? Number(variant.price)
-        : Number(catalogItem.price);
+        ? dec(variant.price)
+        : dec(catalogItem.price);
       return {
         unitPricePaise: currencyToPaise(priceRupees),
         name: `${catalogItem.name} - ${variant.name}`,
@@ -299,7 +305,7 @@ export class CartService {
     }
 
     return {
-      unitPricePaise: currencyToPaise(Number(catalogItem.price)),
+      unitPricePaise: currencyToPaise(dec(catalogItem.price)),
       name: catalogItem.name,
       sku: catalogItem.sku,
     };
@@ -307,7 +313,7 @@ export class CartService {
 
   private computeSubtotalPaise(items: cart_items[]): number {
     return items.reduce(
-      (sum, i) => sum + currencyToPaise(Number(i.unit_price)) * i.quantity,
+      (sum, i) => sum + currencyToPaise(dec(i.unit_price)) * i.quantity,
       0,
     );
   }
@@ -336,7 +342,7 @@ export class CartService {
   private toCartDto(cart: CartWithItems): CartDto {
     const items: CartItemDto[] = cart.items.map((i) => {
       const meta = (i.metadata ?? {}) as { name?: string; sku?: string | null };
-      const unitPricePaise = currencyToPaise(Number(i.unit_price));
+      const unitPricePaise = currencyToPaise(dec(i.unit_price));
       return {
         id: i.id,
         itemId: i.item_id,
@@ -352,7 +358,7 @@ export class CartService {
     const subtotalPaise = items.reduce((s, i) => s + i.lineTotalPaise, 0);
     const discountPaise = this.computeDiscountPaise(
       cart.discount_type as unknown as DiscountType | null,
-      cart.discount_value === null ? null : Number(cart.discount_value),
+      cart.discount_value === null ? null : dec(cart.discount_value),
       subtotalPaise,
     );
 

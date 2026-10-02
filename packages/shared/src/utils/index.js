@@ -30,6 +30,7 @@ function generateCorrelationId() {
  * @returns Integer paise value
  */
 function currencyToPaise(amount) {
+    if (!Number.isFinite(amount)) return 0;
     return Math.round(amount * 100);
 }
 /**
