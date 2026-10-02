@@ -236,7 +236,7 @@ describe('app.config', () => {
       expect(load().openrouter).toEqual({
         apiKey: undefined,
         baseUrl: 'https://openrouter.ai/api/v1/chat/completions',
-        referer: 'https://gosumo.doaide.com',
+        referer: 'https://desk.doaide.com',
         title: 'DoAide Desk',
       });
     });

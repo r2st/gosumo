@@ -249,7 +249,7 @@ describe('CRM adapters given a bare lead', () => {
     const byAttr = Object.fromEntries(payload.attributes.map((a) => [a.Attribute, a.Value]));
 
     expect(byAttr.FirstName).toBe('DoAide');
-    expect(byAttr.LastName).toBe('Inbox Lead');
+    expect(byAttr.LastName).toBe('Desk Lead');
   });
 
   it('LeadSquared sends a zero score rather than dropping it', () => {
