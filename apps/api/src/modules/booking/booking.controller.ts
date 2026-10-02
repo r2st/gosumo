@@ -16,6 +16,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { BookingService } from './booking.service';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
+import { OptionalUuidPipe } from '../../common/pipes/optional-uuid.pipe';
 import {
   CreateBookingDto,
   CreateRecurringBookingDto,
@@ -26,6 +27,7 @@ import {
   BlockSlotDto,
   ConnectGoogleCalendarDto,
   ListBookingsQueryDto,
+  CalendarQueryDto,
 } from './dto';
 
 /** Upper bound on bookings pulled for one calendar-view render. */
@@ -94,7 +96,7 @@ export class BookingController {
   @ApiResponse({ status: 200, description: 'Consent URL' })
   async getGoogleAuthUrl(
     @TenantId() tenantId: string,
-    @Query('staffId') staffId?: string,
+    @Query('staffId', OptionalUuidPipe) staffId?: string,
     @Query('redirectUri') redirectUri?: string,
   ) {
     return this.bookingService.getGoogleAuthUrl(tenantId, staffId, redirectUri);
@@ -117,7 +119,7 @@ export class BookingController {
   @HttpCode(HttpStatus.OK)
   async syncGoogle(
     @TenantId() tenantId: string,
-    @Query('staffId') staffId?: string,
+    @Query('staffId', OptionalUuidPipe) staffId?: string,
   ) {
     return this.bookingService.syncGoogleCalendar(tenantId, staffId);
   }
@@ -127,7 +129,7 @@ export class BookingController {
   @ApiResponse({ status: 200, description: 'Connection status (or null)' })
   async getGoogleConnection(
     @TenantId() tenantId: string,
-    @Query('staffId') staffId?: string,
+    @Query('staffId', OptionalUuidPipe) staffId?: string,
   ) {
     return this.bookingService.getCalendarConnection(tenantId, staffId);
   }
@@ -138,7 +140,7 @@ export class BookingController {
   @ApiResponse({ status: 204, description: 'Deleted; no content returned' })
   async disconnectGoogle(
     @TenantId() tenantId: string,
-    @Query('staffId') staffId?: string,
+    @Query('staffId', OptionalUuidPipe) staffId?: string,
   ) {
     await this.bookingService.disconnectGoogleCalendar(tenantId, staffId);
   }
@@ -188,14 +190,12 @@ export class BookingController {
   @ApiResponse({ status: 200, description: 'Bookings in the requested calendar window' })
   async getCalendar(
     @TenantId() tenantId: string,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
-    @Query('staffMemberId') staffMemberId?: string,
+    @Query() calendarQuery: CalendarQueryDto,
   ) {
     const query: ListBookingsQueryDto = { page: 1, limit: CALENDAR_PAGE_SIZE };
-    if (from) query.from = from;
-    if (to) query.to = to;
-    if (staffMemberId) query.staffId = staffMemberId;
+    if (calendarQuery.from) query.from = calendarQuery.from;
+    if (calendarQuery.to) query.to = calendarQuery.to;
+    if (calendarQuery.staffMemberId) query.staffId = calendarQuery.staffMemberId;
     const { data } = await this.bookingService.listBookings(tenantId, query);
     return {
       events: data.map((b) => ({

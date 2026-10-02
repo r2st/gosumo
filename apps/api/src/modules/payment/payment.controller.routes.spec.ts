@@ -134,7 +134,7 @@ describe('PaymentController (route delegation)', () => {
 
   describe('GET /payments/stats', () => {
     it('passes the date window through as given', async () => {
-      await controller.getPaymentStats(BIZ, '2026-07-01', '2026-07-31');
+      await controller.getPaymentStats(BIZ, { from: '2026-07-01', to: '2026-07-31' });
 
       expect(payments.getPaymentStats).toHaveBeenCalledWith(BIZ, {
         from: '2026-07-01',
@@ -143,7 +143,7 @@ describe('PaymentController (route delegation)', () => {
     });
 
     it('leaves an omitted window undefined so the service picks its own default', async () => {
-      await controller.getPaymentStats(BIZ, undefined, undefined);
+      await controller.getPaymentStats(BIZ, {});
 
       expect(payments.getPaymentStats).toHaveBeenCalledWith(BIZ, {
         from: undefined,

@@ -29,6 +29,7 @@ import {
   UpdateTriggerDto,
   ListNotificationsQueryDto,
   UpdateDeliveryStatusDto,
+  NotificationStatsQueryDto,
 } from './dto';
 import { NotificationSettingsService } from './settings/notification-settings.service';
 import {
@@ -85,14 +86,11 @@ export class NotificationController {
   @Get('stats')
   @ApiOperation({ summary: 'Delivery stats (counts, delivery/failure rate)' })
   @ApiResponse({ status: 200, description: 'The delivery statistics for this business' })
-  @ApiQuery({ name: 'from', required: false })
-  @ApiQuery({ name: 'to', required: false })
   async stats(
     @TenantId() tenantId: string,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
+    @Query() query: NotificationStatsQueryDto,
   ) {
-    return this.service.getStats(tenantId, from, to);
+    return this.service.getStats(tenantId, query.from, query.to);
   }
 
   @Post(':id/retry')

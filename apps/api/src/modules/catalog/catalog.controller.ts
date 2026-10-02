@@ -15,6 +15,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/
 import { CatalogService } from './catalog.service';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
+import { OptionalUuidPipe } from '../../common/pipes/optional-uuid.pipe';
 import {
   CreateCategoryDto,
   UpdateCategoryDto,
@@ -263,7 +264,7 @@ export class CatalogController {
   async getStockLevel(
     @TenantId() tenantId: string,
     @Param('itemId', UuidValidationPipe) itemId: string,
-    @Query('variantId') variantId?: string,
+    @Query('variantId', OptionalUuidPipe) variantId?: string,
   ) {
     return this.catalogService.getStockLevel(tenantId, itemId, variantId);
   }

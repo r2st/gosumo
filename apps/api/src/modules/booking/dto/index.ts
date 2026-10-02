@@ -493,3 +493,20 @@ export interface StaffMemberDto {
   role: string;
   avatarUrl: string | null;
 }
+
+export class CalendarQueryDto {
+  @ApiPropertyOptional({ description: 'Calendar window start, ISO-8601 calendar date' })
+  @IsOptional()
+  @IsCalendarDateString()
+  from?: string;
+
+  @ApiPropertyOptional({ description: 'Calendar window end, ISO-8601 calendar date' })
+  @IsOptional()
+  @IsCalendarDateString()
+  to?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by staff member UUID' })
+  @IsOptional()
+  @IsUUID()
+  staffMemberId?: string;
+}

@@ -14,6 +14,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { OrderService } from './order.service';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
+import { OptionalUuidPipe } from '../../common/pipes/optional-uuid.pipe';
 import {
   CreateOrderDto,
   UpdateOrderStatusDto,
@@ -94,7 +95,7 @@ export class OrderController {
   async getOrderStatusForClient(
     @TenantId() tenantId: string,
     @Param('clientId', UuidValidationPipe) clientId: string,
-    @Query('orderId') orderId?: string,
+    @Query('orderId', OptionalUuidPipe) orderId?: string,
   ) {
     return this.orderService.getOrderStatusForClient(tenantId, clientId, orderId);
   }

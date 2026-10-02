@@ -30,6 +30,7 @@ import {
   ListRefundsQueryDto,
   CreateInvoiceDto,
   ListInvoicesQueryDto,
+  PaymentStatsQueryDto,
 } from './dto';
 
 /**
@@ -82,10 +83,9 @@ export class PaymentController {
   @ApiResponse({ status: 200, description: 'Collected, pending and failed payment totals' })
   async getPaymentStats(
     @TenantId() tenantId: string,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
+    @Query() query: PaymentStatsQueryDto,
   ) {
-    return this.paymentService.getPaymentStats(tenantId, { from, to });
+    return this.paymentService.getPaymentStats(tenantId, { from: query.from, to: query.to });
   }
 
   @Post('payments/links')

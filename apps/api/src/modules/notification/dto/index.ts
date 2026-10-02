@@ -559,6 +559,18 @@ export interface TriggerDto {
   conditions: unknown[];
 }
 
+export class NotificationStatsQueryDto {
+  @ApiPropertyOptional({ description: 'Start date (inclusive), ISO-8601 calendar date' })
+  @IsOptional()
+  @IsCalendarDateString()
+  from?: string;
+
+  @ApiPropertyOptional({ description: 'End date (inclusive), ISO-8601 calendar date' })
+  @IsOptional()
+  @IsCalendarDateString()
+  to?: string;
+}
+
 export interface NotificationStatsDto {
   total: number;
   byStatus: Record<string, number>;

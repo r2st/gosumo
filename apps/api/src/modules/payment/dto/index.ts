@@ -448,3 +448,15 @@ export class ListRefundsQueryDto {
   @Max(MAX_PAGE_SIZE)
   limit?: number = 20;
 }
+
+export class PaymentStatsQueryDto {
+  @ApiPropertyOptional({ description: 'Start date (inclusive), ISO-8601 calendar date' })
+  @IsOptional()
+  @IsCalendarDateString()
+  from?: string;
+
+  @ApiPropertyOptional({ description: 'End date (inclusive), ISO-8601 calendar date' })
+  @IsOptional()
+  @IsCalendarDateString()
+  to?: string;
+}

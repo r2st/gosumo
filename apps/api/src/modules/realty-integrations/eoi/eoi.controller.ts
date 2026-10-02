@@ -21,6 +21,7 @@ import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Public } from '../../../common/decorators/public.decorator';
 import { webhookRawBody } from '../../../common/utils/webhook-verification.util';
 import { UuidValidationPipe } from '../../../common/pipes/uuid-validation.pipe';
+import { OptionalUuidPipe } from '../../../common/pipes/optional-uuid.pipe';
 import { RequestEoiDto, ApproveEoiDto, RejectEoiDto } from '../dto';
 
 /** Express request carrying the raw body (needed for webhook signature checks). */
@@ -56,7 +57,7 @@ export class RealtyEoiController {
   @ApiQuery({ name: 'status', required: false, enum: RealtyEoiStatus })
   async list(
     @TenantId() tenantId: string,
-    @Query('leadId') leadId?: string,
+    @Query('leadId', OptionalUuidPipe) leadId?: string,
     @Query('status') status?: RealtyEoiStatus,
   ) {
     return this.eoi.listEoi(tenantId, { leadId, status });

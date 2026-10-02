@@ -97,7 +97,7 @@ describe('BookingController', () => {
         page([bookingDto({ notes: 'Haircut', staffId: STAFF_ID })]),
       );
 
-      const { events } = await controller.getCalendar(TENANT_ID);
+      const { events } = await controller.getCalendar(TENANT_ID, {});
 
       expect(events).toEqual([
         {
@@ -115,13 +115,13 @@ describe('BookingController', () => {
     it('titles an untitled booking "Appointment"', async () => {
       service.listBookings.mockResolvedValue(page([bookingDto({ notes: '' })]));
 
-      const { events } = await controller.getCalendar(TENANT_ID);
+      const { events } = await controller.getCalendar(TENANT_ID, {});
 
       expect(events[0]!.title).toBe('Appointment');
     });
 
     it('queries a wide page with no filters by default', async () => {
-      await controller.getCalendar(TENANT_ID);
+      await controller.getCalendar(TENANT_ID, {});
 
       expect(service.listBookings).toHaveBeenCalledWith(TENANT_ID, {
         page: 1,
@@ -130,12 +130,11 @@ describe('BookingController', () => {
     });
 
     it('forwards the from/to/staff filters when supplied', async () => {
-      await controller.getCalendar(
-        TENANT_ID,
-        '2030-06-01T00:00:00.000Z',
-        '2030-06-30T00:00:00.000Z',
-        STAFF_ID,
-      );
+      await controller.getCalendar(TENANT_ID, {
+        from: '2030-06-01T00:00:00.000Z',
+        to: '2030-06-30T00:00:00.000Z',
+        staffMemberId: STAFF_ID,
+      });
 
       expect(service.listBookings).toHaveBeenCalledWith(TENANT_ID, {
         page: 1,
@@ -147,7 +146,7 @@ describe('BookingController', () => {
     });
 
     it('returns an empty event list when there are no bookings', async () => {
-      const { events } = await controller.getCalendar(TENANT_ID);
+      const { events } = await controller.getCalendar(TENANT_ID, {});
       expect(events).toEqual([]);
     });
   });
