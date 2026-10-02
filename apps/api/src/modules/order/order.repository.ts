@@ -156,8 +156,7 @@ export class OrderRepository {
       this.prisma.orders.findMany({
         where,
         include: {
-          client: true,
-          shipments: true,
+          client: { select: { id: true, name: true, email: true, phone: true } },
         },
         orderBy: { placed_at: 'desc' },
         skip,
@@ -273,7 +272,7 @@ export class OrderRepository {
         deleted_at: null,
       },
       include: {
-        shipments: true,
+        shipments: { select: { id: true, status: true, tracking_number: true, provider: true } },
       },
       orderBy: { placed_at: 'desc' },
       take: limit,

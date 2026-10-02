@@ -162,5 +162,8 @@ export function isMimeTypeConsistent(type: string, mimeType: unknown): boolean {
   return !required || mimeType.toLowerCase().startsWith(required);
 }
 
+/** Upper bound on the number of replies returned for a single message. */
+export const MAX_REPLIES_PER_MESSAGE = 100;
+
 /** Template category reserved for short canned "quick reply" snippets. */
 export const QUICK_REPLY_CATEGORY = 'QUICK_REPLY';

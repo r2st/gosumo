@@ -299,9 +299,9 @@ describe('OrderRepository', () => {
     it('hydrates the relations the list view renders', async () => {
       await repository.findOrders(BUSINESS_ID, {});
 
-      expect(prisma.orders.findMany.mock.calls[0]![0].include).toEqual({
-        client: true,
-        shipments: true,
+      const include = prisma.orders.findMany.mock.calls[0]![0].include;
+      expect(include).toEqual({
+        client: { select: { id: true, name: true, email: true, phone: true } },
       });
     });
 

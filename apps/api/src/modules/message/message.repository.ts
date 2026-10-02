@@ -10,7 +10,7 @@ import {
   MESSAGE_ORDER_IN_CONVERSATION_NEWEST_FIRST,
 } from '../../common/utils/message-order';
 import { createSequencedMessage } from '../../common/utils/message-sequence';
-import { MAX_SEARCH_RESULTS, SEARCHABLE_MESSAGE_TYPES } from './message.constants';
+import { MAX_SEARCH_RESULTS, MAX_REPLIES_PER_MESSAGE, SEARCHABLE_MESSAGE_TYPES } from './message.constants';
 
 // ─────────────────────────────────────────────
 // Types
@@ -386,9 +386,8 @@ export class MessageRepository {
           equals: messageId,
         },
       },
-      // Unbounded, so no reply can be dropped by a tie — but two simultaneous
-      // replies would still swap places between two loads of the same thread.
       orderBy: MESSAGE_ORDER_OLDEST_FIRST,
+      take: MAX_REPLIES_PER_MESSAGE,
     });
   }
 
