@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
@@ -48,6 +48,8 @@ export interface JwtPayload {
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
+  private readonly logger = new Logger(JwtStrategy.name);
+
   constructor(
     configService: ConfigService,
     private readonly sessionService: SessionService,
@@ -102,7 +104,13 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
         throw new UnauthorizedException('Session has expired or been revoked');
       }
       // Best-effort recency update; failures must not block the request.
-      void this.sessionService.touch(payload.sub, payload.sessionId).catch(() => undefined);
+      void this.sessionService
+        .touch(payload.sub, payload.sessionId)
+        .catch((err: unknown) => {
+          this.logger.debug(
+            `Session touch failed for user ${payload.sub}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
     }
 
     return {

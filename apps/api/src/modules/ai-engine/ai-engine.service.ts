@@ -212,7 +212,7 @@ export class AiEngineService {
       });
     const actionsExecuted = await this.hasRecentAction(context);
 
-    const safety = this.guardrails.evaluate(text, { recentIntents, actionsExecuted });
+    const safety = this.guardrails.evaluate(text, { recentIntents, actionsExecuted, traceId });
 
     // Intent: rules-only when a jailbreak is detected (never invoke the LLM on
     // poisoned input); full cascade otherwise.

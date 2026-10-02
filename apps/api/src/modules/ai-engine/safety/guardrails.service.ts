@@ -113,7 +113,7 @@ export class GuardrailsService {
    */
   evaluate(
     text: string,
-    context: { recentIntents?: string[]; actionsExecuted?: boolean } = {},
+    context: { recentIntents?: string[]; actionsExecuted?: boolean; traceId?: string } = {},
   ): SafetySignals {
     const pii = this.detectAndRedactPii(text);
     const signals: SafetySignals = {
@@ -127,12 +127,13 @@ export class GuardrailsService {
       ),
     };
 
+    const tag = context.traceId ? `[${context.traceId}] ` : '';
     if (signals.jailbreakDetected) {
-      this.logger.warn('Jailbreak attempt detected — message will not be sent to the LLM');
+      this.logger.warn(`${tag}Jailbreak attempt detected — message will not be sent to the LLM`);
     }
     if (signals.pii.hasPii) {
       this.logger.warn(
-        `PII detected in inbound message: ${signals.pii.detected.map((d) => d.type).join(', ')}`,
+        `${tag}PII detected in inbound message: ${signals.pii.detected.map((d) => d.type).join(', ')}`,
       );
     }
 

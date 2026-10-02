@@ -139,7 +139,7 @@ export class RealtyAiService {
     const classification = await this.classifier.classify(text);
     const intent = classification.intent;
 
-    const safety = this.baseGuardrails.evaluate(text);
+    const safety = this.baseGuardrails.evaluate(text, { traceId });
     const reachable = Boolean(lead.whatsappPhone) && !lead.optOut;
 
     // BLTC extraction + qualification turn (deterministic).
@@ -525,7 +525,12 @@ export class RealtyAiService {
         const [project, units, assets] = await Promise.all([
           this.inventory.getProject(businessId, projectId),
           this.inventory.listUnits(businessId, projectId),
-          this.inventory.listAssets(businessId, projectId).catch(() => []),
+          this.inventory.listAssets(businessId, projectId).catch((err: unknown) => {
+            this.logger.debug(
+              `Asset listing failed for project ${projectId} (business ${businessId}): ${err instanceof Error ? err.message : String(err)}`,
+            );
+            return [];
+          }),
         ]);
 
         if (project.reraNumber) sheetReraNumbers.push(project.reraNumber);
