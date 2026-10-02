@@ -214,6 +214,7 @@ export class VoiceNoteProcessorService {
     const agent = await this.prisma.team_members.findFirst({
       where: {
         business_id: businessId,
+        deleted_at: null,
         OR: [
           { name: { equals: command.agentName, mode: 'insensitive' } },
           // The name is transcribed speech, so it is untrusted text like any

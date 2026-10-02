@@ -232,7 +232,7 @@ export class RealtyIvrService implements OnModuleInit {
     call: NormalizedIvrCall,
   ): Promise<boolean> {
     const account = await this.prisma.channel_accounts.findFirst({
-      where: { business_id: businessId, channel: ChannelType.WHATSAPP, is_active: true },
+      where: { business_id: businessId, channel: ChannelType.WHATSAPP, is_active: true, deleted_at: null },
     });
     if (!account) {
       this.logger.warn(

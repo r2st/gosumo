@@ -584,6 +584,7 @@ export class ChannelAdapterService implements OnModuleInit {
               channel: channelType,
               external_id: normalized.channelAccountId,
               is_active: true,
+              deleted_at: null,
             },
           }),
       );
@@ -703,6 +704,7 @@ export class ChannelAdapterService implements OnModuleInit {
             client_id: channelContact.client_id,
             channel_account_id: channelAccount.id,
             status: { notIn: ['RESOLVED'] },
+            deleted_at: null,
           },
           orderBy: { updated_at: 'desc' },
         });
