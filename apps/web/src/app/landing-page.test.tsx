@@ -1,10 +1,8 @@
 /**
- * The redesigned marketing page at `/` with embedded auth form.
+ * Split-layout landing page at `/` with embedded auth form (409A design).
  *
- * The landing page combines the product showcase and auth form into one
- * split-layout view. Tests verify structural integrity: the auth form
- * functions, feature highlights are present, tabs switch correctly, and
- * the mobile-first layout has the right pieces.
+ * Tests verify structural integrity: the auth tabs switch correctly,
+ * form fields are present, branding and pipeline are visible.
  */
 import { render, screen, within, fireEvent } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
@@ -19,6 +17,7 @@ vi.mock('next/link', () => ({
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock('next/font/google', () => ({
@@ -70,91 +69,84 @@ import Home, { metadata as homeMetadata } from './page';
 import RootLayout, { metadata as rootMetadata, viewport } from './layout';
 
 describe('landing page — auth form', () => {
-  it('defaults to the Sign Up tab with all registration fields', () => {
+  it('defaults to the Sign in tab with login fields', () => {
     render(<LandingPage />);
 
-    const signupTab = screen.getAllByRole('tab', { name: 'Sign Up' });
-    expect(signupTab.length).toBeGreaterThan(0);
-    expect(signupTab[0]).toHaveAttribute('aria-selected', 'true');
+    const signinTab = screen.getAllByRole('tab', { name: 'Sign in' });
+    expect(signinTab.length).toBeGreaterThan(0);
+    expect(signinTab[0]).toHaveAttribute('aria-selected', 'true');
 
+    expect(screen.getByLabelText('Email')).toBeInTheDocument();
+    expect(screen.getByLabelText('Password')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
+  });
+
+  it('switches to the Create account tab with registration fields', () => {
+    render(<LandingPage />);
+
+    const registerTab = screen.getAllByRole('tab', { name: 'Create account' });
+    fireEvent.click(registerTab[0]);
+
+    expect(registerTab[0]).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByLabelText('Business name')).toBeInTheDocument();
     expect(screen.getByLabelText('Your name')).toBeInTheDocument();
     expect(screen.getByLabelText('Email')).toBeInTheDocument();
     expect(screen.getByLabelText('Password')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Create Account' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create account' })).toBeInTheDocument();
   });
 
-  it('switches to the Log In tab with login fields', () => {
+  it('shows the forgot password link only in sign-in mode', () => {
     render(<LandingPage />);
 
-    const loginTab = screen.getAllByRole('tab', { name: 'Log In' });
-    fireEvent.click(loginTab[0]);
+    expect(screen.getByText('Forgot?')).toBeInTheDocument();
+    expect(screen.getByText('Forgot?').closest('a')).toHaveAttribute('href', '/forgot-password');
 
-    expect(loginTab[0]).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByLabelText('Email')).toBeInTheDocument();
-    expect(screen.getByLabelText('Password')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Sign In' })).toBeInTheDocument();
-    expect(screen.queryByLabelText('Business name')).not.toBeInTheDocument();
-  });
-
-  it('shows the forgot password link only in login mode', () => {
-    render(<LandingPage />);
-
+    fireEvent.click(screen.getAllByRole('tab', { name: 'Create account' })[0]);
     expect(screen.queryByText('Forgot?')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getAllByRole('tab', { name: 'Log In' })[0]);
-    const forgotLink = screen.getByText('Forgot?');
-    expect(forgotLink).toHaveAttribute('href', '/forgot-password');
   });
 
   it('shows the Google auth button in both tabs', () => {
     render(<LandingPage />);
-    expect(screen.getByText('Sign up with Google')).toBeInTheDocument();
-
-    fireEvent.click(screen.getAllByRole('tab', { name: 'Log In' })[0]);
     expect(screen.getByText('Continue with Google')).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole('tab', { name: 'Create account' })[0]);
+    expect(screen.getByText('Sign up with Google')).toBeInTheDocument();
   });
 });
 
-describe('landing page — feature highlights', () => {
-  it('lists all four feature highlights', () => {
+describe('landing page — pipeline graphic', () => {
+  it('lists the four pipeline stages', () => {
     render(<LandingPage />);
 
-    for (const label of ['30s response', 'BLTC scoring', 'Auto site visits', '90-day nurture']) {
-      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+    for (const label of ['Receive', 'Route', 'Respond', 'Resolve']) {
+      expect(screen.getByText(label)).toBeInTheDocument();
     }
   });
 });
 
 describe('landing page — branding', () => {
-  it('shows DoAide Desk branding', () => {
+  it('shows the headline', () => {
     render(<LandingPage />);
-
-    const doaideTexts = screen.getAllByText('DoAide');
-    expect(doaideTexts.length).toBeGreaterThan(0);
-
-    const deskTexts = screen.getAllByText('Desk');
-    expect(deskTexts.length).toBeGreaterThan(0);
+    expect(screen.getByText('Client conversations, unified.')).toBeInTheDocument();
   });
 
-  it('shows the tagline', () => {
+  it('shows the subtitle', () => {
     render(<LandingPage />);
-
-    const taglines = screen.getAllByText('AI-powered client management across every channel');
-    expect(taglines.length).toBeGreaterThan(0);
+    expect(
+      screen.getByText(/AI-powered client management across WhatsApp/),
+    ).toBeInTheDocument();
   });
 
   it('dates the footer to the current year and credits DoAide', () => {
     render(<LandingPage />);
-
     expect(
-      screen.getByText(new RegExp(`© ${new Date().getFullYear()} DoAide Desk`)),
+      screen.getByText(new RegExp(`© ${new Date().getFullYear()} DoAide`)),
     ).toBeInTheDocument();
   });
 });
 
 describe('landing page — metadata', () => {
-  it('describes the product as realty-first in its page metadata', () => {
+  it('describes the product in its page metadata', () => {
     expect(homeMetadata.title).toBe('DoAide Desk — AI-powered client management across every channel');
     expect(String(homeMetadata.description)).toContain('AI-driven interface');
   });
