@@ -407,9 +407,12 @@ describe('RealtyLeadsService', () => {
           localities: ['Baner'],
           timeline_months: 6,
           config: '2BHK',
-          stage: (data as { stage?: string }).stage ?? 'NEW',
+          stage: 'NEW',
           qual_score: (data as { qualScore?: number }).qualScore ?? 0,
         }) as never,
+      );
+      repository.transitionStage.mockResolvedValue(
+        makeLead({ stage: LeadStage.QUALIFIED }) as never,
       );
 
       const result = await service.applyBltcUpdate(BUSINESS_ID, LEAD_ID, {
@@ -430,11 +433,13 @@ describe('RealtyLeadsService', () => {
         'realty.lead.qualified',
         expect.objectContaining({ leadId: LEAD_ID }),
       );
-      // update called with QUALIFIED stage
-      expect(repository.update).toHaveBeenCalledWith(
+      // stage change goes through CAS, not the unconditional update
+      expect(repository.transitionStage).toHaveBeenCalledWith(
         BUSINESS_ID,
         LEAD_ID,
-        expect.objectContaining({ stage: LeadStage.QUALIFIED }),
+        'NEW',
+        LeadStage.QUALIFIED,
+        expect.objectContaining({ lastActivityAt: expect.any(Date) }),
       );
     });
 
@@ -445,9 +450,12 @@ describe('RealtyLeadsService', () => {
       ['NEGOTIATING', false], // already past QUALIFIED
     ])('auto-qualify from %s → %s', async (stage, expectQualify) => {
       repository.findById.mockResolvedValue(makeLead({ stage }) as never);
-      repository.update.mockImplementation(async (_b, _id, data) =>
-        makeLead({ stage: (data as { stage?: string }).stage ?? stage }) as never,
-      );
+      repository.update.mockResolvedValue(makeLead({ stage }) as never);
+      if (expectQualify) {
+        repository.transitionStage.mockResolvedValue(
+          makeLead({ stage: LeadStage.QUALIFIED }) as never,
+        );
+      }
 
       const result = await service.applyBltcUpdate(BUSINESS_ID, LEAD_ID, {
         budgetMinPaise: 900000000,
@@ -459,11 +467,14 @@ describe('RealtyLeadsService', () => {
       });
 
       expect(result.qualified).toBe(expectQualify);
-      expect(repository.update).toHaveBeenCalledWith(
-        BUSINESS_ID,
-        LEAD_ID,
-        expect.objectContaining({ stage: expectQualify ? LeadStage.QUALIFIED : undefined }),
-      );
+      if (expectQualify) {
+        expect(repository.transitionStage).toHaveBeenCalledWith(
+          BUSINESS_ID, LEAD_ID, stage, LeadStage.QUALIFIED,
+          expect.objectContaining({ lastActivityAt: expect.any(Date) }),
+        );
+      } else {
+        expect(repository.transitionStage).not.toHaveBeenCalled();
+      }
       const stageEvents = eventEmitter.emit.mock.calls.filter(
         ([name]) => name === 'realty.lead.stage_changed' || name === 'realty.lead.qualified',
       );

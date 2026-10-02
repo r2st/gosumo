@@ -548,7 +548,7 @@ export class RealtyLeadsService {
       ...(contradictions.length ? { lastContradictions: contradictions } : {}),
     };
 
-    const updated = await this.repository.update(businessId, leadId, {
+    let updated = await this.repository.update(businessId, leadId, {
       budgetMin: next.budgetMinPaise != null ? paiseToDecimal(next.budgetMinPaise) : null,
       budgetMax: next.budgetMaxPaise != null ? paiseToDecimal(next.budgetMaxPaise) : null,
       localities: next.localities,
@@ -558,26 +558,26 @@ export class RealtyLeadsService {
       financing: next.financing as realty_leads['financing'],
       qualScore: score.score,
       temperature: score.temperature as realty_leads['temperature'],
-      stage: shouldQualify ? (LeadStage.QUALIFIED as realty_leads['stage']) : undefined,
       lastActivityAt: new Date(),
       metadata: metadata as Prisma.InputJsonValue,
     });
 
+    let qualified = false;
     if (shouldQualify) {
-      this.emit<RealtyLeadQualifiedEvent>('realty.lead.qualified', {
-        ...this.baseEvent(businessId),
-        type: 'realty.lead.qualified',
-        leadId,
-        qualScore: score.score,
-        temperature: score.temperature,
-      });
-      this.emit<RealtyLeadStageChangedEvent>('realty.lead.stage_changed', {
-        ...this.baseEvent(businessId),
-        type: 'realty.lead.stage_changed',
-        leadId,
-        fromStage: lead.stage,
-        toStage: LeadStage.QUALIFIED,
-      });
+      const transitioned = await this.commitTransition(
+        businessId, updated, LeadStage.QUALIFIED, 'system', 'BLTC auto-qualify',
+      );
+      if (transitioned) {
+        qualified = true;
+        updated = transitioned;
+        this.emit<RealtyLeadQualifiedEvent>('realty.lead.qualified', {
+          ...this.baseEvent(businessId),
+          type: 'realty.lead.qualified',
+          leadId,
+          qualScore: score.score,
+          temperature: score.temperature,
+        });
+      }
     }
 
     // Hot-lead dossier alert once the lead crosses the hot threshold.
@@ -596,7 +596,7 @@ export class RealtyLeadsService {
       lead: this.mapResponse(updated),
       contradictions,
       score,
-      qualified: shouldQualify,
+      qualified,
     };
   }
 
