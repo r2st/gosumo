@@ -637,4 +637,28 @@ describe('NotificationRepository', () => {
       expect(where['OR']).toHaveLength(2);
     });
   });
+
+  // ─────────────────────────────────────────────
+  // Safety caps on unbounded findMany queries
+  // ─────────────────────────────────────────────
+
+  describe('query bounds', () => {
+    const takeOf = (fn: jest.Mock, call = 0): number | undefined =>
+      (fn.mock.calls[call]?.[0] as { take?: number })?.take;
+
+    it('caps listTemplates', async () => {
+      await repository.listTemplates(BUSINESS_ID);
+      expect(takeOf(prisma.notification_templates.findMany)).toBe(200);
+    });
+
+    it('caps listTriggers', async () => {
+      await repository.listTriggers(BUSINESS_ID);
+      expect(takeOf(prisma.notification_triggers.findMany)).toBe(200);
+    });
+
+    it('caps listActiveTriggersForEvent', async () => {
+      await repository.listActiveTriggersForEvent(BUSINESS_ID, 'booking.created');
+      expect(takeOf(prisma.notification_triggers.findMany)).toBe(200);
+    });
+  });
 });

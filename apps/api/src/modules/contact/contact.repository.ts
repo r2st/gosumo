@@ -464,6 +464,7 @@ export class ContactRepository {
     return this.prisma.segments.findMany({
       where: { business_id: businessId, deleted_at: null },
       orderBy: { created_at: 'desc' },
+      take: 200,
     });
   }
 

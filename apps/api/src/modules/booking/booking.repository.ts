@@ -190,6 +190,7 @@ export class BookingRepository {
         end_at: { gt: start },
       },
       orderBy: { start_at: 'asc' },
+      take: 2000,
     });
   }
 
@@ -261,6 +262,7 @@ export class BookingRepository {
         ...(onlyFuture ? { start_at: { gte: onlyFuture } } : {}),
       },
       orderBy: { start_at: 'asc' },
+      take: 500,
     });
   }
 

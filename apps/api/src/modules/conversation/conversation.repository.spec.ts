@@ -658,4 +658,11 @@ describe('ConversationRepository.releaseAssignments', () => {
     await expect(repository.releaseAssignments(BUSINESS_ID, AGENT_A)).resolves.toEqual([]);
     expect(conversations.updateMany).not.toHaveBeenCalled();
   });
+
+  it('caps the findMany to avoid unbounded reads', async () => {
+    await repository.releaseAssignments(BUSINESS_ID, AGENT_A);
+
+    const { take } = conversations.findMany.mock.calls[0]![0];
+    expect(take).toBe(500);
+  });
 });

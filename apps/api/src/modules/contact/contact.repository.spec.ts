@@ -494,6 +494,7 @@ describe('ContactRepository', () => {
       expect(prisma.segments.findMany).toHaveBeenCalledWith({
         where: { business_id: BUSINESS_ID, deleted_at: null },
         orderBy: { created_at: 'desc' },
+        take: 200,
       });
     });
 
@@ -590,6 +591,15 @@ describe('ContactRepository', () => {
       const call = prisma.segments.update.mock.calls[0]![0];
       expect(call.where).toEqual({ id: SEGMENT_ID, business_id: BUSINESS_ID });
       expect(call.data.deleted_at).toBeInstanceOf(Date);
+    });
+  });
+
+  describe('query bounds', () => {
+    it('caps findSegments', async () => {
+      await repository.findSegments(BUSINESS_ID);
+
+      const { take } = prisma.segments.findMany.mock.calls[0]![0];
+      expect(take).toBe(200);
     });
   });
 });

@@ -568,6 +568,7 @@ export class ConversationRepository {
     const held = await this.prisma.conversations.findMany({
       where,
       select: { id: true },
+      take: 500,
     });
     if (held.length === 0) return [];
 

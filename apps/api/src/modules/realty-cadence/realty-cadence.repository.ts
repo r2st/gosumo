@@ -138,7 +138,7 @@ export class RealtyCadenceRepository {
     if (filters.category) where.category = filters.category as realty_message_templates['category'];
     if (filters.approvalStatus)
       where.approval_status = filters.approvalStatus as realty_message_templates['approval_status'];
-    return this.prisma.realty_message_templates.findMany({ where, orderBy: { name: 'asc' } });
+    return this.prisma.realty_message_templates.findMany({ where, orderBy: { name: 'asc' }, take: 200 });
   }
 
   async updateTemplate(
@@ -179,7 +179,7 @@ export class RealtyCadenceRepository {
   async listCadences(businessId: string, filters: { trigger?: string } = {}): Promise<realty_cadences[]> {
     const where: Prisma.realty_cadencesWhereInput = { business_id: businessId, deleted_at: null };
     if (filters.trigger) where.trigger = filters.trigger as realty_cadences['trigger'];
-    return this.prisma.realty_cadences.findMany({ where, orderBy: { created_at: 'asc' } });
+    return this.prisma.realty_cadences.findMany({ where, orderBy: { created_at: 'asc' }, take: 200 });
   }
 
   /** The active cadence to enrol a lead into for a given trigger (first match). */

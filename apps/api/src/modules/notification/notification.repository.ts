@@ -338,6 +338,7 @@ export class NotificationRepository {
         ...(channel ? { channel } : {}),
       },
       orderBy: { created_at: 'desc' },
+      take: 200,
     });
   }
 
@@ -459,6 +460,7 @@ export class NotificationRepository {
         ...(activeOnly ? { is_active: true } : {}),
       },
       orderBy: { created_at: 'asc' },
+      take: 200,
     });
   }
 
@@ -474,6 +476,7 @@ export class NotificationRepository {
         is_active: true,
         deleted_at: null,
       },
+      take: 200,
     });
   }
 

@@ -233,28 +233,40 @@ export class DataExportRepository {
         : Promise.resolve(0),
     ]);
 
-    // Both of these need the conversation ids, so they run after the count
-    // above rather than in the same batch. The id list is uncapped on purpose:
-    // it is a projection of one indexed column, and using the capped list
-    // would make the "true count" as truncated as the thing it describes.
-    const conversationIds = (
-      await this.prisma.conversations.findMany({
-        where: { ...scope, deleted_at: null },
-        select: { id: true },
-      })
-    ).map((c) => c.id);
-
-    const [messageCount, aiDecisionCount] =
-      conversationIds.length === 0
-        ? [0, 0]
-        : await Promise.all([
-            this.prisma.messages.count({
-              where: { business_id: businessId, conversation_id: { in: conversationIds } },
-            }),
-            this.prisma.ai_decisions.count({
-              where: { business_id: businessId, conversation_id: { in: conversationIds } },
-            }),
-          ]);
+    // Messages and AI decisions join through conversation ids. Rather than
+    // loading every conversation id into a JS array and passing it back as an
+    // `IN (…)` list (unbounded — a long-tenured client could have thousands),
+    // push the join into the database with a correlated subquery so only the
+    // counts cross the wire.
+    let messageCount = 0;
+    let aiDecisionCount = 0;
+    if (conversationCount > 0) {
+      const rows = await this.prisma.$queryRaw<
+        { message_count: number; ai_decision_count: number }[]
+      >`
+        SELECT
+          (SELECT COUNT(*)::int FROM messages m
+            WHERE m.business_id = ${businessId}::uuid
+              AND m.conversation_id IN (
+                SELECT c.id FROM conversations c
+                WHERE c.business_id = ${businessId}::uuid
+                  AND c.client_id   = ${client.id}::uuid
+                  AND c.deleted_at IS NULL
+              )
+          ) AS message_count,
+          (SELECT COUNT(*)::int FROM ai_decisions ad
+            WHERE ad.business_id = ${businessId}::uuid
+              AND ad.conversation_id IN (
+                SELECT c.id FROM conversations c
+                WHERE c.business_id = ${businessId}::uuid
+                  AND c.client_id   = ${client.id}::uuid
+                  AND c.deleted_at IS NULL
+              )
+          ) AS ai_decision_count
+      `;
+      messageCount = rows[0]?.message_count ?? 0;
+      aiDecisionCount = rows[0]?.ai_decision_count ?? 0;
+    }
 
     return {
       conversations: conversationCount,

@@ -183,25 +183,32 @@ describe('DataExportRepository — counts', () => {
     repository = new DataExportRepository(prisma as unknown as PrismaService);
   });
 
-  it('counts from an uncapped conversation id list', async () => {
-    // Using the capped list would make the "true count" as truncated as the
-    // thing it is there to describe, and a partial export would look complete.
-    await repository.countAll('b1', CLIENT);
+  it('uses raw SQL subqueries for message and AI-decision counts', async () => {
+    // The old approach loaded every conversation id into a JS array and
+    // passed it back as an IN list — unbounded for a long-tenured client.
+    // The replacement pushes both counts into the database.
+    prisma.conversations.count.mockResolvedValue(1);
+    (prisma as Record<string, unknown>).$queryRaw = jest
+      .fn()
+      .mockResolvedValue([{ message_count: 42, ai_decision_count: 7 }]);
 
-    const idQuery = prisma.conversations.findMany.mock.calls[0]?.[0] as {
-      select?: Record<string, boolean>;
-      take?: number;
-    };
-    expect(idQuery.select).toEqual({ id: true });
-    expect(idQuery.take).toBeUndefined();
+    const counts = await repository.countAll('b1', CLIENT);
+
+    expect(counts.messages).toBe(42);
+    expect(counts.aiDecisions).toBe(7);
+    expect((prisma as Record<string, unknown>).$queryRaw).toHaveBeenCalledTimes(1);
+    expect(prisma.messages.count).not.toHaveBeenCalled();
+    expect(prisma.ai_decisions.count).not.toHaveBeenCalled();
   });
 
-  it('reports zero messages and AI decisions when there are no conversations', async () => {
+  it('skips the raw query when conversation count is zero', async () => {
+    (prisma as Record<string, unknown>).$queryRaw = jest.fn();
+
     const counts = await repository.countAll('b1', CLIENT);
 
     expect(counts.messages).toBe(0);
     expect(counts.aiDecisions).toBe(0);
-    expect(prisma.messages.count).not.toHaveBeenCalled();
+    expect((prisma as Record<string, unknown>).$queryRaw).not.toHaveBeenCalled();
   });
 
   it('reports no consents for a client with no phone on file', async () => {

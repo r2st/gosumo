@@ -41,12 +41,14 @@ describe('RealtyCadenceRepository', () => {
   let repository: RealtyCadenceRepository;
   let prisma: {
     realty_message_templates: { findMany: jest.Mock };
+    realty_cadences: { findMany: jest.Mock };
     realty_cadence_steps: { findMany: jest.Mock; createMany: jest.Mock };
   };
 
   beforeEach(async () => {
     prisma = {
       realty_message_templates: { findMany: jest.fn().mockResolvedValue([]) },
+      realty_cadences: { findMany: jest.fn().mockResolvedValue([]) },
       realty_cadence_steps: {
         findMany: jest.fn().mockResolvedValue([]),
         createMany: jest.fn().mockResolvedValue({ count: 0 }),
@@ -223,6 +225,23 @@ describe('RealtyCadenceRepository', () => {
 
       const { data } = prisma.realty_cadence_steps.createMany.mock.calls[0][0];
       expect(data[0].condition).toEqual({ stage: 'HOT' });
+    });
+  });
+
+  // ── Query bounds ─────────────────────────────
+
+  describe('query bounds', () => {
+    const takeOf = (fn: jest.Mock, call = 0): number | undefined =>
+      (fn.mock.calls[call]?.[0] as { take?: number })?.take;
+
+    it('caps listTemplates', async () => {
+      await repository.listTemplates(BUSINESS_ID, {});
+      expect(takeOf(prisma.realty_message_templates.findMany)).toBe(200);
+    });
+
+    it('caps listCadences', async () => {
+      await repository.listCadences(BUSINESS_ID);
+      expect(takeOf(prisma.realty_cadences.findMany)).toBe(200);
     });
   });
 });

@@ -853,4 +853,28 @@ describe('BookingRepository', () => {
       });
     });
   });
+
+  // ─────────────────────────────────────────────
+  // Safety caps on unbounded findMany queries
+  // ─────────────────────────────────────────────
+
+  describe('query bounds', () => {
+    const takeOf = (fn: jest.Mock, call = 0): number | undefined =>
+      (fn.mock.calls[call]?.[0] as { take?: number })?.take;
+
+    it('caps findActiveBookingsInRange', async () => {
+      await repository.findActiveBookingsInRange(
+        BUSINESS_ID,
+        STAFF_ID,
+        START,
+        END,
+      );
+      expect(takeOf(prisma.bookings.findMany)).toBe(2000);
+    });
+
+    it('caps findBookingsByRecurrence', async () => {
+      await repository.findBookingsByRecurrence(BUSINESS_ID, RECURRENCE_ID);
+      expect(takeOf(prisma.bookings.findMany)).toBe(500);
+    });
+  });
 });

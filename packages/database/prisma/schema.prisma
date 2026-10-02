@@ -2296,6 +2296,7 @@ model bookings {
   @@index([business_id, staff_id, start_at])
   @@index([business_id, recurrence_id])
   @@index([gcal_event_id])
+  @@index([business_id, payment_id], map: "bookings_payment_idx")
   @@map("bookings")
 }
 
