@@ -1017,22 +1017,29 @@ export class AnalyticsRepository {
       SELECT tm.id AS id,
              tm.name AS name,
              tm.role::text AS role,
-             (SELECT COUNT(*)::int FROM conversations c
-                WHERE c.business_id = tm.business_id AND c.assigned_to = tm.id
-                  AND c.deleted_at IS NULL) AS assigned,
-             (SELECT COUNT(*)::int FROM conversations c
-                WHERE c.business_id = tm.business_id AND c.assigned_to = tm.id
-                  AND c.status = 'RESOLVED'
-                  AND c.resolved_at >= ${range.from} AND c.resolved_at < ${range.to}) AS resolved_conv,
-             (SELECT COUNT(*)::int FROM tasks t
-                WHERE t.business_id = tm.business_id AND t.resolved_by = tm.id
-                  AND t.status = 'RESOLVED'
-                  AND t.resolved_at >= ${range.from} AND t.resolved_at < ${range.to}) AS tasks_resolved,
-             COALESCE((SELECT AVG(EXTRACT(EPOCH FROM (t.resolved_at - t.created_at)))::float8 FROM tasks t
-                WHERE t.business_id = tm.business_id AND t.resolved_by = tm.id
-                  AND t.status = 'RESOLVED'
-                  AND t.resolved_at >= ${range.from} AND t.resolved_at < ${range.to}), 0) AS avg_task_sec
+             COALESCE(cv.assigned, 0)::int         AS assigned,
+             COALESCE(cv.resolved_conv, 0)::int    AS resolved_conv,
+             COALESCE(tr.tasks_resolved, 0)::int   AS tasks_resolved,
+             COALESCE(tr.avg_task_sec, 0)::float8  AS avg_task_sec
       FROM team_members tm
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS assigned,
+               COUNT(*) FILTER (
+                 WHERE c.status = 'RESOLVED'
+                   AND c.resolved_at >= ${range.from} AND c.resolved_at < ${range.to}
+               )::int AS resolved_conv
+        FROM conversations c
+        WHERE c.business_id = tm.business_id AND c.assigned_to = tm.id
+          AND c.deleted_at IS NULL
+      ) cv ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS tasks_resolved,
+               AVG(EXTRACT(EPOCH FROM (t.resolved_at - t.created_at))) AS avg_task_sec
+        FROM tasks t
+        WHERE t.business_id = tm.business_id AND t.resolved_by = tm.id
+          AND t.status = 'RESOLVED'::"TaskStatus"
+          AND t.resolved_at >= ${range.from} AND t.resolved_at < ${range.to}
+      ) tr ON TRUE
       WHERE tm.business_id = ${businessId}::uuid
         AND tm.deleted_at IS NULL
         AND tm.status = 'ACTIVE'

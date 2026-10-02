@@ -71,62 +71,61 @@ export class AgentPerformanceRepository {
              tm.name AS name,
              tm.email AS email,
              tm.role::text AS role,
-             (SELECT COUNT(*)::int FROM conversations c
-                WHERE c.business_id = tm.business_id AND c.assigned_to = tm.id
-                  AND c.deleted_at IS NULL) AS assigned,
-             (SELECT COUNT(*)::int FROM conversations c
-                WHERE c.business_id = tm.business_id AND c.assigned_to = tm.id
-                  AND c.status = 'RESOLVED'
-                  AND c.resolved_at >= ${range.from} AND c.resolved_at < ${range.to}) AS resolved_conv,
-             COALESCE((
-               SELECT AVG(EXTRACT(EPOCH FROM (m.created_at - c.first_message_at)))::float8
-               FROM messages m
-               JOIN conversations c ON c.id = m.conversation_id
-               WHERE m.business_id = tm.business_id AND m.sender_type = 'HUMAN_AGENT'
-                 AND m.sender_id = tm.id AND c.assigned_to = tm.id
-                 AND m.created_at >= ${range.from} AND m.created_at < ${range.to}
-                 AND c.first_message_at IS NOT NULL
-             ), 0) AS avg_first_response_sec,
-             COALESCE((
-               SELECT COUNT(*)::int
-               FROM messages m
-               JOIN conversations c ON c.id = m.conversation_id
-               WHERE m.business_id = tm.business_id AND m.sender_type = 'HUMAN_AGENT'
-                 AND m.sender_id = tm.id AND c.assigned_to = tm.id
-                 AND m.created_at >= ${range.from} AND m.created_at < ${range.to}
-                 AND c.first_message_at IS NOT NULL
-             ), 0) AS first_response_sample,
-             COALESCE((
-               SELECT AVG(EXTRACT(EPOCH FROM (c.resolved_at - c.first_message_at)))::float8
-               FROM conversations c
-               WHERE c.business_id = tm.business_id AND c.assigned_to = tm.id
-                 AND c.status = 'RESOLVED' AND c.first_message_at IS NOT NULL
-                 AND c.resolved_at >= ${range.from} AND c.resolved_at < ${range.to}
-             ), 0) AS avg_resolution_sec,
-             COALESCE((
-               SELECT COUNT(*)::int
-               FROM conversations c
-               WHERE c.business_id = tm.business_id AND c.assigned_to = tm.id
-                 AND c.status = 'RESOLVED' AND c.first_message_at IS NOT NULL
-                 AND c.resolved_at >= ${range.from} AND c.resolved_at < ${range.to}
-             ), 0) AS resolution_sample,
-             (SELECT AVG(c.csat_score)::float8 FROM conversations c
-                WHERE c.business_id = tm.business_id AND c.assigned_to = tm.id
-                  AND c.csat_score IS NOT NULL
-                  AND c.csat_submitted_at >= ${range.from} AND c.csat_submitted_at < ${range.to}) AS csat_avg,
-             COALESCE((SELECT COUNT(*)::int FROM conversations c
-                WHERE c.business_id = tm.business_id AND c.assigned_to = tm.id
-                  AND c.csat_score IS NOT NULL
-                  AND c.csat_submitted_at >= ${range.from} AND c.csat_submitted_at < ${range.to}), 0) AS csat_count,
-             (SELECT COUNT(*)::int FROM tasks t
-                WHERE t.business_id = tm.business_id AND t.resolved_by = tm.id
-                  AND t.status = 'RESOLVED'
-                  AND t.resolved_at >= ${range.from} AND t.resolved_at < ${range.to}) AS tasks_resolved,
-             COALESCE((SELECT AVG(EXTRACT(EPOCH FROM (t.resolved_at - t.created_at)))::float8 FROM tasks t
-                WHERE t.business_id = tm.business_id AND t.resolved_by = tm.id
-                  AND t.status = 'RESOLVED'
-                  AND t.resolved_at >= ${range.from} AND t.resolved_at < ${range.to}), 0) AS avg_task_resolution_sec
+             COALESCE(cv.assigned, 0)::int                       AS assigned,
+             COALESCE(cv.resolved_conv, 0)::int                  AS resolved_conv,
+             COALESCE(fr.avg_first_response_sec, 0)::float8      AS avg_first_response_sec,
+             COALESCE(fr.first_response_sample, 0)::int           AS first_response_sample,
+             COALESCE(cv.avg_resolution_sec, 0)::float8           AS avg_resolution_sec,
+             COALESCE(cv.resolution_sample, 0)::int               AS resolution_sample,
+             cv.csat_avg::float8                                  AS csat_avg,
+             COALESCE(cv.csat_count, 0)::int                      AS csat_count,
+             COALESCE(tr.tasks_resolved, 0)::int                  AS tasks_resolved,
+             COALESCE(tr.avg_task_resolution_sec, 0)::float8      AS avg_task_resolution_sec
       FROM team_members tm
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS assigned,
+               COUNT(*) FILTER (
+                 WHERE c.status = 'RESOLVED'
+                   AND c.resolved_at >= ${range.from} AND c.resolved_at < ${range.to}
+               )::int AS resolved_conv,
+               AVG(EXTRACT(EPOCH FROM (c.resolved_at - c.first_message_at))) FILTER (
+                 WHERE c.status = 'RESOLVED' AND c.first_message_at IS NOT NULL
+                   AND c.resolved_at >= ${range.from} AND c.resolved_at < ${range.to}
+               ) AS avg_resolution_sec,
+               COUNT(*) FILTER (
+                 WHERE c.status = 'RESOLVED' AND c.first_message_at IS NOT NULL
+                   AND c.resolved_at >= ${range.from} AND c.resolved_at < ${range.to}
+               )::int AS resolution_sample,
+               AVG(c.csat_score) FILTER (
+                 WHERE c.csat_score IS NOT NULL
+                   AND c.csat_submitted_at >= ${range.from} AND c.csat_submitted_at < ${range.to}
+               ) AS csat_avg,
+               COUNT(*) FILTER (
+                 WHERE c.csat_score IS NOT NULL
+                   AND c.csat_submitted_at >= ${range.from} AND c.csat_submitted_at < ${range.to}
+               )::int AS csat_count
+        FROM conversations c
+        WHERE c.business_id = tm.business_id AND c.assigned_to = tm.id
+          AND c.deleted_at IS NULL
+      ) cv ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT AVG(EXTRACT(EPOCH FROM (m.created_at - c.first_message_at))) AS avg_first_response_sec,
+               COUNT(*)::int AS first_response_sample
+        FROM messages m
+        JOIN conversations c ON c.id = m.conversation_id
+        WHERE m.business_id = tm.business_id AND m.sender_type = 'HUMAN_AGENT'
+          AND m.sender_id = tm.id AND c.assigned_to = tm.id
+          AND m.created_at >= ${range.from} AND m.created_at < ${range.to}
+          AND c.first_message_at IS NOT NULL
+      ) fr ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS tasks_resolved,
+               AVG(EXTRACT(EPOCH FROM (t.resolved_at - t.created_at))) AS avg_task_resolution_sec
+        FROM tasks t
+        WHERE t.business_id = tm.business_id AND t.resolved_by = tm.id
+          AND t.status = 'RESOLVED'::"TaskStatus"
+          AND t.resolved_at >= ${range.from} AND t.resolved_at < ${range.to}
+      ) tr ON TRUE
       WHERE tm.business_id = ${businessId}::uuid
         AND tm.deleted_at IS NULL
         AND tm.status = 'ACTIVE'

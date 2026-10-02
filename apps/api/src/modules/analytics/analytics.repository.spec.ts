@@ -727,11 +727,9 @@ describe('AnalyticsRepository', () => {
       expect(sql).toContain("tm.status = 'ACTIVE'");
       expect(sql).toContain('tm.deleted_at IS NULL');
       expect(sql).not.toContain(BUSINESS_ID);
-      // The window is bound three times — once per correlated subquery — and
-      // the tenant once.
+      // The window is bound once in the conversations FILTER clause and
+      // once in the tasks lateral; the tenant last.
       expect(rawParams()).toEqual([
-        RANGE.from,
-        RANGE.to,
         RANGE.from,
         RANGE.to,
         RANGE.from,
