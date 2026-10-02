@@ -638,7 +638,7 @@ describe('ConversationService', () => {
       });
       repository.findLatestByClientAndChannel.mockResolvedValue(snoozed);
       repository.updateLastMessageAt.mockResolvedValue(snoozed);
-      repository.updateStatus.mockResolvedValue(
+      repository.transitionStatus.mockResolvedValue(
         makeConversation({ status: ConversationStatus.OPEN }),
       );
 
@@ -658,10 +658,12 @@ describe('ConversationService', () => {
 
       await service.handleMessageReceived(event);
 
-      expect(repository.updateStatus).toHaveBeenCalledWith(
+      expect(repository.transitionStatus).toHaveBeenCalledWith(
         BUSINESS_ID,
         CONVERSATION_ID,
+        ConversationStatus.SNOOZED,
         ConversationStatus.OPEN,
+        expect.any(Object),
       );
       expect(eventEmitter.emit).toHaveBeenCalledWith(
         'conversation.status.changed',

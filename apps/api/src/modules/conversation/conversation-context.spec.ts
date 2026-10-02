@@ -788,7 +788,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
         makeConversation({ id: 'c2' }),
         makeConversation({ id: 'c3' }),
       ]);
-      repository.updateStatus
+      repository.transitionStatus
         .mockResolvedValueOnce(makeConversation({ id: 'c1' }))
         .mockRejectedValueOnce(new Error('c2 is locked'))
         .mockResolvedValueOnce(makeConversation({ id: 'c3' }));
@@ -812,7 +812,7 @@ describe('ConversationService — context, notes and handler resilience', () => 
 
     it('stringifies a non-Error wake failure', async () => {
       repository.findSnoozedDue.mockResolvedValue([makeConversation({ id: 'c1' })]);
-      repository.updateStatus.mockRejectedValue('nope');
+      repository.transitionStatus.mockRejectedValue('nope');
 
       expect(await service.wakeSnoozedConversations(BUSINESS_ID)).toBe(0);
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('nope'));

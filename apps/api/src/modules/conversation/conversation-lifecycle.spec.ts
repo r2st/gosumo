@@ -675,15 +675,19 @@ describe('ConversationService — lifecycle & features', () => {
       repository.findSnoozedDue.mockResolvedValue([
         makeConversation({ id: CONVERSATION_ID, status: ConversationStatus.SNOOZED }),
       ]);
-      repository.updateStatus.mockResolvedValue(makeConversation());
+      repository.transitionStatus.mockResolvedValue(
+        makeConversation({ status: ConversationStatus.OPEN }),
+      );
 
       const woken = await service.wakeSnoozedConversations(BUSINESS_ID);
 
       expect(woken).toBe(1);
-      expect(repository.updateStatus).toHaveBeenCalledWith(
+      expect(repository.transitionStatus).toHaveBeenCalledWith(
         BUSINESS_ID,
         CONVERSATION_ID,
+        ConversationStatus.SNOOZED,
         ConversationStatus.OPEN,
+        expect.any(Object),
       );
     });
   });

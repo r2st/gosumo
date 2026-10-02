@@ -977,18 +977,12 @@ export class ConversationService {
     let woken = 0;
     for (const conversation of due) {
       try {
-        await this.repository.updateStatus(
-          businessId,
-          conversation.id,
-          ConversationStatus.OPEN,
-        );
-        this.emitStatusChanged(
+        await this.applyHandlerTransition(
           businessId,
           conversation.id,
           conversation.client_id,
           ConversationStatus.SNOOZED,
           ConversationStatus.OPEN,
-          RESOLVED_BY.SYSTEM,
         );
         woken += 1;
       } catch (error) {
@@ -1042,12 +1036,7 @@ export class ConversationService {
         conversation.status === ConversationStatus.SNOOZED
       ) {
         const previousStatus = conversation.status as ConversationStatus;
-        await this.repository.updateStatus(
-          event.businessId,
-          conversation.id,
-          ConversationStatus.OPEN,
-        );
-        this.emitStatusChanged(
+        await this.applyHandlerTransition(
           event.businessId,
           conversation.id,
           conversation.client_id,
