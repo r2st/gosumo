@@ -2,10 +2,20 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { GoogleButton } from '@/components/google-button';
 import { useAuth } from '@/providers/auth-provider';
 import { ApiError } from '@/lib/api-client';
+
+/* ── Channel badges ── */
+
+const CHANNELS = [
+  { name: 'WhatsApp', color: '#25D366' },
+  { name: 'Instagram', color: '#E1306C' },
+  { name: 'SMS', color: '#5B6ABF' },
+  { name: 'Web Chat', color: '#F0B429' },
+  { name: 'Email', color: '#4A90D9' },
+] as const;
 
 /* ── Feature highlights ── */
 
@@ -48,79 +58,73 @@ const FEATURES = [
   },
 ] as const;
 
-/* ── Particle background ── */
+/* ── Wave decoration ── */
 
-function ParticleCanvas() {
-  const ref = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = ref.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    let raf: number;
-    const particles: { x: number; y: number; r: number; vx: number; vy: number; a: number }[] = [];
-    const COUNT = 40;
-
-    function resize() {
-      canvas!.width = canvas!.offsetWidth * devicePixelRatio;
-      canvas!.height = canvas!.offsetHeight * devicePixelRatio;
-      ctx!.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-    }
-
-    function init() {
-      resize();
-      const w = canvas!.offsetWidth;
-      const h = canvas!.offsetHeight;
-      particles.length = 0;
-      for (let i = 0; i < COUNT; i++) {
-        particles.push({
-          x: Math.random() * w,
-          y: Math.random() * h,
-          r: Math.random() * 2 + 1,
-          vx: (Math.random() - 0.5) * 0.3,
-          vy: (Math.random() - 0.5) * 0.3,
-          a: Math.random() * 0.4 + 0.1,
-        });
-      }
-    }
-
-    function draw() {
-      const w = canvas!.offsetWidth;
-      const h = canvas!.offsetHeight;
-      ctx!.clearRect(0, 0, w, h);
-      for (const p of particles) {
-        p.x += p.vx;
-        p.y += p.vy;
-        if (p.x < 0) p.x = w;
-        if (p.x > w) p.x = 0;
-        if (p.y < 0) p.y = h;
-        if (p.y > h) p.y = 0;
-        ctx!.beginPath();
-        ctx!.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx!.fillStyle = `rgba(240,180,41,${p.a})`;
-        ctx!.fill();
-      }
-      raf = requestAnimationFrame(draw);
-    }
-
-    init();
-    draw();
-    window.addEventListener('resize', resize);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener('resize', resize);
-    };
-  }, []);
-
+function WaveDecoration() {
   return (
-    <canvas
-      ref={ref}
-      className="absolute inset-0 h-full w-full"
-      style={{ pointerEvents: 'none' }}
-      aria-hidden="true"
-    />
+    <div className="landing-wave" aria-hidden="true">
+      <svg viewBox="0 0 1440 200" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+        <path
+          d="M0,120 C240,180 480,60 720,120 C960,180 1200,60 1440,120 L1440,200 L0,200Z"
+          fill="rgba(240,180,41,0.06)"
+        />
+        <path
+          d="M0,150 C360,90 720,200 1080,140 C1260,110 1380,170 1440,160 L1440,200 L0,200Z"
+          fill="rgba(240,180,41,0.04)"
+        />
+      </svg>
+    </div>
+  );
+}
+
+/* ── Floating robot SVG ── */
+
+function FloatingRobot() {
+  return (
+    <div className="landing-robot-wrap" aria-hidden="true">
+      <div className="landing-robot-glow" />
+      <svg viewBox="0 0 200 200" className="landing-robot">
+        <defs>
+          <linearGradient id="lr-bg" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#F0B429" />
+            <stop offset="100%" stopColor="#D4A017" />
+          </linearGradient>
+          <filter id="lr-glow">
+            <feGaussianBlur stdDeviation="2" result="b" />
+            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+        </defs>
+        <line x1="100" y1="42" x2="100" y2="27" stroke="#F0B429" strokeWidth="3" strokeLinecap="round" />
+        <circle cx="100" cy="24" r="5" fill="#F0B429" filter="url(#lr-glow)">
+          <animate attributeName="opacity" values="1;0.5;1" dur="2s" repeatCount="indefinite" />
+        </circle>
+        <circle cx="100" cy="24" r="2.5" fill="#F7CC5F" />
+        <rect x="55" y="45" width="90" height="75" rx="18" fill="url(#lr-bg)" />
+        <rect x="65" y="54" width="70" height="58" rx="13" fill="#D4A017" opacity="0.4" />
+        <ellipse cx="82" cy="78" rx="9" ry="10" fill="#1A1A2E" />
+        <ellipse cx="118" cy="78" rx="9" ry="10" fill="#1A1A2E" />
+        <circle cx="85" cy="76" r="4" fill="#F7CC5F" />
+        <circle cx="121" cy="76" r="4" fill="#F7CC5F" />
+        <circle cx="87" cy="74" r="1.5" fill="white" opacity="0.8" />
+        <circle cx="123" cy="74" r="1.5" fill="white" opacity="0.8" />
+        <path d="M85 98Q100 112 115 98" stroke="#1A1A2E" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+        <rect x="46" y="68" width="11" height="23" rx="4" fill="#D4A017" />
+        <rect x="143" y="68" width="11" height="23" rx="4" fill="#D4A017" />
+        <rect x="88" y="120" width="25" height="8" rx="3" fill="#D4A017" />
+        <rect x="70" y="128" width="60" height="30" rx="10" fill="url(#lr-bg)" />
+        <circle cx="100" cy="141" r="4" fill="#1A1A2E" />
+        <circle cx="100" cy="141" r="2" fill="#1A1A2E" />
+        <path d="M70 136Q55 139 52 148Q49 157 57 160" stroke="#D4A017" strokeWidth="5" fill="none" strokeLinecap="round" />
+        <circle cx="57" cy="162" r="4" fill="#D4A017" />
+        <path d="M130 136Q145 139 148 148Q151 157 143 160" stroke="#D4A017" strokeWidth="5" fill="none" strokeLinecap="round" />
+        <circle cx="143" cy="162" r="4" fill="#D4A017" />
+        <rect x="138" y="148" width="32" height="22" rx="6" fill="#F0B429" stroke="#1A1A2E" strokeWidth="1.5" />
+        <path d="M145 170L142 177L150 170" fill="#F0B429" stroke="#1A1A2E" strokeWidth="1.5" strokeLinejoin="round" />
+        <circle cx="148" cy="157" r="2" fill="#1A1A2E" />
+        <circle cx="154" cy="157" r="2" fill="#1A1A2E" />
+        <circle cx="160" cy="157" r="2" fill="#1A1A2E" />
+      </svg>
+    </div>
   );
 }
 
@@ -191,7 +195,6 @@ function AuthCard() {
 
   return (
     <div className="landing-auth-card">
-      {/* Tab toggle */}
       <div className="landing-auth-tabs" role="tablist">
         <button
           role="tab"
@@ -268,57 +271,6 @@ function AuthCard() {
   );
 }
 
-/* ── Robot SVG with floating animation ── */
-
-function FloatingRobot() {
-  return (
-    <div className="landing-robot-wrap" aria-hidden="true">
-      <div className="landing-robot-glow" />
-      <svg viewBox="0 0 200 200" className="landing-robot">
-        <defs>
-          <linearGradient id="lr-bg" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#F0B429" />
-            <stop offset="100%" stopColor="#D4A017" />
-          </linearGradient>
-          <filter id="lr-glow">
-            <feGaussianBlur stdDeviation="2" result="b" />
-            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
-        </defs>
-        <line x1="100" y1="42" x2="100" y2="27" stroke="#F0B429" strokeWidth="3" strokeLinecap="round" />
-        <circle cx="100" cy="24" r="5" fill="#F0B429" filter="url(#lr-glow)">
-          <animate attributeName="opacity" values="1;0.5;1" dur="2s" repeatCount="indefinite" />
-        </circle>
-        <circle cx="100" cy="24" r="2.5" fill="#F7CC5F" />
-        <rect x="55" y="45" width="90" height="75" rx="18" fill="url(#lr-bg)" />
-        <rect x="65" y="54" width="70" height="58" rx="13" fill="#D4A017" opacity="0.4" />
-        <ellipse cx="82" cy="78" rx="9" ry="10" fill="#0A0A0B" />
-        <ellipse cx="118" cy="78" rx="9" ry="10" fill="#0A0A0B" />
-        <circle cx="85" cy="76" r="4" fill="#F7CC5F" />
-        <circle cx="121" cy="76" r="4" fill="#F7CC5F" />
-        <circle cx="87" cy="74" r="1.5" fill="white" opacity="0.7" />
-        <circle cx="123" cy="74" r="1.5" fill="white" opacity="0.7" />
-        <path d="M85 98Q100 112 115 98" stroke="#0A0A0B" strokeWidth="2.5" fill="none" strokeLinecap="round" />
-        <rect x="46" y="68" width="11" height="23" rx="4" fill="#D4A017" />
-        <rect x="143" y="68" width="11" height="23" rx="4" fill="#D4A017" />
-        <rect x="88" y="120" width="25" height="8" rx="3" fill="#D4A017" />
-        <rect x="70" y="128" width="60" height="30" rx="10" fill="url(#lr-bg)" />
-        <circle cx="100" cy="141" r="4" fill="#0A0A0B" />
-        <circle cx="100" cy="141" r="2" fill="#0A0A0B" />
-        <path d="M70 136Q55 139 52 148Q49 157 57 160" stroke="#D4A017" strokeWidth="5" fill="none" strokeLinecap="round" />
-        <circle cx="57" cy="162" r="4" fill="#D4A017" />
-        <path d="M130 136Q145 139 148 148Q151 157 143 160" stroke="#D4A017" strokeWidth="5" fill="none" strokeLinecap="round" />
-        <circle cx="143" cy="162" r="4" fill="#D4A017" />
-        <rect x="138" y="148" width="32" height="22" rx="6" fill="#F0B429" stroke="#0A0A0B" strokeWidth="1.5" />
-        <path d="M145 170L142 177L150 170" fill="#F0B429" stroke="#0A0A0B" strokeWidth="1.5" strokeLinejoin="round" />
-        <circle cx="148" cy="157" r="2" fill="#0A0A0B" />
-        <circle cx="154" cy="157" r="2" fill="#0A0A0B" />
-        <circle cx="160" cy="157" r="2" fill="#0A0A0B" />
-      </svg>
-    </div>
-  );
-}
-
 /* ── Landing page component ── */
 
 export function LandingPage() {
@@ -326,7 +278,8 @@ export function LandingPage() {
 
   return (
     <div className="landing-page">
-      <ParticleCanvas />
+      <div className="landing-orb landing-orb--gold" aria-hidden="true" />
+      <div className="landing-orb landing-orb--blue" aria-hidden="true" />
 
       <div className="landing-layout">
         {/* Left: showcase (md+ only) */}
@@ -338,13 +291,29 @@ export function LandingPage() {
             <span className="landing-title-product">Desk</span>
           </h1>
           <p className="landing-tagline">AI-powered client management across every channel</p>
+          <p className="landing-hero-desc">
+            Manage customer conversations across WhatsApp, Instagram, SMS, Web Chat, and Email through a single AI-driven interface.
+          </p>
+
+          <div className="landing-channels">
+            {CHANNELS.map((ch, i) => (
+              <div
+                key={ch.name}
+                className="landing-channel"
+                style={{ animationDelay: `${0.7 + i * 0.1}s` }}
+              >
+                <span className="landing-channel-dot" style={{ backgroundColor: ch.color }} />
+                {ch.name}
+              </div>
+            ))}
+          </div>
 
           <div className="landing-features">
             {FEATURES.map((f, i) => (
               <div
                 key={f.label}
                 className="landing-feature"
-                style={{ animationDelay: `${0.3 + i * 0.15}s` }}
+                style={{ animationDelay: `${1.2 + i * 0.15}s` }}
               >
                 <div className="landing-feature-icon">{f.icon}</div>
                 <div>
@@ -364,11 +333,11 @@ export function LandingPage() {
               <line x1="16" y1="6" x2="16" y2="2" stroke="#F0B429" strokeWidth="1.5" strokeLinecap="round" />
               <circle cx="16" cy="1.5" r="1.5" fill="#F0B429" />
               <rect x="5" y="6" width="22" height="17" rx="5" fill="#F0B429" />
-              <ellipse cx="11" cy="13" rx="2.5" ry="3" fill="#0A0A0B" />
-              <ellipse cx="21" cy="13" rx="2.5" ry="3" fill="#0A0A0B" />
+              <ellipse cx="11" cy="13" rx="2.5" ry="3" fill="#1A1A2E" />
+              <ellipse cx="21" cy="13" rx="2.5" ry="3" fill="#1A1A2E" />
               <circle cx="11.5" cy="12.5" r="1" fill="#F7CC5F" />
               <circle cx="21.5" cy="12.5" r="1" fill="#F7CC5F" />
-              <path d="M12 19Q16 22 20 19" stroke="#0A0A0B" strokeWidth="1.2" fill="none" strokeLinecap="round" />
+              <path d="M12 19Q16 22 20 19" stroke="#1A1A2E" strokeWidth="1.2" fill="none" strokeLinecap="round" />
               <rect x="1" y="10" width="4" height="5" rx="2" fill="#D4A017" />
               <rect x="27" y="10" width="4" height="5" rx="2" fill="#D4A017" />
             </svg>
@@ -379,6 +348,16 @@ export function LandingPage() {
               </h1>
               <p className="landing-mobile-tagline">AI-powered client management across every channel</p>
             </div>
+          </div>
+
+          {/* Mobile-only channel badges */}
+          <div className="landing-mobile-channels">
+            {CHANNELS.map((ch) => (
+              <div key={ch.name} className="landing-channel landing-channel--mobile">
+                <span className="landing-channel-dot" style={{ backgroundColor: ch.color }} />
+                {ch.name}
+              </div>
+            ))}
           </div>
 
           <AuthCard />
@@ -398,6 +377,8 @@ export function LandingPage() {
         </div>
       </div>
 
+      <WaveDecoration />
+
       <footer className="doaide-footer">
         <div className="doaide-footer-products">
           <a href="https://desk.doaide.com" className="doaide-footer-active">Desk</a>
@@ -407,9 +388,7 @@ export function LandingPage() {
           <a href="https://homenex.doaide.com" target="_blank" rel="noopener noreferrer">Realty</a>
         </div>
         <p className="doaide-footer-copy">
-          © {year}{' '}
-          <a href="https://doaide.com" target="_blank" rel="noopener noreferrer">DoAide</a>
-          {' '}· AI tools for small businesses
+          © {year} DoAide Desk · AI tools for small businesses
         </p>
       </footer>
     </div>
