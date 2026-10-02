@@ -185,7 +185,7 @@ export class CrmPushService {
           error: result.error ?? 'unknown',
         });
         this.logger.warn(
-          `CRM ${conn.provider} push failed for lead ${leadId}: ${result.error}`,
+          `CRM ${conn.provider} push failed for lead ${leadId} (business ${businessId}): ${result.error}`,
         );
       }
     }
@@ -219,7 +219,7 @@ export class CrmPushService {
       await this.pushLead(businessId, leadId, reason);
     } catch (err) {
       this.logger.error(
-        `CRM push (${reason}) failed for lead ${leadId}: ${
+        `CRM push (${reason}) failed for lead ${leadId} (business ${businessId}): ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
