@@ -167,6 +167,33 @@ export const TENANT_RATE_LIMIT_BUCKETS: Record<string, TenantRateLimitRule> = {
     windowMs: HOUR,
     description: 'bulk imports and campaign sends',
   },
+
+  /**
+   * Channel connect/disconnect/test operations.
+   *
+   * These are infrequent admin actions — a business connects a channel once
+   * and tests it a handful of times. The ceiling is generous enough for a
+   * setup session and restrictive enough that a leaked manager token cannot
+   * churn channel state in a loop.
+   */
+  'channel-management': {
+    limit: 30,
+    windowMs: HOUR,
+    description: 'channel management operations',
+  },
+
+  /**
+   * Subscription tier changes.
+   *
+   * A single upgrade or downgrade per business should happen at most a few
+   * times a month. The per-hour ceiling keeps a compromised owner token from
+   * thrashing the billing state.
+   */
+  'billing-change': {
+    limit: 10,
+    windowMs: HOUR,
+    description: 'subscription plan changes',
+  },
 };
 
 /**

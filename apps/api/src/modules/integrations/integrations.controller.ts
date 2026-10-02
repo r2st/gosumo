@@ -5,8 +5,10 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { PrismaService } from '../../common/services/prisma.service';
+import { SafeStringPipe } from '../../common/pipes/safe-string.pipe';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { TeamMemberRole } from '@gosumo/database';
+import { SaveCredentialsDto } from './dto/save-credentials.dto';
 
 @ApiTags('integrations')
 @Controller('integrations')
@@ -34,7 +36,6 @@ export class IntegrationsController {
   @ApiOperation({ summary: 'Start Google Calendar OAuth flow' })
   @ApiResponse({ status: 201, description: 'Result of the connect action' })
   async connectCalendar(@TenantId() _tenantId: string) {
-    // Placeholder — would redirect to Google OAuth consent screen
     return { authUrl: null, message: 'Google Calendar integration is not configured yet. Please set up OAuth credentials in the admin panel.' };
   }
 
@@ -53,7 +54,6 @@ export class IntegrationsController {
   @ApiOperation({ summary: 'List saved integration credentials' })
   @ApiResponse({ status: 200, description: 'Paginated credential list for this business' })
   async listCredentials(@TenantId() _tenantId: string) {
-    // Return empty list — no integrations configured yet
     return { integrations: [] };
   }
 
@@ -61,11 +61,12 @@ export class IntegrationsController {
   @Roles(TeamMemberRole.MANAGER)
   @ApiOperation({ summary: 'Save credentials for a provider' })
   @ApiResponse({ status: 200, description: 'The updated credential' })
-  @ApiParam({ name: 'provider', description: 'Provider' })
+  @ApiResponse({ status: 400, description: 'Invalid provider name or credentials' })
+  @ApiParam({ name: 'provider', description: 'Provider name (e.g. razorpay, stripe, twilio)' })
   async saveCredentials(
     @TenantId() tenantId: string,
-    @Param('provider') provider: string,
-    @Body() _body: Record<string, unknown>,
+    @Param('provider', new SafeStringPipe(50)) provider: string,
+    @Body() _dto: SaveCredentialsDto,
   ) {
     this.logger.log(`Saving ${provider} credentials for tenant ${tenantId}`);
     return {
@@ -79,10 +80,11 @@ export class IntegrationsController {
   @Roles(TeamMemberRole.MANAGER)
   @ApiOperation({ summary: 'Test connection for a provider' })
   @ApiResponse({ status: 201, description: 'Result of the test action' })
-  @ApiParam({ name: 'provider', description: 'Provider' })
+  @ApiResponse({ status: 400, description: 'Invalid provider name' })
+  @ApiParam({ name: 'provider', description: 'Provider name' })
   async testCredentials(
     @TenantId() tenantId: string,
-    @Param('provider') provider: string,
+    @Param('provider', new SafeStringPipe(50)) provider: string,
   ) {
     return { success: false, message: `${provider} integration is not fully configured yet.` };
   }

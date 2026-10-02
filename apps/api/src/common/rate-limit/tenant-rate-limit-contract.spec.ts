@@ -23,6 +23,8 @@ import { ConversationSearchController } from '../../modules/conversation-search/
 import { MessageController } from '../../modules/message/message.controller';
 import { RealtyIngestionController } from '../../modules/realty-ingestion/realty-ingestion.controller';
 import { DataExportController } from '../../modules/data-export/data-export.controller';
+import { ChannelsController } from '../../modules/channels/channels.controller';
+import { BillingController } from '../../modules/billing/billing.controller';
 
 /**
  * [description, controller, handler name, expected bucket]
@@ -70,6 +72,14 @@ const RATIONED: Array<[string, NewableFunction, string, string]> = [
   ['GET /data-export/clients/:id', DataExportController, 'exportClient', 'export'],
   ['GET /data-export/clients/:id/summary', DataExportController, 'summary', 'export'],
   ['POST /data-export/resolve', DataExportController, 'resolve', 'export'],
+
+  // Channel connect/disconnect mutates integration state and hits external
+  // providers. A compromised manager token must not churn channels in a loop.
+  ['POST /channels/:type/connect', ChannelsController, 'connectChannel', 'channel-management'],
+  ['DELETE /channels/:id', ChannelsController, 'disconnectChannel', 'channel-management'],
+
+  // Subscription tier changes move money and are the owner's decision.
+  ['POST /billing/upgrade', BillingController, 'upgrade', 'billing-change'],
 ];
 
 describe('per-tenant rate-limit contract', () => {

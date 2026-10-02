@@ -4,6 +4,7 @@ import { RealtyPlan } from '@gosumo/shared';
 import { TeamMemberRole } from '@gosumo/database';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+import { TenantRateLimit } from '../../common/rate-limit/tenant-rate-limit.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { BillingService } from './billing.service';
 import { PLAN_DEFINITIONS } from './billing.constants';
@@ -37,6 +38,7 @@ export class BillingController {
   // money and is the owner's decision alone.
   @Post('upgrade')
   @Roles(TeamMemberRole.OWNER)
+  @TenantRateLimit('billing-change')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Change the subscription tier' })
   @ApiResponse({ status: 200, description: 'Updated subscription usage summary' })

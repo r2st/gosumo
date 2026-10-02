@@ -13,6 +13,7 @@ import { ChannelType } from "@gosumo/shared";
 import { Public } from "../../common/decorators/public.decorator";
 import { TenantId } from "../../common/decorators/tenant-id.decorator";
 import { CurrentUser, AuthenticatedUser } from "../../common/decorators/current-user.decorator";
+import { UuidValidationPipe } from "../../common/pipes/uuid-validation.pipe";
 import { ChannelsService } from "./channels.service";
 import type { ChannelResponse } from "./channels.service";
 
@@ -26,6 +27,7 @@ interface ChannelListResponse {
 import { ConnectChannelDto } from "./dto";
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AuthThrottle } from '../auth/auth-throttle.decorator';
+import { TenantRateLimit } from '../../common/rate-limit/tenant-rate-limit.decorator';
 import { TeamMemberRole } from '@gosumo/database';
 
 /**
@@ -58,6 +60,7 @@ export class ChannelsController {
 
   @Post(":channelType/connect")
   @Roles(TeamMemberRole.MANAGER)
+  @TenantRateLimit('channel-management')
   @ApiOperation({ summary: "Connect a channel, or re-connect an existing one" })
   @ApiParam({
     name: "channelType",
@@ -89,6 +92,7 @@ export class ChannelsController {
 
   @Delete(":channelId")
   @Roles(TeamMemberRole.MANAGER)
+  @TenantRateLimit('channel-management')
   @ApiOperation({
     summary: "Disconnect a channel",
     description: "Soft delete — the channel row is retained with `deleted_at` set.",
@@ -99,7 +103,7 @@ export class ChannelsController {
   async disconnectChannel(
     @TenantId() businessId: string,
     @CurrentUser() user: AuthenticatedUser,
-    @Param("channelId") channelId: string,
+    @Param("channelId", UuidValidationPipe) channelId: string,
   ) {
     return this.channelsService.disconnectChannel(businessId, channelId, {
       id: user.sub,
@@ -122,7 +126,7 @@ export class ChannelsController {
   @ApiResponse({ status: 404, description: "Not found, or not visible to this business" })
   async testConnection(
     @TenantId() businessId: string,
-    @Param("channelId") channelId: string,
+    @Param("channelId", UuidValidationPipe) channelId: string,
   ) {
     return this.channelsService.testConnection(businessId, channelId);
   }
@@ -143,7 +147,7 @@ export class ChannelsController {
   @ApiResponse({ status: 200, description: "Widget id, config and embed snippet" })
   @ApiResponse({ status: 404, description: "Not found, or not visible to this business" })
   @ApiResponse({ status: 429, description: "Too many requests from this address" })
-  async getWebChatEmbed(@Param("channelId") channelId: string) {
+  async getWebChatEmbed(@Param("channelId", UuidValidationPipe) channelId: string) {
     // Public endpoint — external websites load the embed script.
     // Pass empty businessId; service will look up by channelId alone.
     return this.channelsService.getWebChatEmbed("", channelId);

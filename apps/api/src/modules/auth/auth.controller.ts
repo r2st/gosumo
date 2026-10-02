@@ -17,6 +17,7 @@ import { ConfigService } from '@nestjs/config';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
+import { UuidValidationPipe } from '../../common/pipes/uuid-validation.pipe';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { AuthTokensDto } from './dto/auth-tokens.dto';
@@ -229,7 +230,7 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Session revoked' })
   async revokeSession(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('sessionId') sessionId: string,
+    @Param('sessionId', UuidValidationPipe) sessionId: string,
   ): Promise<{ message: string }> {
     await this.authService.revokeSession(user.sub, sessionId);
     return { message: 'Session revoked' };

@@ -462,7 +462,6 @@ const WEBHOOK_RAW_BODY_HANDLERS = [
  */
 const RAW_BODY_HANDLERS = [
   ...WEBHOOK_RAW_BODY_HANDLERS,
-  'IntegrationsController.saveCredentials',
 ];
 
 /**
