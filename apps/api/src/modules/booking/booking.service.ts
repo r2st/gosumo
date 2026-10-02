@@ -431,9 +431,14 @@ export class BookingService {
       );
     }
 
-    const updated = await this.repository.updateBooking(businessId, bookingId, {
-      status: BookingStatus.CONFIRMED,
-    });
+    const updated = await this.repository.transitionStatus(
+      businessId, bookingId, BookingStatus.PENDING,
+      { status: BookingStatus.CONFIRMED },
+    );
+    if (!updated) {
+      this.logger.debug(`Booking ${bookingId} changed status concurrently — confirm skipped`);
+      return toBookingDto(booking);
+    }
 
     const event: BookingConfirmedEvent = {
       type: 'booking.confirmed',
@@ -1418,7 +1423,8 @@ export class BookingService {
 
   /**
    * Invoked by the processor 24h after a PENDING booking. Cancels it if still
-   * unpaid/pending.
+   * unpaid/pending. Uses CAS so a payment that confirmed the booking between
+   * the read and the write does not get overwritten.
    */
   async autoCancelIfUnpaid(
     businessId: string,
@@ -1428,12 +1434,36 @@ export class BookingService {
     if (!booking || (booking.status as BookingStatus) !== BookingStatus.PENDING) {
       return;
     }
-    await this.applyCancellation(
-      businessId,
-      booking,
-      'Auto-cancelled: payment not received within 24 hours',
-      BookingActor.SYSTEM,
+    const reason = 'Auto-cancelled: payment not received within 24 hours';
+    const updated = await this.repository.transitionStatus(
+      businessId, bookingId, BookingStatus.PENDING,
+      {
+        status: BookingStatus.CANCELLED,
+        cancelled_at: new Date(),
+        cancellation_reason: reason,
+        cancelled_by: BookingActor.SYSTEM,
+      },
     );
+    if (!updated) {
+      this.logger.debug(`Booking ${bookingId} no longer PENDING — auto-cancel skipped`);
+      return;
+    }
+
+    await this.removeBookingFromCalendar(businessId, updated);
+
+    const event: BookingCancelledEvent = {
+      type: 'booking.cancelled',
+      id: generateId(),
+      timestamp: new Date().toISOString(),
+      businessId,
+      correlationId: generateCorrelationId(),
+      bookingId: updated.id,
+      clientId: updated.client_id,
+      cancelledBy: BookingActor.SYSTEM,
+      reason,
+    };
+    this.eventEmitter.emit('booking.cancelled', event);
+
     this.logger.log(`Booking ${bookingId} auto-cancelled (unpaid PENDING)`);
   }
 

@@ -130,6 +130,7 @@ describe('BookingService', () => {
       findBookings: jest.fn(),
       findBookingsByRecurrence: jest.fn().mockResolvedValue([]),
       updateBooking: jest.fn(),
+      transitionStatus: jest.fn(),
       findByPaymentId: jest.fn(),
       findAvailability: jest.fn().mockResolvedValue(null),
       upsertAvailability: jest.fn(),
@@ -358,16 +359,17 @@ describe('BookingService', () => {
       repository.findBookingById
         .mockResolvedValueOnce(pending as never) // requireBooking
         .mockResolvedValue(mockBooking({ status: BookingStatus.CONFIRMED }) as never); // scheduleReminders
-      repository.updateBooking.mockResolvedValue(
+      repository.transitionStatus.mockResolvedValue(
         mockBooking({ status: BookingStatus.CONFIRMED }) as never,
       );
 
       const result = await service.confirmBooking(BUSINESS_ID, BOOKING_ID);
 
       expect(result.status).toBe(BookingStatus.CONFIRMED);
-      expect(repository.updateBooking).toHaveBeenCalledWith(
+      expect(repository.transitionStatus).toHaveBeenCalledWith(
         BUSINESS_ID,
         BOOKING_ID,
+        BookingStatus.PENDING,
         expect.objectContaining({ status: BookingStatus.CONFIRMED }),
       );
       expect(eventEmitter.emit).toHaveBeenCalledWith(

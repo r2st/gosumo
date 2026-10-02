@@ -285,6 +285,32 @@ export class BookingRepository {
   }
 
   /**
+   * CAS status transition: only writes if the current status matches
+   * `expectedStatus`. Returns `null` when the row has already moved.
+   */
+  async transitionStatus(
+    businessId: string,
+    bookingId: string,
+    expectedStatus: BookingStatus,
+    data: Prisma.bookingsUpdateInput,
+  ): Promise<bookings | null> {
+    const { count } = await this.prisma.bookings.updateMany({
+      where: {
+        id: bookingId,
+        business_id: businessId,
+        status: expectedStatus,
+        deleted_at: null,
+      },
+      data,
+    });
+    if (count === 0) return null;
+    return this.prisma.bookings.findFirst({
+      where: { id: bookingId, business_id: businessId },
+      include: { client: true },
+    });
+  }
+
+  /**
    * Find the bookings owned by a payment id (used by the payment.success
    * listener to auto-confirm).
    */
