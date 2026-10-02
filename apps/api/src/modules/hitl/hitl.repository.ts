@@ -73,13 +73,24 @@ export class HitlRepository {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Default includes for task queries. */
-  private readonly taskIncludes = {
+  /** Full includes for single-entity detail queries. */
+  private readonly taskDetailIncludes = {
     conversation: true,
     assignee: true,
     resolver: true,
     parent_task: true,
-    child_tasks: true,
+    child_tasks: { select: { id: true, status: true, type: true, title: true } },
+  } as const;
+
+  /**
+   * Lightweight includes for list/batch queries. Drops `parent_task` and
+   * `child_tasks` — each is an extra join per row, and `child_tasks` is
+   * unbounded. The inbox only needs conversation context and who is assigned;
+   * callers that need the full tree fetch the single task by id.
+   */
+  private readonly taskListIncludes = {
+    conversation: { select: { id: true, subject: true, status: true, channel: true, client_id: true } },
+    assignee: { select: { id: true, name: true } },
   } as const;
 
   /**
@@ -103,7 +114,7 @@ export class HitlRepository {
         escalation_level: data.escalationLevel ?? 0,
         metadata: (data.metadata ?? {}) as Prisma.InputJsonValue,
       },
-      include: this.taskIncludes,
+      include: this.taskDetailIncludes,
     });
   }
 
@@ -120,7 +131,7 @@ export class HitlRepository {
         id: taskId,
         business_id: businessId,
       },
-      include: this.taskIncludes,
+      include: this.taskDetailIncludes,
     });
   }
 
@@ -160,7 +171,7 @@ export class HitlRepository {
     const [data, total] = await Promise.all([
       this.prisma.tasks.findMany({
         where,
-        include: this.taskIncludes,
+        include: this.taskListIncludes,
         orderBy: [
           { due_at: { sort: 'asc', nulls: 'last' } },
           { created_at: 'asc' },
@@ -245,7 +256,7 @@ export class HitlRepository {
     return this.prisma.tasks.update({
       where: { id: taskId, business_id: businessId },
       data: updateData,
-      include: this.taskIncludes,
+      include: this.taskDetailIncludes,
     });
   }
 
@@ -263,7 +274,7 @@ export class HitlRepository {
         conversation_id: conversationId,
         status: { notIn: ['RESOLVED', 'ESCALATED', 'EXPIRED'] },
       },
-      include: this.taskIncludes,
+      include: this.taskDetailIncludes,
     });
   }
 
@@ -305,7 +316,7 @@ export class HitlRepository {
         status: { in: ['PENDING', 'IN_PROGRESS'] },
         sla_breached: false,
       },
-      include: this.taskIncludes,
+      include: this.taskListIncludes,
       orderBy: { due_at: 'asc' },
       take: limit,
     });
