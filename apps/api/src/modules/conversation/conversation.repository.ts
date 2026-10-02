@@ -250,7 +250,7 @@ export class ConversationRepository {
     // and is the honest answer: `count` is what says the write landed, and the
     // row is what the conversation looks like now.
     return this.prisma.conversations.findFirst({
-      where: { id: conversationId, business_id: businessId },
+      where: { id: conversationId, business_id: businessId, deleted_at: null },
       include: CONVERSATION_INCLUDE,
     });
   }
@@ -535,7 +535,7 @@ export class ConversationRepository {
     if (count === 0) return null;
 
     return this.prisma.conversations.findFirst({
-      where: { id: conversationId, business_id: businessId },
+      where: { id: conversationId, business_id: businessId, deleted_at: null },
       include: CONVERSATION_INCLUDE,
     });
   }

@@ -236,7 +236,7 @@ export class OrderRepository {
     if (result.count === 0) return null;
 
     return this.prisma.orders.findFirst({
-      where: { id: orderId, business_id: businessId },
+      where: { id: orderId, business_id: businessId, deleted_at: null },
       include: {
         client: true,
         shipping_address: true,
