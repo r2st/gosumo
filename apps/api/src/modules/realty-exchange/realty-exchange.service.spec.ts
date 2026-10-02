@@ -289,8 +289,11 @@ describe('RealtyExchangeService', () => {
 
   // ── disputeSyndication ──
 
-  it('disputes a syndication, reverses settlement, and emits disputed', async () => {
-    repo.findSyndicationById.mockResolvedValue(makeSyndication({ state: SyndicationState.CLOSED }));
+  it('disputes a CLOSED syndication, reverses settlement, and emits disputed', async () => {
+    repo.findSyndicationById.mockResolvedValue(makeSyndication({
+      state: SyndicationState.CLOSED,
+      settlement_state: SettlementState.PENDING,
+    }));
     const res = await service.disputeSyndication(TO, SYND, 'partner withheld my half');
     const patch = repo.updateSyndication.mock.calls[0]![2] as { state: string; settlement_state: string; metadata: { disputeReason: string } };
     expect(patch.state).toBe(SyndicationState.DISPUTED);
@@ -298,6 +301,17 @@ describe('RealtyExchangeService', () => {
     expect(patch.metadata.disputeReason).toBe('partner withheld my half');
     expect(res.state).toBe(SyndicationState.DISPUTED);
     expect(emitter.emit).toHaveBeenCalledWith('realty.syndication.disputed', expect.objectContaining({ reason: 'partner withheld my half' }));
+  });
+
+  it('does not set REVERSED when disputing an unsettled syndication', async () => {
+    repo.findSyndicationById.mockResolvedValue(makeSyndication({
+      state: SyndicationState.OFFERED,
+      settlement_state: SettlementState.UNSETTLED,
+    }));
+    await service.disputeSyndication(TO, SYND, 'bad faith');
+    const patch = repo.updateSyndication.mock.calls[0]![2] as Record<string, unknown>;
+    expect(patch.state).toBe(SyndicationState.DISPUTED);
+    expect(patch).not.toHaveProperty('settlement_state');
   });
 
   // ── rateSyndication → reliability ──
@@ -501,6 +515,35 @@ describe('RealtyExchangeService', () => {
     it('throws NotFound updating a listing the tenant does not own', async () => {
       repo.findResaleListingById.mockResolvedValue(null);
       await expect(service.updateResaleListing(FROM, LISTING, {} as never)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('rejects transition from SOLD (terminal) to any other status', async () => {
+      repo.findResaleListingById.mockResolvedValue(makeResale({ status: ResaleListingStatus.SOLD }));
+      await expect(
+        service.updateResaleListing(FROM, LISTING, { status: ResaleListingStatus.ACTIVE } as never),
+      ).rejects.toThrow(/cannot transition/i);
+      expect(repo.updateResaleListing).not.toHaveBeenCalled();
+    });
+
+    it('rejects transition from SOLD to UNDER_OFFER', async () => {
+      repo.findResaleListingById.mockResolvedValue(makeResale({ status: ResaleListingStatus.SOLD }));
+      await expect(
+        service.updateResaleListing(FROM, LISTING, { status: ResaleListingStatus.UNDER_OFFER } as never),
+      ).rejects.toThrow(/cannot transition/i);
+    });
+
+    it('allows UNDER_OFFER → SOLD', async () => {
+      repo.findResaleListingById.mockResolvedValue(makeResale({ status: ResaleListingStatus.UNDER_OFFER }));
+      repo.updateResaleListing.mockResolvedValue(makeResale({ status: ResaleListingStatus.SOLD }));
+      await service.updateResaleListing(FROM, LISTING, { status: ResaleListingStatus.SOLD } as never);
+      expect(repo.updateResaleListing).toHaveBeenCalled();
+    });
+
+    it('allows WITHDRAWN → ACTIVE (re-list)', async () => {
+      repo.findResaleListingById.mockResolvedValue(makeResale({ status: 'WITHDRAWN' }));
+      repo.updateResaleListing.mockResolvedValue(makeResale({ status: ResaleListingStatus.ACTIVE }));
+      await service.updateResaleListing(FROM, LISTING, { status: ResaleListingStatus.ACTIVE } as never);
+      expect(repo.updateResaleListing).toHaveBeenCalled();
     });
 
     it('soft-deletes a resale listing', async () => {

@@ -690,4 +690,76 @@ describe('EoiService', () => {
       expect(arg.notes).toMatchObject({ businessId: BUSINESS_ID, eoiId: EOI_ID, kind: 'realty_eoi' });
     });
   });
+
+  describe('cancelEoi', () => {
+    it('cancels a PENDING_APPROVAL EOI', async () => {
+      repo.findEoi.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.PENDING_APPROVAL }));
+      repo.updateEoi.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.CANCELLED }));
+
+      const res = await service.cancelEoi(BUSINESS_ID, EOI_ID, 'broker-1', 'Changed mind');
+      expect(res.status).toBe(RealtyEoiStatus.CANCELLED);
+      expect(repo.updateEoi).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        EOI_ID,
+        expect.objectContaining({ status: RealtyEoiStatus.CANCELLED }),
+      );
+    });
+
+    it('cancels a LINK_SENT EOI', async () => {
+      repo.findEoi.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.LINK_SENT }));
+      repo.updateEoi.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.CANCELLED }));
+
+      const res = await service.cancelEoi(BUSINESS_ID, EOI_ID, 'broker-1');
+      expect(res.status).toBe(RealtyEoiStatus.CANCELLED);
+    });
+
+    it('rejects cancelling a PAID EOI', async () => {
+      repo.findEoi.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.PAID }));
+      await expect(
+        service.cancelEoi(BUSINESS_ID, EOI_ID, 'broker-1'),
+      ).rejects.toThrow(/cannot be cancelled/i);
+    });
+
+    it('rejects cancelling a REJECTED EOI', async () => {
+      repo.findEoi.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.REJECTED }));
+      await expect(
+        service.cancelEoi(BUSINESS_ID, EOI_ID, 'broker-1'),
+      ).rejects.toThrow(/cannot be cancelled/i);
+    });
+  });
+
+  describe('reconcileEoi — expired link', () => {
+    it('marks a LINK_SENT EOI as EXPIRED when Razorpay reports expired', async () => {
+      repo.findEoi.mockResolvedValue(
+        makeEoi({ status: RealtyEoiStatus.LINK_SENT, payment_link_id: 'plink_1' }),
+      );
+      razorpay.fetchPaymentLinkStatus.mockResolvedValue({
+        status: 'expired',
+        paymentId: undefined,
+      } as never);
+      repo.updateEoi.mockResolvedValue(makeEoi({ status: RealtyEoiStatus.EXPIRED }));
+
+      const res = await service.reconcileEoi(BUSINESS_ID, EOI_ID);
+      expect(res.status).toBe(RealtyEoiStatus.EXPIRED);
+      expect(repo.updateEoi).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        EOI_ID,
+        expect.objectContaining({ status: RealtyEoiStatus.EXPIRED }),
+      );
+    });
+
+    it('does not mark PENDING_APPROVAL as expired (no link yet)', async () => {
+      repo.findEoi.mockResolvedValue(
+        makeEoi({ status: RealtyEoiStatus.PENDING_APPROVAL, payment_link_id: 'plink_1' }),
+      );
+      razorpay.fetchPaymentLinkStatus.mockResolvedValue({
+        status: 'expired',
+        paymentId: undefined,
+      } as never);
+
+      const res = await service.reconcileEoi(BUSINESS_ID, EOI_ID);
+      expect(res.status).toBe(RealtyEoiStatus.PENDING_APPROVAL);
+      expect(repo.updateEoi).not.toHaveBeenCalled();
+    });
+  });
 });

@@ -282,7 +282,12 @@ export class RealtyDlqService {
     if (status !== DeadLetterStatus.RESOLVED && status !== DeadLetterStatus.DISCARDED) {
       throw new BadRequestException('resolve status must be RESOLVED or DISCARDED');
     }
-    await this.get(businessId, id);
+    const entry = await this.get(businessId, id);
+    if (entry.status !== DeadLetterStatus.PENDING) {
+      throw new BadRequestException(
+        `Dead letter ${id} is ${entry.status}; only PENDING entries can be resolved`,
+      );
+    }
     const updated = await this.repository.update(businessId, id, {
       status,
       resolution: note ?? null,

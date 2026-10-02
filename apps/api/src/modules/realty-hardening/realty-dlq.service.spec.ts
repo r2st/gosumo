@@ -264,6 +264,28 @@ describe('RealtyDlqService', () => {
       );
     });
 
+    it('rejects resolving an already-REPLAYED entry', async () => {
+      repo.findById.mockResolvedValue(makeEntry({ status: DeadLetterStatus.REPLAYED }));
+      await expect(
+        service.resolve(BIZ, DL_ID, DeadLetterStatus.RESOLVED, 'manual'),
+      ).rejects.toThrow(/only PENDING/i);
+      expect(repo.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects resolving an already-DISCARDED entry', async () => {
+      repo.findById.mockResolvedValue(makeEntry({ status: DeadLetterStatus.DISCARDED }));
+      await expect(
+        service.resolve(BIZ, DL_ID, DeadLetterStatus.RESOLVED),
+      ).rejects.toThrow(/only PENDING/i);
+    });
+
+    it('rejects resolving an already-RESOLVED entry', async () => {
+      repo.findById.mockResolvedValue(makeEntry({ status: DeadLetterStatus.RESOLVED }));
+      await expect(
+        service.resolve(BIZ, DL_ID, DeadLetterStatus.DISCARDED),
+      ).rejects.toThrow(/only PENDING/i);
+    });
+
     it('aggregates counts per status', async () => {
       repo.countByStatus
         .mockResolvedValueOnce(2) // pending

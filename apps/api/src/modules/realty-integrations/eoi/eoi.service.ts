@@ -214,6 +214,38 @@ export class EoiService {
     return this.map(updated);
   }
 
+  /**
+   * Cancel an approved-but-unpaid EOI. Allowed from APPROVED, LINK_SENT, or
+   * PENDING_APPROVAL — anything before money changed hands. PAID, REJECTED,
+   * EXPIRED, and CANCELLED are terminal or already resolved.
+   */
+  async cancelEoi(
+    businessId: string,
+    eoiId: string,
+    cancelledBy: string,
+    reason?: string,
+  ): Promise<EoiResponseDto> {
+    const eoi = await this.mustFind(businessId, eoiId);
+    const cancellable: RealtyEoiStatus[] = [
+      RealtyEoiStatus.PENDING_APPROVAL,
+      RealtyEoiStatus.APPROVED,
+      RealtyEoiStatus.LINK_SENT,
+    ];
+    if (!cancellable.includes(eoi.status)) {
+      throw new ConflictError(
+        `EOI ${eoiId} is ${eoi.status} and cannot be cancelled`,
+        { context: { businessId, eoiId, status: eoi.status, action: 'cancel' } },
+      );
+    }
+    const updated = await this.repository.updateEoi(businessId, eoiId, {
+      status: RealtyEoiStatus.CANCELLED,
+      rejectReason: reason ?? `Cancelled by ${cancelledBy}`,
+    });
+    this.emitStatusChange(businessId, updated, eoi.status);
+    this.logger.log(`EOI ${eoiId} cancelled by ${cancelledBy}`);
+    return this.map(updated);
+  }
+
   // ── Payment tracking ─────────────────────────
 
   /**
@@ -272,6 +304,17 @@ export class EoiService {
     const status = await this.razorpay.fetchPaymentLinkStatus(eoi.payment_link_id);
     if (status.status === 'paid') {
       const updated = await this.markPaid(businessId, eoi, status.paymentId);
+      return this.map(updated);
+    }
+    if (
+      status.status === 'expired' &&
+      eoi.status === RealtyEoiStatus.LINK_SENT
+    ) {
+      const updated = await this.repository.updateEoi(businessId, eoiId, {
+        status: RealtyEoiStatus.EXPIRED,
+      });
+      this.emitStatusChange(businessId, updated, eoi.status);
+      this.logger.log(`EOI ${eoiId} marked EXPIRED (Razorpay link expired)`);
       return this.map(updated);
     }
     return this.map(eoi);

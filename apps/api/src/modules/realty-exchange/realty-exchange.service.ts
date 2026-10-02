@@ -39,6 +39,14 @@ import {
   UpdateResaleListingDto,
 } from './dto';
 
+// ── Resale listing state machine ──
+const VALID_RESALE_TRANSITIONS: Record<ResaleListingStatus, ResaleListingStatus[]> = {
+  [ResaleListingStatus.ACTIVE]: [ResaleListingStatus.UNDER_OFFER, ResaleListingStatus.SOLD, ResaleListingStatus.WITHDRAWN],
+  [ResaleListingStatus.UNDER_OFFER]: [ResaleListingStatus.ACTIVE, ResaleListingStatus.SOLD, ResaleListingStatus.WITHDRAWN],
+  [ResaleListingStatus.SOLD]: [],
+  [ResaleListingStatus.WITHDRAWN]: [ResaleListingStatus.ACTIVE],
+};
+
 // ── Money helpers (rupees Decimal ↔ paise at the boundary) ──
 function paiseToDecimal(paise: number): Prisma.Decimal {
   return new Prisma.Decimal(paise).div(100);
@@ -290,9 +298,13 @@ export class RealtyExchangeService {
       SyndicationState.VISIT,
       SyndicationState.CLOSED,
     ]);
+    const settlementPatch =
+      syndication.settlement_state === SettlementState.UNSETTLED
+        ? {}
+        : { settlement_state: SettlementState.REVERSED };
     const updated = await this.repository.updateSyndication(businessId, syndicationId, {
       state: SyndicationState.DISPUTED,
-      settlement_state: SettlementState.REVERSED,
+      ...settlementPatch,
       metadata: this.mergeMetadata(syndication, { disputeReason: reason }),
     });
     this.emit<RealtySyndicationDisputedEvent>('realty.syndication.disputed', {
@@ -545,7 +557,7 @@ export class RealtyExchangeService {
     listingId: string,
     dto: UpdateResaleListingDto,
   ): Promise<ResaleListingResponseDto> {
-    await this.mustFindResale(businessId, listingId);
+    const existing = await this.mustFindResale(businessId, listingId);
     const data: Prisma.realty_resale_listingsUpdateInput = {};
     if (dto.locality !== undefined) data.locality = dto.locality;
     if (dto.config !== undefined) data.config = dto.config;
@@ -553,6 +565,7 @@ export class RealtyExchangeService {
     if (dto.askingPricePaise !== undefined) data.asking_price = paiseToDecimal(dto.askingPricePaise);
     if (dto.sellerPhone !== undefined) data.seller_phone = dto.sellerPhone;
     if (dto.status !== undefined) {
+      this.assertResaleTransition(existing.status as ResaleListingStatus, dto.status);
       data.status = dto.status;
       // Re-verify freshness whenever a seller reconfirms the listing is ACTIVE.
       if (dto.status === ResaleListingStatus.ACTIVE) data.verified_at = new Date();
@@ -578,6 +591,18 @@ export class RealtyExchangeService {
     const total = split.originatorPct + split.counterpartyPct + (split.developerPct ?? 0);
     if (total !== 100) {
       throw new BadRequestException(`Split terms must sum to 100 (got ${total})`);
+    }
+  }
+
+  private assertResaleTransition(
+    current: ResaleListingStatus,
+    next: ResaleListingStatus,
+  ): void {
+    const allowed = VALID_RESALE_TRANSITIONS[current];
+    if (!allowed || !allowed.includes(next)) {
+      throw new BadRequestException(
+        `Resale listing is ${current}; cannot transition to ${next}`,
+      );
     }
   }
 
