@@ -428,7 +428,7 @@ export function LandingPage() {
         <a href="https://doaide.com" className="split-brand">
           <RobotIcon size={28} />
           <span className="split-brand-text">
-            Do<em>Aide</em> Desk
+            DoAide <em>Desk</em>
           </span>
         </a>
       </header>
