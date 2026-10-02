@@ -130,7 +130,7 @@ export class DataExportRepository {
         take: MAX_EXPORT_RECORDS_PER_SECTION,
       }),
       this.prisma.notifications.findMany({
-        where: scope,
+        where: { ...scope, deleted_at: null },
         orderBy: { created_at: 'desc' },
         take: MAX_EXPORT_RECORDS_PER_SECTION,
       }),
@@ -224,7 +224,7 @@ export class DataExportRepository {
       this.prisma.orders.count({ where: { ...scope, deleted_at: null } }),
       this.prisma.payments.count({ where: scope }),
       this.prisma.bookings.count({ where: { ...scope, deleted_at: null } }),
-      this.prisma.notifications.count({ where: scope }),
+      this.prisma.notifications.count({ where: { ...scope, deleted_at: null } }),
       this.prisma.channel_contacts.count({ where: scope }),
       client.phone
         ? this.prisma.consent_logs.count({
