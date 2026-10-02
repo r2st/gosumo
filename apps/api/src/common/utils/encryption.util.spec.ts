@@ -33,6 +33,22 @@ describe('encryptJson / decryptJson', () => {
   it('returns an empty object for undecryptable garbage rather than throwing', () => {
     expect(decryptJson('not-base64-and-not-json')).toEqual({});
   });
+
+  it('logs a warning via NestJS Logger (not console) on decryption failure', () => {
+    const { Logger } = require('@nestjs/common') as typeof import('@nestjs/common');
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    decryptJson('unrecoverable-garbage-value');
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to decrypt or parse credential'),
+    );
+    expect(consoleSpy).not.toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+    consoleSpy.mockRestore();
+  });
 });
 
 describe('maskCredentialFields', () => {

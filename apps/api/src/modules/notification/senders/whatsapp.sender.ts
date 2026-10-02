@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NotificationTemplateChannel } from '@prisma/client';
 import { generateId } from '@gosumo/shared';
+import { maskPhone } from '../../../common/utils/log-redact.util';
 import {
   ChannelSender,
   OutboundNotification,
@@ -47,7 +48,7 @@ export class WhatsAppSender implements ChannelSender {
 
     if (!token || !phoneNumberId) {
       this.logger.debug(
-        `[no-op] WHATSAPP → ${payload.recipient} ` +
+        `[no-op] WHATSAPP → ${maskPhone(payload.recipient)} ` +
           `(template=${payload.externalTemplateName ?? 'free-form'}, no provider configured)`,
       );
       return { success: true, providerMessageId: `wa_noop_${generateId()}` };
@@ -58,13 +59,13 @@ export class WhatsAppSender implements ChannelSender {
       // body = template message when externalTemplateName is set, else text.
       const wamid = `wamid.${generateId()}`;
       this.logger.log(
-        `WHATSAPP sent to ${payload.recipient} ` +
+        `WHATSAPP sent to ${maskPhone(payload.recipient)} ` +
           `(${payload.externalTemplateName ?? 'text'}, id: ${wamid})`,
       );
       return { success: true, providerMessageId: wamid };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(`WHATSAPP send failed for ${payload.recipient}: ${message}`);
+      this.logger.error(`WHATSAPP send failed for ${maskPhone(payload.recipient)}: ${message}`);
       return { success: false, error: message, retryable: true };
     }
   }

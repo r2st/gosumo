@@ -5,6 +5,7 @@ import { SmsSender } from './sms.sender';
 import { WhatsAppSender } from './whatsapp.sender';
 import { PushSender } from './push.sender';
 import { OutboundNotification } from './channel-sender.interface';
+import { maskEmail, maskPhone } from '../../../common/utils/log-redact.util';
 
 /**
  * `senders.spec.ts` exercises the credential-free no-op mode every sender falls
@@ -56,10 +57,10 @@ describe('Channel senders with a provider configured', () => {
       expect(result.providerMessageId).not.toContain('noop');
     });
 
-    it('logs the delivery at info level, unlike the no-op path', async () => {
+    it('logs the delivery at info level with the email masked', async () => {
       await sender().send(outbound({ recipient: 'a@b.com' }));
       expect(log).toHaveBeenCalledWith(
-        expect.stringContaining('EMAIL sent to a@b.com'),
+        expect.stringContaining(`EMAIL sent to ${maskEmail('a@b.com')}`),
       );
     });
 
@@ -95,7 +96,7 @@ describe('Channel senders with a provider configured', () => {
       expect(result.providerMessageId).toMatch(/^sms_/);
       expect(result.providerMessageId).not.toContain('noop');
       expect(log).toHaveBeenCalledWith(
-        expect.stringContaining('SMS sent to +919876543210'),
+        expect.stringContaining(`SMS sent to ${maskPhone('+919876543210')}`),
       );
     });
 
@@ -204,11 +205,11 @@ describe('Channel senders with a provider configured', () => {
       expect(result.providerMessageId).not.toContain('noop');
     });
 
-    it('truncates the device token in logs rather than printing it whole', async () => {
+    it('logs only the last 4 chars of the device token', async () => {
       const token = 'abcdefgh' + 'z'.repeat(56);
       await sender().send(outbound({ recipient: token }));
       const logged = log.mock.calls[0][0] as string;
-      expect(logged).toContain('abcdefgh…');
+      expect(logged).toContain('token…zzzz');
       expect(logged).not.toContain(token);
     });
 

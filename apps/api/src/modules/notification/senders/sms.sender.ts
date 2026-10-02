@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NotificationTemplateChannel } from '@prisma/client';
 import { generateId } from '@gosumo/shared';
+import { maskPhone } from '../../../common/utils/log-redact.util';
 import {
   ChannelSender,
   OutboundNotification,
@@ -55,18 +56,18 @@ export class SmsSender implements ChannelSender {
     const apiKey = this.config.get<string>('notification.sms.apiKey');
     if (!apiKey) {
       this.logger.debug(
-        `[no-op] SMS → ${payload.recipient} (${segments} seg, no provider configured)`,
+        `[no-op] SMS → ${maskPhone(payload.recipient)} (${segments} seg, no provider configured)`,
       );
       return { success: true, providerMessageId: `sms_noop_${generateId()}` };
     }
 
     try {
       const providerMessageId = `sms_${generateId()}`;
-      this.logger.log(`SMS sent to ${payload.recipient} (id: ${providerMessageId})`);
+      this.logger.log(`SMS sent to ${maskPhone(payload.recipient)} (id: ${providerMessageId})`);
       return { success: true, providerMessageId };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(`SMS send failed for ${payload.recipient}: ${message}`);
+      this.logger.error(`SMS send failed for ${maskPhone(payload.recipient)}: ${message}`);
       return { success: false, error: message, retryable: true };
     }
   }

@@ -450,7 +450,10 @@ export class ChannelsService {
     const creds = (() => {
       try {
         return decryptJson(row.credentials as string);
-      } catch {
+      } catch (err) {
+        this.logger.warn(
+          `Credential decryption failed for channel ${row.id as string} — possible key-material mismatch: ${err instanceof Error ? err.message : String(err)}`,
+        );
         return {};
       }
     })();

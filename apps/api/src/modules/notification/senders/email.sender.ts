@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NotificationTemplateChannel } from '@prisma/client';
 import { generateId } from '@gosumo/shared';
+import { maskEmail } from '../../../common/utils/log-redact.util';
 import {
   ChannelSender,
   OutboundNotification,
@@ -41,7 +42,7 @@ export class EmailSender implements ChannelSender {
     const apiKey = this.config.get<string>('notification.email.apiKey');
     if (!apiKey) {
       this.logger.debug(
-        `[no-op] EMAIL → ${payload.recipient} "${payload.subject ?? ''}" ` +
+        `[no-op] EMAIL → ${maskEmail(payload.recipient)} "${payload.subject ?? ''}" ` +
           `(no provider configured)`,
       );
       return { success: true, providerMessageId: `email_noop_${generateId()}` };
@@ -52,12 +53,12 @@ export class EmailSender implements ChannelSender {
       // The concrete provider call lives here; on success return its message id.
       const providerMessageId = `email_${generateId()}`;
       this.logger.log(
-        `EMAIL sent to ${payload.recipient} (id: ${providerMessageId})`,
+        `EMAIL sent to ${maskEmail(payload.recipient)} (id: ${providerMessageId})`,
       );
       return { success: true, providerMessageId };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(`EMAIL send failed for ${payload.recipient}: ${message}`);
+      this.logger.error(`EMAIL send failed for ${maskEmail(payload.recipient)}: ${message}`);
       // Treat transport errors as transient/retryable.
       return { success: false, error: message, retryable: true };
     }

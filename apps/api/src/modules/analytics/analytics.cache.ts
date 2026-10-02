@@ -66,7 +66,11 @@ export class RedisAnalyticsCache implements AnalyticsCache {
           ).unref?.(),
         ),
       ]);
-    } catch {
+    } catch (err) {
+      const logger = new Logger('RedisAnalyticsCache');
+      logger.warn(
+        `QUIT failed, forcing disconnect: ${err instanceof Error ? err.message : String(err)}`,
+      );
       this.client.disconnect?.();
     }
   }

@@ -6,6 +6,7 @@ import { WhatsAppSender } from './whatsapp.sender';
 import { PushSender } from './push.sender';
 import { SenderRegistry } from './sender-registry';
 import { OutboundNotification } from './channel-sender.interface';
+import { maskEmail, maskPhone } from '../../../common/utils/log-redact.util';
 
 /** ConfigService that returns undefined (no provider credentials → no-op mode). */
 const emptyConfig = { get: () => undefined } as unknown as ConfigService;
@@ -216,6 +217,77 @@ describe('Channel senders', () => {
 
       expect(r).toEqual({ success: false, error: 'socket hang up', retryable: true });
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('socket hang up'));
+    });
+  });
+
+  describe('PII masking in log lines', () => {
+    it('EmailSender logs masked email, never the raw address', async () => {
+      const sender = new EmailSender(emptyConfig);
+      const debugSpy = jest
+        .spyOn((sender as unknown as { logger: { debug: jest.Mock } }).logger, 'debug')
+        .mockImplementation(() => undefined);
+
+      await sender.send(outbound({ recipient: 'alice@example.com' }));
+
+      expect(debugSpy).toHaveBeenCalledWith(
+        expect.stringContaining(maskEmail('alice@example.com')),
+      );
+      expect(debugSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('alice@example.com'),
+      );
+      debugSpy.mockRestore();
+    });
+
+    it('SmsSender logs masked phone, never the raw number', async () => {
+      const sender = new SmsSender(emptyConfig);
+      const debugSpy = jest
+        .spyOn((sender as unknown as { logger: { debug: jest.Mock } }).logger, 'debug')
+        .mockImplementation(() => undefined);
+
+      await sender.send(outbound({ recipient: '+919876543210', text: 'Hi' }));
+
+      expect(debugSpy).toHaveBeenCalledWith(
+        expect.stringContaining(maskPhone('+919876543210')),
+      );
+      expect(debugSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('+919876543210'),
+      );
+      debugSpy.mockRestore();
+    });
+
+    it('WhatsAppSender logs masked phone, never the raw number', async () => {
+      const sender = new WhatsAppSender(emptyConfig);
+      const debugSpy = jest
+        .spyOn((sender as unknown as { logger: { debug: jest.Mock } }).logger, 'debug')
+        .mockImplementation(() => undefined);
+
+      await sender.send(outbound({ recipient: '+919876543210' }));
+
+      expect(debugSpy).toHaveBeenCalledWith(
+        expect.stringContaining(maskPhone('+919876543210')),
+      );
+      expect(debugSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('+919876543210'),
+      );
+      debugSpy.mockRestore();
+    });
+
+    it('PushSender logs only the last 4 chars of the device token', async () => {
+      const sender = new PushSender(emptyConfig);
+      const debugSpy = jest
+        .spyOn((sender as unknown as { logger: { debug: jest.Mock } }).logger, 'debug')
+        .mockImplementation(() => undefined);
+
+      const token = 'abcdefghij1234567890abcdefghij1234567890';
+      await sender.send(outbound({ recipient: token, subject: 'Ping' }));
+
+      expect(debugSpy).toHaveBeenCalledWith(
+        expect.stringContaining('token…7890'),
+      );
+      expect(debugSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining(token),
+      );
+      debugSpy.mockRestore();
     });
   });
 

@@ -38,7 +38,7 @@ export class PushSender implements ChannelSender {
     const serverKey = this.config.get<string>('notification.push.serverKey');
     if (!serverKey) {
       this.logger.debug(
-        `[no-op] PUSH → ${payload.recipient.slice(0, 8)}… ` +
+        `[no-op] PUSH → token…${payload.recipient.slice(-4)} ` +
           `"${payload.subject ?? ''}" (no provider configured)`,
       );
       return { success: true, providerMessageId: `push_noop_${generateId()}` };
@@ -49,7 +49,7 @@ export class PushSender implements ChannelSender {
       // { to: token, notification: { title: subject, body: text }, data }
       const providerMessageId = `push_${generateId()}`;
       this.logger.log(
-        `PUSH sent to ${payload.recipient.slice(0, 8)}… (id: ${providerMessageId})`,
+        `PUSH sent to token…${payload.recipient.slice(-4)} (id: ${providerMessageId})`,
       );
       return { success: true, providerMessageId };
     } catch (err) {
