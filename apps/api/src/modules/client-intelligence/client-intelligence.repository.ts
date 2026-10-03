@@ -531,6 +531,22 @@ export class ClientIntelligenceRepository {
       });
     }
 
+    return this.writeIntelligenceScores(businessId, clientId, scores);
+  }
+
+  /**
+   * Write intelligence scores without an existence check.
+   * Use when the caller has already verified the client exists.
+   */
+  async writeIntelligenceScores(
+    businessId: string,
+    clientId: string,
+    scores: {
+      churnRisk?: number;
+      ltvScore?: number;
+      engagementScore?: number;
+    },
+  ): Promise<ClientWithContacts> {
     const updateData: Record<string, unknown> = {
       scores_updated_at: new Date(),
     };
@@ -644,7 +660,38 @@ export class ClientIntelligenceRepository {
       });
     }
 
-    // Get most recent order date
+    return this.buildRFMData(businessId, clientId, client);
+  }
+
+  /**
+   * Build RFM data from an already-loaded client, querying only the latest order date.
+   * Saves a redundant client read when the caller already has the row.
+   */
+  async getRFMDataFromClient(
+    businessId: string,
+    clientId: string,
+    client: Pick<clients, 'last_interaction_at' | 'total_orders' | 'total_spent' | 'first_seen_at'>,
+  ): Promise<{
+    lastInteractionAt: Date | null;
+    lastOrderAt: Date | null;
+    orderCount: number;
+    totalSpent: number;
+    firstSeenAt: Date;
+  }> {
+    return this.buildRFMData(businessId, clientId, client);
+  }
+
+  private async buildRFMData(
+    businessId: string,
+    clientId: string,
+    client: Pick<clients, 'last_interaction_at' | 'total_orders' | 'total_spent' | 'first_seen_at'>,
+  ): Promise<{
+    lastInteractionAt: Date | null;
+    lastOrderAt: Date | null;
+    orderCount: number;
+    totalSpent: number;
+    firstSeenAt: Date;
+  }> {
     const latestOrder = await this.prisma.orders.findFirst({
       where: {
         business_id: businessId,

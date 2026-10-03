@@ -84,10 +84,12 @@ describe('ClientIntelligenceService', () => {
       listClients: jest.fn(),
       mergeClients: jest.fn(),
       updateIntelligenceScores: jest.fn(),
+      writeIntelligenceScores: jest.fn(),
       createChannelContact: jest.fn(),
       findChannelContact: jest.fn(),
       getClientOrderAggregates: jest.fn(),
       getClientRFMData: jest.fn(),
+      getRFMDataFromClient: jest.fn(),
       getClientTimelineData: jest.fn(),
     };
 
@@ -459,7 +461,7 @@ describe('ClientIntelligenceService', () => {
       // RFM data that would result in HIGH score (>60)
       const sixtyDaysAgo = new Date();
       sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 65);
-      repository.getClientRFMData.mockResolvedValue({
+      repository.getRFMDataFromClient.mockResolvedValue({
         lastInteractionAt: sixtyDaysAgo,
         lastOrderAt: sixtyDaysAgo,
         orderCount: 1,
@@ -472,7 +474,7 @@ describe('ClientIntelligenceService', () => {
         orderCount: 1,
       });
 
-      repository.updateIntelligenceScores.mockResolvedValue(client);
+      repository.writeIntelligenceScores.mockResolvedValue(client);
 
       await service.refreshIntelligenceScores(BUSINESS_ID, CLIENT_ID);
 
@@ -493,7 +495,7 @@ describe('ClientIntelligenceService', () => {
       repository.getClientById.mockResolvedValue(client);
 
       // RFM data that keeps the score in LOW range
-      repository.getClientRFMData.mockResolvedValue({
+      repository.getRFMDataFromClient.mockResolvedValue({
         lastInteractionAt: new Date(), // today
         lastOrderAt: new Date(),
         orderCount: 20,
@@ -506,7 +508,7 @@ describe('ClientIntelligenceService', () => {
         orderCount: 20,
       });
 
-      repository.updateIntelligenceScores.mockResolvedValue(client);
+      repository.writeIntelligenceScores.mockResolvedValue(client);
 
       await service.refreshIntelligenceScores(BUSINESS_ID, CLIENT_ID);
 
@@ -619,7 +621,7 @@ describe('ClientIntelligenceService', () => {
 
     it('should classify a high-value active client as VIP', async () => {
       repository.getClientById.mockResolvedValue(makeClient());
-      repository.getClientRFMData.mockResolvedValue({
+      repository.getRFMDataFromClient.mockResolvedValue({
         lastInteractionAt: new Date(),
         lastOrderAt: new Date(),
         orderCount: 15,
@@ -635,7 +637,7 @@ describe('ClientIntelligenceService', () => {
 
     it('should classify a recently acquired client with no orders as NEW', async () => {
       repository.getClientById.mockResolvedValue(makeClient());
-      repository.getClientRFMData.mockResolvedValue({
+      repository.getRFMDataFromClient.mockResolvedValue({
         lastInteractionAt: new Date(),
         lastOrderAt: null,
         orderCount: 0,
@@ -650,7 +652,7 @@ describe('ClientIntelligenceService', () => {
 
     it('should classify an existing customer with high churn as AT_RISK', async () => {
       repository.getClientById.mockResolvedValue(makeClient());
-      repository.getClientRFMData.mockResolvedValue({
+      repository.getRFMDataFromClient.mockResolvedValue({
         lastInteractionAt: daysAgo(70),
         lastOrderAt: daysAgo(70),
         orderCount: 1,
@@ -668,7 +670,7 @@ describe('ClientIntelligenceService', () => {
 
     it('should classify a long-inactive client as LOST', async () => {
       repository.getClientById.mockResolvedValue(makeClient());
-      repository.getClientRFMData.mockResolvedValue({
+      repository.getRFMDataFromClient.mockResolvedValue({
         lastInteractionAt: daysAgo(200),
         lastOrderAt: daysAgo(200),
         orderCount: 3,

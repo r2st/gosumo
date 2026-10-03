@@ -107,10 +107,12 @@ describe('ClientIntelligenceService — branches', () => {
       listClients: jest.fn(),
       mergeClients: jest.fn(),
       updateIntelligenceScores: jest.fn(),
+      writeIntelligenceScores: jest.fn(),
       createChannelContact: jest.fn(),
       findChannelContact: jest.fn(),
       getClientOrderAggregates: jest.fn(),
       getClientRFMData: jest.fn(),
+      getRFMDataFromClient: jest.fn(),
       getClientTimelineData: jest.fn(),
     };
 
@@ -569,7 +571,7 @@ describe('ClientIntelligenceService — branches', () => {
         totalRevenue: 0,
         orderCount: 0,
       });
-      repository.updateIntelligenceScores.mockResolvedValue(makeClient());
+      repository.writeIntelligenceScores.mockResolvedValue(makeClient());
     });
 
     it('returns without writing when the client is gone', async () => {
@@ -577,20 +579,20 @@ describe('ClientIntelligenceService — branches', () => {
 
       await service.refreshIntelligenceScores(BUSINESS_ID, CLIENT_ID);
 
-      expect(repository.updateIntelligenceScores).not.toHaveBeenCalled();
+      expect(repository.writeIntelligenceScores).not.toHaveBeenCalled();
       expect(eventEmitter.emit).not.toHaveBeenCalled();
     });
 
     it('does not emit a churn event when there is no previous level', async () => {
       // churn_risk null → first ever scoring, so no boundary was crossed.
       repository.getClientById.mockResolvedValue(makeClient({ churn_risk: null }));
-      repository.getClientRFMData.mockResolvedValue(
+      repository.getRFMDataFromClient.mockResolvedValue(
         rfm({ lastInteractionAt: daysAgo(120) }),
       );
 
       await service.refreshIntelligenceScores(BUSINESS_ID, CLIENT_ID);
 
-      expect(repository.updateIntelligenceScores).toHaveBeenCalledWith(
+      expect(repository.writeIntelligenceScores).toHaveBeenCalledWith(
         BUSINESS_ID,
         CLIENT_ID,
         expect.objectContaining({ churnRisk: 0.83 }),
@@ -602,7 +604,7 @@ describe('ClientIntelligenceService — branches', () => {
 
     it('stores churn and engagement on a 0–1 scale and LTV in rupees', async () => {
       repository.getClientById.mockResolvedValue(makeClient({ churn_risk: null }));
-      repository.getClientRFMData.mockResolvedValue(
+      repository.getRFMDataFromClient.mockResolvedValue(
         rfm({ lastInteractionAt: daysAgo(3), orderCount: 12 }),
       );
       repository.getClientOrderAggregates.mockResolvedValue({
@@ -612,7 +614,7 @@ describe('ClientIntelligenceService — branches', () => {
 
       await service.refreshIntelligenceScores(BUSINESS_ID, CLIENT_ID);
 
-      expect(repository.updateIntelligenceScores).toHaveBeenCalledWith(
+      expect(repository.writeIntelligenceScores).toHaveBeenCalledWith(
         BUSINESS_ID,
         CLIENT_ID,
         { churnRisk: 0.14, ltvScore: 4200, engagementScore: 0.9 },
@@ -630,13 +632,13 @@ describe('ClientIntelligenceService — branches', () => {
       'scores engagement recency %s as %f',
       async (_label, days, orderCount, expected) => {
         repository.getClientById.mockResolvedValue(makeClient());
-        repository.getClientRFMData.mockResolvedValue(
+        repository.getRFMDataFromClient.mockResolvedValue(
           rfm({ lastInteractionAt: daysAgo(days), orderCount }),
         );
 
         await service.refreshIntelligenceScores(BUSINESS_ID, CLIENT_ID);
 
-        expect(repository.updateIntelligenceScores).toHaveBeenCalledWith(
+        expect(repository.writeIntelligenceScores).toHaveBeenCalledWith(
           BUSINESS_ID,
           CLIENT_ID,
           expect.objectContaining({ engagementScore: expected }),
@@ -652,13 +654,13 @@ describe('ClientIntelligenceService — branches', () => {
       ['no orders', 0, 0.45],
     ])('scores engagement frequency with %s as %f', async (_label, orderCount, expected) => {
       repository.getClientById.mockResolvedValue(makeClient());
-      repository.getClientRFMData.mockResolvedValue(
+      repository.getRFMDataFromClient.mockResolvedValue(
         rfm({ lastInteractionAt: daysAgo(3), orderCount }),
       );
 
       await service.refreshIntelligenceScores(BUSINESS_ID, CLIENT_ID);
 
-      expect(repository.updateIntelligenceScores).toHaveBeenCalledWith(
+      expect(repository.writeIntelligenceScores).toHaveBeenCalledWith(
         BUSINESS_ID,
         CLIENT_ID,
         expect.objectContaining({ engagementScore: expected }),
@@ -667,13 +669,13 @@ describe('ClientIntelligenceService — branches', () => {
 
     it('uses first-seen for engagement when the client never interacted', async () => {
       repository.getClientById.mockResolvedValue(makeClient());
-      repository.getClientRFMData.mockResolvedValue(
+      repository.getRFMDataFromClient.mockResolvedValue(
         rfm({ lastInteractionAt: null, orderCount: 12, firstSeenAt: daysAgo(120) }),
       );
 
       await service.refreshIntelligenceScores(BUSINESS_ID, CLIENT_ID);
 
-      expect(repository.updateIntelligenceScores).toHaveBeenCalledWith(
+      expect(repository.writeIntelligenceScores).toHaveBeenCalledWith(
         BUSINESS_ID,
         CLIENT_ID,
         expect.objectContaining({ engagementScore: 0.5 }),
@@ -825,7 +827,7 @@ describe('ClientIntelligenceService — branches', () => {
   describe('getClientSegment', () => {
     it('classifies a 60–180 day gap with no orders as DORMANT', async () => {
       repository.getClientById.mockResolvedValue(makeClient());
-      repository.getClientRFMData.mockResolvedValue(
+      repository.getRFMDataFromClient.mockResolvedValue(
         rfm({ lastInteractionAt: daysAgo(90), orderCount: 0 }),
       );
 
@@ -837,7 +839,7 @@ describe('ClientIntelligenceService — branches', () => {
 
     it('classifies an established low-churn customer as ACTIVE', async () => {
       repository.getClientById.mockResolvedValue(makeClient());
-      repository.getClientRFMData.mockResolvedValue(
+      repository.getRFMDataFromClient.mockResolvedValue(
         rfm({
           lastInteractionAt: daysAgo(2),
           orderCount: 4,
@@ -854,7 +856,7 @@ describe('ClientIntelligenceService — branches', () => {
 
     it('treats high spend alone as VIP even without ten orders', async () => {
       repository.getClientById.mockResolvedValue(makeClient());
-      repository.getClientRFMData.mockResolvedValue(
+      repository.getRFMDataFromClient.mockResolvedValue(
         rfm({ lastInteractionAt: daysAgo(2), orderCount: 2, totalSpent: 90000 }),
       );
 
@@ -866,7 +868,7 @@ describe('ClientIntelligenceService — branches', () => {
     it('does not call a dormant high-value client VIP', async () => {
       // ≥₹50k spent but 90 days silent — VIP requires activity within 60 days.
       repository.getClientById.mockResolvedValue(makeClient());
-      repository.getClientRFMData.mockResolvedValue(
+      repository.getRFMDataFromClient.mockResolvedValue(
         rfm({ lastInteractionAt: daysAgo(90), orderCount: 12, totalSpent: 90000 }),
       );
 
@@ -987,12 +989,12 @@ describe('ClientIntelligenceService — branches', () => {
 
     it('refreshes scores on order.delivered', async () => {
       repository.getClientById.mockResolvedValue(makeClient());
-      repository.getClientRFMData.mockResolvedValue(rfm());
+      repository.getRFMDataFromClient.mockResolvedValue(rfm());
       repository.getClientOrderAggregates.mockResolvedValue({
         totalRevenue: 100,
         orderCount: 1,
       });
-      repository.updateIntelligenceScores.mockResolvedValue(makeClient());
+      repository.writeIntelligenceScores.mockResolvedValue(makeClient());
 
       await service.handleOrderDelivered({
         businessId: BUSINESS_ID,
@@ -1000,7 +1002,7 @@ describe('ClientIntelligenceService — branches', () => {
         orderId: 'order-1',
       });
 
-      expect(repository.updateIntelligenceScores).toHaveBeenCalled();
+      expect(repository.writeIntelligenceScores).toHaveBeenCalled();
     });
 
     it('swallows a failure on order.delivered', async () => {
@@ -1017,19 +1019,19 @@ describe('ClientIntelligenceService — branches', () => {
 
     it('refreshes scores on payment.success', async () => {
       repository.getClientById.mockResolvedValue(makeClient());
-      repository.getClientRFMData.mockResolvedValue(rfm());
+      repository.getRFMDataFromClient.mockResolvedValue(rfm());
       repository.getClientOrderAggregates.mockResolvedValue({
         totalRevenue: 100,
         orderCount: 1,
       });
-      repository.updateIntelligenceScores.mockResolvedValue(makeClient());
+      repository.writeIntelligenceScores.mockResolvedValue(makeClient());
 
       await service.handlePaymentSuccess({
         businessId: BUSINESS_ID,
         clientId: CLIENT_ID,
       } as PaymentSuccessEvent);
 
-      expect(repository.updateIntelligenceScores).toHaveBeenCalled();
+      expect(repository.writeIntelligenceScores).toHaveBeenCalled();
     });
 
     it('swallows a failure on payment.success', async () => {
@@ -1270,7 +1272,7 @@ describe('ClientIntelligenceService — branches', () => {
   describe('recency falls back through the activity chain', () => {
     beforeEach(() => {
       repository.getClientById.mockResolvedValue(makeClient());
-      repository.updateIntelligenceScores.mockResolvedValue(makeClient());
+      repository.writeIntelligenceScores.mockResolvedValue(makeClient());
       repository.getClientOrderAggregates.mockResolvedValue({
         totalRevenue: 0,
         orderCount: 0,
@@ -1279,14 +1281,14 @@ describe('ClientIntelligenceService — branches', () => {
 
     /** The churn score the refresh actually persisted, as a 0–1 fraction. */
     function churnRiskWritten(): number {
-      const patch = repository.updateIntelligenceScores.mock.calls[0]![2] as {
+      const patch = repository.writeIntelligenceScores.mock.calls[0]![2] as {
         churnRisk: number;
       };
       return patch.churnRisk;
     }
 
     it('dates a never-messaged client from its last order', async () => {
-      repository.getClientRFMData.mockResolvedValue(
+      repository.getRFMDataFromClient.mockResolvedValue(
         rfm({ lastInteractionAt: null, lastOrderAt: daysAgo(400) }),
       );
 
@@ -1295,7 +1297,7 @@ describe('ClientIntelligenceService — branches', () => {
     });
 
     it('dates a client with no activity at all from first seen', async () => {
-      repository.getClientRFMData.mockResolvedValue(
+      repository.getRFMDataFromClient.mockResolvedValue(
         rfm({
           lastInteractionAt: null,
           lastOrderAt: null,

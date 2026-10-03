@@ -615,23 +615,20 @@ export class ClientIntelligenceService {
       ? getChurnRiskLevel(Math.round(previousChurnRisk * 100))
       : null;
 
-    // Calculate new churn score
-    const rfmData = await this.repository.getClientRFMData(businessId, clientId);
+    // Reuse the already-loaded client row for RFM instead of re-reading it
+    const [rfmData, aggregates] = await Promise.all([
+      this.repository.getRFMDataFromClient(businessId, clientId, client),
+      this.repository.getClientOrderAggregates(businessId, clientId),
+    ]);
+
     const newChurnScore = this.calculateChurnScore(rfmData);
     const newLevel = getChurnRiskLevel(newChurnScore);
-
-    // Calculate LTV
-    const aggregates = await this.repository.getClientOrderAggregates(
-      businessId,
-      clientId,
-    );
     const ltvScore = aggregates.totalRevenue;
-
-    // Calculate engagement score (based on recent activity)
     const engagementScore = this.calculateEngagementScore(rfmData);
 
-    // Store as 0.0-1.0 scale for churn_risk and engagement_score
-    await this.repository.updateIntelligenceScores(businessId, clientId, {
+    // Store as 0.0-1.0 scale for churn_risk and engagement_score;
+    // skip existence check — we already verified the client above
+    await this.repository.writeIntelligenceScores(businessId, clientId, {
       churnRisk: newChurnScore / 100,
       ltvScore,
       engagementScore: engagementScore / 100,
@@ -786,7 +783,8 @@ export class ClientIntelligenceService {
       throw new NotFoundException(`Client ${clientId} not found`);
     }
 
-    const rfmData = await this.repository.getClientRFMData(businessId, clientId);
+    // Reuse the already-loaded client row instead of re-reading it
+    const rfmData = await this.repository.getRFMDataFromClient(businessId, clientId, client);
     const churnScore = this.calculateChurnScore(rfmData);
     const churnRiskLevel = getChurnRiskLevel(churnScore);
 
