@@ -459,7 +459,7 @@ export class BookingService {
     await this.scheduleReminders(businessId, updated.id);
     await this.pushBookingToCalendar(businessId, updated);
 
-    this.logger.log(`Booking ${bookingId} confirmed`);
+    this.logger.log(`Booking ${bookingId} confirmed (business ${businessId})`);
     return toBookingDto(updated);
   }
 
@@ -560,7 +560,7 @@ export class BookingService {
     };
     this.eventEmitter.emit('booking.cancelled', event);
 
-    this.logger.log(`Booking ${booking.id} cancelled by ${cancelledBy}: ${reason}`);
+    this.logger.log(`Booking ${booking.id} cancelled by ${cancelledBy}: ${reason} (business ${businessId})`);
     return updated;
   }
 
@@ -677,7 +677,7 @@ export class BookingService {
       staffMemberId: updated.staff_id ?? undefined,
     };
     this.eventEmitter.emit('booking.completed', event);
-    this.logger.log(`Booking ${bookingId} marked COMPLETED`);
+    this.logger.log(`Booking ${bookingId} marked COMPLETED (business ${businessId})`);
     return toBookingDto(updated);
   }
 
@@ -698,7 +698,7 @@ export class BookingService {
       this.logger.debug(`Booking ${bookingId} changed status concurrently — no-show skipped`);
       return toBookingDto(booking);
     }
-    this.logger.log(`Booking ${bookingId} marked NO_SHOW`);
+    this.logger.log(`Booking ${bookingId} marked NO_SHOW (business ${businessId})`);
     return toBookingDto(updated);
   }
 
@@ -905,7 +905,7 @@ export class BookingService {
 
   async unblockSlot(businessId: string, blockId: string): Promise<void> {
     await this.repository.deleteBlock(businessId, blockId);
-    this.logger.log(`Unblocked slot ${blockId}`);
+    this.logger.log(`Unblocked slot ${blockId} (business ${businessId})`);
   }
 
   // ════════════════════════════════════════════

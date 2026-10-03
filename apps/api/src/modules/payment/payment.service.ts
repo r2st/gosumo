@@ -360,7 +360,7 @@ export class PaymentService implements OnModuleInit {
       },
     );
 
-    this.logger.log(`Payment link ${paymentId} cancelled`);
+    this.logger.log(`Payment link ${paymentId} cancelled (business ${businessId})`);
 
     return this.toPaymentLinkDto(updated);
   }

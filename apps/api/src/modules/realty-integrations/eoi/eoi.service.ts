@@ -111,7 +111,7 @@ export class EoiService {
       amountPaise: dto.amountPaise,
     });
     this.logger.log(
-      `EOI ${eoi.id} requested for lead ${dto.leadId} (₹${(dto.amountPaise / 100).toFixed(2)}) — awaiting broker approval`,
+      `EOI ${eoi.id} requested for lead ${dto.leadId} (₹${(dto.amountPaise / 100).toFixed(2)}) — awaiting broker approval (business ${businessId})`,
     );
     return this.map(eoi);
   }
@@ -180,7 +180,7 @@ export class EoiService {
       paymentLinkUrl: link.shortUrl,
     });
     this.emitStatusChange(businessId, updated, eoi.status);
-    this.logger.log(`EOI ${eoiId} approved by ${approvedBy}; link ${link.id} sent`);
+    this.logger.log(`EOI ${eoiId} approved by ${approvedBy}; link ${link.id} sent (business ${businessId})`);
     return this.map(updated);
   }
 
@@ -242,7 +242,7 @@ export class EoiService {
       rejectReason: reason ?? `Cancelled by ${cancelledBy}`,
     });
     this.emitStatusChange(businessId, updated, eoi.status);
-    this.logger.log(`EOI ${eoiId} cancelled by ${cancelledBy}`);
+    this.logger.log(`EOI ${eoiId} cancelled by ${cancelledBy} (business ${businessId})`);
     return this.map(updated);
   }
 
@@ -314,7 +314,7 @@ export class EoiService {
         status: RealtyEoiStatus.EXPIRED,
       });
       this.emitStatusChange(businessId, updated, eoi.status);
-      this.logger.log(`EOI ${eoiId} marked EXPIRED (Razorpay link expired)`);
+      this.logger.log(`EOI ${eoiId} marked EXPIRED (Razorpay link expired, business ${businessId})`);
       return this.map(updated);
     }
     return this.map(eoi);
@@ -350,7 +350,7 @@ export class EoiService {
 
     if (!claimed) {
       this.logger.log(
-        `EOI ${eoi.id} was already settled — skipping duplicate stage advance and event`,
+        `EOI ${eoi.id} was already settled — skipping duplicate stage advance and event (business ${businessId})`,
       );
       return updated;
     }
@@ -361,7 +361,7 @@ export class EoiService {
       await this.leadsService.advanceStage(businessId, eoi.lead_id, PAID_LEAD_STAGE);
     } catch (err) {
       this.logger.error(
-        `EOI ${eoi.id} paid but lead ${eoi.lead_id} stage transition failed: ${
+        `EOI ${eoi.id} paid but lead ${eoi.lead_id} stage transition failed (business ${businessId}): ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
@@ -376,7 +376,7 @@ export class EoiService {
       gatewayPaymentId,
     });
     this.emitStatusChange(businessId, updated, eoi.status);
-    this.logger.log(`EOI ${eoi.id} PAID; lead ${eoi.lead_id} → ${PAID_LEAD_STAGE}`);
+    this.logger.log(`EOI ${eoi.id} PAID; lead ${eoi.lead_id} → ${PAID_LEAD_STAGE} (business ${businessId})`);
     return updated;
   }
 
