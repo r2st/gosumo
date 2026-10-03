@@ -325,7 +325,7 @@ describe('InvoiceService — branch coverage', () => {
   // ─────────────────────────────────────────────
 
   describe('handlePaymentSuccess', () => {
-    const event = { paymentId: PAYMENT_ID } as PaymentSuccessEvent;
+    const event = { businessId: BUSINESS_ID, paymentId: PAYMENT_ID } as PaymentSuccessEvent;
 
     it('ignores a payment with no linked invoice', async () => {
       repository.findInvoiceByPaymentId.mockResolvedValue(null);

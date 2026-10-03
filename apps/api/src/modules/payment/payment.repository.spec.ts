@@ -1313,9 +1313,9 @@ describe('PaymentRepository', () => {
     it('excludes soft-deleted invoices when fetching by payment id', async () => {
       prisma.invoices.findFirst.mockResolvedValue(null);
 
-      await expect(repository.findInvoiceByPaymentId(PAYMENT_ID)).resolves.toBeNull();
+      await expect(repository.findInvoiceByPaymentId(BUSINESS_ID, PAYMENT_ID)).resolves.toBeNull();
       expect(prisma.invoices.findFirst).toHaveBeenCalledWith({
-        where: { payment_id: PAYMENT_ID, deleted_at: null },
+        where: { business_id: BUSINESS_ID, payment_id: PAYMENT_ID, deleted_at: null },
       });
     });
   });

@@ -1005,9 +1005,10 @@ export class PaymentRepository {
   /**
    * Find the invoice attached to a payment (used to mark it PAID on capture).
    */
-  async findInvoiceByPaymentId(paymentId: string): Promise<invoices | null> {
+  async findInvoiceByPaymentId(businessId: string, paymentId: string): Promise<invoices | null> {
     return this.prisma.invoices.findFirst({
       where: {
+        business_id: businessId,
         payment_id: paymentId,
         deleted_at: null,
       },

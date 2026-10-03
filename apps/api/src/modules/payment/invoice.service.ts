@@ -299,7 +299,7 @@ export class InvoiceService {
   @OnEvent('payment.success')
   async handlePaymentSuccess(event: PaymentSuccessEvent): Promise<void> {
     try {
-      const invoice = await this.repository.findInvoiceByPaymentId(event.paymentId);
+      const invoice = await this.repository.findInvoiceByPaymentId(event.businessId, event.paymentId);
       if (!invoice || invoice.status === InvoiceStatus.PAID) {
         return;
       }
