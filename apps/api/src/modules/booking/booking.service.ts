@@ -613,7 +613,7 @@ export class BookingService {
     );
     if (!updated) {
       throw new ConflictException(
-        `Booking ${bookingId} changed status concurrently — reschedule aborted`,
+        'Booking changed status concurrently — reschedule aborted',
       );
     }
 
