@@ -11,6 +11,7 @@ import {
   generateId,
   generateCorrelationId,
   CatalogItemType,
+  ErrorCode,
 } from '@gosumo/shared';
 import type {
   CatalogItemCreatedEvent,
@@ -228,7 +229,10 @@ export class CatalogService {
         sku = generateSKU();
         attempts++;
         if (attempts > 10) {
-          throw new ConflictException('Failed to generate a unique SKU');
+          throw new ConflictException({
+            message: 'Could not generate a unique SKU. Please provide a custom SKU for this item.',
+            error: ErrorCode.CONFLICT,
+          });
         }
       }
     }

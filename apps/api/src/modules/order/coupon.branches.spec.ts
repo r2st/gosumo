@@ -205,7 +205,7 @@ describe('CouponService (CRUD branches)', () => {
 
       await expect(
         service.updateCoupon(BUSINESS_ID, COUPON_ID, { value: 15 }),
-      ).rejects.toThrow(new NotFoundException(`Coupon not found: ${COUPON_ID}`));
+      ).rejects.toThrow(new NotFoundException('Coupon not found'));
       expect(repository.update).not.toHaveBeenCalled();
     });
 
@@ -348,7 +348,7 @@ describe('CouponService (CRUD branches)', () => {
       repository.findById.mockResolvedValue(null);
 
       await expect(service.deactivateCoupon(BUSINESS_ID, COUPON_ID)).rejects.toThrow(
-        new NotFoundException(`Coupon not found: ${COUPON_ID}`),
+        new NotFoundException('Coupon not found'),
       );
       expect(repository.softDelete).not.toHaveBeenCalled();
     });

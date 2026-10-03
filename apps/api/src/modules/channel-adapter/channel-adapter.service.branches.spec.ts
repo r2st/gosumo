@@ -112,32 +112,34 @@ describe('ChannelAdapterService — defensive branches', () => {
   describe('when the adapter cannot parse the payload', () => {
     const req = { headers: {}, body: {}, rawBody: Buffer.from('{}') } as RawRequest;
 
-    it('answers 400 with the parser reason, and does not emit message.received', async () => {
+    it('answers 400 with a generic parse error, and does not emit message.received', async () => {
       adapter.parseInbound.mockImplementation(() => {
         throw new Error('unsupported message type: sticker');
       });
 
       await expect(
         service.handleInboundWebhook(ChannelType.SMS, req, BUSINESS_ID),
-      ).rejects.toThrow(
-        new BadRequestException(
-          'Could not parse inbound message: unsupported message type: sticker',
-        ),
-      );
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.handleInboundWebhook(ChannelType.SMS, req, BUSINESS_ID),
+      ).rejects.toThrow('Could not parse inbound message');
       expect(emit).not.toHaveBeenCalled();
     });
 
-    it('stringifies a non-Error throw instead of reporting "undefined"', async () => {
-      // A parser written with `throw 'reason'` (or a rejected string from a
-      // third-party lib) has no `.message`; the reason has to survive anyway,
-      // because it is the only thing in the 400 the channel sees.
+    it('does not leak internal parse details in the error response', async () => {
       adapter.parseInbound.mockImplementation(() => {
         throw 'malformed envelope';
       });
 
-      await expect(
-        service.handleInboundWebhook(ChannelType.SMS, req, BUSINESS_ID),
-      ).rejects.toThrow('Could not parse inbound message: malformed envelope');
+      try {
+        await service.handleInboundWebhook(ChannelType.SMS, req, BUSINESS_ID);
+        throw new Error('expected to throw');
+      } catch (err) {
+        const response = (err as BadRequestException).getResponse() as Record<string, unknown>;
+        expect(response['message']).toBe('Could not parse inbound message');
+        expect(response['error']).toBe('PAYLOAD_PARSE_ERROR');
+        expect(JSON.stringify(response)).not.toContain('malformed envelope');
+      }
     });
   });
 

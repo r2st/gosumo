@@ -205,7 +205,7 @@ describe('RealtyCadenceService (reads, deletes, mappers)', () => {
       repository.findTemplateById.mockResolvedValue(null);
 
       await expect(service.getTemplate(BUSINESS_ID, TEMPLATE_ID)).rejects.toThrow(
-        new NotFoundException(`Template ${TEMPLATE_ID} not found`),
+        new NotFoundException('Template not found'),
       );
     });
 
@@ -427,7 +427,7 @@ describe('RealtyCadenceService (reads, deletes, mappers)', () => {
       repository.findCadenceById.mockResolvedValue(null);
 
       await expect(service.getCadence(BUSINESS_ID, CADENCE_ID)).rejects.toThrow(
-        new NotFoundException(`Cadence ${CADENCE_ID} not found`),
+        new NotFoundException('Cadence not found'),
       );
     });
   });

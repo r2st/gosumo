@@ -156,8 +156,7 @@ describe('EmailAdapter — branch coverage', () => {
       const result = await adapter.sendMessage(outbound());
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('SendGrid 401');
-      expect(result.error).toContain('Unauthorized');
+      expect(result.error).toBe('Email delivery failed (HTTP 401)');
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
@@ -172,7 +171,7 @@ describe('EmailAdapter — branch coverage', () => {
       const result = await adapter.sendMessage(outbound());
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('SendGrid 422: Unknown client error');
+      expect(result.error).toBe('Email delivery failed (HTTP 422)');
     });
 
     it('retries a 5xx and gives up after maxAttempts', async () => {

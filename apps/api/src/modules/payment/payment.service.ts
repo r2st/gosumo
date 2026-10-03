@@ -19,6 +19,7 @@ import {
   generateId,
   generateCorrelationId,
   currencyToPaise,
+  ErrorCode,
 } from '@gosumo/shared';
 import type {
   PaymentCreatedEvent,
@@ -928,7 +929,10 @@ export class PaymentService implements OnModuleInit {
           );
         }
 
-        throw new BadRequestException('Failed to process refund with payment gateway');
+        throw new BadRequestException({
+          message: 'The payment gateway could not process this refund. Please try again or contact support if the issue persists.',
+          error: ErrorCode.EXTERNAL_SERVICE_ERROR,
+        });
       }
     }
 

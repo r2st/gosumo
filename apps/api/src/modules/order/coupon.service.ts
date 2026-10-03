@@ -112,7 +112,7 @@ export class CouponService {
   async getCoupon(businessId: string, couponId: string): Promise<CouponDto> {
     const coupon = await this.repository.findById(businessId, couponId);
     if (!coupon) {
-      throw new NotFoundException(`Coupon not found: ${couponId}`);
+      throw new NotFoundException('Coupon not found');
     }
     return toCouponDto(coupon);
   }
@@ -124,7 +124,7 @@ export class CouponService {
   ): Promise<CouponDto> {
     const coupon = await this.repository.findById(businessId, couponId);
     if (!coupon) {
-      throw new NotFoundException(`Coupon not found: ${couponId}`);
+      throw new NotFoundException('Coupon not found');
     }
 
     const effectiveType = dto.type ?? (coupon.type as unknown as DiscountType);
@@ -155,7 +155,7 @@ export class CouponService {
   async deactivateCoupon(businessId: string, couponId: string): Promise<CouponDto> {
     const coupon = await this.repository.findById(businessId, couponId);
     if (!coupon) {
-      throw new NotFoundException(`Coupon not found: ${couponId}`);
+      throw new NotFoundException('Coupon not found');
     }
     const deleted = await this.repository.softDelete(businessId, couponId);
     this.logger.log(`Coupon ${coupon.code} deactivated for business ${businessId}`);

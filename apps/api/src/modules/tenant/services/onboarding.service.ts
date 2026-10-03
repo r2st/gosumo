@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
+import { ErrorCode } from '@gosumo/shared';
 import { TenantRepository } from '../tenant.repository';
 import {
   OnboardingStep,
@@ -66,9 +67,10 @@ export class OnboardingService {
     // Enforce sequential completion — the step must be the next expected one.
     const nextExpected = ONBOARDING_STEP_ORDER.find((s) => !completed.includes(s));
     if (step !== nextExpected) {
-      throw new BadRequestException(
-        `INVALID_ONBOARDING_STEP: expected "${nextExpected}" next but got "${step}"`,
-      );
+      throw new BadRequestException({
+        message: `Complete the "${nextExpected}" step before "${step}"`,
+        error: ErrorCode.VALIDATION_FAILED,
+      });
     }
 
     const updatedSteps = [...completed, step];
@@ -152,7 +154,7 @@ export class OnboardingService {
   private async getBusinessOrThrow(businessId: string) {
     const business = await this.repository.findBusinessById(businessId);
     if (!business) {
-      throw new NotFoundException(`Business not found: ${businessId}`);
+      throw new NotFoundException('Business not found');
     }
     return business;
   }

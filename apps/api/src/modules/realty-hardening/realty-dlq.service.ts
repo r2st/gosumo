@@ -200,7 +200,7 @@ export class RealtyDlqService {
 
   async get(businessId: string, id: string): Promise<RedactedDeadLetter> {
     const entry = await this.repository.findById(businessId, id);
-    if (!entry) throw new NotFoundException(`Dead letter ${id} not found`);
+    if (!entry) throw new NotFoundException('Dead letter entry not found');
     return redact(entry);
   }
 
@@ -215,7 +215,7 @@ export class RealtyDlqService {
       return entry; // idempotent — already recovered
     }
     if (entry.status !== DeadLetterStatus.PENDING) {
-      throw new NotFoundException(`Dead letter ${id} is ${entry.status}, not replayable`);
+      throw new BadRequestException(`Dead letter entry is ${entry.status} and cannot be replayed`);
     }
 
     const handler = this.replayers.get(entry.operation);

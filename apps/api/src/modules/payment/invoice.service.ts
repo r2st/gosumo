@@ -130,7 +130,7 @@ export class InvoiceService {
   async getInvoice(businessId: string, invoiceId: string): Promise<InvoiceDto> {
     const invoice = await this.repository.getInvoice(businessId, invoiceId);
     if (!invoice) {
-      throw new NotFoundException(`Invoice not found: ${invoiceId}`);
+      throw new NotFoundException('Invoice not found');
     }
     return this.toInvoiceDto(invoice);
   }
@@ -170,12 +170,12 @@ export class InvoiceService {
   async issueInvoice(businessId: string, invoiceId: string): Promise<InvoiceDto> {
     const invoice = await this.repository.getInvoice(businessId, invoiceId);
     if (!invoice) {
-      throw new NotFoundException(`Invoice not found: ${invoiceId}`);
+      throw new NotFoundException('Invoice not found');
     }
 
     if (invoice.status !== InvoiceStatus.DRAFT) {
       throw new BadRequestException(
-        `Only DRAFT invoices can be issued. Invoice ${invoiceId} is ${invoice.status}.`,
+        `Only DRAFT invoices can be issued; this invoice is ${invoice.status}`,
       );
     }
 
@@ -215,7 +215,7 @@ export class InvoiceService {
   ): Promise<InvoiceDto> {
     const invoice = await this.repository.getInvoice(businessId, invoiceId);
     if (!invoice) {
-      throw new NotFoundException(`Invoice not found: ${invoiceId}`);
+      throw new NotFoundException('Invoice not found');
     }
 
     if (invoice.status === InvoiceStatus.CANCELLED || invoice.status === InvoiceStatus.VOID) {
@@ -256,7 +256,7 @@ export class InvoiceService {
   async renderInvoiceText(businessId: string, invoiceId: string): Promise<string> {
     const invoice = await this.repository.getInvoice(businessId, invoiceId);
     if (!invoice) {
-      throw new NotFoundException(`Invoice not found: ${invoiceId}`);
+      throw new NotFoundException('Invoice not found');
     }
 
     const lineItems = (invoice.line_items as unknown as InvoiceLineItemData[]) ?? [];

@@ -92,7 +92,7 @@ export class ContactService {
   async getContact(businessId: string, id: string): Promise<ContactResponseDto> {
     const contact = await this.repository.findById(businessId, id);
     if (!contact) {
-      throw new NotFoundException(`Contact ${id} not found`);
+      throw new NotFoundException('Contact not found');
     }
     return this.toContactDto(contact);
   }
@@ -154,7 +154,7 @@ export class ContactService {
   private async getContactEntity(businessId: string, id: string): Promise<clients> {
     const contact = await this.repository.findById(businessId, id);
     if (!contact) {
-      throw new NotFoundException(`Contact ${id} not found`);
+      throw new NotFoundException('Contact not found');
     }
     return contact;
   }
@@ -340,7 +340,7 @@ export class ContactService {
   private async getSegmentEntity(businessId: string, id: string): Promise<segments> {
     const segment = await this.repository.findSegmentById(businessId, id);
     if (!segment) {
-      throw new NotFoundException(`Segment ${id} not found`);
+      throw new NotFoundException('Segment not found');
     }
     return segment;
   }

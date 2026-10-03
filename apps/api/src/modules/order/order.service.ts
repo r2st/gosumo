@@ -14,6 +14,7 @@ import {
   generateId,
   generateCorrelationId,
   currencyToPaise,
+  ErrorCode,
 } from '@gosumo/shared';
 import type {
   OrderCreatedEvent,
@@ -192,9 +193,10 @@ export class OrderService {
       const catalogItem = catalogItemsById.get(item.itemId);
 
       if (!catalogItem) {
-        throw new BadRequestException(
-          `Catalog item not found or inactive: ${item.itemId}`,
-        );
+        throw new BadRequestException({
+          message: 'One or more items in this order are no longer available. Please refresh your catalog and try again.',
+          error: ErrorCode.RESOURCE_NOT_FOUND,
+        });
       }
 
       // Determine the effective price (variant overrides item price)
@@ -205,9 +207,10 @@ export class OrderService {
       if (item.variantId) {
         const variant = catalogItem.variants.find((v) => v.id === item.variantId);
         if (!variant) {
-          throw new BadRequestException(
-            `Variant not found or inactive: ${item.variantId} for item ${item.itemId}`,
-          );
+          throw new BadRequestException({
+            message: 'The selected product variant is no longer available. Please choose a different option.',
+            error: ErrorCode.RESOURCE_NOT_FOUND,
+          });
         }
         unitPriceRupees = variant.price
           ? dec(variant.price)
@@ -257,9 +260,10 @@ export class OrderService {
           const variant = catalogItem.variants.find((v) => v.id === item.variantId);
           if (variant && variant.stock_quantity !== null) {
             if (variant.stock_quantity < item.quantity && !catalogItem.allow_backorder) {
-              throw new BadRequestException(
-                `Insufficient stock for variant ${item.variantId}: available ${variant.stock_quantity}, requested ${item.quantity}`,
-              );
+              throw new BadRequestException({
+                message: `Insufficient stock for "${catalogItem.name}". Only ${variant.stock_quantity} available.`,
+                error: ErrorCode.CONFLICT,
+              });
             }
             stockDecrements.push(
               this.prisma.catalog_variants.update({
@@ -270,9 +274,10 @@ export class OrderService {
           }
         } else if (catalogItem.stock_quantity !== null) {
           if (catalogItem.stock_quantity < item.quantity && !catalogItem.allow_backorder) {
-            throw new BadRequestException(
-              `Insufficient stock for item ${item.itemId}: available ${catalogItem.stock_quantity}, requested ${item.quantity}`,
-            );
+            throw new BadRequestException({
+              message: `Insufficient stock for "${catalogItem.name}". Only ${catalogItem.stock_quantity} available.`,
+              error: ErrorCode.CONFLICT,
+            });
           }
           stockDecrements.push(
             this.prisma.catalog_items.update({
@@ -413,7 +418,7 @@ export class OrderService {
     const order = await this.repository.findOrderById(businessId, orderId);
 
     if (!order) {
-      throw new NotFoundException(`Order not found: ${orderId}`);
+      throw new NotFoundException('Order not found');
     }
 
     return toOrderDto(order);
@@ -460,7 +465,7 @@ export class OrderService {
     const order = await this.repository.findOrderById(businessId, orderId);
 
     if (!order) {
-      throw new NotFoundException(`Order not found: ${orderId}`);
+      throw new NotFoundException('Order not found');
     }
 
     const currentStatus = order.status as OrderStatus;
@@ -496,7 +501,7 @@ export class OrderService {
     const order = await this.repository.findOrderById(businessId, orderId);
 
     if (!order) {
-      throw new NotFoundException(`Order not found: ${orderId}`);
+      throw new NotFoundException('Order not found');
     }
 
     const currentStatus = order.status as OrderStatus;
@@ -560,7 +565,7 @@ export class OrderService {
     const order = await this.repository.findOrderById(businessId, orderId);
 
     if (!order) {
-      throw new NotFoundException(`Order not found: ${orderId}`);
+      throw new NotFoundException('Order not found');
     }
 
     const currentStatus = order.status as OrderStatus;
@@ -607,7 +612,7 @@ export class OrderService {
     const order = await this.repository.findOrderById(businessId, orderId);
 
     if (!order) {
-      throw new NotFoundException(`Order not found: ${orderId}`);
+      throw new NotFoundException('Order not found');
     }
 
     const currentStatus = order.status as OrderStatus;
@@ -677,7 +682,7 @@ export class OrderService {
     const order = await this.repository.findOrderById(businessId, orderId);
 
     if (!order) {
-      throw new NotFoundException(`Order not found: ${orderId}`);
+      throw new NotFoundException('Order not found');
     }
 
     const currentStatus = order.status as OrderStatus;
@@ -1052,9 +1057,10 @@ export class OrderService {
     });
 
     if (!option) {
-      throw new BadRequestException(
-        `Shipping option not found or inactive: ${shippingOptionId}`,
-      );
+      throw new BadRequestException({
+        message: 'The selected shipping option is no longer available. Please choose a different shipping method.',
+        error: ErrorCode.RESOURCE_NOT_FOUND,
+      });
     }
 
     if (option.min_order_value_for_free !== null) {
@@ -1113,10 +1119,10 @@ export class OrderService {
     const allowed = VALID_TRANSITIONS[currentStatus];
 
     if (!allowed || !allowed.includes(targetStatus)) {
-      throw new BadRequestException(
-        `Invalid order status transition: ${currentStatus} -> ${targetStatus}. ` +
-          `Allowed transitions from ${currentStatus}: ${allowed?.join(', ') || 'none'}`,
-      );
+      throw new BadRequestException({
+        message: `Cannot change order status from "${currentStatus}" to "${targetStatus}"`,
+        error: ErrorCode.VALIDATION_FAILED,
+      });
     }
   }
 
@@ -1131,10 +1137,10 @@ export class OrderService {
     to: OrderStatus,
   ): asserts result is orders {
     if (!result) {
-      throw new ConflictException(
-        `Order ${orderId} is no longer ${from}; ` +
-          `the ${from} → ${to} transition was not applied`,
-      );
+      throw new ConflictException({
+        message: `This order was updated by another request. Please refresh and try again.`,
+        error: ErrorCode.CONFLICT,
+      });
     }
   }
 }

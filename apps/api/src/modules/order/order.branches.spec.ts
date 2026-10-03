@@ -246,7 +246,7 @@ describe('OrderService — branches', () => {
           items: [{ itemId: ITEM_ID, variantId: VARIANT_ID, quantity: 1 }],
           paymentMethod: PaymentMethod.COD,
         } as Parameters<OrderService['createOrder']>[1]),
-      ).rejects.toThrow(/Variant not found or inactive/);
+      ).rejects.toThrow(/selected product variant is no longer available/);
     });
   });
 
@@ -281,7 +281,7 @@ describe('OrderService — branches', () => {
           items: [{ itemId: ITEM_ID, variantId: VARIANT_ID, quantity: 5 }],
           paymentMethod: PaymentMethod.COD,
         } as Parameters<OrderService['createOrder']>[1]),
-      ).rejects.toThrow(/Insufficient stock for variant/);
+      ).rejects.toThrow(/Insufficient stock/);
     });
 
     it('allows a variant oversell when the item permits backorder', async () => {
@@ -417,7 +417,7 @@ describe('OrderService — branches', () => {
           paymentMethod: PaymentMethod.COD,
           shippingOptionId: SHIPPING_OPTION_ID,
         } as Parameters<OrderService['createOrder']>[1]),
-      ).rejects.toThrow(/Shipping option not found or inactive/);
+      ).rejects.toThrow(/selected shipping option is no longer available/);
     });
 
     it('charges the base fee when the option has no free-shipping threshold', async () => {
@@ -876,7 +876,7 @@ describe('OrderService — branches', () => {
         service.updateOrderStatus(BUSINESS_ID, ORDER_ID, {
           status: OrderStatus.CONFIRMED,
         }),
-      ).rejects.toThrow(/Allowed transitions from REFUNDED: none/);
+      ).rejects.toThrow(/Cannot change order status from "REFUNDED" to "CONFIRMED"/);
     });
 
     it('rejects a status that is not in the transition table at all', async () => {
@@ -888,7 +888,7 @@ describe('OrderService — branches', () => {
         service.updateOrderStatus(BUSINESS_ID, ORDER_ID, {
           status: OrderStatus.CONFIRMED,
         }),
-      ).rejects.toThrow(/Allowed transitions from BOGUS: none/);
+      ).rejects.toThrow(/Cannot change order status from "BOGUS" to "CONFIRMED"/);
     });
 
     it('rejects packing an order that was never processed', async () => {

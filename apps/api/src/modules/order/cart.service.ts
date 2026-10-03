@@ -128,7 +128,7 @@ export class CartService {
     const cart = await this.getOrCreateActiveCart(businessId, clientId);
     const line = await this.repository.findItem(businessId, cart.id, cartItemId);
     if (!line) {
-      throw new NotFoundException(`Cart item not found: ${cartItemId}`);
+      throw new NotFoundException('Cart item not found');
     }
     await this.repository.updateItemQuantity(businessId, cartItemId, dto.quantity);
     await this.repository.touch(businessId, cart.id);
@@ -143,7 +143,7 @@ export class CartService {
     const cart = await this.getOrCreateActiveCart(businessId, clientId);
     const line = await this.repository.findItem(businessId, cart.id, cartItemId);
     if (!line) {
-      throw new NotFoundException(`Cart item not found: ${cartItemId}`);
+      throw new NotFoundException('Cart item not found');
     }
     await this.repository.removeItem(businessId, cartItemId);
     await this.repository.touch(businessId, cart.id);
@@ -256,7 +256,7 @@ export class CartService {
   ): Promise<CartDto> {
     const cart = await this.repository.findCartById(businessId, cartId);
     if (!cart) {
-      throw new NotFoundException(`Cart not found: ${cartId}`);
+      throw new NotFoundException('Cart not found');
     }
     return this.toCartDto(cart);
   }

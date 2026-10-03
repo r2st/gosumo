@@ -1000,7 +1000,7 @@ describe('ChannelAdapterService — inbound persistence', () => {
 
       await expect(
         service.handleInboundWebhookBatch(ChannelType.WHATSAPP, REQ, BUSINESS_ID),
-      ).rejects.toThrow(/type=text but no text field/);
+      ).rejects.toThrow(/Could not parse inbound message/);
     });
 
     it('handleInboundWebhook still processes the whole batch, returning the first', async () => {

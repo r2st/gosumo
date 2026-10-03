@@ -104,7 +104,7 @@ export class AddressService {
   async getAddress(businessId: string, addressId: string): Promise<AddressDto> {
     const address = await this.repository.findById(businessId, addressId);
     if (!address) {
-      throw new NotFoundException(`Address not found: ${addressId}`);
+      throw new NotFoundException('Address not found');
     }
     return toAddressDto(address);
   }
@@ -116,7 +116,7 @@ export class AddressService {
   ): Promise<AddressDto> {
     const address = await this.repository.findById(businessId, addressId);
     if (!address) {
-      throw new NotFoundException(`Address not found: ${addressId}`);
+      throw new NotFoundException('Address not found');
     }
 
     const validation = this.validate({
@@ -154,7 +154,7 @@ export class AddressService {
   async deleteAddress(businessId: string, addressId: string): Promise<void> {
     const address = await this.repository.findById(businessId, addressId);
     if (!address) {
-      throw new NotFoundException(`Address not found: ${addressId}`);
+      throw new NotFoundException('Address not found');
     }
     await this.repository.softDelete(businessId, addressId);
     this.logger.log(`Address ${addressId} soft-deleted`);

@@ -21,6 +21,7 @@ import { Prisma } from '@prisma/client';
 import {
   generateId,
   generateCorrelationId,
+  ErrorCode,
   type TeamMemberRemovedEvent,
 } from '@gosumo/shared';
 import { TenantRepository } from './tenant.repository';
@@ -268,7 +269,10 @@ export class TenantService {
     const business = await this.repository.findBusinessById(businessId);
 
     if (!business) {
-      throw new NotFoundException(`Business not found: ${businessId}`);
+      throw new NotFoundException({
+        message: 'Business not found',
+        error: ErrorCode.RESOURCE_NOT_FOUND,
+      });
     }
 
     return business;
@@ -362,7 +366,10 @@ export class TenantService {
 
     const merged = await this.repository.mergeProfileSettings(businessId, patch);
     if (!merged) {
-      throw new NotFoundException(`Business not found: ${businessId}`);
+      throw new NotFoundException({
+        message: 'Business not found',
+        error: ErrorCode.RESOURCE_NOT_FOUND,
+      });
     }
 
     this.eventEmitter.emit('business.settings.updated', {
@@ -928,7 +935,10 @@ export class TenantService {
     const member = await this.repository.findTeamMemberById(businessId, memberId);
 
     if (!member) {
-      throw new NotFoundException(`Team member not found: ${memberId}`);
+      throw new NotFoundException({
+        message: 'Team member not found',
+        error: ErrorCode.RESOURCE_NOT_FOUND,
+      });
     }
 
     // Removing an equal is allowed — two managers can each remove the other —

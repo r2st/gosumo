@@ -256,7 +256,7 @@ describe('RealtyCadenceService', () => {
             { order: 1, dayOffset: 3, templateId: MISSING, stopOn: [] },
           ],
         }),
-      ).rejects.toThrow(`Template ${MISSING} not found`);
+      ).rejects.toThrow('Template not found');
 
       expect(repository.createCadence).not.toHaveBeenCalled();
       expect(repository.createSteps).not.toHaveBeenCalled();

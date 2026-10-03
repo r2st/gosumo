@@ -191,7 +191,7 @@ export class EmailAdapter extends BaseChannelAdapter {
         );
         return {
           success: false,
-          error: "SendGrid " + response.status + ": " + errorBody,
+          error: `Email delivery failed (HTTP ${response.status})`,
         };
       }
 

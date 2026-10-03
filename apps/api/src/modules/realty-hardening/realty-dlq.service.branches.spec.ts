@@ -211,7 +211,7 @@ describe('RealtyDlqService — branches', () => {
         makeEntry({ status: DeadLetterStatus.RESOLVED }),
       );
 
-      await expect(service.replay(BIZ, DL_ID)).rejects.toThrow(NotFoundException);
+      await expect(service.replay(BIZ, DL_ID)).rejects.toThrow(BadRequestException);
       expect(repo.update).not.toHaveBeenCalled();
     });
 
@@ -221,7 +221,7 @@ describe('RealtyDlqService — branches', () => {
       );
 
       await expect(service.replay(BIZ, DL_ID)).rejects.toThrow(
-        /is DISCARDED, not replayable/,
+        /is DISCARDED and cannot be replayed/,
       );
     });
 

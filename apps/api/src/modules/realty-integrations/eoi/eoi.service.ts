@@ -398,7 +398,7 @@ export class EoiService {
 
   private async mustFind(businessId: string, eoiId: string): Promise<realty_eoi_requests> {
     const eoi = await this.repository.findEoi(businessId, eoiId);
-    if (!eoi) throw new NotFoundException(`EOI ${eoiId} not found`);
+    if (!eoi) throw new NotFoundException('Expression of interest not found');
     return eoi;
   }
 

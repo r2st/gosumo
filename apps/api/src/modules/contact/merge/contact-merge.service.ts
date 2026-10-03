@@ -345,8 +345,8 @@ export class ContactMergeService {
       this.repository.findClient(businessId, duplicateId),
     ]);
 
-    if (!survivor) throw new NotFoundException(`Contact ${survivorId} not found`);
-    if (!duplicate) throw new NotFoundException(`Contact ${duplicateId} not found`);
+    if (!survivor) throw new NotFoundException('Contact not found');
+    if (!duplicate) throw new NotFoundException('Contact not found');
 
     return { survivor, duplicate };
   }

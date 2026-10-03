@@ -377,7 +377,7 @@ export class BookingService {
   async getBooking(businessId: string, bookingId: string): Promise<BookingDto> {
     const booking = await this.repository.findBookingById(businessId, bookingId);
     if (!booking) {
-      throw new NotFoundException(`Booking not found: ${bookingId}`);
+      throw new NotFoundException('Booking not found');
     }
     return toBookingDto(booking);
   }
@@ -1553,7 +1553,7 @@ export class BookingService {
   ): Promise<bookings> {
     const booking = await this.repository.findBookingById(businessId, bookingId);
     if (!booking) {
-      throw new NotFoundException(`Booking not found: ${bookingId}`);
+      throw new NotFoundException('Booking not found');
     }
     return booking;
   }

@@ -343,18 +343,18 @@ export class RealtyCadenceService {
     const found = await this.repository.findTemplatesByIds(businessId, ids);
     const known = new Set(found.map((t) => t.id));
     const missing = ids.find((id) => !known.has(id));
-    if (missing) throw new NotFoundException(`Template ${missing} not found`);
+    if (missing) throw new NotFoundException('Template not found');
   }
 
   private async mustFindTemplate(businessId: string, id: string): Promise<realty_message_templates> {
     const t = await this.repository.findTemplateById(businessId, id);
-    if (!t) throw new NotFoundException(`Template ${id} not found`);
+    if (!t) throw new NotFoundException('Template not found');
     return t;
   }
 
   private async mustFindCadence(businessId: string, id: string): Promise<realty_cadences> {
     const c = await this.repository.findCadenceById(businessId, id);
-    if (!c) throw new NotFoundException(`Cadence ${id} not found`);
+    if (!c) throw new NotFoundException('Cadence not found');
     return c;
   }
 

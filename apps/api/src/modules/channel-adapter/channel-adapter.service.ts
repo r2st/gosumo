@@ -24,7 +24,7 @@ import {
   MessageFailedEvent,
   MessageDirection,
 } from '@gosumo/shared';
-import { generateId, generateCorrelationId, normalizeIndianPhone, PayloadParseError } from '@gosumo/shared';
+import { generateId, generateCorrelationId, normalizeIndianPhone, PayloadParseError, ErrorCode } from '@gosumo/shared';
 import { PrismaService } from '../../common/services/prisma.service';
 import { findOrCreateClientByIdentity } from '../../common/utils/client-identity.util';
 import { createSequencedMessage } from '../../common/utils/message-sequence';
@@ -456,7 +456,10 @@ export class ChannelAdapterService implements OnModuleInit {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`[${traceId}] Failed to parse inbound webhook: ${message}`);
-      throw new BadRequestException(`Could not parse inbound message: ${message}`);
+      throw new BadRequestException({
+        message: 'Could not parse inbound message',
+        error: ErrorCode.PAYLOAD_PARSE_ERROR,
+      });
     }
   }
 

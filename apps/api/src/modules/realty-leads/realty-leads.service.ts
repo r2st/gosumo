@@ -996,7 +996,7 @@ export class RealtyLeadsService {
 
   private async mustFind(businessId: string, leadId: string): Promise<realty_leads> {
     const lead = await this.repository.findById(businessId, leadId);
-    if (!lead) throw new NotFoundException(`Lead ${leadId} not found`);
+    if (!lead) throw new NotFoundException('Lead not found');
     return lead;
   }
 

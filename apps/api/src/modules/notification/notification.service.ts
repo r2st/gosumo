@@ -354,7 +354,7 @@ export class NotificationService {
         ? await this.repository.findClient(businessId, params.clientId)
         : null;
     if (params.clientId && !client) {
-      throw new NotFoundException(`Client not found: ${params.clientId}`);
+      throw new NotFoundException('Client not found');
     }
 
     // 2. Render the body from a template or ad-hoc content.
@@ -861,7 +861,7 @@ export class NotificationService {
         : null);
 
     if (!row) {
-      throw new NotFoundException(`Notification not found: ${idOrProviderId}`);
+      throw new NotFoundException('Notification not found');
     }
 
     const data: Prisma.notificationsUpdateInput = { status: dto.status };
@@ -890,7 +890,7 @@ export class NotificationService {
     id: string,
   ): Promise<NotificationDto> {
     const row = await this.repository.findById(businessId, id);
-    if (!row) throw new NotFoundException(`Notification not found: ${id}`);
+    if (!row) throw new NotFoundException('Notification not found');
     if (TERMINAL_STATUSES.includes(row.status) && row.status !== NotificationStatus.FAILED) {
       throw new ConflictException(
         `Cannot retry a notification in status ${row.status}`,
@@ -935,7 +935,7 @@ export class NotificationService {
 
   async getNotification(businessId: string, id: string): Promise<NotificationDto> {
     const row = await this.repository.findById(businessId, id);
-    if (!row) throw new NotFoundException(`Notification not found: ${id}`);
+    if (!row) throw new NotFoundException('Notification not found');
     return this.toDto(row);
   }
 
@@ -1118,7 +1118,7 @@ export class NotificationService {
       );
     }
     const client = await this.repository.findClient(businessId, dto.clientId);
-    if (!client) throw new NotFoundException(`Client not found: ${dto.clientId}`);
+    if (!client) throw new NotFoundException('Client not found');
 
     const row = await this.repository.upsertPreference({
       businessId,
@@ -1170,7 +1170,7 @@ export class NotificationService {
     dto: UpdateTriggerDto,
   ): Promise<TriggerDto> {
     const existing = await this.repository.findTriggerById(businessId, id);
-    if (!existing) throw new NotFoundException(`Trigger not found: ${id}`);
+    if (!existing) throw new NotFoundException('Trigger not found');
     if (dto.templateId) await this.getTemplateRow(businessId, dto.templateId);
 
     const data: Prisma.notification_triggersUpdateInput = {};
@@ -1195,7 +1195,7 @@ export class NotificationService {
 
   async deleteTrigger(businessId: string, id: string): Promise<void> {
     const existing = await this.repository.findTriggerById(businessId, id);
-    if (!existing) throw new NotFoundException(`Trigger not found: ${id}`);
+    if (!existing) throw new NotFoundException('Trigger not found');
     await this.repository.softDeleteTrigger(businessId, id);
   }
 
@@ -1249,7 +1249,7 @@ export class NotificationService {
     id: string,
   ): Promise<notification_templates> {
     const row = await this.repository.findTemplateById(businessId, id);
-    if (!row) throw new NotFoundException(`Template not found: ${id}`);
+    if (!row) throw new NotFoundException('Template not found');
     return row;
   }
 

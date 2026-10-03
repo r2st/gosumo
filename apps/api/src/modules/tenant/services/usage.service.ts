@@ -218,7 +218,7 @@ export class UsageService {
   private async getBusinessOrThrow(businessId: string) {
     const business = await this.repository.findBusinessById(businessId);
     if (!business) {
-      throw new NotFoundException(`Business not found: ${businessId}`);
+      throw new NotFoundException('Business not found');
     }
     return business;
   }
