@@ -284,15 +284,13 @@ export class CartService {
     });
 
     if (!catalogItem) {
-      throw new BadRequestException(`Catalog item not found or inactive: ${itemId}`);
+      throw new BadRequestException('Catalog item not found or inactive');
     }
 
     if (variantId) {
       const variant = catalogItem.variants.find((v) => v.id === variantId);
       if (!variant) {
-        throw new BadRequestException(
-          `Variant not found or inactive: ${variantId} for item ${itemId}`,
-        );
+        throw new BadRequestException('Variant not found or inactive');
       }
       const priceRupees = variant.price
         ? dec(variant.price)

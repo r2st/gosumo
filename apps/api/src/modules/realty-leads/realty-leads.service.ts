@@ -620,7 +620,7 @@ export class RealtyLeadsService {
 
     const updated = await this.commitTransition(businessId, lead, dto.stage, 'operator', dto.note);
     if (!updated) {
-      throw new ConflictException(`Lead ${leadId} changed stage concurrently — retry`);
+      throw new ConflictException('Lead changed stage concurrently — retry');
     }
     return this.mapResponse(updated);
   }
