@@ -439,7 +439,7 @@ export class AuthService {
 
     const frontendUrl = this.configService.get<string>('app.frontendUrl', 'http://localhost:3001');
     this.logger.log(
-      `Password reset link generated for ${email}: ${frontendUrl}/reset-password?token=${token}`,
+      `Password reset link generated for ${maskEmail(email)}: ${frontendUrl}/reset-password?token=${token}`,
     );
   }
 

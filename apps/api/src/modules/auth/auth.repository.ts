@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
+import { maskEmail } from '../../common/utils/log-redact.util';
 import {
   Prisma,
   team_members,
@@ -94,7 +95,7 @@ export class AuthRepository {
       });
 
       this.logger.log(
-        `Created business '${businessName}' (${business.id}) with owner ${email}`,
+        `Created business '${businessName}' (${business.id}) with owner ${maskEmail(email)}`,
       );
 
       return teamMember;
@@ -178,7 +179,7 @@ export class AuthRepository {
       });
 
       this.logger.log(
-        `Created business '${businessName}' (${business.id}) via Google for ${email}`,
+        `Created business '${businessName}' (${business.id}) via Google for ${maskEmail(email)}`,
       );
 
       return teamMember;

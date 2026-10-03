@@ -3,6 +3,7 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import type { MessageReceivedEvent } from '@gosumo/shared';
 import { PrismaService } from '../../../../common/services/prisma.service';
+import { maskPhone } from '../../../../common/utils/log-redact.util';
 import { RealtyLeadsService } from '../../../realty-leads/realty-leads.service';
 import { VoiceNoteProcessorService } from './voice-note-processor.service';
 import { TranscriptionUnavailableError } from './transcription.service';
@@ -80,7 +81,7 @@ export class VoiceMessageRouter {
     // channel id never matched one, so every voice note was skipped here.
     const lead = await this.leads.findLeadByPhone(event.businessId, senderPhone);
     if (!lead) {
-      this.logger.debug(`Voice note from ${event.senderExternalId} has no lead yet — skipping`);
+      this.logger.debug(`Voice note from ${maskPhone(event.senderExternalId)} has no lead yet — skipping`);
       return;
     }
 
