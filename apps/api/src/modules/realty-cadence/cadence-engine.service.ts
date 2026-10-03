@@ -136,8 +136,8 @@ export class CadenceEngineService {
         const stopOn = currentStep?.stop_on ?? [];
         if (!stopOn.includes(signal)) continue;
       }
-      await this.finish(businessId, enrollment, 'STOPPED', reason);
-      stopped++;
+      const ok = await this.finish(businessId, enrollment, 'STOPPED', reason);
+      if (ok) stopped++;
     }
     return stopped;
   }
@@ -150,10 +150,12 @@ export class CadenceEngineService {
    */
   async pauseForLead(businessId: string, leadId: string, reason = 'broker_paused'): Promise<number> {
     const active = await this.repository.findActiveEnrollmentsForLead(businessId, leadId);
+    let stopped = 0;
     for (const enrollment of active) {
-      await this.finish(businessId, enrollment, 'STOPPED', reason);
+      const ok = await this.finish(businessId, enrollment, 'STOPPED', reason);
+      if (ok) stopped++;
     }
-    return active.length;
+    return stopped;
   }
 
   /**
@@ -323,7 +325,8 @@ export class CadenceEngineService {
       stepOrder: step.step_order,
       templateId: step.template_id,
     });
-    await this.repository.updateEnrollment(businessId, enrollment.id, { lastStepSentAt: now });
+    const updated = await this.repository.transitionEnrollment(businessId, enrollment.id, { lastStepSentAt: now });
+    if (!updated) return 'stopped';
     return this.advance(businessId, enrollment, steps, now, 'sent');
   }
 
@@ -366,19 +369,20 @@ export class CadenceEngineService {
     steps: StepWithTemplate[],
     now: Date,
     outcome: 'sent' | 'skipped',
-  ): Promise<'sent' | 'skipped' | 'completed'> {
+  ): Promise<'sent' | 'skipped' | 'stopped' | 'completed'> {
     const nextIndex = enrollment.current_step + 1;
     if (nextIndex >= steps.length) {
-      await this.finish(businessId, enrollment, 'COMPLETED');
-      return 'completed';
+      const ok = await this.finish(businessId, enrollment, 'COMPLETED');
+      return ok ? 'completed' : 'stopped';
     }
     const nextStep = steps[nextIndex]!;
     // Absolute schedule from enrolment start keeps the D1/D3/D7 cadence honest.
     const nextRunAt = new Date(enrollment.started_at.getTime() + nextStep.day_offset * DAY_MS);
-    await this.repository.updateEnrollment(businessId, enrollment.id, {
+    const updated = await this.repository.transitionEnrollment(businessId, enrollment.id, {
       currentStep: nextIndex,
       nextRunAt: nextRunAt.getTime() <= now.getTime() ? now : nextRunAt,
     });
+    if (!updated) return 'stopped';
     return outcome;
   }
 
@@ -388,13 +392,17 @@ export class CadenceEngineService {
     enrollment: realty_cadence_enrollments,
     outcome: 'COMPLETED' | 'STOPPED',
     stopReason?: string,
-  ): Promise<void> {
-    await this.repository.updateEnrollment(businessId, enrollment.id, {
+  ): Promise<boolean> {
+    const row = await this.repository.transitionEnrollment(businessId, enrollment.id, {
       status: outcome,
       nextRunAt: null,
       completedAt: new Date(),
       stopReason: stopReason ?? null,
     });
+    if (!row) {
+      this.logger.debug(`Enrollment ${enrollment.id} already terminated — skipping ${outcome}`);
+      return false;
+    }
     this.emit<RealtyCadenceCompletedEvent>('realty.cadence.completed', {
       ...this.baseEvent(businessId),
       type: 'realty.cadence.completed',
@@ -404,6 +412,7 @@ export class CadenceEngineService {
       outcome,
       stopReason,
     });
+    return true;
   }
 
   /** True when the lead still satisfies the step's optional guard. */

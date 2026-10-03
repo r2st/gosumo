@@ -355,6 +355,32 @@ export class RealtyCadenceRepository {
     return this.prisma.realty_cadence_enrollments.update({ where: { id, business_id: businessId }, data: d });
   }
 
+  /**
+   * CAS enrollment update: only writes if the enrollment is still ACTIVE.
+   * Returns null when a concurrent stop/complete already terminated it.
+   */
+  async transitionEnrollment(
+    businessId: string,
+    id: string,
+    data: UpdateEnrollmentData,
+  ): Promise<realty_cadence_enrollments | null> {
+    const d: Record<string, unknown> = {};
+    if (data.status !== undefined) d['status'] = data.status;
+    if (data.currentStep !== undefined) d['current_step'] = data.currentStep;
+    if (data.nextRunAt !== undefined) d['next_run_at'] = data.nextRunAt;
+    if (data.stopReason !== undefined) d['stop_reason'] = data.stopReason;
+    if (data.lastStepSentAt !== undefined) d['last_step_sent_at'] = data.lastStepSentAt;
+    if (data.completedAt !== undefined) d['completed_at'] = data.completedAt;
+    const { count } = await this.prisma.realty_cadence_enrollments.updateMany({
+      where: { id, business_id: businessId, status: 'ACTIVE' },
+      data: d,
+    });
+    if (count === 0) return null;
+    return this.prisma.realty_cadence_enrollments.findFirst({
+      where: { id, business_id: businessId },
+    });
+  }
+
   async countActiveEnrollments(businessId: string): Promise<number> {
     return this.prisma.realty_cadence_enrollments.count({
       where: { business_id: businessId, status: 'ACTIVE' },

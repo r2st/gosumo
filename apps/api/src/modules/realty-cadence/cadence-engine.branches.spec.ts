@@ -132,6 +132,7 @@ describe('CadenceEngineService (branches)', () => {
       createEnrollment: jest.fn(),
       findDueEnrollments: jest.fn(),
       updateEnrollment: jest.fn(),
+      transitionEnrollment: jest.fn(),
     };
     // `enroll` resolves its lead first; default to a live, contactable one so
     // the branches below exercise what they name rather than the lead guard.
@@ -172,27 +173,28 @@ describe('CadenceEngineService (branches)', () => {
         makeEnrollment({ id: 'enr-1' }),
         makeEnrollment({ id: 'enr-2', cadence_id: 'cad-2' }),
       ] as never);
+      repository.transitionEnrollment.mockResolvedValue(makeEnrollment() as never);
 
       const stopped = await engine.pauseForLead(BUSINESS_ID, LEAD_ID);
 
       expect(stopped).toBe(2);
-      expect(repository.updateEnrollment).toHaveBeenCalledTimes(2);
+      expect(repository.transitionEnrollment).toHaveBeenCalledTimes(2);
       // Never consults the step list — the pause is unconditional.
       expect(repository.listStepsByCadence).not.toHaveBeenCalled();
     });
 
     it('records the default broker_paused reason and unschedules the enrolment', async () => {
       repository.findActiveEnrollmentsForLead.mockResolvedValue([makeEnrollment()] as never);
+      repository.transitionEnrollment.mockResolvedValue(makeEnrollment() as never);
 
       await engine.pauseForLead(BUSINESS_ID, LEAD_ID);
 
-      expect(repository.updateEnrollment).toHaveBeenCalledWith(
+      expect(repository.transitionEnrollment).toHaveBeenCalledWith(
         BUSINESS_ID,
         'enr-1',
         expect.objectContaining({
           status: 'STOPPED',
           stopReason: 'broker_paused',
-          // A live next_run_at would have the tick pick this straight back up.
           nextRunAt: null,
         }),
       );
@@ -200,10 +202,11 @@ describe('CadenceEngineService (branches)', () => {
 
     it('records a caller-supplied reason', async () => {
       repository.findActiveEnrollmentsForLead.mockResolvedValue([makeEnrollment()] as never);
+      repository.transitionEnrollment.mockResolvedValue(makeEnrollment() as never);
 
       await engine.pauseForLead(BUSINESS_ID, LEAD_ID, 'deal_closed');
 
-      expect(repository.updateEnrollment).toHaveBeenCalledWith(
+      expect(repository.transitionEnrollment).toHaveBeenCalledWith(
         BUSINESS_ID,
         'enr-1',
         expect.objectContaining({ stopReason: 'deal_closed' }),
@@ -212,6 +215,7 @@ describe('CadenceEngineService (branches)', () => {
 
     it('emits completed with the STOPPED outcome for each paused enrolment', async () => {
       repository.findActiveEnrollmentsForLead.mockResolvedValue([makeEnrollment()] as never);
+      repository.transitionEnrollment.mockResolvedValue(makeEnrollment() as never);
 
       await engine.pauseForLead(BUSINESS_ID, LEAD_ID);
 
@@ -228,7 +232,7 @@ describe('CadenceEngineService (branches)', () => {
       repository.findActiveEnrollmentsForLead.mockResolvedValue([] as never);
 
       await expect(engine.pauseForLead(BUSINESS_ID, LEAD_ID)).resolves.toBe(0);
-      expect(repository.updateEnrollment).not.toHaveBeenCalled();
+      expect(repository.transitionEnrollment).not.toHaveBeenCalled();
     });
   });
 
@@ -300,13 +304,14 @@ describe('CadenceEngineService (branches)', () => {
       );
 
       expect(stopped).toBe(0);
-      expect(repository.updateEnrollment).not.toHaveBeenCalled();
+      expect(repository.transitionEnrollment).not.toHaveBeenCalled();
     });
 
     it('still stops on OPTOUT, which never consults the step list', async () => {
       repository.findActiveEnrollmentsForLead.mockResolvedValue([
         makeEnrollment({ current_step: 5 }),
       ] as never);
+      repository.transitionEnrollment.mockResolvedValue(makeEnrollment() as never);
 
       const stopped = await engine.stopForLead(
         BUSINESS_ID,
@@ -325,6 +330,7 @@ describe('CadenceEngineService (branches)', () => {
         makeEnrollment({ id: 'enr-2' }),
       ] as never);
       repository.listStepsByCadence.mockResolvedValue([makeStep()] as never);
+      repository.transitionEnrollment.mockResolvedValue(makeEnrollment() as never);
 
       await engine.stopForLead(BUSINESS_ID, LEAD_ID, CadenceStopOn.REPLY, 'buyer_replied');
 
@@ -338,11 +344,12 @@ describe('CadenceEngineService (branches)', () => {
       repository.findDueEnrollments.mockResolvedValue([makeEnrollment()] as never);
       repository.listStepsByCadence.mockResolvedValue([makeStep()] as never);
       leadsService.getLead.mockRejectedValue(new NotFoundException('Lead not found'));
+      repository.transitionEnrollment.mockResolvedValue(makeEnrollment() as never);
 
       const result = await engine.processDueEnrollments(NOW);
 
       expect(result).toMatchObject({ processed: 1, stopped: 1 });
-      expect(repository.updateEnrollment).toHaveBeenCalledWith(
+      expect(repository.transitionEnrollment).toHaveBeenCalledWith(
         BUSINESS_ID,
         'enr-1',
         expect.objectContaining({ status: 'STOPPED', stopReason: 'lead_missing' }),
@@ -355,7 +362,7 @@ describe('CadenceEngineService (branches)', () => {
       leadsService.getLead.mockRejectedValue(new Error('ECONNREFUSED'));
 
       await expect(engine.processDueEnrollments(NOW)).rejects.toThrow('ECONNREFUSED');
-      expect(repository.updateEnrollment).not.toHaveBeenCalledWith(
+      expect(repository.transitionEnrollment).not.toHaveBeenCalledWith(
         BUSINESS_ID,
         'enr-1',
         expect.objectContaining({ stopReason: 'lead_missing' }),
@@ -367,6 +374,7 @@ describe('CadenceEngineService (branches)', () => {
         makeEnrollment({ current_step: 3 }),
       ] as never);
       repository.listStepsByCadence.mockResolvedValue([makeStep()] as never);
+      repository.transitionEnrollment.mockResolvedValue(makeEnrollment() as never);
 
       const result = await engine.processDueEnrollments(NOW);
 
@@ -405,10 +413,11 @@ describe('CadenceEngineService (branches)', () => {
         makeStep({ step_order: 1, day_offset: 3 }),
       ] as never);
       leadsService.getLead.mockResolvedValue(makeLead());
+      repository.transitionEnrollment.mockResolvedValue(makeEnrollment() as never);
 
       await engine.processDueEnrollments(NOW);
 
-      expect(repository.updateEnrollment).toHaveBeenCalledWith(
+      expect(repository.transitionEnrollment).toHaveBeenCalledWith(
         BUSINESS_ID,
         'enr-1',
         expect.objectContaining({ currentStep: 1, nextRunAt: NOW }),
@@ -423,11 +432,11 @@ describe('CadenceEngineService (branches)', () => {
         makeStep({ step_order: 1, day_offset: 3 }),
       ] as never);
       leadsService.getLead.mockResolvedValue(makeLead());
+      repository.transitionEnrollment.mockResolvedValue(makeEnrollment() as never);
 
       await engine.processDueEnrollments(NOW);
 
-      // D3 from start, not "now + 3d" — that is what keeps D1/D3/D7 honest.
-      expect(repository.updateEnrollment).toHaveBeenCalledWith(
+      expect(repository.transitionEnrollment).toHaveBeenCalledWith(
         BUSINESS_ID,
         'enr-1',
         expect.objectContaining({ nextRunAt: new Date(startedAt.getTime() + 3 * DAY) }),
@@ -452,6 +461,7 @@ describe('CadenceEngineService (branches)', () => {
         makeStep({ step_order: 1, day_offset: 3 }),
       ] as never);
       leadsService.getLead.mockResolvedValue(makeLead(leadOverrides));
+      repository.transitionEnrollment.mockResolvedValue(makeEnrollment() as never);
 
       const result = await engine.processDueEnrollments(NOW);
       return result.sent === 1 ? 'sent' : 'skipped';
@@ -535,6 +545,7 @@ describe('CadenceEngineService (branches)', () => {
       // A CTWA lead can be enrolled before it has ever replied — the 24h
       // service window is closed, not open, when there is no inbound at all.
       leadsService.getLead.mockResolvedValue(makeLead({ lastActivityAt: null }));
+      repository.transitionEnrollment.mockResolvedValue(makeEnrollment() as never);
 
       const result = await engine.processDueEnrollments(NOW);
       return result.sent === 1 ? 'sent' : 'skipped';
