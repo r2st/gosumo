@@ -517,6 +517,17 @@ export class NotificationRepository {
     });
   }
 
+  async findClientsByIds(
+    businessId: string,
+    clientIds: string[],
+  ): Promise<Map<string, clients>> {
+    if (clientIds.length === 0) return new Map();
+    const rows = await this.prisma.clients.findMany({
+      where: { id: { in: clientIds }, business_id: businessId, deleted_at: null },
+    });
+    return new Map(rows.map((r) => [r.id, r]));
+  }
+
   /**
    * Which of `clientIds` exist in this business — one round trip for a whole
    * batch, so a 5000-recipient dispatch can be validated before it writes a
@@ -532,5 +543,22 @@ export class NotificationRepository {
       select: { id: true },
     });
     return new Set(rows.map((r) => r.id));
+  }
+
+  async listPreferencesForClients(
+    businessId: string,
+    clientIds: string[],
+  ): Promise<Map<string, notification_preferences[]>> {
+    if (clientIds.length === 0) return new Map();
+    const rows = await this.prisma.notification_preferences.findMany({
+      where: { business_id: businessId, client_id: { in: clientIds } },
+    });
+    const map = new Map<string, notification_preferences[]>();
+    for (const row of rows) {
+      const list = map.get(row.client_id) ?? [];
+      list.push(row);
+      map.set(row.client_id, list);
+    }
+    return map;
   }
 }

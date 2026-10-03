@@ -114,6 +114,10 @@ interface DispatchParams {
   campaignId?: string | null;
   batchId?: string | null;
   correlationId?: string;
+  /** Pre-loaded client, bypasses the per-recipient DB lookup in createAndQueue. */
+  preloadedClient?: clients | null;
+  /** Pre-loaded preferences, bypasses the per-recipient DB lookup in createAndQueue. */
+  preloadedPreferences?: notification_preferences[];
 }
 
 /**
@@ -210,6 +214,18 @@ export class NotificationService {
 
     await this.assertRecipientClientsAreOurs(businessId, dto.recipients);
 
+    const uniqueClientIds = [
+      ...new Set(
+        dto.recipients
+          .map((r) => r.clientId)
+          .filter((id): id is string => typeof id === 'string' && id.length > 0),
+      ),
+    ];
+    const [clientsMap, prefsMap] = await Promise.all([
+      this.repository.findClientsByIds(businessId, uniqueClientIds),
+      this.repository.listPreferencesForClients(businessId, uniqueClientIds),
+    ]);
+
     const batchId = generateId();
     const category = dto.category ?? NotificationCategory.MARKETING;
     const scheduledAt = dto.scheduledAt ? new Date(dto.scheduledAt) : null;
@@ -219,10 +235,11 @@ export class NotificationService {
 
     for (const r of dto.recipients) {
       try {
+        const cId = r.clientId ?? null;
         const result = await this.createAndQueue(
           businessId,
           {
-            clientId: r.clientId ?? null,
+            clientId: cId,
             channel: dto.channel,
             category,
             recipientOverride: r.recipient ?? null,
@@ -232,6 +249,8 @@ export class NotificationService {
             scheduledAt,
             campaignId: dto.campaignId ?? null,
             batchId,
+            preloadedClient: cId ? (clientsMap.get(cId) ?? null) : null,
+            preloadedPreferences: cId ? (prefsMap.get(cId) ?? []) : [],
           },
           // Defer queueing — we push chunks ourselves below.
           { deferQueue: true },
@@ -327,9 +346,13 @@ export class NotificationService {
     const correlationId = params.correlationId ?? generateCorrelationId();
 
     // 1. Load the client once (recipient + preferences both need it).
-    const client = params.clientId
-      ? await this.repository.findClient(businessId, params.clientId)
-      : null;
+    //    Batch callers (dispatchBatch) pre-load and pass via preloadedClient to
+    //    avoid N individual queries.
+    const client = params.preloadedClient !== undefined
+      ? params.preloadedClient
+      : params.clientId
+        ? await this.repository.findClient(businessId, params.clientId)
+        : null;
     if (params.clientId && !client) {
       throw new NotFoundException(`Client not found: ${params.clientId}`);
     }
@@ -355,13 +378,16 @@ export class NotificationService {
     }
 
     // 4. Preference / opt-out enforcement.
+    const prefs = params.preloadedPreferences !== undefined
+      ? params.preloadedPreferences
+      : params.clientId
+        ? await this.repository.listPreferences(businessId, params.clientId)
+        : [];
     const pref = this.resolvePreference(
       params.category,
       params.channel,
       client,
-      params.clientId
-        ? await this.repository.listPreferences(businessId, params.clientId)
-        : [],
+      prefs,
     );
     if (!pref.allowed) {
       return this.recordSkipped(

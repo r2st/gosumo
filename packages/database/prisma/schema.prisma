@@ -1513,6 +1513,7 @@ model business_rules {
 
   @@index([business_id, type, is_active])
   @@index([business_id, trigger, priority])
+  @@index([business_id, is_active, deleted_at, priority(sort: Desc)])
   @@map("business_rules")
 }
 

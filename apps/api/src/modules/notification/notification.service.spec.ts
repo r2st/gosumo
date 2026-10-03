@@ -309,6 +309,24 @@ class FakeRepo {
     return new Set(ids.filter((id) => this.clients.get(id)?.business_id === b));
   });
 
+  findClientsByIds = jest.fn(async (b: string, ids: string[]) => {
+    const map = new Map<string, unknown>();
+    for (const id of ids) {
+      const c = this.clients.get(id);
+      if (c && c.business_id === b) map.set(id, { ...c });
+    }
+    return map;
+  });
+
+  listPreferencesForClients = jest.fn(async (b: string, ids: string[]) => {
+    const map = new Map<string, unknown[]>();
+    for (const id of ids) {
+      const prefs = this.preferences.filter((p) => p.business_id === b && p.client_id === id);
+      if (prefs.length > 0) map.set(id, prefs);
+    }
+    return map;
+  });
+
   // Test helpers
   seedClient(overrides: Record<string, unknown> = {}) {
     const c = {
