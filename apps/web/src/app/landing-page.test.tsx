@@ -182,7 +182,10 @@ describe('RootLayout', () => {
     expect(rootMetadata.manifest).toBe('/manifest.json');
     expect(rootMetadata.applicationName).toBe('DoAide Desk');
     expect(rootMetadata.appleWebApp).toMatchObject({ capable: true, title: 'DoAide Desk' });
-    expect(viewport.themeColor).toBe('#0A0A0B');
+    expect(viewport.themeColor).toEqual([
+      { media: '(prefers-color-scheme: dark)', color: '#0A0A0B' },
+      { media: '(prefers-color-scheme: light)', color: '#FFFFFF' },
+    ]);
   });
 
   it('templates child page titles under the product name', () => {

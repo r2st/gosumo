@@ -1,12 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, Languages, LogOut, Menu, Settings, User } from 'lucide-react';
+import { ChevronDown, Languages, LogOut, Menu, Monitor, Moon, Settings, Sun, User } from 'lucide-react';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { NotificationCenter } from '@/components/notifications/notification-center';
 import { useAuth } from '@/providers/auth-provider';
 import { useLanguage } from '@/providers/language-provider';
+import { useTheme, type Theme } from '@/providers/theme-provider';
 import { UI_LANGUAGE_LABELS } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
@@ -34,6 +35,8 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
           </p>
         )}
       </div>
+
+      <ThemeToggle />
 
       <LanguageToggle />
 
@@ -75,6 +78,28 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
         )}
       </div>
     </header>
+  );
+}
+
+const THEME_ICON: Record<Theme, typeof Sun> = { light: Sun, dark: Moon, system: Monitor };
+const THEME_LABEL: Record<Theme, string> = { light: 'Light', dark: 'Dark', system: 'System' };
+
+function ThemeToggle() {
+  const { theme, toggleTheme } = useTheme();
+  const Icon = THEME_ICON[theme];
+  const order: Theme[] = ['light', 'dark', 'system'];
+  const nextIdx = (order.indexOf(theme) + 1) % order.length;
+  const next = order[nextIdx];
+  return (
+    <button
+      onClick={toggleTheme}
+      className="flex h-9 items-center gap-1 rounded-md px-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      aria-label={`Switch to ${THEME_LABEL[next]} theme`}
+      title={`${THEME_LABEL[theme]} theme — click for ${THEME_LABEL[next]}`}
+    >
+      <Icon className="h-4 w-4" />
+      <span className="hidden sm:inline">{THEME_LABEL[theme]}</span>
+    </button>
   );
 }
 

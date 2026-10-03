@@ -6,80 +6,91 @@
 
 @layer base {
   :root {
-    /* ── DoAide dark palette ── */
-    --background: 240 5% 4%;          /* #0A0A0B */
-    --foreground: 220 13% 91%;        /* #E5E7EB */
+    /* ── DoAide light palette ── */
+    --background: 0 0% 100%;             /* #FFFFFF */
+    --foreground: 240 5% 10%;            /* #18181B */
 
-    --card: 240 5% 11%;               /* #1A1A1D */
-    --card-foreground: 220 13% 91%;   /* #E5E7EB */
+    --card: 0 0% 98%;                    /* #FAFAFA */
+    --card-foreground: 240 5% 10%;       /* #18181B */
 
-    --muted: 240 4% 14%;              /* ~#222225 */
-    --muted-foreground: 218 11% 65%;  /* #9CA3AF */
+    --muted: 240 5% 96%;                 /* #F4F4F5 */
+    --muted-foreground: 240 4% 46%;      /* #71717A */
 
     /* Gold accent as brand primary */
-    --primary: 42 87% 55%;            /* #F0B429 */
-    --primary-foreground: 240 5% 4%;  /* #0A0A0B */
+    --primary: 42 87% 45%;               /* #C49520 — darkened for light-bg contrast */
+    --primary-foreground: 0 0% 100%;     /* #FFFFFF */
 
-    --accent: 42 40% 12%;             /* subtle gold tint background */
-    --accent-foreground: 42 87% 55%;  /* #F0B429 */
+    --accent: 42 40% 94%;               /* light gold tint background */
+    --accent-foreground: 42 87% 40%;    /* dark gold text */
 
-    --success: 160 64% 52%;           /* #34D399 */
-    --success-foreground: 240 5% 4%;
+    --success: 160 64% 38%;             /* #22A06B — darkened for contrast */
+    --success-foreground: 0 0% 100%;
 
-    --warning: 45 93% 56%;            /* #FBBF24 */
-    --warning-foreground: 240 5% 4%;
+    --warning: 45 93% 42%;              /* #B08C13 — darkened for contrast */
+    --warning-foreground: 0 0% 100%;
 
-    --danger: 0 91% 71%;              /* #F87171 */
+    --danger: 0 72% 51%;                /* #DC2626 */
     --danger-foreground: 0 0% 100%;
 
-    --border: 240 4% 17%;             /* #2A2A2D */
-    --input: 240 4% 20%;              /* #303033 slightly lighter for inputs */
-    --ring: 42 87% 55%;               /* gold */
+    --border: 240 6% 90%;               /* #E4E4E7 */
+    --input: 240 6% 90%;                /* #E4E4E7 */
+    --ring: 42 87% 45%;                 /* gold */
 
-    --sidebar: 240 5% 4%;             /* #0A0A0B — same as background */
-    --sidebar-foreground: 220 13% 91%;
-    --sidebar-muted: 220 9% 46%;      /* #6B7280 */
-    --sidebar-active: 42 87% 55%;     /* gold */
-    --sidebar-border: 240 4% 17%;
+    --sidebar: 0 0% 98%;                /* #FAFAFA */
+    --sidebar-foreground: 240 5% 10%;
+    --sidebar-muted: 240 4% 46%;        /* #71717A */
+    --sidebar-active: 42 87% 45%;       /* gold */
+    --sidebar-border: 240 6% 90%;
 
     --radius: 0.5rem;
 
-    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.30);
-    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.40);
-    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.50);
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.08);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.10);
 
-    color-scheme: dark;
+    color-scheme: light;
   }
 
-  /* Both themes resolve to the same dark palette — DoAide is dark-only. */
   .dark {
-    --background: 240 5% 4%;
-    --foreground: 220 13% 91%;
-    --card: 240 5% 11%;
-    --card-foreground: 220 13% 91%;
-    --muted: 240 4% 14%;
-    --muted-foreground: 218 11% 65%;
-    --primary: 42 87% 55%;
-    --primary-foreground: 240 5% 4%;
-    --accent: 42 40% 12%;
-    --accent-foreground: 42 87% 55%;
-    --success: 160 64% 52%;
+    /* ── DoAide dark palette ── */
+    --background: 240 5% 4%;            /* #0A0A0B */
+    --foreground: 220 13% 91%;          /* #E5E7EB */
+
+    --card: 240 5% 11%;                 /* #1A1A1D */
+    --card-foreground: 220 13% 91%;     /* #E5E7EB */
+
+    --muted: 240 4% 14%;               /* ~#222225 */
+    --muted-foreground: 218 11% 65%;    /* #9CA3AF */
+
+    --primary: 42 87% 55%;             /* #F0B429 */
+    --primary-foreground: 240 5% 4%;   /* #0A0A0B */
+
+    --accent: 42 40% 12%;              /* subtle gold tint background */
+    --accent-foreground: 42 87% 55%;   /* #F0B429 */
+
+    --success: 160 64% 52%;            /* #34D399 */
     --success-foreground: 240 5% 4%;
-    --warning: 45 93% 56%;
+
+    --warning: 45 93% 56%;             /* #FBBF24 */
     --warning-foreground: 240 5% 4%;
-    --danger: 0 91% 71%;
+
+    --danger: 0 91% 71%;               /* #F87171 */
     --danger-foreground: 0 0% 100%;
-    --border: 240 4% 17%;
-    --input: 240 4% 20%;
-    --ring: 42 87% 55%;
-    --sidebar: 240 5% 4%;
+
+    --border: 240 4% 17%;              /* #2A2A2D */
+    --input: 240 4% 20%;               /* #303033 */
+    --ring: 42 87% 55%;                /* gold */
+
+    --sidebar: 240 5% 4%;              /* #0A0A0B */
     --sidebar-foreground: 220 13% 91%;
-    --sidebar-muted: 220 9% 46%;
-    --sidebar-active: 42 87% 55%;
+    --sidebar-muted: 220 9% 46%;       /* #6B7280 */
+    --sidebar-active: 42 87% 55%;      /* gold */
     --sidebar-border: 240 4% 17%;
+
     --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.30);
     --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.40);
     --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.50);
+
     color-scheme: dark;
   }
 
