@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { InjectQueue } from '@nestjs/bull';
@@ -527,12 +528,22 @@ export class BookingService {
     reason: string,
     cancelledBy: BookingActor,
   ): Promise<bookings> {
-    const updated = await this.repository.updateBooking(businessId, booking.id, {
-      status: BookingStatus.CANCELLED,
-      cancelled_at: new Date(),
-      cancellation_reason: reason,
-      cancelled_by: cancelledBy,
-    });
+    const currentStatus = booking.status as BookingStatus;
+    const updated = await this.repository.transitionStatus(
+      businessId, booking.id, currentStatus,
+      {
+        status: BookingStatus.CANCELLED,
+        cancelled_at: new Date(),
+        cancellation_reason: reason,
+        cancelled_by: cancelledBy,
+      },
+    );
+    if (!updated) {
+      this.logger.debug(
+        `Booking ${booking.id} changed status concurrently — cancel skipped`,
+      );
+      return booking;
+    }
 
     await this.removeBookingFromCalendar(businessId, updated);
 
@@ -590,13 +601,21 @@ export class BookingService {
     const oldStart = booking.start_at;
     const oldEnd = booking.end_at;
 
-    const updated = await this.repository.updateBooking(businessId, bookingId, {
-      status: BookingStatus.RESCHEDULED,
-      start_at: newStart,
-      end_at: newEnd,
-      duration_minutes: duration,
-      staff_id: newStaffId,
-    });
+    const updated = await this.repository.transitionStatus(
+      businessId, bookingId, current,
+      {
+        status: BookingStatus.RESCHEDULED,
+        start_at: newStart,
+        end_at: newEnd,
+        duration_minutes: duration,
+        staff_id: newStaffId,
+      },
+    );
+    if (!updated) {
+      throw new ConflictException(
+        `Booking ${bookingId} changed status concurrently — reschedule aborted`,
+      );
+    }
 
     await this.pushBookingToCalendar(businessId, updated);
     await this.scheduleReminders(businessId, updated.id);
@@ -631,13 +650,20 @@ export class BookingService {
   ): Promise<BookingDto> {
     const booking = await this.requireBooking(businessId, bookingId);
     const current = booking.status as BookingStatus;
-    if (current === BookingStatus.CANCELLED) {
-      throw new BadRequestException('Cannot complete a cancelled booking');
+    if (current === BookingStatus.CANCELLED || current === BookingStatus.NO_SHOW) {
+      throw new BadRequestException(
+        `Cannot complete a booking in status ${current}`,
+      );
     }
 
-    const updated = await this.repository.updateBooking(businessId, bookingId, {
-      status: BookingStatus.COMPLETED,
-    });
+    const updated = await this.repository.transitionStatus(
+      businessId, bookingId, current,
+      { status: BookingStatus.COMPLETED },
+    );
+    if (!updated) {
+      this.logger.debug(`Booking ${bookingId} changed status concurrently — complete skipped`);
+      return toBookingDto(booking);
+    }
 
     const event: BookingCompletedEvent = {
       type: 'booking.completed',
@@ -664,9 +690,14 @@ export class BookingService {
         `Cannot mark a ${current} booking as no-show`,
       );
     }
-    const updated = await this.repository.updateBooking(businessId, bookingId, {
-      status: BookingStatus.NO_SHOW,
-    });
+    const updated = await this.repository.transitionStatus(
+      businessId, bookingId, current,
+      { status: BookingStatus.NO_SHOW },
+    );
+    if (!updated) {
+      this.logger.debug(`Booking ${bookingId} changed status concurrently — no-show skipped`);
+      return toBookingDto(booking);
+    }
     this.logger.log(`Booking ${bookingId} marked NO_SHOW`);
     return toBookingDto(updated);
   }

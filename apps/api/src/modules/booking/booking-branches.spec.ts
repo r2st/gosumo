@@ -10,7 +10,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { getQueueToken } from '@nestjs/bull';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { BookingService } from './booking.service';
 import { BookingRepository } from './booking.repository';
 import { PrismaService } from '../../common/services/prisma.service';
@@ -141,6 +141,7 @@ describe('BookingService — branch coverage', () => {
       }),
       findBookingsByRecurrence: jest.fn().mockResolvedValue([]),
       updateBooking: jest.fn().mockResolvedValue(mockBooking() as never),
+      transitionStatus: jest.fn().mockResolvedValue(mockBooking() as never),
       findByPaymentId: jest.fn(),
       findAvailability: jest.fn().mockResolvedValue(null),
       upsertAvailability: jest.fn(),
@@ -542,6 +543,104 @@ describe('BookingService — branch coverage', () => {
         'Cannot mark a CANCELLED booking as no-show',
       );
     });
+
+    it('refuses to complete a NO_SHOW booking', async () => {
+      repository.findBookingById.mockResolvedValue(
+        mockBooking({ status: BookingStatus.NO_SHOW }) as never,
+      );
+
+      await expect(service.completeBooking(BUSINESS_ID, BOOKING_ID)).rejects.toThrow(
+        'Cannot complete a booking in status NO_SHOW',
+      );
+    });
+  });
+
+  describe('CAS guards on lifecycle transitions', () => {
+    it('cancelBooking skips silently when status changed concurrently', async () => {
+      repository.findBookingById.mockResolvedValue(
+        mockBooking({ status: BookingStatus.PENDING }) as never,
+      );
+      repository.transitionStatus.mockResolvedValue(null as never);
+
+      const result = await service.cancelBooking(BUSINESS_ID, BOOKING_ID, {
+        reason: 'too late',
+      });
+
+      expect(repository.transitionStatus).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        BOOKING_ID,
+        BookingStatus.PENDING,
+        expect.objectContaining({ status: BookingStatus.CANCELLED }),
+      );
+      expect(result.id).toBe(BOOKING_ID);
+      expect(eventEmitter.emit).not.toHaveBeenCalledWith(
+        'booking.cancelled',
+        expect.anything(),
+      );
+    });
+
+    it('cancelBooking emits event on successful CAS', async () => {
+      const cancelled = mockBooking({ status: BookingStatus.CANCELLED });
+      repository.findBookingById.mockResolvedValue(
+        mockBooking({ status: BookingStatus.CONFIRMED }) as never,
+      );
+      repository.transitionStatus.mockResolvedValue(cancelled as never);
+
+      await service.cancelBooking(BUSINESS_ID, BOOKING_ID, { reason: 'no need' });
+
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'booking.cancelled',
+        expect.objectContaining({ bookingId: BOOKING_ID }),
+      );
+    });
+
+    it('completeBooking skips silently when status changed concurrently', async () => {
+      repository.findBookingById.mockResolvedValue(
+        mockBooking({ status: BookingStatus.CONFIRMED }) as never,
+      );
+      repository.transitionStatus.mockResolvedValue(null as never);
+
+      const result = await service.completeBooking(BUSINESS_ID, BOOKING_ID);
+
+      expect(repository.transitionStatus).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        BOOKING_ID,
+        BookingStatus.CONFIRMED,
+        expect.objectContaining({ status: BookingStatus.COMPLETED }),
+      );
+      expect(result.id).toBe(BOOKING_ID);
+    });
+
+    it('markNoShow skips silently when status changed concurrently', async () => {
+      repository.findBookingById.mockResolvedValue(
+        mockBooking({ status: BookingStatus.CONFIRMED }) as never,
+      );
+      repository.transitionStatus.mockResolvedValue(null as never);
+
+      const result = await service.markNoShow(BUSINESS_ID, BOOKING_ID);
+
+      expect(repository.transitionStatus).toHaveBeenCalledWith(
+        BUSINESS_ID,
+        BOOKING_ID,
+        BookingStatus.CONFIRMED,
+        expect.objectContaining({ status: BookingStatus.NO_SHOW }),
+      );
+      expect(result.id).toBe(BOOKING_ID);
+    });
+
+    it('rescheduleBooking throws ConflictException when status changed concurrently', async () => {
+      repository.findBookingById.mockResolvedValue(
+        mockBooking({ status: BookingStatus.CONFIRMED }) as never,
+      );
+      repository.transitionStatus.mockResolvedValue(null as never);
+
+      await expect(
+        service.rescheduleBooking(BUSINESS_ID, BOOKING_ID, {
+          newStartAt: daysFromNow(7),
+          durationMinutes: 30,
+        }),
+      ).rejects.toThrow(ConflictException);
+    });
   });
 
   // ─── setAvailability ─────────────────────────
@@ -863,7 +962,7 @@ describe('BookingService — branch coverage', () => {
       repository.findBookingById.mockResolvedValue(
         mockBooking({ status: BookingStatus.PENDING, gcal_event_id: 'evt-existing' }) as never,
       );
-      repository.updateBooking.mockResolvedValue(
+      repository.transitionStatus.mockResolvedValue(
         mockBooking({ status: BookingStatus.CONFIRMED, gcal_event_id: 'evt-existing' }) as never,
       );
 
@@ -939,7 +1038,7 @@ describe('BookingService — branch coverage', () => {
 
     it('deletes the Google event when the booking is cancelled', async () => {
       repository.findBookingById.mockResolvedValue(mockBooking(synced) as never);
-      repository.updateBooking.mockResolvedValue(mockBooking(synced) as never);
+      repository.transitionStatus.mockResolvedValue(mockBooking(synced) as never);
       repository.findConnection.mockResolvedValue(mockConnection() as never);
 
       await service.cancelBooking(BUSINESS_ID, BOOKING_ID, { reason: 'client asked' });
@@ -949,7 +1048,7 @@ describe('BookingService — branch coverage', () => {
 
     it('does nothing when the calendar connection is gone', async () => {
       repository.findBookingById.mockResolvedValue(mockBooking(synced) as never);
-      repository.updateBooking.mockResolvedValue(mockBooking(synced) as never);
+      repository.transitionStatus.mockResolvedValue(mockBooking(synced) as never);
       repository.findConnection.mockResolvedValue(null as never);
 
       await service.cancelBooking(BUSINESS_ID, BOOKING_ID, { reason: 'client asked' });
@@ -959,7 +1058,7 @@ describe('BookingService — branch coverage', () => {
 
     it('never lets a delete failure break cancellation', async () => {
       repository.findBookingById.mockResolvedValue(mockBooking(synced) as never);
-      repository.updateBooking.mockResolvedValue(mockBooking(synced) as never);
+      repository.transitionStatus.mockResolvedValue(mockBooking(synced) as never);
       repository.findConnection.mockResolvedValue(mockConnection() as never);
       googleCalendar.deleteEvent.mockRejectedValue('gone' as never);
 

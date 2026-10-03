@@ -409,7 +409,7 @@ describe('BookingService', () => {
   describe('cancelBooking', () => {
     it('cancels a confirmed booking and emits booking.cancelled', async () => {
       repository.findBookingById.mockResolvedValue(mockBooking() as never);
-      repository.updateBooking.mockResolvedValue(
+      repository.transitionStatus.mockResolvedValue(
         mockBooking({ status: BookingStatus.CANCELLED }) as never,
       );
 
@@ -437,7 +437,7 @@ describe('BookingService', () => {
     it('cancels the whole series when cancelSeries is set', async () => {
       const seriesBooking = mockBooking({ recurrence_id: RECURRENCE_ID });
       repository.findBookingById.mockResolvedValue(seriesBooking as never);
-      repository.updateBooking.mockResolvedValue(
+      repository.transitionStatus.mockResolvedValue(
         mockBooking({ status: BookingStatus.CANCELLED }) as never,
       );
       repository.findBookingsByRecurrence.mockResolvedValue([
@@ -455,8 +455,8 @@ describe('BookingService', () => {
         RECURRENCE_ID,
       );
       // sib-1 (active) cancelled + the target booking; sib-2 already cancelled → skipped.
-      const cancelUpdates = repository.updateBooking.mock.calls.filter(
-        (c) => (c[2] as { status?: string }).status === BookingStatus.CANCELLED,
+      const cancelUpdates = repository.transitionStatus.mock.calls.filter(
+        (c) => ((c[3] as Record<string, unknown>)?.status) === BookingStatus.CANCELLED,
       );
       expect(cancelUpdates.length).toBe(2);
     });
@@ -465,7 +465,7 @@ describe('BookingService', () => {
       repository.findBookingById.mockResolvedValue(
         mockBooking({ gcal_event_id: 'evt-1', gcal_calendar_id: 'primary' }) as never,
       );
-      repository.updateBooking.mockResolvedValue(
+      repository.transitionStatus.mockResolvedValue(
         mockBooking({ status: BookingStatus.CANCELLED, gcal_event_id: 'evt-1', gcal_calendar_id: 'primary' }) as never,
       );
       repository.findConnection.mockResolvedValue(mockConnection() as never);
@@ -486,7 +486,7 @@ describe('BookingService', () => {
     it('moves a booking to a new time and emits booking.rescheduled', async () => {
       const original = mockBooking();
       repository.findBookingById.mockResolvedValue(original as never);
-      repository.updateBooking.mockResolvedValue(
+      repository.transitionStatus.mockResolvedValue(
         mockBooking({
           status: BookingStatus.RESCHEDULED,
           start_at: new Date('2030-06-28T09:00:00Z'),
@@ -535,7 +535,7 @@ describe('BookingService', () => {
   describe('completeBooking & markNoShow', () => {
     it('marks a booking COMPLETED', async () => {
       repository.findBookingById.mockResolvedValue(mockBooking() as never);
-      repository.updateBooking.mockResolvedValue(
+      repository.transitionStatus.mockResolvedValue(
         mockBooking({ status: BookingStatus.COMPLETED }) as never,
       );
       const result = await service.completeBooking(BUSINESS_ID, BOOKING_ID);
@@ -557,7 +557,7 @@ describe('BookingService', () => {
 
     it('marks a booking NO_SHOW', async () => {
       repository.findBookingById.mockResolvedValue(mockBooking() as never);
-      repository.updateBooking.mockResolvedValue(
+      repository.transitionStatus.mockResolvedValue(
         mockBooking({ status: BookingStatus.NO_SHOW }) as never,
       );
       const result = await service.markNoShow(BUSINESS_ID, BOOKING_ID);
@@ -814,7 +814,7 @@ describe('BookingService', () => {
       repository.findBookingById.mockResolvedValue(
         mockBooking({ status: BookingStatus.PENDING }) as never,
       );
-      repository.updateBooking.mockResolvedValue(
+      repository.transitionStatus.mockResolvedValue(
         mockBooking({ status: BookingStatus.CANCELLED }) as never,
       );
       await service.autoCancelIfUnpaid(BUSINESS_ID, BOOKING_ID);
@@ -839,7 +839,8 @@ describe('BookingService', () => {
     it('auto-confirms a PENDING booking referenced by the payment', async () => {
       const pending = mockBooking({ status: BookingStatus.PENDING });
       repository.findBookingById.mockResolvedValue(pending as never);
-      repository.updateBooking.mockResolvedValue(
+      repository.updateBooking.mockResolvedValue(pending as never);
+      repository.transitionStatus.mockResolvedValue(
         mockBooking({ status: BookingStatus.CONFIRMED }) as never,
       );
 
