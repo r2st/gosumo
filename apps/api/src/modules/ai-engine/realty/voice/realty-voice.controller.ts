@@ -22,7 +22,10 @@ export class RealtyVoiceController {
   @Post('transcribe')
   @ApiOperation({ summary: 'Transcribe a voice note to text' })
   @ApiResponse({ status: 201, description: 'Result of the transcribe action' })
-  async transcribe(@Body() dto: TranscribeVoiceDto): Promise<{ text: string }> {
+  async transcribe(
+    @TenantId() _businessId: string,
+    @Body() dto: TranscribeVoiceDto,
+  ): Promise<{ text: string }> {
     const text = await this.processor.transcribeVoiceNote(dto.mediaUrl, dto.mimeType ?? 'audio/ogg');
     return { text };
   }

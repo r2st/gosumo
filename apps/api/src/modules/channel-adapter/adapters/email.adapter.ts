@@ -13,6 +13,7 @@ import {
   RawRequest,
 } from "@gosumo/shared";
 import { generateId, ExternalServiceError } from "@gosumo/shared";
+import { maskEmail } from "../../../common/utils/log-redact.util";
 import { BaseChannelAdapter } from "./base.adapter";
 import { CircuitBreakerRegistry } from "../../../common/resilience/circuit-breaker.registry";
 import { SENDGRID_BREAKER } from "../../../common/resilience/circuit-breaker.constants";
@@ -159,8 +160,8 @@ export class EmailAdapter extends BaseChannelAdapter {
       };
 
       this.logger.log(
-        "Sending email via SendGrid: to=" + message.recipientExternalId +
-        " from=" + this.fromEmail +
+        "Sending email via SendGrid: to=" + maskEmail(message.recipientExternalId) +
+        " from=" + maskEmail(this.fromEmail) +
         " body length=" + textContent.length,
       );
 

@@ -86,6 +86,31 @@ describe("EmailAdapter", () => {
     fetchSpy.mockRestore();
   });
 
+  it("sendMessage masks the recipient email in log output", async () => {
+    const logSpy = jest.spyOn((adapter as any).logger, 'log');
+    const fetchSpy = jest.spyOn(global, "fetch").mockResolvedValueOnce({
+      status: 202,
+      headers: { get: () => "sg-id" },
+      text: async () => "",
+    } as unknown as Response);
+
+    await adapter.sendMessage({
+      channelAccountId: "support@business.com",
+      recipientExternalId: "customer@example.com",
+      content: { type: MessageContentType.TEXT, text: "Hi" },
+    });
+
+    const logLine = logSpy.mock.calls.find((c) =>
+      String(c[0]).includes("Sending email via SendGrid"),
+    );
+    expect(logLine).toBeDefined();
+    expect(String(logLine![0])).not.toContain("customer@example.com");
+    expect(String(logLine![0])).toContain("c*******@example.com");
+
+    fetchSpy.mockRestore();
+    logSpy.mockRestore();
+  });
+
   it("sendMessage returns a failure result on a 4xx from SendGrid", async () => {
     const fetchSpy = jest.spyOn(global, "fetch").mockResolvedValueOnce({
       status: 401,

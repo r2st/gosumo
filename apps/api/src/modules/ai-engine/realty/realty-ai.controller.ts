@@ -23,7 +23,7 @@ export class RealtyAiController {
   @Post('classify')
   @ApiOperation({ summary: 'Classify a single realty message into one of the 14 intents' })
   @ApiResponse({ status: 201, description: 'Result of the classify action' })
-  async classify(@Body() dto: RealtyClassifyDto) {
+  async classify(@TenantId() _businessId: string, @Body() dto: RealtyClassifyDto) {
     return this.service.classify(dto.text);
   }
 }

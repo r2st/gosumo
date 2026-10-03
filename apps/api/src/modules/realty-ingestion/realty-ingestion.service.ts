@@ -18,6 +18,7 @@ import {
 import { parseMetaLeadgen } from './meta-leadgen.parser';
 import { parsePortalEmail } from './portal-email.parser';
 import { parseCtwaReferral } from './ctwa.util';
+import { maskEmail } from '../../common/utils/log-redact.util';
 import { normalizeCsvRows } from './csv-import.util';
 import type { RawCsvRow } from './csv-import.util';
 import {
@@ -187,7 +188,7 @@ export class RealtyIngestionService implements OnModuleInit {
   ): Promise<(LeadIngestResult & { portal: RealtyPortal }) | null> {
     const parsed = parsePortalEmail(dto);
     if (!parsed || !parsed.phone) {
-      this.logger.warn(`Portal email from "${dto.from ?? '?'}" could not be parsed (no phone)`);
+      this.logger.warn(`Portal email from "${maskEmail(dto.from)}" could not be parsed (no phone)`);
       return null;
     }
     const result = await this.leadsService.ingestLead(businessId, {
