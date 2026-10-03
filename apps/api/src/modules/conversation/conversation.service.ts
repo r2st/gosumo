@@ -284,7 +284,7 @@ export class ConversationService {
   ): Promise<conversations> {
     const conversation = await this.repository.findById(businessId, id);
     if (!conversation) {
-      throw new NotFoundException(`Conversation not found: ${id}`);
+      throw new NotFoundException('Conversation not found');
     }
     return conversation;
   }
@@ -303,7 +303,7 @@ export class ConversationService {
   ): Promise<{ conversation: conversations; cleared: number }> {
     const conversation = await this.repository.findById(businessId, id);
     if (!conversation) {
-      throw new NotFoundException(`Conversation not found: ${id}`);
+      throw new NotFoundException('Conversation not found');
     }
 
     const cleared = await this.repository.markRead(businessId, id);
@@ -1321,7 +1321,7 @@ export class ConversationService {
   ): Promise<conversations> {
     const conversation = await this.repository.findById(businessId, id);
     if (!conversation) {
-      throw new NotFoundException(`Conversation not found: ${id}`);
+      throw new NotFoundException('Conversation not found');
     }
     return conversation;
   }

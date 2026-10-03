@@ -107,7 +107,7 @@ export class CatalogService {
     if (dto.parentId) {
       const parent = await this.repository.findCategoryById(businessId, dto.parentId);
       if (!parent) {
-        throw new NotFoundException(`Parent category ${dto.parentId} not found`);
+        throw new NotFoundException('Parent category not found');
       }
     }
 
@@ -131,7 +131,7 @@ export class CatalogService {
   ): Promise<CategoryResponseDto> {
     const category = await this.repository.findCategoryById(businessId, categoryId);
     if (!category) {
-      throw new NotFoundException(`Category ${categoryId} not found`);
+      throw new NotFoundException('Category not found');
     }
     return this.mapCategoryResponse(category);
   }
@@ -143,7 +143,7 @@ export class CatalogService {
   ): Promise<CategoryResponseDto> {
     const existing = await this.repository.findCategoryById(businessId, categoryId);
     if (!existing) {
-      throw new NotFoundException(`Category ${categoryId} not found`);
+      throw new NotFoundException('Category not found');
     }
 
     if (dto.parentId) {
@@ -152,7 +152,7 @@ export class CatalogService {
       }
       const parent = await this.repository.findCategoryById(businessId, dto.parentId);
       if (!parent) {
-        throw new NotFoundException(`Parent category ${dto.parentId} not found`);
+        throw new NotFoundException('Parent category not found');
       }
     }
 
@@ -175,7 +175,7 @@ export class CatalogService {
   ): Promise<void> {
     const existing = await this.repository.findCategoryById(businessId, categoryId);
     if (!existing) {
-      throw new NotFoundException(`Category ${categoryId} not found`);
+      throw new NotFoundException('Category not found');
     }
 
     const activeItemCount = await this.repository.countActiveItemsInCategory(
@@ -241,7 +241,7 @@ export class CatalogService {
     if (dto.categoryId) {
       const category = await this.repository.findCategoryById(businessId, dto.categoryId);
       if (!category) {
-        throw new NotFoundException(`Category ${dto.categoryId} not found`);
+        throw new NotFoundException('Category not found');
       }
     }
 
@@ -304,7 +304,7 @@ export class CatalogService {
   ): Promise<ItemResponseDto> {
     const item = await this.repository.findItemById(businessId, itemId);
     if (!item) {
-      throw new NotFoundException(`Item ${itemId} not found`);
+      throw new NotFoundException('Item not found');
     }
     return this.mapItemResponse(item);
   }
@@ -316,7 +316,7 @@ export class CatalogService {
   ): Promise<ItemResponseDto> {
     const existing = await this.repository.findItemById(businessId, itemId);
     if (!existing) {
-      throw new NotFoundException(`Item ${itemId} not found`);
+      throw new NotFoundException('Item not found');
     }
 
     // Validate SKU uniqueness if changing
@@ -339,7 +339,7 @@ export class CatalogService {
     if (dto.categoryId) {
       const category = await this.repository.findCategoryById(businessId, dto.categoryId);
       if (!category) {
-        throw new NotFoundException(`Category ${dto.categoryId} not found`);
+        throw new NotFoundException('Category not found');
       }
     }
 
@@ -400,7 +400,7 @@ export class CatalogService {
   ): Promise<void> {
     const existing = await this.repository.findItemById(businessId, itemId);
     if (!existing) {
-      throw new NotFoundException(`Item ${itemId} not found`);
+      throw new NotFoundException('Item not found');
     }
     await this.repository.softDeleteItem(businessId, itemId);
     this.logger.log(`Soft-deleted catalog item ${itemId} for business ${businessId}`);
@@ -452,7 +452,7 @@ export class CatalogService {
   ): Promise<VariantResponseDto> {
     const item = await this.repository.findItemById(businessId, itemId);
     if (!item) {
-      throw new NotFoundException(`Item ${itemId} not found`);
+      throw new NotFoundException('Item not found');
     }
 
     // Validate SKU uniqueness if provided
@@ -493,7 +493,7 @@ export class CatalogService {
   ): Promise<VariantResponseDto> {
     const variant = await this.repository.findVariantById(businessId, variantId);
     if (!variant || variant.item_id !== itemId) {
-      throw new NotFoundException(`Variant ${variantId} not found for item ${itemId}`);
+      throw new NotFoundException('Variant not found');
     }
 
     // Validate SKU uniqueness if changing
@@ -531,7 +531,7 @@ export class CatalogService {
   ): Promise<void> {
     const variant = await this.repository.findVariantById(businessId, variantId);
     if (!variant || variant.item_id !== itemId) {
-      throw new NotFoundException(`Variant ${variantId} not found for item ${itemId}`);
+      throw new NotFoundException('Variant not found');
     }
     await this.repository.softDeleteVariant(businessId, variantId);
   }
@@ -542,7 +542,7 @@ export class CatalogService {
   ): Promise<VariantResponseDto[]> {
     const item = await this.repository.findItemById(businessId, itemId);
     if (!item) {
-      throw new NotFoundException(`Item ${itemId} not found`);
+      throw new NotFoundException('Item not found');
     }
     const variants = await this.repository.listVariantsByItemId(businessId, itemId);
     return variants.map((v) => this.mapVariantResponse(v));
@@ -560,7 +560,7 @@ export class CatalogService {
   ): Promise<EffectivePriceDto> {
     const item = await this.repository.findItemById(businessId, itemId);
     if (!item) {
-      throw new NotFoundException(`Item ${itemId} not found`);
+      throw new NotFoundException('Item not found');
     }
 
     // Determine base price: variant price overrides item price
@@ -570,7 +570,7 @@ export class CatalogService {
     if (variantId) {
       const variant = item.variants.find((v) => v.id === variantId);
       if (!variant) {
-        throw new NotFoundException(`Variant ${variantId} not found for item ${itemId}`);
+        throw new NotFoundException('Variant not found');
       }
       // Variant price: null means inherit from parent item
       if (variant.price !== null) {
@@ -608,7 +608,7 @@ export class CatalogService {
   ): Promise<StockLevelDto> {
     const item = await this.repository.findItemById(businessId, itemId);
     if (!item) {
-      throw new NotFoundException(`Item ${itemId} not found`);
+      throw new NotFoundException('Item not found');
     }
 
     // No-op if trackInventory is false
@@ -624,7 +624,7 @@ export class CatalogService {
     if (dto.variantId) {
       const variant = item.variants.find((v) => v.id === dto.variantId);
       if (!variant) {
-        throw new NotFoundException(`Variant ${dto.variantId} not found for item ${itemId}`);
+        throw new NotFoundException('Variant not found');
       }
       const updated = await this.repository.updateVariantStock(
         businessId,
@@ -684,7 +684,7 @@ export class CatalogService {
   ): Promise<StockLevelDto> {
     const item = await this.repository.findItemById(businessId, itemId);
     if (!item) {
-      throw new NotFoundException(`Item ${itemId} not found`);
+      throw new NotFoundException('Item not found');
     }
     return this.buildStockLevel(item, variantId ?? null);
   }

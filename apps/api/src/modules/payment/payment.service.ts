@@ -322,7 +322,7 @@ export class PaymentService implements OnModuleInit {
     const payment = await this.repository.getPayment(businessId, paymentId);
 
     if (!payment) {
-      throw new NotFoundException(`Payment not found: ${paymentId}`);
+      throw new NotFoundException('Payment not found');
     }
 
     return this.toPaymentLinkDto(payment);
@@ -339,7 +339,7 @@ export class PaymentService implements OnModuleInit {
     const payment = await this.repository.getPayment(businessId, paymentId);
 
     if (!payment) {
-      throw new NotFoundException(`Payment not found: ${paymentId}`);
+      throw new NotFoundException('Payment not found');
     }
 
     const status = payment.status as string;
@@ -705,7 +705,7 @@ export class PaymentService implements OnModuleInit {
   ): Promise<ReconcileResultDto> {
     const payment = await this.repository.getPayment(businessId, paymentId);
     if (!payment) {
-      throw new NotFoundException(`Payment not found: ${paymentId}`);
+      throw new NotFoundException('Payment not found');
     }
 
     const previousStatus = payment.status as string;
@@ -823,7 +823,7 @@ export class PaymentService implements OnModuleInit {
     const payment = await this.repository.getPayment(businessId, dto.transactionId);
 
     if (!payment) {
-      throw new NotFoundException(`Payment not found: ${dto.transactionId}`);
+      throw new NotFoundException('Payment not found');
     }
 
     // Check payment is in a refundable state
@@ -991,7 +991,7 @@ export class PaymentService implements OnModuleInit {
     const refund = await this.repository.getRefund(businessId, refundId);
 
     if (!refund) {
-      throw new NotFoundException(`Refund not found: ${refundId}`);
+      throw new NotFoundException('Refund not found');
     }
 
     return this.toRefundDto(refund);

@@ -170,7 +170,7 @@ export class HitlService {
     const task = await this.repository.findTaskById(businessId, taskId);
 
     if (!task) {
-      throw new NotFoundException(`Task not found: ${taskId}`);
+      throw new NotFoundException('Task not found');
     }
 
     return task;
@@ -212,7 +212,7 @@ export class HitlService {
     const task = await this.repository.findTaskById(businessId, taskId);
 
     if (!task) {
-      throw new NotFoundException(`Task not found: ${taskId}`);
+      throw new NotFoundException('Task not found');
     }
 
     const status = task.status as TaskStatus;
@@ -271,7 +271,7 @@ export class HitlService {
     const task = await this.repository.findTaskById(businessId, taskId);
 
     if (!task) {
-      throw new NotFoundException(`Task not found: ${taskId}`);
+      throw new NotFoundException('Task not found');
     }
 
     const status = task.status as TaskStatus;
@@ -341,7 +341,7 @@ export class HitlService {
     const task = await this.repository.findTaskById(businessId, taskId);
 
     if (!task) {
-      throw new NotFoundException(`Task not found: ${taskId}`);
+      throw new NotFoundException('Task not found');
     }
 
     if (!task.ai_draft || !task.ai_decision_id) {
@@ -429,7 +429,7 @@ export class HitlService {
     const task = await this.repository.findTaskById(businessId, taskId);
 
     if (!task) {
-      throw new NotFoundException(`Task not found: ${taskId}`);
+      throw new NotFoundException('Task not found');
     }
 
     if (!task.ai_decision_id) {
@@ -504,7 +504,7 @@ export class HitlService {
     const task = await this.repository.findTaskById(businessId, taskId);
 
     if (!task) {
-      throw new NotFoundException(`Task not found: ${taskId}`);
+      throw new NotFoundException('Task not found');
     }
 
     if (!task.ai_decision_id) {
@@ -698,7 +698,7 @@ export class HitlService {
     const task = await this.repository.findTaskById(businessId, taskId);
 
     if (!task) {
-      throw new NotFoundException(`Task not found: ${taskId}`);
+      throw new NotFoundException('Task not found');
     }
 
     const status = task.status as TaskStatus;

@@ -210,6 +210,58 @@ describe('Error message quality (M19 Pass 2)', () => {
     });
   });
 
+  // ── Pass 3: Conversation, payment, HITL, catalog, SLA — no ID leakage ──
+  describe('ConversationService error messages (Pass 3)', () => {
+    it('conversation-not-found does not leak conversation ID', () => {
+      const err = new NotFoundException('Conversation not found');
+      expect(extractMessage(err)).toBe('Conversation not found');
+      expect(extractMessage(err)).not.toMatch(UUID_PATTERN);
+    });
+  });
+
+  describe('PaymentService error messages (Pass 3)', () => {
+    it('payment-not-found does not leak payment ID', () => {
+      const err = new NotFoundException('Payment not found');
+      expect(extractMessage(err)).toBe('Payment not found');
+      expect(extractMessage(err)).not.toMatch(UUID_PATTERN);
+    });
+
+    it('refund-not-found does not leak refund ID', () => {
+      const err = new NotFoundException('Refund not found');
+      expect(extractMessage(err)).toBe('Refund not found');
+      expect(extractMessage(err)).not.toMatch(UUID_PATTERN);
+    });
+  });
+
+  describe('HitlService error messages (Pass 3)', () => {
+    it('task-not-found does not leak task ID', () => {
+      const err = new NotFoundException('Task not found');
+      expect(extractMessage(err)).toBe('Task not found');
+      expect(extractMessage(err)).not.toMatch(UUID_PATTERN);
+    });
+  });
+
+  describe('CatalogService error messages (Pass 3)', () => {
+    it.each([
+      ['Category not found'],
+      ['Parent category not found'],
+      ['Item not found'],
+      ['Variant not found'],
+    ])('%s does not leak entity ID', (message) => {
+      const err = new NotFoundException(message);
+      expect(extractMessage(err)).toBe(message);
+      expect(extractMessage(err)).not.toMatch(UUID_PATTERN);
+    });
+  });
+
+  describe('SlaService error messages (Pass 3)', () => {
+    it('sla-policy-not-found does not leak policy ID', () => {
+      const err = new NotFoundException('SLA policy not found');
+      expect(extractMessage(err)).toBe('SLA policy not found');
+      expect(extractMessage(err)).not.toMatch(UUID_PATTERN);
+    });
+  });
+
   // ── Cross-cutting: ErrorCode enum values are used, not arbitrary strings ──
   describe('ErrorCode enum coverage', () => {
     const validCodes = Object.values(ErrorCode);

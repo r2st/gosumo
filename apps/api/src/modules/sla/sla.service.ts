@@ -111,7 +111,7 @@ export class SlaService {
   private async getPolicyEntity(businessId: string, id: string): Promise<sla_policies> {
     const policy = await this.repository.findPolicyById(businessId, id);
     if (!policy) {
-      throw new NotFoundException(`SLA policy ${id} not found`);
+      throw new NotFoundException('SLA policy not found');
     }
     return policy;
   }
