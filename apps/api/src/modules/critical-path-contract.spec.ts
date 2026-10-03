@@ -417,12 +417,13 @@ describe('critical path — a message arrives on every channel', () => {
     /** The real handler, with only its collaborators doubled. */
     async function buildConversationService(): Promise<{
       service: ConversationService;
-      repository: { updateLastMessageAt: jest.Mock; updateStatus: jest.Mock };
+      repository: { updateLastMessageAt: jest.Mock; updateStatus: jest.Mock; transitionStatus: jest.Mock };
       findOrCreate: jest.SpyInstance;
     }> {
       const repository = {
         updateLastMessageAt: jest.fn().mockResolvedValue({}),
         updateStatus: jest.fn().mockResolvedValue({}),
+        transitionStatus: jest.fn().mockResolvedValue({ id: CONVERSATION_ID, status: 'OPEN' }),
       };
 
       const module: TestingModule = await Test.createTestingModule({
@@ -493,7 +494,7 @@ describe('critical path — a message arrives on every channel', () => {
 
       await service.handleMessageReceived(event);
 
-      expect(repository.updateStatus).toHaveBeenCalledWith(BUSINESS_ID, CONVERSATION_ID, 'OPEN');
+      expect(repository.transitionStatus).toHaveBeenCalledWith(BUSINESS_ID, CONVERSATION_ID, 'RESOLVED', 'OPEN', {});
     });
   });
 
