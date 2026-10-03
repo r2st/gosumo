@@ -27,6 +27,8 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SessionDto } from './dto/session.dto';
 import { SessionMeta } from './session.service';
 import { GoogleProfile } from './strategies/google.strategy';
+import { GitHubProfile } from './strategies/github.strategy';
+import { MicrosoftProfile } from './strategies/microsoft.strategy';
 import { Public } from '../../common/decorators/public.decorator';
 import { AuthThrottle } from './auth-throttle.decorator';
 import { SelfService } from './decorators/self-service.decorator';
@@ -148,6 +150,70 @@ export class AuthController {
     //
     // The dashboard's callback page reads the fragment; it also still accepts
     // the query form, so deploy the web app before the API.
+    const fragment =
+      `accessToken=${encodeURIComponent(tokens.accessToken)}` +
+      `&refreshToken=${encodeURIComponent(tokens.refreshToken)}` +
+      `&expiresIn=${tokens.expiresIn}`;
+
+    res.redirect(`${frontendUrl}/auth/callback#${fragment}`);
+  }
+
+  // ─────────────────────────────────────────────
+  // GitHub OAuth
+  // ─────────────────────────────────────────────
+
+  @Public()
+  @Get('github')
+  @UseGuards(AuthGuard('github'))
+  @ApiOperation({ summary: 'Begin GitHub OAuth login (redirects to GitHub)' })
+  githubAuth(): void {
+    // Passport redirects to GitHub's consent screen; this body never runs.
+  }
+
+  @Public()
+  @Get('github/callback')
+  @UseGuards(AuthGuard('github'))
+  @ApiOperation({ summary: 'GitHub OAuth callback — issues tokens and redirects to the dashboard' })
+  async githubCallback(@Req() req: Request, @Res() res: Response): Promise<void> {
+    const profile = req.user as GitHubProfile;
+    const tokens = await this.authService.handleGitHubLogin(profile, this.sessionMeta(req));
+
+    const frontendUrl = this.configService.get<string>(
+      'app.frontendUrl',
+      'http://localhost:3001',
+    );
+    const fragment =
+      `accessToken=${encodeURIComponent(tokens.accessToken)}` +
+      `&refreshToken=${encodeURIComponent(tokens.refreshToken)}` +
+      `&expiresIn=${tokens.expiresIn}`;
+
+    res.redirect(`${frontendUrl}/auth/callback#${fragment}`);
+  }
+
+  // ─────────────────────────────────────────────
+  // Microsoft OAuth
+  // ─────────────────────────────────────────────
+
+  @Public()
+  @Get('microsoft')
+  @UseGuards(AuthGuard('microsoft'))
+  @ApiOperation({ summary: 'Begin Microsoft OAuth login (redirects to Microsoft)' })
+  microsoftAuth(): void {
+    // Passport redirects to Microsoft's consent screen; this body never runs.
+  }
+
+  @Public()
+  @Get('microsoft/callback')
+  @UseGuards(AuthGuard('microsoft'))
+  @ApiOperation({ summary: 'Microsoft OAuth callback — issues tokens and redirects to the dashboard' })
+  async microsoftCallback(@Req() req: Request, @Res() res: Response): Promise<void> {
+    const profile = req.user as MicrosoftProfile;
+    const tokens = await this.authService.handleMicrosoftLogin(profile, this.sessionMeta(req));
+
+    const frontendUrl = this.configService.get<string>(
+      'app.frontendUrl',
+      'http://localhost:3001',
+    );
     const fragment =
       `accessToken=${encodeURIComponent(tokens.accessToken)}` +
       `&refreshToken=${encodeURIComponent(tokens.refreshToken)}` +

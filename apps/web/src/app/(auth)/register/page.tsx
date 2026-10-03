@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { GoogleButton } from '@/components/google-button';
+import { GitHubButton } from '@/components/github-button';
+import { MicrosoftButton } from '@/components/microsoft-button';
 import { useAuth } from '@/providers/auth-provider';
 import { ApiError } from '@/lib/api-client';
 
@@ -74,7 +76,11 @@ export default function RegisterPage() {
         <span>OR</span>
       </div>
 
-      <GoogleButton label="Sign up with Google" />
+      <div className="flex flex-col gap-2">
+        <GoogleButton label="Sign up with Google" />
+        <GitHubButton label="Sign up with GitHub" />
+        <MicrosoftButton label="Sign up with Microsoft" />
+      </div>
 
       <p className="doaide-auth-switch">
         Already have an account?{' '}

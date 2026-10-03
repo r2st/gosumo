@@ -84,6 +84,8 @@ enum TeamMemberStatus {
 enum AuthProvider {
   LOCAL
   GOOGLE
+  GITHUB
+  MICROSOFT
 }
 
 enum TaskStatus {
@@ -762,6 +764,10 @@ model team_members {
   auth_provider AuthProvider @default(LOCAL)
   /// Google account subject id (`sub` claim) — set for GOOGLE accounts
   google_id     String?      @unique @db.VarChar(255)
+  /// GitHub account id — set for GITHUB accounts
+  github_id     String?      @unique @db.VarChar(255)
+  /// Microsoft account subject id — set for MICROSOFT accounts
+  microsoft_id  String?      @unique @db.VarChar(255)
   last_login_at DateTime?    @db.Timestamptz
   login_count   Int          @default(0)
 

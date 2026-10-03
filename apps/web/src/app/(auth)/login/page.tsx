@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
 import { GoogleButton } from '@/components/google-button';
+import { GitHubButton } from '@/components/github-button';
+import { MicrosoftButton } from '@/components/microsoft-button';
 import { useAuth } from '@/providers/auth-provider';
 import { ApiError } from '@/lib/api-client';
 
@@ -78,7 +80,11 @@ function LoginForm() {
         <span>OR</span>
       </div>
 
-      <GoogleButton />
+      <div className="flex flex-col gap-2">
+        <GoogleButton />
+        <GitHubButton />
+        <MicrosoftButton />
+      </div>
 
       <p className="doaide-auth-switch">
         New to DoAide Desk?{' '}

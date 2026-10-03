@@ -24,6 +24,8 @@ import { SessionService, SessionMeta } from './session.service';
 import { REDIS_CLIENT, RedisClient } from './redis.provider';
 import { JwtPayload } from './strategies/jwt.strategy';
 import { GoogleProfile } from './strategies/google.strategy';
+import { GitHubProfile } from './strategies/github.strategy';
+import { MicrosoftProfile } from './strategies/microsoft.strategy';
 
 const ACCESS_TOKEN_TTL = '15m';
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
@@ -226,6 +228,108 @@ export class AuthService {
         profile.avatarUrl,
       );
       this.logger.log(`New Google registration: ${maskEmail(profile.email)}`);
+    }
+
+    if (teamMember.status === 'SUSPENDED') {
+      throw new UnauthorizedException('Account has been suspended');
+    }
+
+    this.authRepository
+      .updateLastLogin(teamMember.business_id, teamMember.id)
+      .catch((err: Error) => {
+        this.logger.warn(`Failed to update last login for ${teamMember.id}: ${err.message}`);
+      });
+
+    return this.issueTokensForNewSession(teamMember, meta);
+  }
+
+  // ─────────────────────────────────────────────
+  // Login / sign-up via GitHub OAuth
+  // ─────────────────────────────────────────────
+
+  async handleGitHubLogin(
+    rawProfile: GitHubProfile,
+    meta: SessionMeta = {},
+  ): Promise<AuthTokensDto> {
+    const profile: GitHubProfile = { ...rawProfile, email: normalizeEmail(rawProfile.email) };
+
+    let teamMember = await this.authRepository.findTeamMemberByGithubId(profile.githubId);
+
+    if (!teamMember) {
+      const byEmail = await this.authRepository.findTeamMemberByEmail(profile.email);
+      if (byEmail) {
+        teamMember = await this.authRepository.linkGithubAccount(
+          byEmail.business_id,
+          byEmail.id,
+          profile.githubId,
+          profile.avatarUrl,
+        );
+        this.logger.log(`Linked GitHub account to existing user ${maskEmail(profile.email)}`);
+      }
+    }
+
+    if (!teamMember) {
+      const businessName = profile.name || profile.email.split('@')[0] || 'My Business';
+      const slug = await this.buildUniqueSlug(businessName);
+      teamMember = await this.authRepository.createOAuthTeamMemberWithBusinessForGithub(
+        profile.email,
+        profile.name,
+        businessName,
+        slug,
+        profile.githubId,
+        profile.avatarUrl,
+      );
+      this.logger.log(`New GitHub registration: ${maskEmail(profile.email)}`);
+    }
+
+    if (teamMember.status === 'SUSPENDED') {
+      throw new UnauthorizedException('Account has been suspended');
+    }
+
+    this.authRepository
+      .updateLastLogin(teamMember.business_id, teamMember.id)
+      .catch((err: Error) => {
+        this.logger.warn(`Failed to update last login for ${teamMember.id}: ${err.message}`);
+      });
+
+    return this.issueTokensForNewSession(teamMember, meta);
+  }
+
+  // ─────────────────────────────────────────────
+  // Login / sign-up via Microsoft OAuth
+  // ─────────────────────────────────────────────
+
+  async handleMicrosoftLogin(
+    rawProfile: MicrosoftProfile,
+    meta: SessionMeta = {},
+  ): Promise<AuthTokensDto> {
+    const profile: MicrosoftProfile = { ...rawProfile, email: normalizeEmail(rawProfile.email) };
+
+    let teamMember = await this.authRepository.findTeamMemberByMicrosoftId(profile.microsoftId);
+
+    if (!teamMember) {
+      const byEmail = await this.authRepository.findTeamMemberByEmail(profile.email);
+      if (byEmail) {
+        teamMember = await this.authRepository.linkMicrosoftAccount(
+          byEmail.business_id,
+          byEmail.id,
+          profile.microsoftId,
+        );
+        this.logger.log(`Linked Microsoft account to existing user ${maskEmail(profile.email)}`);
+      }
+    }
+
+    if (!teamMember) {
+      const businessName = profile.name || profile.email.split('@')[0] || 'My Business';
+      const slug = await this.buildUniqueSlug(businessName);
+      teamMember = await this.authRepository.createOAuthTeamMemberWithBusinessForMicrosoft(
+        profile.email,
+        profile.name,
+        businessName,
+        slug,
+        profile.microsoftId,
+      );
+      this.logger.log(`New Microsoft registration: ${maskEmail(profile.email)}`);
     }
 
     if (teamMember.status === 'SUSPENDED') {

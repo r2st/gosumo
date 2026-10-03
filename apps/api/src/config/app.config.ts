@@ -31,6 +31,22 @@ export default registerAs('app', () => ({
       process.env['GOOGLE_CALLBACK_URL'] ?? 'http://localhost:3000/auth/google/callback',
   },
 
+  // GitHub OAuth
+  github: {
+    clientId: process.env['GITHUB_CLIENT_ID'],
+    clientSecret: process.env['GITHUB_CLIENT_SECRET'],
+    callbackUrl:
+      process.env['GITHUB_CALLBACK_URL'] ?? 'http://localhost:3000/auth/github/callback',
+  },
+
+  // Microsoft OAuth
+  microsoft: {
+    clientId: process.env['MICROSOFT_CLIENT_ID'],
+    clientSecret: process.env['MICROSOFT_CLIENT_SECRET'],
+    callbackUrl:
+      process.env['MICROSOFT_CALLBACK_URL'] ?? 'http://localhost:3000/auth/microsoft/callback',
+  },
+
   // Dashboard frontend — OAuth redirects and password-reset links point here
   frontendUrl: process.env['FRONTEND_URL'] ?? 'http://localhost:3001',
 

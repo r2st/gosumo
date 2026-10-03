@@ -186,6 +186,146 @@ export class AuthRepository {
     });
   }
 
+  async findTeamMemberByGithubId(githubId: string): Promise<TeamMemberWithBusiness | null> {
+    return this.prisma.team_members.findFirst({
+      where: {
+        github_id: githubId,
+        deleted_at: null,
+      },
+      include: {
+        business: true,
+      },
+    });
+  }
+
+  async findTeamMemberByMicrosoftId(microsoftId: string): Promise<TeamMemberWithBusiness | null> {
+    return this.prisma.team_members.findFirst({
+      where: {
+        microsoft_id: microsoftId,
+        deleted_at: null,
+      },
+      include: {
+        business: true,
+      },
+    });
+  }
+
+  async linkGithubAccount(
+    businessId: string,
+    id: string,
+    githubId: string,
+    avatarUrl: string | null,
+  ): Promise<TeamMemberWithBusiness> {
+    return this.prisma.team_members.update({
+      where: { id, business_id: businessId },
+      data: {
+        github_id: githubId,
+        auth_provider: AuthProvider.GITHUB,
+        ...(avatarUrl ? { avatar_url: avatarUrl } : {}),
+      },
+      include: {
+        business: true,
+      },
+    });
+  }
+
+  async linkMicrosoftAccount(
+    businessId: string,
+    id: string,
+    microsoftId: string,
+  ): Promise<TeamMemberWithBusiness> {
+    return this.prisma.team_members.update({
+      where: { id, business_id: businessId },
+      data: {
+        microsoft_id: microsoftId,
+        auth_provider: AuthProvider.MICROSOFT,
+      },
+      include: {
+        business: true,
+      },
+    });
+  }
+
+  async createOAuthTeamMemberWithBusinessForGithub(
+    email: string,
+    name: string,
+    businessName: string,
+    slug: string,
+    githubId: string,
+    avatarUrl: string | null,
+  ): Promise<TeamMemberWithBusiness> {
+    return this.prisma.$transaction(async (tx) => {
+      const business = await tx.businesses.create({
+        data: {
+          name: businessName,
+          slug,
+          email: email.toLowerCase(),
+        },
+      });
+
+      const teamMember = await tx.team_members.create({
+        data: {
+          business_id: business.id,
+          email: email.toLowerCase(),
+          name,
+          avatar_url: avatarUrl,
+          role: TeamMemberRole.OWNER,
+          status: TeamMemberStatus.ACTIVE,
+          auth_provider: AuthProvider.GITHUB,
+          github_id: githubId,
+        },
+        include: {
+          business: true,
+        },
+      });
+
+      this.logger.log(
+        `Created business '${businessName}' (${business.id}) via GitHub for ${maskEmail(email)}`,
+      );
+
+      return teamMember;
+    });
+  }
+
+  async createOAuthTeamMemberWithBusinessForMicrosoft(
+    email: string,
+    name: string,
+    businessName: string,
+    slug: string,
+    microsoftId: string,
+  ): Promise<TeamMemberWithBusiness> {
+    return this.prisma.$transaction(async (tx) => {
+      const business = await tx.businesses.create({
+        data: {
+          name: businessName,
+          slug,
+          email: email.toLowerCase(),
+        },
+      });
+
+      const teamMember = await tx.team_members.create({
+        data: {
+          business_id: business.id,
+          email: email.toLowerCase(),
+          name,
+          role: TeamMemberRole.OWNER,
+          status: TeamMemberStatus.ACTIVE,
+          auth_provider: AuthProvider.MICROSOFT,
+          microsoft_id: microsoftId,
+        },
+        include: {
+          business: true,
+        },
+      });
+
+      this.logger.log(
+        `Created business '${businessName}' (${business.id}) via Microsoft for ${maskEmail(email)}`,
+      );
+
+      return teamMember;
+    });
+  }
+
   /**
    * Partial update of a team member record.
    */

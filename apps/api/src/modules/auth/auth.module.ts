@@ -10,6 +10,8 @@ import { AuthRepository } from './auth.repository';
 import { SessionService } from './session.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
+import { GitHubStrategy } from './strategies/github.strategy';
+import { MicrosoftStrategy } from './strategies/microsoft.strategy';
 import { RolesGuard } from './guards/roles.guard';
 import { AuthThrottleGuard } from './auth-throttle.guard';
 import { AuthThrottleLimiter } from './auth-throttle.limiter';
@@ -36,6 +38,8 @@ import { redisProvider, REDIS_CLIENT, RedisLifecycle } from './redis.provider';
     SessionService,
     JwtStrategy,
     GoogleStrategy,
+    GitHubStrategy,
+    MicrosoftStrategy,
     RolesGuard,
     {
       provide: APP_GUARD,

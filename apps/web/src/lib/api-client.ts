@@ -259,8 +259,10 @@ export const api = {
     logout: (refreshToken: string) =>
       request<void>('/auth/logout', { method: 'POST', body: { refreshToken } }),
     me: () => request<AuthUser>('/auth/me'),
-    /** Conventional redirect target for the Google OAuth flow. */
+    /** Conventional redirect targets for OAuth flows. */
     googleUrl: () => `${API_BASE}/auth/google`,
+    githubUrl: () => `${API_BASE}/auth/github`,
+    microsoftUrl: () => `${API_BASE}/auth/microsoft`,
   },
 
   // ── Business / tenant ───────────────────────────────────────────────────────
