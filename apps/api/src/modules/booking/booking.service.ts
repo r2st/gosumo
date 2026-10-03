@@ -330,7 +330,7 @@ export class BookingService {
     }
 
     this.logger.log(
-      `Recurring series ${recurrence.id}: ${created.length} created, ${skipped.length} skipped`,
+      `Recurring series ${recurrence.id}: ${created.length} created, ${skipped.length} skipped (business ${businessId})`,
     );
 
     return { recurrenceId: recurrence.id, occurrences: created, skipped };
@@ -366,7 +366,7 @@ export class BookingService {
 
     this.logger.log(
       `Booking ${booking.id} created (${booking.status}) ` +
-        `start=${booking.start_at.toISOString()} staff=${booking.staff_id ?? 'any'}`,
+        `start=${booking.start_at.toISOString()} staff=${booking.staff_id ?? 'any'} (business ${businessId})`,
     );
   }
 
@@ -517,7 +517,7 @@ export class BookingService {
       await this.applyCancellation(businessId, sibling, reason, cancelledBy);
     }
     this.logger.log(
-      `Cancelled recurring series ${recurrenceId} (${future.length} future occurrences)`,
+      `Cancelled recurring series ${recurrenceId} (${future.length} future occurrences, business ${businessId})`,
     );
   }
 
@@ -619,7 +619,7 @@ export class BookingService {
     this.eventEmitter.emit('booking.rescheduled', event);
 
     this.logger.log(
-      `Booking ${bookingId} rescheduled ${oldStart.toISOString()} → ${newStart.toISOString()}`,
+      `Booking ${bookingId} rescheduled ${oldStart.toISOString()} → ${newStart.toISOString()} (business ${businessId})`,
     );
     return toBookingDto(updated);
   }
@@ -1283,7 +1283,12 @@ export class BookingService {
     const message = err instanceof Error ? err.message : String(err);
     await this.repository
       .updateConnection(businessId, connection.id, { last_sync_error: message })
-      .catch(() => undefined);
+      .catch((updateErr: unknown) => {
+        this.logger.warn(
+          `Could not persist calendar auth failure for connection ${connection.id} ` +
+            `(business ${businessId}): ${updateErr instanceof Error ? updateErr.message : String(updateErr)}`,
+        );
+      });
 
     const event: TaskCreatedEvent = {
       type: 'task.created',

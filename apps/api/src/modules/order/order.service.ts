@@ -481,7 +481,7 @@ export class OrderService {
     this.assertCasResult(updated, orderId, currentStatus, dto.status);
 
     this.logger.log(
-      `Order ${order.order_number} status changed: ${currentStatus} -> ${dto.status}`,
+      `Order ${order.order_number} status changed: ${currentStatus} -> ${dto.status} (business ${businessId})`,
     );
 
     return toOrderDto(updated);
@@ -545,7 +545,7 @@ export class OrderService {
     this.eventEmitter.emit('order.cancelled', event);
 
     this.logger.log(
-      `Order ${order.order_number} cancelled. Reason: ${dto.reason}`,
+      `Order ${order.order_number} cancelled (business ${businessId}). Reason: ${dto.reason}`,
     );
 
     return toOrderDto(updated);
@@ -593,7 +593,7 @@ export class OrderService {
 
     this.eventEmitter.emit('order.packed', event);
 
-    this.logger.log(`Order ${order.order_number} marked as PACKED`);
+    this.logger.log(`Order ${order.order_number} marked as PACKED (business ${businessId})`);
 
     return toOrderDto(updated);
   }
@@ -664,7 +664,7 @@ export class OrderService {
     this.eventEmitter.emit('order.shipped', event);
 
     this.logger.log(
-      `Order ${order.order_number} shipped. Tracking: ${dto.trackingId} (${dto.provider})`,
+      `Order ${order.order_number} shipped (business ${businessId}). Tracking: ${dto.trackingId} (${dto.provider})`,
     );
 
     return toOrderDto(updated);
@@ -720,7 +720,7 @@ export class OrderService {
     this.eventEmitter.emit('order.returned', event);
 
     this.logger.log(
-      `Order ${order.order_number} returned. Reason: ${dto.reason}`,
+      `Order ${order.order_number} returned (business ${businessId}). Reason: ${dto.reason}`,
     );
 
     return toOrderDto(updated);
@@ -832,7 +832,7 @@ export class OrderService {
 
       if (!order) {
         this.logger.warn(
-          `Payment success for unknown order ${event.orderId}`,
+          `Payment success for unknown order ${event.orderId} (business ${event.businessId})`,
         );
         return;
       }
@@ -880,11 +880,11 @@ export class OrderService {
       this.eventEmitter.emit('order.confirmed', confirmedEvent);
 
       this.logger.log(
-        `Order ${order.order_number} confirmed after payment ${event.paymentId}`,
+        `Order ${order.order_number} confirmed after payment ${event.paymentId} (business ${event.businessId})`,
       );
     } catch (error) {
       this.logger.error(
-        `Failed to handle payment success for order ${event.orderId}: ` +
+        `Failed to handle payment success for order ${event.orderId} (business ${event.businessId}): ` +
           `${error instanceof Error ? error.message : String(error)}`,
       );
     }
@@ -908,7 +908,7 @@ export class OrderService {
 
       if (!order) {
         this.logger.warn(
-          `Refund completed for unknown order ${event.orderId}`,
+          `Refund completed for unknown order ${event.orderId} (business ${event.businessId})`,
         );
         return;
       }
@@ -943,11 +943,11 @@ export class OrderService {
       }
 
       this.logger.log(
-        `Order ${order.order_number} marked as REFUNDED after refund ${event.refundId}`,
+        `Order ${order.order_number} marked as REFUNDED after refund ${event.refundId} (business ${event.businessId})`,
       );
     } catch (error) {
       this.logger.error(
-        `Failed to handle refund completion for order ${event.orderId}: ` +
+        `Failed to handle refund completion for order ${event.orderId} (business ${event.businessId}): ` +
           `${error instanceof Error ? error.message : String(error)}`,
       );
     }
@@ -971,7 +971,7 @@ export class OrderService {
 
       if (!order) {
         this.logger.warn(
-          `Shipping delivered for unknown order ${event.orderId}`,
+          `Shipping delivered for unknown order ${event.orderId} (business ${event.businessId})`,
         );
         return;
       }
@@ -1019,11 +1019,11 @@ export class OrderService {
       this.eventEmitter.emit('order.delivered', deliveredEvent);
 
       this.logger.log(
-        `Order ${order.order_number} marked as DELIVERED`,
+        `Order ${order.order_number} marked as DELIVERED (business ${event.businessId})`,
       );
     } catch (error) {
       this.logger.error(
-        `Failed to handle shipping delivery for order ${event.orderId}: ` +
+        `Failed to handle shipping delivery for order ${event.orderId} (business ${event.businessId}): ` +
           `${error instanceof Error ? error.message : String(error)}`,
       );
     }

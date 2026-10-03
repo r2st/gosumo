@@ -153,7 +153,7 @@ export class DataExportService {
     });
 
     this.logger.log(
-      `Data export for client ${clientId}: ` +
+      `Data export for client ${clientId} (business ${businessId}): ` +
         `${bundle.sections['messages']?.included ?? 0} message(s), ` +
         `${bundle.sections['orders']?.included ?? 0} order(s)` +
         (bundle.disclosure.truncated ? ' (truncated)' : ''),

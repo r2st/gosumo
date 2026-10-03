@@ -1494,7 +1494,7 @@ export class PaymentService implements OnModuleInit {
 
     this.eventEmitter.emit('payment.failed', failedEvent);
 
-    this.logger.log(`Payment ${payment.id} failed via Stripe webhook: ${failureReason}`);
+    this.logger.warn(`Payment ${payment.id} failed via Stripe webhook (business ${payment.business_id}): ${failureReason}`);
   }
 
   /**

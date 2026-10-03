@@ -167,7 +167,13 @@ export class OperatorAlertService {
         // than a second alert about the same thing.
         const existing = await this.repository
           .findByDedupeKey(businessId, dedupeKey)
-          .catch(() => null);
+          .catch((findErr: unknown) => {
+            this.logger.warn(
+              `Could not look up deduped alert ${input.kind} for business ${businessId}: ` +
+                `${findErr instanceof Error ? findErr.message : String(findErr)}`,
+            );
+            return null;
+          });
         this.logger.debug(
           `Operator alert ${input.kind} deduped for business ${businessId} (${dedupeKey})`,
         );

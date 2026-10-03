@@ -1106,14 +1106,14 @@ export class ConversationService {
 
       this.logger.log(
         `Released ${released.length} conversation(s) held by removed member ` +
-          `${event.memberId}: ${released.join(', ')}`,
+          `${event.memberId} (business ${event.businessId}): ${released.join(', ')}`,
       );
     } catch (error) {
       // A throw here would propagate into the event bus and take out the other
       // listeners on this event alongside it.
       this.logger.error(
-        `Could not release conversations held by removed member ${event.memberId}: ` +
-          this.errMsg(error),
+        `Could not release conversations held by removed member ${event.memberId} ` +
+          `(business ${event.businessId}): ${this.errMsg(error)}`,
       );
     }
   }
