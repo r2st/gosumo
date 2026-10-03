@@ -26,6 +26,24 @@ const TOOLS = [
     description: 'Calculate Customer Satisfaction Score from survey responses.',
     icon: '⭐',
   },
+  {
+    slug: 'ticket-template-generator',
+    title: 'Ticket Template Generator',
+    description: 'Generate structured ticket templates for bug reports, feature requests, and more.',
+    icon: '📝',
+  },
+  {
+    slug: 'sla-calculator',
+    title: 'SLA Calculator',
+    description: 'Calculate uptime targets, allowed downtime, and staffing needs from your SLA.',
+    icon: '📐',
+  },
+  {
+    slug: 'survey-builder',
+    title: 'Survey Builder',
+    description: 'Build customer satisfaction surveys with pre-written questions and rating scales.',
+    icon: '📋',
+  },
 ] as const;
 
 export default function ToolsIndex() {
