@@ -201,6 +201,17 @@ export function limitForMetric(plan: PlanDefinition, metric: UsageMetric): numbe
 }
 
 // ─────────────────────────────────────────────
+// Repository safety limits
+// ─────────────────────────────────────────────
+
+/** Max channel accounts returned by findChannelAccounts. */
+export const MAX_CHANNEL_ACCOUNTS_PER_LIST = 100;
+/** Max team members returned by findTeamMembers. */
+export const MAX_TEAM_MEMBERS_PER_LIST = 500;
+/** Max business rules returned by findBusinessRules. */
+export const MAX_BUSINESS_RULES_PER_LIST = 200;
+
+// ─────────────────────────────────────────────
 // Onboarding flow
 // ─────────────────────────────────────────────
 

@@ -216,6 +216,62 @@ export class AiQualityRepository {
   }
 
   /**
+   * Upsert a batch of bucket rows in a single transaction, eliminating the
+   * per-group round-trip that the rollup loop otherwise pays.
+   */
+  async upsertBucketBatch(
+    bucket: AiQualityBucket,
+    bucketStart: Date,
+    groups: RollupGroup[],
+    now: Date = new Date(),
+  ): Promise<number> {
+    if (groups.length === 0) return 0;
+    const ops = groups.map((group) => {
+      const values = {
+        decisions: group.decisions,
+        auto_executed: group.auto_executed,
+        sent_for_review: group.sent_for_review,
+        escalated: group.escalated,
+        overridden: group.overridden,
+        expired: group.expired,
+        human_overrides: group.human_overrides,
+        confidence_deciles: group.deciles as Prisma.InputJsonValue,
+        confidence_sum: group.confidence_sum,
+        confidence_min: group.confidence_min,
+        confidence_max: group.confidence_max,
+        latency_count: group.latency_count,
+        latency_sum_ms: group.latency_sum_ms,
+        latency_p50_ms: group.latency_p50_ms,
+        latency_p95_ms: group.latency_p95_ms,
+        latency_max_ms: group.latency_max_ms,
+        prompt_tokens: group.prompt_tokens,
+        completion_tokens: group.completion_tokens,
+        computed_at: now,
+      };
+      return this.prisma.ai_quality_metrics.upsert({
+        where: {
+          business_id_bucket_bucket_start_channel: {
+            business_id: group.business_id,
+            bucket,
+            bucket_start: bucketStart,
+            channel: group.channel,
+          },
+        },
+        create: {
+          business_id: group.business_id,
+          bucket,
+          bucket_start: bucketStart,
+          channel: group.channel,
+          ...values,
+        },
+        update: values,
+      });
+    });
+    const results = await this.prisma.$transaction(ops);
+    return results.length;
+  }
+
+  /**
    * The most recent bucket start already computed at this granularity.
    *
    * Cross-tenant: the rollup asks "how far behind am I", which is a property of

@@ -9,7 +9,7 @@ import {
 import { ChannelType, MessageContentType } from '@gosumo/shared';
 import { PrismaService } from '../../../common/services/prisma.service';
 import { isBlankText } from '../../../common/utils/blank-text.util';
-import { CONTEXT_MESSAGE_WINDOW } from '../ai-engine.constants';
+import { CONTEXT_MESSAGE_WINDOW, MAX_BUSINESS_RULES_PER_CONTEXT } from '../ai-engine.constants';
 
 /**
  * Everything the pipeline needs to reason about one inbound message. Any
@@ -111,6 +111,7 @@ export class ContextLoaderService {
       this.prisma.business_rules.findMany({
         where: { business_id: businessId, is_active: true, deleted_at: null },
         orderBy: { priority: 'desc' },
+        take: MAX_BUSINESS_RULES_PER_CONTEXT,
       }),
     ]);
 

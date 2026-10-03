@@ -62,6 +62,9 @@ describe('RealtyIntelligenceService', () => {
   beforeEach(() => {
     repository = {
       upsertAggregate: jest.fn().mockResolvedValue(undefined),
+      upsertAggregateBatch: jest.fn().mockImplementation(
+        async (data: Array<{ businessId: string }>) => data.length,
+      ),
       findLatestByCorridor: jest.fn().mockResolvedValue([]),
       listByBusiness: jest.fn().mockResolvedValue([]),
       listCorridors: jest.fn().mockResolvedValue([]),
@@ -95,7 +98,8 @@ describe('RealtyIntelligenceService', () => {
       expect(result.businessCount).toBe(1);
       // 5 metrics for the single qualifying corridor.
       expect(result.aggregateCount).toBe(5);
-      expect(repository.upsertAggregate).toHaveBeenCalledTimes(5);
+      expect(repository.upsertAggregateBatch).toHaveBeenCalledTimes(1);
+      expect(repository.upsertAggregateBatch.mock.calls[0]![0]).toHaveLength(5);
       expect(emitter.emit).toHaveBeenCalledWith(
         'realty.intelligence.aggregates_generated',
         expect.objectContaining({ type: 'realty.intelligence.aggregates_generated', aggregateCount: 5 }),
@@ -106,7 +110,7 @@ describe('RealtyIntelligenceService', () => {
       leads.listLeadsForAggregation.mockResolvedValue(fetched([makeLead(), makeLead()])); // only 2
       const result = await service.generateNightlyAggregates();
       expect(result.aggregateCount).toBe(0);
-      expect(repository.upsertAggregate).not.toHaveBeenCalled();
+      expect(repository.upsertAggregateBatch).toHaveBeenCalledWith([]);
     });
 
     it('single-tenant run skips a business that has not opted in', async () => {
@@ -159,12 +163,13 @@ describe('RealtyIntelligenceService', () => {
         leads.listLeadsForAggregation.mockResolvedValue(
           fetched(Array.from({ length: 6 }, () => makeLead())),
         );
-        repository.upsertAggregate.mockImplementation((async (arg: {
-          businessId: string;
-        }) => {
-          if (arg.businessId === BIZ_B) throw new Error('constraint violation');
-          return undefined;
-        }) as never);
+        repository.upsertAggregateBatch.mockImplementation(
+          async (data: Array<{ businessId: string }>) => {
+            if (data.length > 0 && data[0]!.businessId === BIZ_B)
+              throw new Error('constraint violation');
+            return data.length;
+          },
+        );
 
         const result = await service.generateNightlyAggregates();
 

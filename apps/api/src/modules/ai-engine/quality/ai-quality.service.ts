@@ -128,25 +128,22 @@ export class AiQualityService {
 
     for (const bucketStart of due) {
       if (Date.now() >= deadline) {
-        // Out of budget mid-catch-up. Say so rather than let the next run
-        // infer "nothing to do" from a `lastComputed` that moved.
         pending = true;
         break;
       }
 
       const to = new Date(bucketStart.getTime() + size);
       const groups = await this.repository.aggregateWindow(bucketStart, to);
+      const written = await this.repository.upsertBucketBatch(
+        bucket,
+        bucketStart,
+        groups,
+        now,
+      );
       for (const group of groups) {
-        await this.repository.upsertBucket(
-          group.business_id,
-          bucket,
-          bucketStart,
-          group,
-          now,
-        );
         businesses.add(group.business_id);
-        rowsWritten += 1;
       }
+      rowsWritten += written;
       bucketsComputed += 1;
     }
 
@@ -219,18 +216,13 @@ export class AiQualityService {
         bucketStart,
         new Date(t + size),
       );
-      for (const group of groups) {
-        // The aggregate spans tenants; this path rebuilds one of them.
-        if (group.business_id !== businessId) continue;
-        await this.repository.upsertBucket(
-          businessId,
-          bucket,
-          bucketStart,
-          group,
-          now,
-        );
-        written += 1;
-      }
+      const filtered = groups.filter((g) => g.business_id === businessId);
+      written += await this.repository.upsertBucketBatch(
+        bucket,
+        bucketStart,
+        filtered,
+        now,
+      );
       buckets += 1;
     }
 

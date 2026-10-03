@@ -71,6 +71,46 @@ export class RealtyIntelligenceRepository {
     });
   }
 
+  /**
+   * Upsert a batch of aggregates in a single transaction, eliminating the
+   * per-aggregate round-trip the nightly loop otherwise pays.
+   */
+  async upsertAggregateBatch(
+    data: UpsertAggregateData[],
+  ): Promise<number> {
+    if (data.length === 0) return 0;
+    const ops = data.map((d) =>
+      this.prisma.realty_intelligence_aggregates.upsert({
+        where: {
+          business_id_corridor_metric_type_period_start: {
+            business_id: d.businessId,
+            corridor: d.corridor,
+            metric_type: d.metricType,
+            period_start: d.periodStart,
+          },
+        },
+        create: {
+          business_id: d.businessId,
+          corridor: d.corridor,
+          metric_type: d.metricType,
+          metric_value: d.metricValue,
+          sample_size: d.sampleSize,
+          min_n_threshold: d.minNThreshold,
+          period_start: d.periodStart,
+          period_end: d.periodEnd,
+        },
+        update: {
+          metric_value: d.metricValue,
+          sample_size: d.sampleSize,
+          min_n_threshold: d.minNThreshold,
+          period_end: d.periodEnd,
+        },
+      }),
+    );
+    const results = await this.prisma.$transaction(ops);
+    return results.length;
+  }
+
   /** Most-recent aggregate per metric for a corridor (one row per metric_type). */
   async findLatestByCorridor(
     businessId: string,

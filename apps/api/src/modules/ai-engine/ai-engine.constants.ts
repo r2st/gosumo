@@ -61,6 +61,8 @@ export const WEIGHT_POLICY_CLARITY = 0.5;
 
 /** Number of recent messages loaded as conversation history. */
 export const CONTEXT_MESSAGE_WINDOW = 20;
+/** Safety cap on business rules loaded per AI pipeline invocation. */
+export const MAX_BUSINESS_RULES_PER_CONTEXT = 200;
 /**
  * Max characters kept per message when rendering conversation history into
  * the prompt. WhatsApp/web-chat text can run to tens of thousands of

@@ -11,6 +11,11 @@ import {
   RuleType,
 } from '@gosumo/database';
 import { Prisma } from '@prisma/client';
+import {
+  MAX_CHANNEL_ACCOUNTS_PER_LIST,
+  MAX_TEAM_MEMBERS_PER_LIST,
+  MAX_BUSINESS_RULES_PER_LIST,
+} from './tenant.constants';
 
 /**
  * TenantRepository — all Prisma queries for the Tenant module.
@@ -172,6 +177,7 @@ export class TenantRepository {
         deleted_at: null,
       },
       orderBy: { created_at: 'desc' },
+      take: MAX_CHANNEL_ACCOUNTS_PER_LIST,
     });
   }
 
@@ -274,6 +280,7 @@ export class TenantRepository {
         status: { in: [TeamMemberStatus.ACTIVE, TeamMemberStatus.INVITED] },
       },
       orderBy: { created_at: 'asc' },
+      take: MAX_TEAM_MEMBERS_PER_LIST,
     });
   }
 
@@ -481,6 +488,7 @@ export class TenantRepository {
         ...(type ? { type } : {}),
       },
       orderBy: { priority: 'desc' },
+      take: MAX_BUSINESS_RULES_PER_LIST,
     });
   }
 }

@@ -83,6 +83,7 @@ function metricRow(over: Partial<ai_quality_metrics> = {}): ai_quality_metrics {
 type RepoMock = {
   aggregateWindow: jest.Mock;
   upsertBucket: jest.Mock;
+  upsertBucketBatch: jest.Mock;
   latestComputedBucketStart: jest.Mock;
   listMetrics: jest.Mock;
   deleteFrom: jest.Mock;
@@ -96,6 +97,9 @@ describe('AiQualityService', () => {
     repo = {
       aggregateWindow: jest.fn().mockResolvedValue([]),
       upsertBucket: jest.fn().mockResolvedValue(metricRow()),
+      upsertBucketBatch: jest.fn().mockImplementation(
+        async (_bucket: unknown, _start: unknown, groups: RollupGroup[]) => groups.length,
+      ),
       latestComputedBucketStart: jest.fn().mockResolvedValue(null),
       listMetrics: jest.fn().mockResolvedValue([]),
       deleteFrom: jest.fn().mockResolvedValue(0),
@@ -140,14 +144,12 @@ describe('AiQualityService', () => {
 
       const summary = await service.runRollup(NOW);
 
-      const written = repo.upsertBucket.mock.calls.map(
-        ([businessId, , , g]: [string, unknown, unknown, RollupGroup]) => [
-          businessId,
-          g.business_id,
-        ],
+      const batchCalls = repo.upsertBucketBatch.mock.calls;
+      const allGroups = batchCalls.flatMap(
+        ([, , groups]: [unknown, unknown, RollupGroup[]]) => groups,
       );
-      for (const [target, source] of written) expect(target).toBe(source);
-      expect(new Set(written.map(([t]) => t))).toEqual(new Set([BIZ_A, BIZ_B]));
+      const bizIds = new Set(allGroups.map((g) => g.business_id));
+      expect(bizIds).toEqual(new Set([BIZ_A, BIZ_B]));
 
       const hour = summary.results.find((r) => r.bucket === AiQualityBucket.HOUR)!;
       expect(hour.businesses).toBe(2);
@@ -249,8 +251,11 @@ describe('AiQualityService', () => {
       );
 
       expect(result.written).toBe(1);
-      for (const [businessId] of repo.upsertBucket.mock.calls) {
-        expect(businessId).toBe(BIZ_A);
+      const batchGroups = repo.upsertBucketBatch.mock.calls.flatMap(
+        ([, , groups]: [unknown, unknown, RollupGroup[]]) => groups,
+      );
+      for (const g of batchGroups) {
+        expect(g.business_id).toBe(BIZ_A);
       }
     });
 

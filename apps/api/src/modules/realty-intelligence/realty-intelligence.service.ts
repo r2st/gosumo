@@ -134,24 +134,22 @@ export class RealtyIntelligenceService {
       try {
         const leads = await this.fetchIntelLeads(bId, periodStart);
         const aggregates = computeAggregatesForBusiness(leads, DEFAULT_MIN_N_THRESHOLD);
+        const upsertData = aggregates.map((agg) => ({
+          businessId: bId,
+          corridor: agg.corridor,
+          metricType: agg.metricType,
+          metricValue: agg.metricValue as unknown as Prisma.InputJsonValue,
+          sampleSize: agg.sampleSize,
+          minNThreshold: DEFAULT_MIN_N_THRESHOLD,
+          periodStart,
+          periodEnd,
+        }));
+        const written = await this.repository.upsertAggregateBatch(upsertData);
+        aggregateCount += written;
         for (const agg of aggregates) {
-          await this.repository.upsertAggregate({
-            businessId: bId,
-            corridor: agg.corridor,
-            metricType: agg.metricType,
-            metricValue: agg.metricValue as unknown as Prisma.InputJsonValue,
-            sampleSize: agg.sampleSize,
-            minNThreshold: DEFAULT_MIN_N_THRESHOLD,
-            periodStart,
-            periodEnd,
-          });
-          aggregateCount++;
           corridors.add(`${bId}:${agg.corridor}`);
         }
       } catch (err) {
-        // Aggregates are upserted per corridor, so a mid-tenant failure leaves
-        // that tenant partially rebuilt. That is safe to leave: the rows are
-        // idempotent and tonight's run overwrites them wholesale.
         businessesFailed++;
         this.logger.error(
           `Nightly aggregation failed for business ${bId}: ${
