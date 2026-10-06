@@ -7,6 +7,7 @@ import Appointment from './components/Appointment.jsx'
 import Testimonials from './components/Testimonials.jsx'
 import Contact from './components/Contact.jsx'
 import Footer from './components/Footer.jsx'
+import DoAideFooter from './components/DoAideFooter.jsx'
 export default function App() {
   return (
     <div className="min-h-screen bg-white">
@@ -21,6 +22,7 @@ export default function App() {
         <Contact />
       </main>
       <Footer />
+      <DoAideFooter />
     </div>
   )
 }
