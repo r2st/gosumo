@@ -29,6 +29,27 @@ const POSTS = [
     date: '2026-09-29',
     readTime: '7 min read',
   },
+  {
+    slug: 'ai-helpdesk-revolution-indian-smbs',
+    title: 'The AI Helpdesk Revolution: Why Indian SMBs Are Switching Now',
+    excerpt: 'From Jaipur textile exporters to Bengaluru SaaS startups, Indian SMBs are adopting AI helpdesks to handle multilingual support at scale — without hiring large teams.',
+    date: '2026-10-06',
+    readTime: '7 min read',
+  },
+  {
+    slug: 'customer-support-automation-reduce-costs',
+    title: 'Customer Support Automation: Cut Costs by 50% Without Losing the Human Touch',
+    excerpt: 'Automation does not mean robotic replies. Learn how to automate the repetitive work while keeping high-touch interactions personal and empathetic.',
+    date: '2026-10-08',
+    readTime: '6 min read',
+  },
+  {
+    slug: 'ticketing-best-practices-indian-smbs',
+    title: 'Ticketing Best Practices for Indian SMBs: A Practical Guide',
+    excerpt: 'From WhatsApp-first workflows to festival-season surge planning, here are the ticketing strategies that work for Indian small and medium businesses.',
+    date: '2026-10-10',
+    readTime: '8 min read',
+  },
 ] as const;
 
 export default function BlogIndex() {
