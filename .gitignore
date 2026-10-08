@@ -12,9 +12,8 @@ out/
 next-env.d.ts
 
 # Environment
-.env
-.env.local
-.env.*.local
+.env*
+!.env.example
 
 # Secrets — never commit keys, tokens, or credentials
 keys
