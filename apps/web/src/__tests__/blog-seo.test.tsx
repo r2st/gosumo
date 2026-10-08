@@ -31,10 +31,10 @@ describe('Blog Index SEO articles', () => {
     expect(screen.getByText('The Complete Guide to Automated Ticket Routing')).toBeInTheDocument();
   });
 
-  it('renders all 6 blog post links', async () => {
+  it('renders all 9 blog post links', async () => {
     const { default: BlogIndex } = await import('@/app/blog/page');
     const { container } = render(<BlogIndex />);
     const links = container.querySelectorAll('a[href^="/blog/"]');
-    expect(links.length).toBe(6);
+    expect(links.length).toBe(9);
   });
 });
