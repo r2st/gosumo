@@ -144,7 +144,7 @@ export default function ImportPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'gosumo-leads-sample.csv';
+    a.download = 'desk-leads-sample.csv';
     a.click();
     URL.revokeObjectURL(url);
   };

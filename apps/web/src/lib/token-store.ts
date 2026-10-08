@@ -8,7 +8,18 @@
 // SPA can bootstrap a session without the cookie during local development.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const REFRESH_KEY = 'gosumo.refreshToken';
+const REFRESH_KEY = 'desk.refreshToken';
+const LEGACY_REFRESH_KEY = 'gosumo.refreshToken';
+
+function migrateRefreshToken(): void {
+  if (typeof window === 'undefined') return;
+  const old = window.localStorage.getItem(LEGACY_REFRESH_KEY);
+  if (old && !window.localStorage.getItem(REFRESH_KEY)) {
+    window.localStorage.setItem(REFRESH_KEY, old);
+    window.localStorage.removeItem(LEGACY_REFRESH_KEY);
+  }
+}
+migrateRefreshToken();
 
 let accessToken: string | null = null;
 

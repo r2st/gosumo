@@ -1,4 +1,4 @@
-// GoSumo Realty — dashboard UI internationalization (English + Hindi).
+// DoAide Desk — dashboard UI internationalization (English + Hindi).
 //
 // The dashboard is built for Indian real-estate brokers, so every shared UI label
 // ships with a Hindi (Devanagari) translation alongside English. Page-specific copy
@@ -19,7 +19,18 @@ export const UI_LANGUAGE_LABELS: Record<UiLang, string> = {
 };
 
 /** localStorage key + cookie name the UI-language preference is persisted under. */
-export const LANG_STORAGE_KEY = 'gosumo-lang';
+export const LANG_STORAGE_KEY = 'desk-lang';
+const LEGACY_LANG_KEY = 'gosumo-lang';
+
+function migrateLangKey(): void {
+  if (typeof window === 'undefined') return;
+  const old = window.localStorage.getItem(LEGACY_LANG_KEY);
+  if (old && !window.localStorage.getItem(LANG_STORAGE_KEY)) {
+    window.localStorage.setItem(LANG_STORAGE_KEY, old);
+    window.localStorage.removeItem(LEGACY_LANG_KEY);
+  }
+}
+migrateLangKey();
 
 /**
  * Flat, dot-namespaced translation table. English is the source of truth and the

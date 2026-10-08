@@ -5,7 +5,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { useOnboardingStatus } from '@/hooks/use-onboarding';
 import { OnboardingWizard } from './onboarding-wizard';
 
-const DISMISS_KEY = 'gosumo:onboarding:dismissed';
+const DISMISS_KEY = 'desk:onboarding:dismissed';
 
 /**
  * OnboardingGate — checks onboarding status once the user is authenticated and

@@ -4,7 +4,18 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 
 export type Theme = 'light' | 'dark' | 'system';
 
-export const THEME_STORAGE_KEY = 'gosumo-theme';
+export const THEME_STORAGE_KEY = 'desk-theme';
+const LEGACY_THEME_KEY = 'gosumo-theme';
+
+function migrateThemeKey(): void {
+  if (typeof window === 'undefined') return;
+  const old = window.localStorage.getItem(LEGACY_THEME_KEY);
+  if (old && !window.localStorage.getItem(THEME_STORAGE_KEY)) {
+    window.localStorage.setItem(THEME_STORAGE_KEY, old);
+    window.localStorage.removeItem(LEGACY_THEME_KEY);
+  }
+}
+migrateThemeKey();
 
 const VALID_THEMES: Theme[] = ['light', 'dark', 'system'];
 
