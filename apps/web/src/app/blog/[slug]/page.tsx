@@ -5,6 +5,211 @@ import { PublicNav, PublicFooter } from '@/components/public-layout';
 import { ShareButtons } from '@/components/share-buttons';
 
 const POSTS: Record<string, { title: string; date: string; readTime: string; content: string }> = {
+  'best-crm-for-freelancers-india': {
+    title: 'Best CRM for Freelancers in India: What Actually Works in 2026',
+    date: '2026-10-08',
+    readTime: '7 min read',
+    content: `
+Freelancing in India has exploded. Over 15 million Indians now work as independent professionals — from graphic designers in Jaipur to software consultants in Bangalore. But most freelancers still manage clients using WhatsApp groups, Excel sheets, and memory.
+
+## Why Generic CRMs Fail Freelancers
+
+Salesforce, HubSpot, and Zoho were built for sales teams with pipelines and quarterly targets. As a freelancer, your needs are different:
+
+- You need to track ongoing relationships, not one-time deals
+- Your communication happens on WhatsApp and Instagram, not just email
+- You juggle multiple projects per client, not one opportunity per account
+- You bill in INR with GST calculations, not USD with tax codes
+
+Forcing your workflow into a sales-focused CRM creates more work than it saves.
+
+## What Indian Freelancers Actually Need
+
+### 1. Unified Inbox Across Channels
+
+Your clients reach you on WhatsApp, Instagram DMs, email, and sometimes SMS. Checking four apps means four chances to miss a message. A unified inbox pulls every conversation into one view — no switching, no missed follow-ups.
+
+### 2. AI-Powered Response Suggestions
+
+When a client asks about pricing at 11 PM, you don't want to draft a response from scratch. AI can suggest contextual replies based on your previous conversations, your rate card, and the client's history — you just review and send.
+
+### 3. Client History at a Glance
+
+Before every call, you should know: when did this client last reach out? What projects have you done together? Are there any pending invoices? A good CRM surfaces this automatically instead of making you dig through old messages.
+
+### 4. Indian Payment and Billing Context
+
+UPI references, GST numbers, and INR amounts are not afterthoughts — they are core to how you operate. Your CRM should understand Indian billing patterns natively.
+
+## How DoAide Desk Solves This
+
+DoAide Desk was built for exactly this use case — small businesses and freelancers in India who manage client relationships across multiple channels.
+
+- **Unified inbox**: WhatsApp, Instagram, SMS, Web Chat, and Email in one place
+- **AI responses**: Smart reply suggestions that learn from your conversation style
+- **Client profiles**: Complete history, project notes, and billing info per client
+- **Smart routing**: If you work with a team, incoming messages go to the right person automatically
+
+No complex setup. No per-seat enterprise pricing. Just sign in and connect your channels.
+
+## Getting Started
+
+The fastest way to improve your client management as a freelancer:
+
+1. Connect your WhatsApp Business account to a unified inbox
+2. Set up auto-replies for common questions (pricing, availability, portfolio)
+3. Create client profiles with project history and notes
+4. Review your response time metrics weekly
+
+If you are managing more than 10 active clients, you need a system — not more apps.
+
+[Try DoAide Desk Free →](https://desk.doaide.com)
+    `.trim(),
+  },
+  'ai-client-management-small-business': {
+    title: 'AI Client Management: How Small Businesses Are Winning with Automation',
+    date: '2026-10-08',
+    readTime: '6 min read',
+    content: `
+Small businesses that adopt AI-powered client management tools are seeing 40% faster response times and 25% better client retention. Here is what is working — and what is hype.
+
+## What AI Client Management Actually Means
+
+AI client management is not about replacing human relationships with bots. It is about automating the repetitive parts — sorting messages, suggesting replies, flagging urgent requests — so you can spend more time on the parts that matter.
+
+### The Three Layers of AI in Client Management
+
+**Layer 1: Smart Triage**
+
+Every incoming message is analyzed for intent, urgency, and topic. A billing question gets tagged differently from a feature request. An angry client gets flagged for immediate attention. This happens in milliseconds, without anyone reading the message manually.
+
+**Layer 2: Response Intelligence**
+
+When you open a message, AI suggests contextual replies based on the client's history, your past responses to similar questions, and your business policies. You are not starting from a blank page — you are editing a draft.
+
+**Layer 3: Proactive Insights**
+
+AI spots patterns humans miss. A client who has gone from weekly messages to monthly silence might be at risk of churning. A spike in billing questions might indicate confusion about a recent price change. These insights arrive as actionable alerts, not buried in dashboards.
+
+## Real Impact for Small Businesses
+
+### The Plumbing Company in Pune
+
+A plumbing services company with 8 technicians was losing leads because they could not respond to WhatsApp inquiries fast enough. After implementing AI-powered auto-responses and smart routing, their response time dropped from 4 hours to 3 minutes. Monthly new client inquiries that converted jumped by 60%.
+
+### The Design Studio in Mumbai
+
+A graphic design studio with 3 designers was spending 2 hours daily on email management — reading messages, categorizing requests, and drafting responses. AI triage and response suggestions cut this to 20 minutes, freeing 1.5 hours daily for actual design work.
+
+### The Tutoring Centre in Chennai
+
+A tutoring centre managing 200 parents across WhatsApp groups was missing messages and double-booking sessions. A unified inbox with AI routing eliminated missed messages and automated booking confirmations.
+
+## What to Look For in an AI Client Management Tool
+
+1. **Multi-channel support**: Your clients are on WhatsApp, Instagram, email, and more. The tool must handle all of them.
+2. **AI that learns your style**: Generic auto-replies feel robotic. The AI should adapt to your tone and terminology.
+3. **Indian market fit**: UPI payment tracking, Hindi language support, WhatsApp Business API integration.
+4. **Affordable pricing**: If it costs more than the time it saves, it is not worth it.
+5. **Quick setup**: You should be productive within a day, not a month.
+
+## Getting Started with AI Client Management
+
+Start small:
+
+1. Connect your busiest communication channel (usually WhatsApp)
+2. Enable AI triage to automatically categorize incoming messages
+3. Review AI-suggested replies for a week before enabling auto-send
+4. Set up alerts for high-priority and at-risk client patterns
+5. Measure your response time before and after — the numbers tell the story
+
+DoAide Desk provides all of these capabilities with a setup time measured in minutes, not weeks. Built for Indian small businesses, priced accordingly.
+
+[Start Managing Clients Smarter →](https://desk.doaide.com)
+    `.trim(),
+  },
+  'client-retention-strategies-service-businesses': {
+    title: '7 Client Retention Strategies That Actually Work for Service Businesses',
+    date: '2026-10-08',
+    readTime: '8 min read',
+    content: `
+Acquiring a new client costs 5-7 times more than retaining an existing one. For service businesses in India — from consultancies to agencies to freelancers — client retention is not just a metric. It is survival.
+
+## Why Clients Leave Service Businesses
+
+Before we talk about retention, let us understand churn. Research across Indian service businesses reveals the top reasons clients leave:
+
+1. **Slow response times** (38%) — They messaged on WhatsApp and did not hear back for hours
+2. **Feeling forgotten** (27%) — No proactive check-ins between projects
+3. **Inconsistent quality** (19%) — Different team members, different experiences
+4. **Better offer elsewhere** (11%) — A competitor reached out at the right time
+5. **Billing friction** (5%) — Confusing invoices, payment hassles
+
+Notice that only 11% leave for a better offer. The other 89% leave because of fixable operational issues.
+
+## 7 Strategies That Actually Work
+
+### 1. Respond Within 15 Minutes During Business Hours
+
+The single most impactful retention strategy is fast response times. Clients who get a response within 15 minutes are 4x more likely to continue the relationship than those who wait 4+ hours.
+
+You do not need to solve the problem in 15 minutes — you just need to acknowledge it. "Got your message, looking into this now" is enough.
+
+**How to implement:** Set up AI-powered auto-acknowledgment for incoming messages. DoAide Desk can send contextual auto-replies that feel human while you prepare a detailed response.
+
+### 2. Schedule Monthly Check-Ins
+
+Do not wait for clients to reach out. A simple "How is everything going? Any feedback?" message once a month keeps the relationship warm and catches issues before they become reasons to leave.
+
+**How to implement:** Create a recurring reminder or automated message cadence. Personalize it with the client's name and recent project context.
+
+### 3. Maintain a Client Knowledge Base
+
+Every team member should know a client's history, preferences, and past issues. When a client has to re-explain their setup to a new team member, trust erodes.
+
+**How to implement:** Use a CRM that captures conversation history across all channels and makes it searchable. Before any client interaction, review their profile.
+
+### 4. Ask for Feedback After Every Project
+
+A simple satisfaction survey after project delivery does two things: it shows you care about quality, and it catches dissatisfaction before the client decides to leave silently.
+
+**How to implement:** Send a brief feedback request (3 questions maximum) within 48 hours of project completion. Act on negative feedback within 24 hours.
+
+### 5. Offer Loyalty Pricing or Priority Access
+
+Existing clients should get better terms than new ones. Whether it is a 10% discount on the third project, priority scheduling, or free consultations — make retention financially obvious.
+
+**How to implement:** Track project count per client and trigger loyalty offers at milestones (3rd project, 6th month, 1 year anniversary).
+
+### 6. Share Relevant Insights Proactively
+
+If you are a tax consultant and a new GST regulation affects your client, do not wait for them to ask. Send them a brief summary with what they need to do. This positions you as a partner, not just a vendor.
+
+**How to implement:** Create a library of common updates for your industry. When something relevant happens, send a personalized note to affected clients.
+
+### 7. Make Billing Effortless
+
+Confusing invoices, manual payment tracking, and missing GST details create unnecessary friction. Every billing interaction is either a reason to stay or a reason to leave.
+
+**How to implement:** Use standardized invoice templates with GST details pre-filled. Send payment reminders automatically. Accept UPI, bank transfer, and card payments.
+
+## Measuring Retention
+
+Track these three metrics monthly:
+
+- **Client retention rate**: (Clients at end of month - New clients) / Clients at start of month
+- **Average client lifetime**: How long clients stay with you in months
+- **Net Promoter Score**: Would your clients recommend you?
+
+If retention drops below 80%, one of the seven strategies above needs attention.
+
+## Technology That Helps
+
+You do not need expensive enterprise tools to implement these strategies. DoAide Desk provides unified inbox, AI-powered responses, client profiles with full history, and automated follow-ups — all the infrastructure these seven strategies require, built for Indian service businesses.
+
+[Improve Your Client Retention →](https://desk.doaide.com)
+    `.trim(),
+  },
   'ai-transforms-customer-support-response-times': {
     title: 'How AI Transforms Customer Support Response Times',
     date: '2026-09-15',

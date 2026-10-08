@@ -9,6 +9,27 @@ export const metadata: Metadata = {
 
 const POSTS = [
   {
+    slug: 'best-crm-for-freelancers-india',
+    title: 'Best CRM for Freelancers in India: What Actually Works in 2026',
+    excerpt: 'Why generic CRMs fail freelancers, and how AI-powered client management tools built for the Indian market help you retain clients and grow revenue.',
+    date: '2026-10-08',
+    readTime: '7 min read',
+  },
+  {
+    slug: 'ai-client-management-small-business',
+    title: 'AI Client Management: How Small Businesses Are Winning with Automation',
+    excerpt: 'From auto-replies to smart routing, AI client management is no longer enterprise-only. Here is how small businesses are using it to compete.',
+    date: '2026-10-08',
+    readTime: '6 min read',
+  },
+  {
+    slug: 'client-retention-strategies-service-businesses',
+    title: '7 Client Retention Strategies That Actually Work for Service Businesses',
+    excerpt: 'Acquiring a new client costs 5x more than retaining one. These seven strategies help service businesses in India keep clients coming back.',
+    date: '2026-10-08',
+    readTime: '8 min read',
+  },
+  {
     slug: 'ai-transforms-customer-support-response-times',
     title: 'How AI Transforms Customer Support Response Times',
     excerpt: 'Discover how artificial intelligence is revolutionizing support workflows, cutting response times by up to 70%, and keeping customers happier.',

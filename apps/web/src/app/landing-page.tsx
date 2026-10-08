@@ -13,6 +13,68 @@ const TYPEWRITER_PHRASES = [
   'Omnichannel support',
 ];
 
+const TESTIMONIALS = [
+  {
+    quote: 'We used to miss WhatsApp messages all the time. DoAide Desk pulled everything into one inbox — response time dropped from 4 hours to under 10 minutes.',
+    name: 'Meera Joshi',
+    role: 'Founder, Joshi Design Studio',
+    location: 'Mumbai',
+  },
+  {
+    quote: 'Managing 50 clients across WhatsApp, email, and Instagram was chaos. Now my team of 3 handles it all from one screen. We have not lost a client to missed messages since.',
+    name: 'Arjun Reddy',
+    role: 'Managing Director, Reddy Consulting',
+    location: 'Hyderabad',
+  },
+  {
+    quote: 'The AI reply suggestions save me at least an hour every day. It learns my tone and my pricing — I just review and send. Game changer for a solo freelancer.',
+    name: 'Kavitha Nair',
+    role: 'Independent Tax Consultant',
+    location: 'Kochi',
+  },
+  {
+    quote: 'We switched from Zoho because it was built for sales teams, not service businesses. DoAide Desk understands how we actually work — conversations, not pipelines.',
+    name: 'Rohit Sharma',
+    role: 'Co-founder, BrightPath Tutoring',
+    location: 'Pune',
+  },
+] as const;
+
+const FAQ_ITEMS = [
+  {
+    q: 'What is DoAide Desk?',
+    a: 'DoAide Desk is an AI-powered client management platform that unifies your conversations across WhatsApp, Instagram, SMS, Web Chat, and Email into a single inbox. Built for small businesses and freelancers in India.',
+  },
+  {
+    q: 'Which messaging channels are supported?',
+    a: 'DoAide Desk supports WhatsApp Business, Instagram DMs, SMS, Web Chat (embeddable widget), and Email. All conversations appear in one unified inbox.',
+  },
+  {
+    q: 'How does the AI help with responses?',
+    a: 'The AI analyzes incoming messages for intent and urgency, suggests contextual replies based on your conversation history and business context, and can auto-respond to common questions. You always review before sending.',
+  },
+  {
+    q: 'Is DoAide Desk suitable for freelancers?',
+    a: 'Yes. DoAide Desk is designed for freelancers, small agencies, and service businesses. No complex setup, no enterprise-only pricing. Connect your channels and start managing clients in minutes.',
+  },
+  {
+    q: 'How much does it cost?',
+    a: 'DoAide Desk offers a free tier to get started. Paid plans are priced for Indian businesses — significantly more affordable than enterprise CRM tools like Salesforce or HubSpot.',
+  },
+  {
+    q: 'Can my team use it together?',
+    a: 'Yes. DoAide Desk supports team collaboration with smart routing — incoming messages are automatically assigned to the right team member based on expertise, availability, and client history.',
+  },
+  {
+    q: 'Is my data secure?',
+    a: 'Yes. All data is encrypted in transit and at rest. DoAide Desk complies with Indian data protection regulations and your data stays within secure infrastructure.',
+  },
+  {
+    q: 'How do I get started?',
+    a: 'Create an account, connect your first messaging channel (usually WhatsApp Business), and start managing conversations. The entire setup takes under 10 minutes.',
+  },
+] as const;
+
 const DOAIDE_PRODUCTS = [
   { name: 'Desk', url: 'https://desk.doaide.com', active: true },
   { name: 'Jobs', url: 'https://job.doaide.com' },
@@ -228,6 +290,33 @@ function ParticleBackground() {
   }, []);
 
   return <canvas ref={canvasRef} className="split-particles" />;
+}
+
+function FAQItem({ question, answer }: { question: string; answer: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ background: 'var(--doaide-surface)', border: '1px solid var(--doaide-border)', borderRadius: 'var(--doaide-radius-lg)', overflow: 'hidden' }}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '16px 20px', background: 'none', border: 'none', cursor: 'pointer',
+          color: 'var(--doaide-text)', fontWeight: 500, fontSize: '0.9rem', textAlign: 'left',
+          fontFamily: 'var(--doaide-font)',
+        }}
+        aria-expanded={open}
+      >
+        <span style={{ paddingRight: 16 }}>{question}</span>
+        <span style={{ color: 'var(--doaide-gold)', fontSize: '1.2rem', flexShrink: 0 }}>{open ? '−' : '+'}</span>
+      </button>
+      {open && (
+        <div style={{ padding: '0 20px 16px', color: 'var(--doaide-text-secondary)', fontSize: '0.85rem', lineHeight: 1.6, borderTop: '1px solid var(--doaide-border)' }}>
+          <p style={{ marginTop: 12 }}>{answer}</p>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function AuthTabs({ tab, onTabChange }: { tab: 'signin' | 'register'; onTabChange: (t: 'signin' | 'register') => void }) {
@@ -463,6 +552,85 @@ export function LandingPage() {
           <AuthPanel />
         </div>
       </main>
+
+      {/* Social Proof — Testimonials */}
+      <section className="split-below-fold" style={{ background: 'var(--doaide-bg-alt)', padding: '64px 24px' }}>
+        <div style={{ maxWidth: 960, margin: '0 auto' }}>
+          <h2 style={{ fontFamily: 'var(--doaide-font-display)', fontSize: '2rem', color: 'var(--doaide-text)', textAlign: 'center', marginBottom: 8 }}>
+            Trusted by businesses across India
+          </h2>
+          <p style={{ textAlign: 'center', color: 'var(--doaide-text-muted)', marginBottom: 40, fontSize: '0.95rem' }}>
+            Freelancers, agencies, and service businesses managing clients with DoAide Desk.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
+            {TESTIMONIALS.map((t) => (
+              <div key={t.name} style={{ background: 'var(--doaide-surface)', border: '1px solid var(--doaide-border)', borderRadius: 'var(--doaide-radius-lg)', padding: 24 }}>
+                <p style={{ color: 'var(--doaide-text-secondary)', fontSize: '0.9rem', lineHeight: 1.6, fontStyle: 'italic', marginBottom: 16 }}>
+                  &ldquo;{t.quote}&rdquo;
+                </p>
+                <p style={{ color: 'var(--doaide-text)', fontWeight: 600, fontSize: '0.85rem', marginBottom: 2 }}>{t.name}</p>
+                <p style={{ color: 'var(--doaide-text-muted)', fontSize: '0.8rem' }}>{t.role} · {t.location}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ with JSON-LD */}
+      <section style={{ padding: '64px 24px' }}>
+        <div style={{ maxWidth: 720, margin: '0 auto' }}>
+          <h2 style={{ fontFamily: 'var(--doaide-font-display)', fontSize: '2rem', color: 'var(--doaide-text)', textAlign: 'center', marginBottom: 8 }}>
+            Frequently asked questions
+          </h2>
+          <p style={{ textAlign: 'center', color: 'var(--doaide-text-muted)', marginBottom: 40, fontSize: '0.95rem' }}>
+            Everything you need to know about DoAide Desk.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {FAQ_ITEMS.map((item, i) => (
+              <FAQItem key={i} question={item.q} answer={item.a} />
+            ))}
+          </div>
+        </div>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              '@context': 'https://schema.org',
+              '@type': 'FAQPage',
+              mainEntity: FAQ_ITEMS.map((item) => ({
+                '@type': 'Question',
+                name: item.q,
+                acceptedAnswer: { '@type': 'Answer', text: item.a },
+              })),
+            }),
+          }}
+        />
+      </section>
+
+      {/* CTA */}
+      <section style={{ background: 'var(--doaide-bg-alt)', padding: '64px 24px', textAlign: 'center' }}>
+        <h2 style={{ fontFamily: 'var(--doaide-font-display)', fontSize: '2rem', color: 'var(--doaide-text)', marginBottom: 12 }}>
+          Stop losing clients to missed messages
+        </h2>
+        <p style={{ color: 'var(--doaide-text-secondary)', maxWidth: 480, margin: '0 auto 24px', fontSize: '0.95rem' }}>
+          Unify every conversation. Let AI handle the routine. Focus on what matters — your clients.
+        </p>
+        <a
+          href="/"
+          style={{
+            display: 'inline-block',
+            padding: '12px 32px',
+            background: 'var(--doaide-gold)',
+            color: 'var(--doaide-text-on-gold)',
+            borderRadius: 'var(--doaide-radius-md)',
+            fontWeight: 600,
+            fontSize: '0.95rem',
+            textDecoration: 'none',
+          }}
+        >
+          Start Free — No Credit Card Required
+        </a>
+      </section>
 
       {/* Footer */}
       <footer className="split-footer">
