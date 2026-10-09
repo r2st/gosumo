@@ -194,8 +194,8 @@ describe('InventoryCard', () => {
     };
     const { container } = render(<InventoryCard project={makeProject()} />);
     // Within the 24h window, so the pill reads fresh rather than stale.
-    expect(container.querySelector('.bg-rose-100')).toBeNull();
-    expect(container.querySelector('.bg-sky-100')).not.toBeNull();
+    expect(container.querySelector('.bg-rose-500\\/15')).toBeNull();
+    expect(container.querySelector('.bg-sky-500\\/15')).not.toBeNull();
   });
 
   it('falls back to the project timestamp when no unit was ever verified', () => {
@@ -203,7 +203,7 @@ describe('InventoryCard', () => {
     const { container } = render(
       <InventoryCard project={makeProject({ updatedAt: '2026-08-10T05:00:00.000Z' })} />,
     );
-    expect(container.querySelector('.bg-rose-100')).not.toBeNull();
+    expect(container.querySelector('.bg-rose-500\\/15')).not.toBeNull();
   });
 });
 
@@ -292,14 +292,14 @@ describe('InventoryUnitsTable', () => {
   it('flags a unit last verified outside the 24-hour window', () => {
     render(<InventoryUnitsTable units={[makeUnit({ verifiedAt: '2026-08-12T05:00:00.000Z' })]} />);
     const verified = within(screen.getAllByRole('row')[1]).getAllByRole('cell')[7];
-    expect(verified.querySelector('.text-rose-600')).not.toBeNull();
+    expect(verified.querySelector('.text-rose-400')).not.toBeNull();
   });
 
   it('leaves a unit verified inside the window unflagged', () => {
     render(<InventoryUnitsTable units={[makeUnit({ verifiedAt: '2026-08-14T04:00:00.000Z' })]} />);
     const verified = within(screen.getAllByRole('row')[1]).getAllByRole('cell')[7];
-    expect(verified.querySelector('.text-rose-600')).toBeNull();
-    expect(verified.querySelector('.text-sky-600')).not.toBeNull();
+    expect(verified.querySelector('.text-rose-400')).toBeNull();
+    expect(verified.querySelector('.text-sky-400')).not.toBeNull();
   });
 
   it('says so when a unit has never been verified at all', () => {

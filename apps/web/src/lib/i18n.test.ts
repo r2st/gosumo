@@ -90,6 +90,6 @@ describe('language metadata', () => {
   });
 
   it('pins the persistence key, which is shared with the cookie the server reads', () => {
-    expect(LANG_STORAGE_KEY).toBe('gosumo-lang');
+    expect(LANG_STORAGE_KEY).toBe('desk-lang');
   });
 });

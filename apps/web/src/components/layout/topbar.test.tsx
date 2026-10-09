@@ -135,13 +135,13 @@ describe('Topbar', () => {
   describe('theme toggle', () => {
     it('offers dark mode while light', () => {
       renderTopbar();
-      expect(screen.getByLabelText('Switch to dark mode')).toBeInTheDocument();
+      expect(screen.getByLabelText('Switch to Dark theme')).toBeInTheDocument();
     });
 
     it('flips the label after toggling', () => {
       renderTopbar();
-      fireEvent.click(screen.getByLabelText('Switch to dark mode'));
-      expect(screen.getByLabelText('Switch to light mode')).toBeInTheDocument();
+      fireEvent.click(screen.getByLabelText('Switch to Dark theme'));
+      expect(screen.getByLabelText('Switch to System theme')).toBeInTheDocument();
     });
   });
 

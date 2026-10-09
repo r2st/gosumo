@@ -12,7 +12,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { tokenStore } from './token-store';
 
-const REFRESH_KEY = 'gosumo.refreshToken';
+const REFRESH_KEY = 'desk.refreshToken';
 
 /** jsdom runs on an opaque origin, so `localStorage` is missing entirely. */
 function installLocalStorage(): Map<string, string> {

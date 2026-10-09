@@ -192,8 +192,8 @@ describe('match scoring', () => {
     [85, 'border-l-emerald-500', 'success'],
     [84, 'border-l-amber-400', 'warning'],
     [70, 'border-l-amber-400', 'warning'],
-    [69, 'border-l-slate-300', 'neutral'],
-    [0, 'border-l-slate-300', 'neutral'],
+    [69, 'border-l-muted-foreground/30', 'neutral'],
+    [0, 'border-l-muted-foreground/30', 'neutral'],
   ])('scores %i as %s / %s', (score, border, tone) => {
     expect(matchBorder(score)).toBe(border);
     expect(matchTone(score)).toBe(tone);

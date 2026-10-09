@@ -142,12 +142,12 @@ describe('ApprovalsPage — AI confidence display', () => {
   // The three routing bands from the platform's confidence rules. `success` is
   // the auto-execute band, `warning` the review band, `danger` the escalate band.
   it.each([
-    [100, 'bg-emerald-100'],
-    [90, 'bg-emerald-100'],
-    [89, 'bg-amber-100'],
-    [70, 'bg-amber-100'],
-    [69, 'bg-rose-100'],
-    [0, 'bg-rose-100'],
+    [100, 'bg-emerald-500/15'],
+    [90, 'bg-emerald-500/15'],
+    [89, 'bg-amber-500/15'],
+    [70, 'bg-amber-500/15'],
+    [69, 'bg-rose-500/15'],
+    [0, 'bg-rose-500/15'],
   ])('tones a %i%% score with %s', (confidence, toneClass) => {
     state.approvals.data = [makeApproval({ confidence })];
     render(<ApprovalsPage />);

@@ -98,9 +98,9 @@ describe('AiDraftPanel — confidence display', () => {
 
   // The Badge tone → colour map, so a tone change has to be deliberate here too.
   const TONE_CLASS = {
-    success: 'bg-emerald-100',
-    warning: 'bg-amber-100',
-    danger: 'bg-rose-100',
+    success: 'bg-emerald-500/15',
+    warning: 'bg-amber-500/15',
+    danger: 'bg-rose-500/15',
   } as const;
 
   it.each([

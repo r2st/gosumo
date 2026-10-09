@@ -37,7 +37,7 @@ describe('KpiCard', () => {
     it('shows a positive trend in green', () => {
       const { container } = render(<KpiCard label="Leads" value="128" icon={Target} trend={12.34} />);
       expect(screen.getByText('12.3%')).toBeInTheDocument();
-      expect(container.querySelector('.text-emerald-600')).toBeTruthy();
+      expect(container.querySelector('.text-emerald-400')).toBeTruthy();
     });
 
     it('shows a negative trend in red, as a magnitude', () => {
@@ -45,13 +45,13 @@ describe('KpiCard', () => {
       // as a double negative.
       const { container } = render(<KpiCard label="Leads" value="128" icon={Target} trend={-8} />);
       expect(screen.getByText('8.0%')).toBeInTheDocument();
-      expect(container.querySelector('.text-rose-600')).toBeTruthy();
+      expect(container.querySelector('.text-rose-400')).toBeTruthy();
     });
 
     it('treats a flat trend as non-negative', () => {
       const { container } = render(<KpiCard label="Leads" value="128" icon={Target} trend={0} />);
       expect(screen.getByText('0.0%')).toBeInTheDocument();
-      expect(container.querySelector('.text-emerald-600')).toBeTruthy();
+      expect(container.querySelector('.text-emerald-400')).toBeTruthy();
     });
 
     it('renders a zero trend rather than treating it as absent', () => {

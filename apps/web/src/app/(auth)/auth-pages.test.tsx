@@ -117,9 +117,9 @@ describe('AuthLayout', () => {
     expect(
       screen.getByText(/AI-powered client management across every channel/),
     ).toBeInTheDocument();
-    const copyright = screen.getByText(new RegExp(`© ${new Date().getFullYear()} DoAide Desk`));
-    expect(copyright).toBeInTheDocument();
-    expect(copyright.closest('p')!.textContent).toContain('DoAide');
+    const footer = screen.getByText(new RegExp(`© ${new Date().getFullYear()}`));
+    expect(footer).toBeInTheDocument();
+    expect(footer.closest('p')!.textContent).toContain('DoAide');
   });
 });
 

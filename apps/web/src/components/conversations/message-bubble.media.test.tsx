@@ -200,13 +200,13 @@ describe('delivery ticks', () => {
 
   it('shows a grey tick once delivered', () => {
     expect(tickClasses({ direction: 'OUTBOUND', status: 'DELIVERED' })).toContain(
-      'text-slate-500',
+      'text-muted-foreground',
     );
   });
 
   it('shows a grey tick once sent', () => {
     expect(tickClasses({ direction: 'OUTBOUND', status: 'SENT' })).toContain(
-      'text-slate-500',
+      'text-muted-foreground',
     );
   });
 
@@ -218,7 +218,7 @@ describe('delivery ticks', () => {
 
   it('shows a clock for a status that is none of those (still queued)', () => {
     expect(tickClasses({ direction: 'OUTBOUND', status: 'QUEUED' })).toContain(
-      'text-slate-400',
+      'text-muted-foreground',
     );
   });
 });

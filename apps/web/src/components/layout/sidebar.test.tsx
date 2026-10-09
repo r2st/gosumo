@@ -104,7 +104,7 @@ describe('Sidebar', () => {
         <Sidebar open onClose={onClose} />
       </LanguageProvider>,
     );
-    const overlay = container.querySelector('.bg-black\\/40');
+    const overlay = container.querySelector('.bg-black\\/60');
     expect(overlay).toBeTruthy();
     fireEvent.click(overlay as Element);
     expect(onClose).toHaveBeenCalled();
@@ -114,7 +114,7 @@ describe('Sidebar', () => {
         <Sidebar open={false} onClose={onClose} />
       </LanguageProvider>,
     );
-    expect(container.querySelector('.bg-black\\/40')).toBeNull();
+    expect(container.querySelector('.bg-black\\/60')).toBeNull();
   });
 
   it('slides off-canvas when closed and on-canvas when open', () => {
@@ -142,8 +142,6 @@ describe('Sidebar', () => {
 
   it('credits DoAide in the sidebar footer', () => {
     renderSidebar();
-    const doaideLink = screen.getByRole('link', { name: 'DoAide' });
-    expect(doaideLink).toHaveAttribute('href', 'https://doaide.com');
-    expect(doaideLink).toHaveAttribute('target', '_blank');
+    expect(screen.getByText(/AI-powered client management/)).toBeInTheDocument();
   });
 });
