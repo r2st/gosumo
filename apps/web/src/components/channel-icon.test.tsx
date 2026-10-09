@@ -27,8 +27,8 @@ describe('ChannelIcon', () => {
   ])('renders %s with its own label and colour', (channel, label, hue) => {
     render(<ChannelIcon channel={channel as ChannelType} />);
     const badge = screen.getByTitle(label);
-    expect(badge.className).toContain(`text-${hue}-600`);
-    expect(badge.className).toContain(`bg-${hue}-50`);
+    expect(badge.className).toContain(`text-${hue}-400`);
+    expect(badge.className).toContain(`bg-${hue}-500/15`);
   });
 
   it('gives every known channel a distinct colour', () => {
@@ -63,7 +63,7 @@ describe('ChannelIcon', () => {
     render(<ChannelIcon channel="WHATSAPP" className="h-8 w-8" />);
     const badge = screen.getByTitle('WhatsApp');
     expect(badge.className).toContain('h-8');
-    expect(badge.className).toContain('text-emerald-600');
+    expect(badge.className).toContain('text-emerald-400');
   });
 });
 

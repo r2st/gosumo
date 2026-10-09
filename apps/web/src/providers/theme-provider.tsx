@@ -8,7 +8,7 @@ export const THEME_STORAGE_KEY = 'desk-theme';
 const LEGACY_THEME_KEY = 'gosumo-theme';
 
 function migrateThemeKey(): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || !window.localStorage) return;
   const old = window.localStorage.getItem(LEGACY_THEME_KEY);
   if (old && !window.localStorage.getItem(THEME_STORAGE_KEY)) {
     window.localStorage.setItem(THEME_STORAGE_KEY, old);

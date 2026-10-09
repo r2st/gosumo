@@ -19,10 +19,10 @@ import { StatusBadge } from './status-badge';
 const TONE_CLASS = {
   neutral: 'bg-muted',
   primary: 'bg-accent',
-  success: 'bg-emerald-100',
-  warning: 'bg-amber-100',
-  danger: 'bg-rose-100',
-  info: 'bg-sky-100',
+  success: 'bg-emerald-500/15',
+  warning: 'bg-amber-500/15',
+  danger: 'bg-rose-500/15',
+  info: 'bg-sky-500/15',
 } as const;
 
 function toneClassOf(value: string): string {

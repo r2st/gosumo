@@ -23,7 +23,7 @@ export const LANG_STORAGE_KEY = 'desk-lang';
 const LEGACY_LANG_KEY = 'gosumo-lang';
 
 function migrateLangKey(): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || !window.localStorage) return;
   const old = window.localStorage.getItem(LEGACY_LANG_KEY);
   if (old && !window.localStorage.getItem(LANG_STORAGE_KEY)) {
     window.localStorage.setItem(LANG_STORAGE_KEY, old);
