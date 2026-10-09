@@ -34,8 +34,8 @@ const PAYMENTS: IntegrationDef[] = [
 const MESSAGING: IntegrationDef[] = [
   {
     provider: 'WHATSAPP',
-    label: 'WhatsApp Business API',
-    blurb: 'Send and receive WhatsApp messages via Meta Cloud API.',
+    label: 'WhatsApp Business API (optional)',
+    blurb: 'Agents can message leads directly from their own WhatsApp — no API keys needed. These keys enable automated inbound webhooks and AI-driven replies.',
     icon: MessageCircle,
     color: 'bg-[#25D366]',
     fields: [

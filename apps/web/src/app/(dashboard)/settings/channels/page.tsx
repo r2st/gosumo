@@ -62,7 +62,7 @@ const CHANNELS: ChannelDef[] = [
   {
     type: 'WHATSAPP',
     label: 'WhatsApp',
-    blurb: 'Connect your WhatsApp Business number via Meta.',
+    blurb: 'Optional — agents can message leads via their own WhatsApp. Connect here only for automated AI replies.',
     icon: MessageCircle,
     color: 'bg-[#25D366]',
     connectPath: '/channels/whatsapp/connect',
