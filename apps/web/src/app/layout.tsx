@@ -6,6 +6,7 @@ import { QueryProvider } from '@/providers/query-provider';
 import { LanguageProvider, langInitScript } from '@/providers/language-provider';
 import { ThemeProvider, themeInitScript } from '@/providers/theme-provider';
 import { ToastProvider } from '@/providers/toast-provider';
+import { FeedbackWidget } from '@/components/feedback-widget';
 
 export const metadata: Metadata = {
   title: {
@@ -69,7 +70,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Script
           defer
           src="https://analytics.doaide.com/script.js"
-          data-website-id="3d370230-1fb9-4b01-9ec6-612ff1bdce75"
+          data-website-id="7b40a0e8-42a2-4202-aff7-63ebf108d6da"
           strategy="afterInteractive"
         />
         <script
@@ -99,7 +100,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <LanguageProvider>
             <QueryProvider>
               <ToastProvider>
-                <AuthProvider>{children}</AuthProvider>
+                <AuthProvider>
+                  {children}
+                  <FeedbackWidget />
+                </AuthProvider>
               </ToastProvider>
             </QueryProvider>
           </LanguageProvider>
