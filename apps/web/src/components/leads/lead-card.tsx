@@ -1,12 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { Flame, Phone } from 'lucide-react';
+import { Flame, MessageCircle, Phone } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { BltcCompletionBar } from '@/components/leads/bltc-bars';
 import { cn } from '@/lib/utils';
 import { budgetLabel, sourceLabel, sourceTone, TEMPERATURE_BORDER } from '@/lib/realty-ui';
 import type { Lead } from '@/lib/realty-types';
+import { buildWhatsAppLink } from '@/lib/whatsapp-link';
 
 /**
  * A kanban lead card. Pass `href` to navigate to the lead's detail page (renders
@@ -33,6 +34,16 @@ export function LeadCard({ lead, href, onClick }: { lead: Lead; href?: string; o
           <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
             <Phone className="h-3 w-3 shrink-0" />
             <span className="truncate">{lead.whatsappPhone}</span>
+            <a
+              href={buildWhatsAppLink(lead.whatsappPhone)}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="ml-1 shrink-0 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
+              title="Message on WhatsApp"
+            >
+              <MessageCircle className="h-3 w-3" />
+            </a>
           </p>
         </div>
         {isHot && (

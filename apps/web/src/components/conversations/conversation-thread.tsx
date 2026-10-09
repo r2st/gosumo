@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Clock3, RotateCcw, Send } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock3, MessageCircle, RotateCcw, Send } from 'lucide-react';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -24,6 +24,7 @@ import { formatDayLabelIST, istDayKey } from '@/lib/format';
 import { friendlyError } from '@/lib/errors';
 import type { HitlTask, Message } from '@/lib/types';
 import { usePermissions } from '@/hooks/use-permissions';
+import { buildWhatsAppLink } from '@/lib/whatsapp-link';
 
 const QUICK_REPLIES = [
   'Thanks for reaching out! How can I help? 😊',
@@ -117,6 +118,18 @@ export function ConversationThread({ conversationId }: { conversationId: string 
             {conversation.client?.phone ? ` · ${conversation.client.phone}` : ''}
           </p>
         </div>
+        {conversation.client?.phone && (
+          <a
+            href={buildWhatsAppLink(conversation.client.phone)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-green-600 px-2.5 text-xs font-medium text-white transition-colors hover:bg-green-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-1"
+            title="Open in WhatsApp"
+          >
+            <MessageCircle className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">WhatsApp</span>
+          </a>
+        )}
         <StatusBadge value={conversation.status} />
       </div>
 

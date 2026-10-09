@@ -84,7 +84,9 @@ describe('LeadCard', () => {
   describe('as a link', () => {
     it('renders a real anchor, so the card can be opened in a new tab', () => {
       render(<LeadCard lead={makeLead()} href="/leads/l1" />);
-      expect(screen.getByRole('link')).toHaveAttribute('href', '/leads/l1');
+      const links = screen.getAllByRole('link');
+      const cardLink = links.find((l) => l.getAttribute('href') === '/leads/l1');
+      expect(cardLink).toBeDefined();
     });
 
     it('is not also a button', () => {
@@ -95,7 +97,8 @@ describe('LeadCard', () => {
     it('prefers the link when both href and onClick are given', () => {
       const onClick = vi.fn();
       render(<LeadCard lead={makeLead()} href="/leads/l1" onClick={onClick} />);
-      expect(screen.getByRole('link')).toBeInTheDocument();
+      const cardLink = screen.getAllByRole('link').find((l) => l.getAttribute('href') === '/leads/l1');
+      expect(cardLink).toBeDefined();
     });
   });
 
@@ -132,10 +135,12 @@ describe('LeadCard', () => {
   });
 
   describe('as a static card', () => {
-    it('exposes no interactive role when neither href nor onClick is given', () => {
+    it('exposes no interactive role when neither href nor onClick is given (except WhatsApp)', () => {
       render(<LeadCard lead={makeLead()} />);
       expect(screen.queryByRole('button')).not.toBeInTheDocument();
-      expect(screen.queryByRole('link')).not.toBeInTheDocument();
+      const links = screen.queryAllByRole('link');
+      expect(links).toHaveLength(1);
+      expect(links[0]).toHaveAttribute('href', expect.stringContaining('wa.me'));
     });
 
     it('is not focusable', () => {
@@ -147,6 +152,15 @@ describe('LeadCard', () => {
       const { container } = render(<LeadCard lead={makeLead()} />);
       expect(container.firstElementChild?.className).not.toContain('cursor-pointer');
     });
+  });
+
+  it('shows a WhatsApp link pointing to the lead phone', () => {
+    render(<LeadCard lead={makeLead({ whatsappPhone: '+919876543210' })} />);
+    const waLink = screen.getAllByRole('link').find((l) =>
+      l.getAttribute('href')?.includes('wa.me/919876543210'),
+    );
+    expect(waLink).toBeDefined();
+    expect(waLink).toHaveAttribute('target', '_blank');
   });
 
   it('colours its left border by temperature', () => {

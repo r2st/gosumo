@@ -9,6 +9,7 @@ import {
   Hand,
   Mail,
   MapPin,
+  MessageCircle,
   Phone,
   PhoneCall,
 } from 'lucide-react';
@@ -25,6 +26,7 @@ import { paiseToCompactRupees } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { matchBorder, matchTone, sourceLabel, sourceTone, TEMPERATURE_TONE } from '@/lib/realty-ui';
 import { STAGE_LABELS, type Lead } from '@/lib/realty-types';
+import { buildWhatsAppLink } from '@/lib/whatsapp-link';
 import { usePermissions } from '@/hooks/use-permissions';
 
 /**
@@ -78,6 +80,15 @@ function LeftPanel({ lead }: { lead: Lead }) {
           >
             <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <span className="truncate">{lead.whatsappPhone}</span>
+          </a>
+          <a
+            href={buildWhatsAppLink(lead.whatsappPhone)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 flex items-center gap-1.5 text-sm text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
+          >
+            <MessageCircle className="h-3.5 w-3.5 shrink-0" />
+            <span>Message on WhatsApp</span>
           </a>
           {lead.email && (
             <p className="mt-1 flex min-w-0 items-center gap-1.5 text-sm">
@@ -133,6 +144,15 @@ function RightPanel({ lead, match }: { lead: Lead; match: ReturnType<typeof useM
           >
             <PhoneCall className="h-4 w-4" />
             Call
+          </a>
+          <a
+            href={buildWhatsAppLink(lead.whatsappPhone)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-green-600 bg-green-600 px-3 text-xs font-medium text-white transition-colors hover:bg-green-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-1 dark:border-green-500 dark:bg-green-600 dark:hover:bg-green-700"
+          >
+            <MessageCircle className="h-4 w-4" />
+            WhatsApp
           </a>
           {canWrite && (
             <Button size="sm" variant="secondary" onClick={() => router.push('/conversations')}>

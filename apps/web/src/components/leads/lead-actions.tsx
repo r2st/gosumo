@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CalendarPlus, Languages, Send, UserCog, Workflow } from 'lucide-react';
+import { CalendarPlus, Languages, MessageCircle, Send, UserCog, Workflow } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { Select } from '@/components/ui/select';
@@ -27,6 +27,7 @@ import {
   type LeadStage,
 } from '@/lib/realty-types';
 import { usePermissions } from '@/hooks/use-permissions';
+import { buildWhatsAppLink } from '@/lib/whatsapp-link';
 
 type ActiveModal = 'assign' | 'stage' | 'cadence' | null;
 
@@ -46,7 +47,16 @@ export function LeadActions({ lead }: { lead: Lead }) {
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <a
+          href={buildWhatsAppLink(lead.whatsappPhone)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex h-8 items-center justify-center gap-2 rounded-md bg-green-600 px-3 text-xs font-medium text-white transition-colors hover:bg-green-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-1 dark:bg-green-600 dark:hover:bg-green-700"
+        >
+          <MessageCircle className="h-4 w-4" />
+          WhatsApp
+        </a>
         <Button variant="outline" size="sm" onClick={() => setActive('assign')}>
           <UserCog className="h-4 w-4" />
           Assign agent

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { Building2, ChevronRight, ClipboardList, Mail, MapPin, Phone } from 'lucide-react';
+import { Building2, ChevronRight, ClipboardList, Mail, MapPin, MessageCircle, Phone } from 'lucide-react';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,6 +16,7 @@ import { QualScoreGauge } from '@/components/leads/qual-score-gauge';
 import { useLead } from '@/hooks/use-realty';
 import { sourceLabel, sourceTone, TEMPERATURE_TONE } from '@/lib/realty-ui';
 import { STAGE_LABELS, type Lead } from '@/lib/realty-types';
+import { buildWhatsAppLink } from '@/lib/whatsapp-link';
 
 export default function LeadDetailPage() {
   const params = useParams<{ leadId: string }>();
@@ -91,6 +92,15 @@ function LeadDetail({ lead }: { lead: Lead }) {
                 >
                   <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   <span className="truncate">{lead.whatsappPhone}</span>
+                </a>
+                <a
+                  href={buildWhatsAppLink(lead.whatsappPhone)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
+                >
+                  <MessageCircle className="h-3.5 w-3.5 shrink-0" />
+                  <span>WhatsApp</span>
                 </a>
                 {lead.email && (
                   <a
