@@ -35,7 +35,7 @@ export class AgentPerformanceService {
   ): Promise<AgentPerformanceDto> {
     const member = await this.repository.findActiveMember(businessId, memberId);
     if (!member) {
-      throw new NotFoundException(`Team member ${memberId} not found`);
+      throw new NotFoundException('Team member not found');
     }
 
     const range = this.resolveRange(fromIso, toIso);

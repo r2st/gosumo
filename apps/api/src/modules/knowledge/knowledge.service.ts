@@ -108,7 +108,7 @@ export class KnowledgeService {
   async getBySlug(businessId: string, slug: string): Promise<KnowledgeArticleDto> {
     const article = await this.repository.findBySlug(businessId, slug);
     if (!article) {
-      throw new NotFoundException(`Knowledge article "${slug}" not found`);
+      throw new NotFoundException('Knowledge article not found');
     }
     return this.toDto(article);
   }
@@ -281,7 +281,7 @@ export class KnowledgeService {
   private async require(businessId: string, id: string): Promise<knowledge_articles> {
     const article = await this.repository.findById(businessId, id);
     if (!article) {
-      throw new NotFoundException(`Knowledge article ${id} not found`);
+      throw new NotFoundException('Knowledge article not found');
     }
     return article;
   }

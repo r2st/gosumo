@@ -515,7 +515,7 @@ export class RealtyVisitsService {
 
   private async mustFind(businessId: string, visitId: string): Promise<realty_site_visits> {
     const visit = await this.repository.findById(businessId, visitId);
-    if (!visit) throw new NotFoundException(`Site visit ${visitId} not found`);
+    if (!visit) throw new NotFoundException('Site visit not found');
     return visit;
   }
 

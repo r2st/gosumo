@@ -378,7 +378,7 @@ export class ConversationTaggingService {
   private async requireConversation(businessId: string, conversationId: string) {
     const conversation = await this.conversations.findById(businessId, conversationId);
     if (!conversation) {
-      throw new NotFoundException(`Conversation ${conversationId} not found`);
+      throw new NotFoundException('Conversation not found');
     }
     return conversation;
   }

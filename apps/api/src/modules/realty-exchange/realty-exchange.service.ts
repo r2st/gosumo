@@ -601,7 +601,7 @@ export class RealtyExchangeService {
     const allowed = VALID_RESALE_TRANSITIONS[current];
     if (!allowed || !allowed.includes(next)) {
       throw new BadRequestException(
-        `Resale listing is ${current}; cannot transition to ${next}`,
+        'This status transition is not allowed for the current listing state',
       );
     }
   }
@@ -609,7 +609,7 @@ export class RealtyExchangeService {
   private assertState(syndication: realty_syndications, allowed: SyndicationState[]): void {
     if (!allowed.includes(syndication.state as SyndicationState)) {
       throw new BadRequestException(
-        `Syndication is ${syndication.state}; expected one of ${allowed.join(', ')}`,
+        'This action is not available in the current syndication state',
       );
     }
   }
@@ -682,7 +682,7 @@ export class RealtyExchangeService {
     syndicationId: string,
   ): Promise<realty_syndications> {
     const s = await this.repository.findSyndicationById(businessId, syndicationId);
-    if (!s) throw new NotFoundException(`Syndication ${syndicationId} not found`);
+    if (!s) throw new NotFoundException('Syndication not found');
     return s;
   }
 
@@ -691,7 +691,7 @@ export class RealtyExchangeService {
     listingId: string,
   ): Promise<realty_resale_listings> {
     const r = await this.repository.findResaleListingById(businessId, listingId);
-    if (!r) throw new NotFoundException(`Resale listing ${listingId} not found`);
+    if (!r) throw new NotFoundException('Resale listing not found');
     return r;
   }
 

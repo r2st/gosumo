@@ -115,7 +115,7 @@ export class MessageTemplateService {
       where: { id: templateId, business_id: businessId, deleted_at: null },
     });
     if (!template) {
-      throw new NotFoundException(`Template not found: ${templateId}`);
+      throw new NotFoundException('Message template not found');
     }
     return template;
   }

@@ -81,7 +81,7 @@ export class RealtyPilotController {
   @ApiParam({ name: 'id', description: 'Migration run UUID' })
   async getMigration(@TenantId() tenantId: string, @Param('id', UuidValidationPipe) id: string) {
     const run = await this.migrationService.getRun(tenantId, id);
-    if (!run) throw new NotFoundException(`Migration run ${id} not found`);
+    if (!run) throw new NotFoundException('Migration run not found');
     return run;
   }
 

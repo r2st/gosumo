@@ -231,7 +231,7 @@ export class CrmPushService {
   private mustAdapter(provider: RealtyIntegrationProvider): CrmAdapter {
     const adapter = this.adapters.get(provider);
     if (!adapter) {
-      throw new BadRequestException(`Unsupported CRM provider: ${provider}`);
+      throw new BadRequestException('The specified CRM provider is not supported');
     }
     return adapter;
   }

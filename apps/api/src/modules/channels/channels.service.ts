@@ -209,7 +209,7 @@ export class ChannelsService {
     });
 
     if (!record) {
-      throw new NotFoundException(`Channel ${channelId} not found`);
+      throw new NotFoundException('Channel not found');
     }
 
     await this.prisma.channel_accounts.update({
@@ -243,7 +243,7 @@ export class ChannelsService {
     });
 
     if (!record) {
-      throw new NotFoundException(`Channel ${channelId} not found`);
+      throw new NotFoundException('Channel not found');
     }
 
     const creds = decryptJson(record.credentials as string);
@@ -383,7 +383,7 @@ export class ChannelsService {
     });
 
     if (!record) {
-      throw new NotFoundException(`WebChat channel ${channelId} not found`);
+      throw new NotFoundException('WebChat channel not found');
     }
 
     const meta = record.metadata as Record<string, unknown>;
@@ -417,7 +417,7 @@ export class ChannelsService {
     });
 
     if (!record) {
-      throw new NotFoundException(`Channel account ${channelAccountId} not found`);
+      throw new NotFoundException('Channel account not found');
     }
 
     return decryptJson(record.credentials as string);

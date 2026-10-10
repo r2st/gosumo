@@ -160,7 +160,7 @@ export class ApiKeysController {
       where: { id, business_id: tenantId },
     });
     if (!existing) {
-      throw new NotFoundException(`API key ${id} not found`);
+      throw new NotFoundException('API key not found');
     }
 
     // deleteMany (not delete) keeps business_id in the WHERE clause — deleting
@@ -171,7 +171,7 @@ export class ApiKeysController {
     });
 
     if (count === 0) {
-      throw new NotFoundException(`API key ${id} not found`);
+      throw new NotFoundException('API key not found');
     }
 
     await this.audit.record({

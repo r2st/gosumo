@@ -50,7 +50,7 @@ export class WebhookLogService {
   async get(businessId: string, id: string): Promise<WebhookEventDetailDto> {
     const event = await this.repository.findById(businessId, id);
     if (!event) {
-      throw new NotFoundException(`Webhook event ${id} not found`);
+      throw new NotFoundException('Webhook event not found');
     }
     return { ...this.toSummaryDto(event), payload: event.payload, headers: event.headers };
   }

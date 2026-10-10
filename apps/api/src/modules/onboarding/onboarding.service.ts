@@ -163,7 +163,7 @@ export class OnboardingService {
   private async loadProgress(businessId: string): Promise<StoredProgress> {
     const business = await this.repository.findBusinessById(businessId);
     if (!business) {
-      throw new NotFoundException(`Business not found: ${businessId}`);
+      throw new NotFoundException('Business not found');
     }
     return this.normalize(business.onboarding_progress);
   }

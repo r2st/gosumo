@@ -106,7 +106,7 @@ export class AuditService {
     if (!row) {
       // Same non-disclosure as everywhere else: "not yours" and "not real" are
       // indistinguishable to the caller.
-      throw new NotFoundException(`Audit log ${id} not found`);
+      throw new NotFoundException('Audit log entry not found');
     }
     return this.toDto(row);
   }

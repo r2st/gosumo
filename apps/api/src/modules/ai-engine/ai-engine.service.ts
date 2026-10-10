@@ -855,7 +855,7 @@ export class AiEngineService {
   async deleteKnowledgeEntry(businessId: string, entryId: string): Promise<void> {
     const meta = await this.repository.findEmbeddingMetadata(businessId, entryId);
     if (!meta) {
-      throw new NotFoundException(`Knowledge entry ${entryId} not found`);
+      throw new NotFoundException('Knowledge entry not found');
     }
 
     const removed = await this.knowledgeIngestion.remove(businessId, entryId);
@@ -889,7 +889,7 @@ export class AiEngineService {
   async getDraftDecision(businessId: string, decisionId: string): Promise<AIDecisionDto> {
     const decision = await this.repository.findDecisionById(businessId, decisionId);
     if (!decision) {
-      throw new NotFoundException(`AI decision ${decisionId} not found`);
+      throw new NotFoundException('AI decision not found');
     }
     return this.decisionRowToDto(decision);
   }
@@ -925,7 +925,7 @@ export class AiEngineService {
   ): Promise<AIDecisionDto> {
     const decision = await this.repository.findDecisionById(businessId, decisionId);
     if (!decision) {
-      throw new NotFoundException(`AI decision ${decisionId} not found`);
+      throw new NotFoundException('AI decision not found');
     }
     if (feedback) {
       this.logger.log(`Regenerating decision ${decisionId} with reviewer feedback`);

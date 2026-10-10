@@ -126,7 +126,7 @@ export class ClientIntelligenceService {
     const client = await this.repository.getClientById(businessId, clientId);
 
     if (!client) {
-      throw new NotFoundException(`Client ${clientId} not found`);
+      throw new NotFoundException('Client not found');
     }
 
     return this.toClientProfileDto(client);
@@ -160,7 +160,7 @@ export class ClientIntelligenceService {
     // Verify the client exists first
     const existing = await this.repository.getClientById(businessId, clientId);
     if (!existing) {
-      throw new NotFoundException(`Client ${clientId} not found`);
+      throw new NotFoundException('Client not found');
     }
 
     const changedFields: string[] = [];
@@ -446,7 +446,7 @@ export class ClientIntelligenceService {
   ): Promise<SentimentTrendDto> {
     const client = await this.repository.getClientById(businessId, clientId);
     if (!client) {
-      throw new NotFoundException(`Client ${clientId} not found`);
+      throw new NotFoundException('Client not found');
     }
 
     const profile = (client.profile as Record<string, unknown>) ?? {};
@@ -567,7 +567,7 @@ export class ClientIntelligenceService {
   ): Promise<LTVEstimateDto> {
     const client = await this.repository.getClientById(businessId, clientId);
     if (!client) {
-      throw new NotFoundException(`Client ${clientId} not found`);
+      throw new NotFoundException('Client not found');
     }
 
     const aggregates = await this.repository.getClientOrderAggregates(
@@ -702,7 +702,7 @@ export class ClientIntelligenceService {
   ): Promise<ClientAISummaryDto> {
     const client = await this.repository.getClientById(businessId, clientId);
     if (!client) {
-      throw new NotFoundException(`Client ${clientId} not found`);
+      throw new NotFoundException('Client not found');
     }
 
     const parts: string[] = [];
@@ -780,7 +780,7 @@ export class ClientIntelligenceService {
   ): Promise<ClientSegmentDto> {
     const client = await this.repository.getClientById(businessId, clientId);
     if (!client) {
-      throw new NotFoundException(`Client ${clientId} not found`);
+      throw new NotFoundException('Client not found');
     }
 
     // Reuse the already-loaded client row instead of re-reading it
@@ -888,7 +888,7 @@ export class ClientIntelligenceService {
   ): Promise<ClientTimelineDto> {
     const client = await this.repository.getClientById(businessId, clientId);
     if (!client) {
-      throw new NotFoundException(`Client ${clientId} not found`);
+      throw new NotFoundException('Client not found');
     }
 
     const data = await this.repository.getClientTimelineData(

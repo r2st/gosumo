@@ -307,7 +307,7 @@ export class RealtyBrokerService {
 
   async markAlertRead(businessId: string, id: string): Promise<AlertResponseDto> {
     const alert = await this.repository.findAlertById(businessId, id);
-    if (!alert) throw new NotFoundException(`Alert ${id} not found`);
+    if (!alert) throw new NotFoundException('Alert not found');
     return this.mapAlert(await this.repository.markAlertRead(businessId, id));
   }
 
@@ -583,7 +583,7 @@ export class RealtyBrokerService {
 
   private async mustFindApproval(businessId: string, id: string): Promise<realty_approvals> {
     const a = await this.repository.findApprovalById(businessId, id);
-    if (!a) throw new NotFoundException(`Approval ${id} not found`);
+    if (!a) throw new NotFoundException('Approval not found');
     return a;
   }
 

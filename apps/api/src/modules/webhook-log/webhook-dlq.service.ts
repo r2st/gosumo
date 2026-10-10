@@ -214,7 +214,7 @@ export class WebhookDlqService {
     now: Date = new Date(),
   ): Promise<WebhookRetryOutcome> {
     const entry = await this.repository.findById(businessId, id);
-    if (!entry) throw new NotFoundException(`Webhook dead letter ${id} not found`);
+    if (!entry) throw new NotFoundException('Webhook dead letter entry not found');
 
     // Already recovered, or already closed out by a human — nothing to do.
     // Retries are enqueued per attempt, so a duplicate delivery lands here.
@@ -433,7 +433,7 @@ export class WebhookDlqService {
     id: string,
   ): Promise<webhook_dead_letters> {
     const entry = await this.repository.findById(businessId, id);
-    if (!entry) throw new NotFoundException(`Webhook dead letter ${id} not found`);
+    if (!entry) throw new NotFoundException('Webhook dead letter entry not found');
     return entry;
   }
 

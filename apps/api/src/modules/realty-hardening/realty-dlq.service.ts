@@ -215,13 +215,13 @@ export class RealtyDlqService {
       return entry; // idempotent — already recovered
     }
     if (entry.status !== DeadLetterStatus.PENDING) {
-      throw new BadRequestException(`Dead letter entry is ${entry.status} and cannot be replayed`);
+      throw new BadRequestException('This entry has already been processed and cannot be replayed');
     }
 
     const handler = this.replayers.get(entry.operation);
     if (!handler) {
       throw new NotFoundException(
-        `No replayer registered for operation "${entry.operation}"`,
+        'This entry type does not support replay',
       );
     }
 

@@ -164,7 +164,7 @@ export class ComplianceService {
   async correction(businessId: string, input: CorrectionInput): Promise<realty_leads> {
     const phone = normalizeIndianPhone(input.phone) ?? input.phone;
     const lead = await this.repository.findLeadByPhone(businessId, phone);
-    if (!lead) throw new NotFoundException(`No lead found for phone ${phone}`);
+    if (!lead) throw new NotFoundException('No lead found for the provided phone number');
 
     const data: Prisma.realty_leadsUpdateInput = { last_activity_at: new Date() };
     if (input.name !== undefined) data.name = input.name;

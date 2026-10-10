@@ -369,13 +369,13 @@ export class RealtyInventoryService {
 
   private async mustFindProject(businessId: string, projectId: string): Promise<realty_projects> {
     const p = await this.repository.findProjectById(businessId, projectId);
-    if (!p) throw new NotFoundException(`Project ${projectId} not found`);
+    if (!p) throw new NotFoundException('Project not found');
     return p;
   }
 
   private async mustFindUnit(businessId: string, unitId: string): Promise<realty_units> {
     const u = await this.repository.findUnitById(businessId, unitId);
-    if (!u) throw new NotFoundException(`Unit ${unitId} not found`);
+    if (!u) throw new NotFoundException('Unit not found');
     return u;
   }
 

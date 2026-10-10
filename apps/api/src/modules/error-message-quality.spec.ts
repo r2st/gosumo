@@ -262,6 +262,67 @@ describe('Error message quality (M19 Pass 2)', () => {
     });
   });
 
+  // ── Pass 6: UUID / PII / internal-detail leakage across services ──
+  describe('Pass 6 — no UUID or PII leakage', () => {
+    it.each([
+      ['Client not found'],
+      ['Message not found'],
+      ['Channel not found'],
+      ['Channel account not found'],
+      ['WebChat channel not found'],
+      ['Knowledge entry not found'],
+      ['Knowledge article not found'],
+      ['AI decision not found'],
+      ['Team member not found'],
+      ['Message template not found'],
+      ['Site visit not found'],
+      ['Project not found'],
+      ['Unit not found'],
+      ['Syndication not found'],
+      ['Resale listing not found'],
+      ['Approval not found'],
+      ['Alert not found'],
+      ['Audit log entry not found'],
+      ['Migration run not found'],
+      ['Webhook event not found'],
+      ['Webhook dead letter entry not found'],
+      ['Canned response not found'],
+      ['API key not found'],
+    ])('NotFoundException("%s") does not leak an internal UUID', (message) => {
+      const err = new NotFoundException(message);
+      expect(extractMessage(err)).toBe(message);
+      expect(extractMessage(err)).not.toMatch(UUID_PATTERN);
+    });
+
+    it('compliance phone lookup does not leak phone number', () => {
+      const err = new NotFoundException('No lead found for the provided phone number');
+      expect(extractMessage(err)).not.toMatch(/\+?\d{10,}/);
+      expect(extractMessage(err)).not.toMatch(UUID_PATTERN);
+    });
+
+    it('DLQ replay rejection does not expose internal status enum', () => {
+      const err = new BadRequestException('This entry has already been processed and cannot be replayed');
+      const msg = extractMessage(err);
+      expect(msg).not.toMatch(/DISCARDED|REPLAYED|PENDING/);
+    });
+
+    it('resale transition error does not expose internal state values', () => {
+      const err = new BadRequestException('This status transition is not allowed for the current listing state');
+      const msg = extractMessage(err);
+      expect(msg).not.toMatch(/DRAFT|ACTIVE|SOLD|WITHDRAWN/);
+    });
+
+    it('CRM provider error does not echo the provider value', () => {
+      const err = new BadRequestException('The specified CRM provider is not supported');
+      expect(extractMessage(err)).not.toMatch(/selldo|privyr|leadsquared/i);
+    });
+
+    it('lead stage conflict does not leak lead UUID', () => {
+      const err = new ConflictException('Lead stage changed concurrently — please retry');
+      expect(extractMessage(err)).not.toMatch(UUID_PATTERN);
+    });
+  });
+
   // ── Cross-cutting: ErrorCode enum values are used, not arbitrary strings ──
   describe('ErrorCode enum coverage', () => {
     const validCodes = Object.values(ErrorCode);

@@ -217,7 +217,7 @@ export class MessageService {
   async getMessageById(businessId: string, messageId: string): Promise<messages> {
     const message = await this.repository.findById(businessId, messageId);
     if (!message) {
-      throw new NotFoundException(`Message ${messageId} not found`);
+      throw new NotFoundException('Message not found');
     }
     return message;
   }
@@ -261,7 +261,7 @@ export class MessageService {
   ): Promise<messages> {
     const existing = await this.repository.findById(businessId, messageId);
     if (!existing) {
-      throw new NotFoundException(`Message ${messageId} not found`);
+      throw new NotFoundException('Message not found');
     }
 
     const currentRank = STATUS_RANK[existing.status as MessageStatus] ?? 0;
@@ -311,7 +311,7 @@ export class MessageService {
   ): Promise<messages> {
     const existing = await this.repository.findById(businessId, messageId);
     if (!existing) {
-      throw new NotFoundException(`Message ${messageId} not found`);
+      throw new NotFoundException('Message not found');
     }
 
     return this.repository.attachAIMetadata(businessId, messageId, {

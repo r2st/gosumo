@@ -94,7 +94,7 @@ export class CannedResponseService {
   async getByShortcut(businessId: string, shortcut: string): Promise<CannedResponseDto> {
     const entity = await this.repository.findByShortcut(businessId, shortcut.toLowerCase());
     if (!entity) {
-      throw new NotFoundException(`Canned response "${shortcut}" not found`);
+      throw new NotFoundException('Canned response not found');
     }
     return this.toDto(entity);
   }
@@ -330,7 +330,7 @@ export class CannedResponseService {
   private async getEntity(businessId: string, id: string): Promise<canned_responses> {
     const entity = await this.repository.findById(businessId, id);
     if (!entity) {
-      throw new NotFoundException(`Canned response ${id} not found`);
+      throw new NotFoundException('Canned response not found');
     }
     return entity;
   }
