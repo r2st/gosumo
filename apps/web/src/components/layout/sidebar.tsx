@@ -78,9 +78,9 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
 
         <div className="border-t border-sidebar-border p-4 text-xs text-sidebar-muted">
           <p className="font-heading text-sm text-sidebar-foreground">
-            DoAide <span className="italic text-primary">Desk</span>
+            GoSumo <span className="italic text-primary">Realty</span>
           </p>
-          <p className="mt-0.5 font-mono text-[10px] uppercase tracking-wider">AI-powered client management</p>
+          <p className="mt-0.5 font-mono text-[10px] uppercase tracking-wider">AI-powered lead management</p>
         </div>
       </aside>
     </>

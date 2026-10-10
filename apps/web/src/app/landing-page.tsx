@@ -15,7 +15,7 @@ const TYPEWRITER_PHRASES = [
 
 const TESTIMONIALS = [
   {
-    quote: 'We used to miss WhatsApp messages all the time. DoAide Desk pulled everything into one inbox — response time dropped from 4 hours to under 10 minutes.',
+    quote: 'We used to miss WhatsApp messages all the time. GoSumo pulled everything into one inbox — response time dropped from 4 hours to under 10 minutes.',
     name: 'Meera Joshi',
     role: 'Founder, Joshi Design Studio',
     location: 'Mumbai',
@@ -33,7 +33,7 @@ const TESTIMONIALS = [
     location: 'Kochi',
   },
   {
-    quote: 'We switched from Zoho because it was built for sales teams, not service businesses. DoAide Desk understands how we actually work — conversations, not pipelines.',
+    quote: 'We switched from Zoho because it was built for sales teams, not service businesses. GoSumo understands how we actually work — conversations, not pipelines.',
     name: 'Rohit Sharma',
     role: 'Co-founder, BrightPath Tutoring',
     location: 'Pune',
@@ -42,47 +42,46 @@ const TESTIMONIALS = [
 
 const FAQ_ITEMS = [
   {
-    q: 'What is DoAide Desk?',
-    a: 'DoAide Desk is an AI-powered client management platform that unifies your conversations across WhatsApp, Instagram, SMS, Web Chat, and Email into a single inbox. Built for small businesses and freelancers in India.',
+    q: 'What is GoSumo Realty?',
+    a: 'GoSumo Realty is an AI-powered lead management platform for real estate brokers in India. It captures buyers from WhatsApp, portals and Meta ads, qualifies them with AI, and follows up automatically.',
   },
   {
     q: 'Which messaging channels are supported?',
-    a: 'DoAide Desk supports WhatsApp Business, Instagram DMs, SMS, Web Chat (embeddable widget), and Email. All conversations appear in one unified inbox.',
+    a: 'GoSumo supports WhatsApp Business, Instagram DMs, SMS, Web Chat (embeddable widget), and Email. All conversations appear in one unified inbox.',
   },
   {
     q: 'How does the AI help with responses?',
     a: 'The AI analyzes incoming messages for intent and urgency, suggests contextual replies based on your conversation history and business context, and can auto-respond to common questions. You always review before sending.',
   },
   {
-    q: 'Is DoAide Desk suitable for freelancers?',
-    a: 'Yes. DoAide Desk is designed for freelancers, small agencies, and service businesses. No complex setup, no enterprise-only pricing. Connect your channels and start managing clients in minutes.',
+    q: 'Is GoSumo suitable for independent brokers?',
+    a: 'Yes. GoSumo Realty is designed for independent brokers, small agencies, and real estate teams. No complex setup, no enterprise-only pricing. Connect your channels and start managing leads in minutes.',
   },
   {
     q: 'How much does it cost?',
-    a: 'DoAide Desk offers a free tier to get started. Paid plans are priced for Indian businesses — significantly more affordable than enterprise CRM tools like Salesforce or HubSpot.',
+    a: 'GoSumo Realty offers a free tier to get started. Paid plans are priced for Indian businesses — significantly more affordable than enterprise CRM tools like Salesforce or HubSpot.',
   },
   {
     q: 'Can my team use it together?',
-    a: 'Yes. DoAide Desk supports team collaboration with smart routing — incoming messages are automatically assigned to the right team member based on expertise, availability, and client history.',
+    a: 'Yes. GoSumo supports team collaboration with smart routing — incoming leads are automatically assigned to the right team member based on expertise, availability, and history.',
   },
   {
     q: 'Is my data secure?',
-    a: 'Yes. All data is encrypted in transit and at rest. DoAide Desk complies with Indian data protection regulations and your data stays within secure infrastructure.',
+    a: 'Yes. All data is encrypted in transit and at rest. GoSumo complies with Indian data protection regulations and your data stays within secure infrastructure.',
   },
   {
     q: 'How do I get started?',
-    a: 'Create an account, connect your first messaging channel (usually WhatsApp Business), and start managing conversations. The entire setup takes under 10 minutes.',
+    a: 'Create an account, connect your first messaging channel (usually WhatsApp Business), and start managing leads. The entire setup takes under 10 minutes.',
   },
 ] as const;
 
 const DOAIDE_PRODUCTS = [
-  { name: 'Desk', url: 'https://desk.doaide.com', active: true },
+  { name: 'Realty', url: 'https://gosumo.aiknol.com', active: true },
   { name: 'Jobs', url: 'https://job.doaide.com' },
   { name: '409A', url: 'https://409a.doaide.com' },
   { name: 'GST', url: 'https://gst.doaide.com' },
   { name: 'Pulse', url: 'https://pulse.doaide.com' },
   { name: 'Med', url: 'https://med.doaide.com' },
-  { name: 'Realty', url: 'https://realty.doaide.com' },
   { name: 'Reach', url: 'https://reach.doaide.com' },
   { name: 'Trade', url: 'https://trade.doaide.com' },
 ] as const;
@@ -514,10 +513,10 @@ export function LandingPage() {
 
       {/* Header */}
       <header className={`split-header ${visible ? 'split-visible' : ''}`}>
-        <a href="https://doaide.com" className="split-brand">
+        <a href="https://gosumo.aiknol.com" className="split-brand">
           <RobotIcon size={28} />
           <span className="split-brand-text">
-            DoAide <em>Desk</em>
+            GoSumo <em>Realty</em>
           </span>
         </a>
       </header>
@@ -560,7 +559,7 @@ export function LandingPage() {
             Trusted by businesses across India
           </h2>
           <p style={{ textAlign: 'center', color: 'var(--doaide-text-muted)', marginBottom: 40, fontSize: '0.95rem' }}>
-            Freelancers, agencies, and service businesses managing clients with DoAide Desk.
+            Real estate brokers and agencies managing leads with GoSumo Realty.
           </p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
             {TESTIMONIALS.map((t) => (
@@ -583,7 +582,7 @@ export function LandingPage() {
             Frequently asked questions
           </h2>
           <p style={{ textAlign: 'center', color: 'var(--doaide-text-muted)', marginBottom: 40, fontSize: '0.95rem' }}>
-            Everything you need to know about DoAide Desk.
+            Everything you need to know about GoSumo Realty.
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {FAQ_ITEMS.map((item, i) => (
@@ -646,12 +645,12 @@ export function LandingPage() {
           ))}
         </div>
         <div className="doaide-footer-copy">
-          <a href="https://doaide.com" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+          <a href="https://gosumo.aiknol.com" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
             <RobotIcon size={14} />
-            doaide.com
+            gosumo.aiknol.com
           </a>
           {' · '}
-          © {new Date().getFullYear()} DoAide
+          © {new Date().getFullYear()} GoSumo
         </div>
       </footer>
     </div>

@@ -5,7 +5,7 @@ import { ApiError } from './api-client';
  *
  * The dashboard's error surfaces used to render `(error as Error).message`
  * directly, which meant operators saw transport-level strings — "Request failed
- * with status 500", "Unable to reach the DoAide Desk API. Is it running?" — that
+ * with status 500", "Unable to reach the GoSumo Realty API. Is it running?" — that
  * describe the system's problem rather than the reader's options. Other
  * surfaces rendered nothing at all, so a permissions problem and an outage
  * looked identical and both read "Something went wrong".
@@ -42,7 +42,7 @@ function usableServerMessage(message: string | undefined): string | undefined {
 function messageForStatus(status: number, serverMessage?: string): string {
   // 0 is what the api-client uses when fetch itself threw — no response at all.
   if (status === 0) {
-    return 'Can’t reach DoAide Desk. Check your internet connection and try again.';
+    return 'Can’t reach GoSumo Realty. Check your internet connection and try again.';
   }
   if (status === 401) {
     return 'Your session has expired. Please sign in again to continue.';
@@ -66,7 +66,7 @@ function messageForStatus(status: number, serverMessage?: string): string {
     return 'Too many requests right now. Please wait a few seconds and try again.';
   }
   if (status === 503) {
-    return 'DoAide Desk is temporarily unavailable. We’re on it — please try again shortly.';
+    return 'GoSumo Realty is temporarily unavailable. We’re on it — please try again shortly.';
   }
   if (status >= 500) {
     return GENERIC;

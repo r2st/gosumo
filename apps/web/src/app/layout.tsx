@@ -10,17 +10,17 @@ import { FeedbackWidget } from '@/components/feedback-widget';
 
 export const metadata: Metadata = {
   title: {
-    default: 'DoAide Desk',
-    template: '%s · DoAide Desk',
+    default: 'GoSumo Realty',
+    template: '%s · GoSumo Realty',
   },
   description:
-    'DoAide Desk unifies WhatsApp, Instagram, SMS, Web Chat and Email into one AI-powered inbox for small businesses in India.',
-  applicationName: 'DoAide Desk',
+    'GoSumo Realty is an AI-powered lead management platform for real estate brokers in India — capture, qualify and follow up across WhatsApp, portals and Meta ads.',
+  applicationName: 'GoSumo Realty',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'DoAide Desk',
+    title: 'GoSumo Realty',
   },
   icons: {
     icon: [
@@ -32,25 +32,25 @@ export const metadata: Metadata = {
     apple: [{ url: '/favicon-192x192.png', sizes: '192x192', type: 'image/png' }],
   },
   openGraph: {
-    title: 'DoAide Desk — AI-Powered Client Management',
+    title: 'GoSumo Realty — AI-Powered Lead Management',
     description:
-      'Manage customer conversations across WhatsApp, Instagram, SMS, Web Chat, and Email through a single AI-driven interface.',
-    url: 'https://desk.doaide.com',
-    siteName: 'DoAide',
+      'AI-powered lead management for real estate brokers — capture buyers from WhatsApp, portals and Meta ads, qualify with AI, and close more deals.',
+    url: 'https://gosumo.aiknol.com',
+    siteName: 'GoSumo',
     type: 'website',
     images: [
       {
-        url: 'https://desk.doaide.com/og-image.png',
+        url: 'https://gosumo.aiknol.com/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'DoAide Desk — AI-Powered Client Management',
+        alt: 'GoSumo Realty — AI-Powered Lead Management',
       },
     ],
   },
   twitter: {
     card: 'summary',
-    title: 'DoAide Desk — AI-Powered Client Management',
-    description: 'AI-powered omnichannel inbox for small businesses.',
+    title: 'GoSumo Realty — AI-Powered Lead Management',
+    description: 'AI-powered lead management for real estate brokers.',
   },
 };
 
@@ -79,17 +79,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             __html: JSON.stringify({
               '@context': 'https://schema.org',
               '@type': 'SoftwareApplication',
-              name: 'DoAide Desk',
+              name: 'GoSumo Realty',
               description:
-                'AI-powered client management platform for small businesses in India.',
-              url: 'https://desk.doaide.com',
+                'AI-powered lead management platform for real estate brokers in India.',
+              url: 'https://gosumo.aiknol.com',
               applicationCategory: 'BusinessApplication',
               operatingSystem: 'Web',
               offers: { '@type': 'Offer', price: '0', priceCurrency: 'INR' },
               author: {
                 '@type': 'Organization',
                 name: 'Apprend Technologies',
-                url: 'https://doaide.com',
+                url: 'https://gosumo.aiknol.com',
               },
             }),
           }}

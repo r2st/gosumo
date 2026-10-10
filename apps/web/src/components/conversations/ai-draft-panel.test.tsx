@@ -250,7 +250,7 @@ describe('AiDraftPanel — approve / edit / reject', () => {
     rejectState.error = new ApiError(
       0,
       'NETWORK_ERROR',
-      'Unable to reach the DoAide Desk API. Is it running?',
+      'Unable to reach the GoSumo Realty API. Is it running?',
     );
     render(<AiDraftPanel task={makeTask()} />);
 

@@ -4,11 +4,11 @@ import { TicketTemplateGenerator } from './generator';
 
 export const metadata: Metadata = {
   title: 'Ticket Template Generator',
-  description: 'Generate structured support ticket templates for bug reports, feature requests, and more. Free tool by DoAide Desk.',
+  description: 'Generate structured support ticket templates for bug reports, feature requests, and more. Free tool by GoSumo Realty.',
   openGraph: {
-    title: 'Ticket Template Generator — DoAide Desk',
+    title: 'Ticket Template Generator — GoSumo Realty',
     description: 'Generate structured support ticket templates for common categories.',
-    url: 'https://desk.doaide.com/tools/ticket-template-generator',
+    url: 'https://gosumo.aiknol.com/tools/ticket-template-generator',
   },
 };
 
@@ -28,11 +28,11 @@ export default function Page() {
             '@type': 'WebApplication',
             name: 'Ticket Template Generator',
             description: 'Generate structured support ticket templates for common categories.',
-            url: 'https://desk.doaide.com/tools/ticket-template-generator',
+            url: 'https://gosumo.aiknol.com/tools/ticket-template-generator',
             applicationCategory: 'BusinessApplication',
             operatingSystem: 'Web',
             offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-            author: { '@type': 'Organization', name: 'Apprend Technologies', url: 'https://doaide.com' },
+            author: { '@type': 'Organization', name: 'Apprend Technologies', url: 'https://gosumo.aiknol.com' },
           }),
         }}
       />

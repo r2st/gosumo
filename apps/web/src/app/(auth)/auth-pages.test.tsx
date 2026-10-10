@@ -106,7 +106,7 @@ function fillCredentials() {
 }
 
 describe('AuthLayout', () => {
-  it('frames the form with the brand panel, current year and DoAide attribution', () => {
+  it('frames the form with the brand panel, current year and GoSumo attribution', () => {
     render(
       <AuthLayout>
         <p>form goes here</p>
@@ -115,11 +115,11 @@ describe('AuthLayout', () => {
 
     expect(screen.getByText('form goes here')).toBeInTheDocument();
     expect(
-      screen.getByText(/AI-powered client management across every channel/),
+      screen.getByText(/AI-powered lead management for real estate/),
     ).toBeInTheDocument();
     const footer = screen.getByText(new RegExp(`© ${new Date().getFullYear()}`));
     expect(footer).toBeInTheDocument();
-    expect(footer.closest('p')!.textContent).toContain('DoAide');
+    expect(footer.closest('p')!.textContent).toContain('GoSumo');
   });
 });
 
@@ -166,7 +166,7 @@ describe('LoginPage', () => {
     fillCredentials();
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
-    expect(await screen.findByText('Email or password is wrong.')).toBeInTheDocument();
+    expect(await screen.findByText('Your session has expired. Please sign in again to continue.')).toBeInTheDocument();
   });
 
   it('falls back to a generic message for a non-API failure', async () => {
@@ -176,7 +176,7 @@ describe('LoginPage', () => {
     fillCredentials();
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
-    expect(await screen.findByText('Unable to sign in. Please try again.')).toBeInTheDocument();
+    expect(await screen.findByText(/Can.t reach GoSumo Realty/)).toBeInTheDocument();
   });
 
   it('sends the Google button to the backend OAuth entry point', () => {
@@ -264,14 +264,14 @@ describe('RegisterPage', () => {
   });
 
   it('falls back to a generic message for a non-API failure', async () => {
-    register.mockRejectedValue(new Error('offline'));
+    register.mockRejectedValue(new TypeError('Failed to fetch'));
     render(<RegisterPage />);
     fillRegistration();
 
     fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
 
     expect(
-      await screen.findByText('Unable to create your account. Please try again.'),
+      await screen.findByText(/Can.t reach GoSumo Realty/),
     ).toBeInTheDocument();
   });
 });
@@ -297,19 +297,19 @@ describe('ForgotPasswordPage', () => {
     type(/^Email$/, 'priya@sharma.in');
     fireEvent.click(screen.getByRole('button', { name: 'Send reset link' }));
 
-    expect(await screen.findByText('Too many attempts.')).toBeInTheDocument();
+    expect(await screen.findByText('Too many requests right now. Please wait a few seconds and try again.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Send reset link' })).toBeInTheDocument();
   });
 
   it('falls back to a generic message for a non-API failure', async () => {
-    forgotPassword.mockRejectedValue(new Error('offline'));
+    forgotPassword.mockRejectedValue(new TypeError('Failed to fetch'));
     render(<ForgotPasswordPage />);
 
     type(/^Email$/, 'priya@sharma.in');
     fireEvent.click(screen.getByRole('button', { name: 'Send reset link' }));
 
     expect(
-      await screen.findByText('Unable to send the reset link. Please try again.'),
+      await screen.findByText(/Can.t reach GoSumo Realty/),
     ).toBeInTheDocument();
   });
 });
@@ -366,7 +366,7 @@ describe('ResetPasswordPage', () => {
 
   it('falls back to a generic message for a non-API failure', async () => {
     searchParams = new URLSearchParams('token=stale');
-    resetPassword.mockRejectedValue(new Error('offline'));
+    resetPassword.mockRejectedValue(new TypeError('Failed to fetch'));
     render(<ResetPasswordPage />);
 
     type(/New password/, 'newpassword123');
@@ -374,7 +374,7 @@ describe('ResetPasswordPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reset password' }));
 
     expect(
-      await screen.findByText('Unable to reset your password. The link may have expired.'),
+      await screen.findByText(/Can.t reach GoSumo Realty/),
     ).toBeInTheDocument();
   });
 });

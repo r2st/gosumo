@@ -127,7 +127,7 @@ export function SlaCalculator() {
           </div>
         </div>
 
-        <ShareButtons url="https://desk.doaide.com/tools/sla-calculator" title="SLA Calculator — Free tool by DoAide Desk" />
+        <ShareButtons url="https://gosumo.aiknol.com/tools/sla-calculator" title="SLA Calculator — Free tool by GoSumo Realty" />
 
         <div className="p-6 rounded-xl border border-[var(--doaide-border)] bg-[var(--doaide-surface)] text-center">
           <p className="text-sm text-[var(--doaide-text-secondary)] mb-3">Want to track SLA compliance automatically?</p>

@@ -81,7 +81,7 @@ export function FeedbackWidget() {
         open={open}
         onClose={handleClose}
         title="Send Feedback"
-        description="Help us improve DoAide Desk"
+        description="Help us improve GoSumo Realty"
         footer={
           submitted ? (
             <Button variant="secondary" onClick={handleClose}>Close</Button>

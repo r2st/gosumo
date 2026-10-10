@@ -37,7 +37,7 @@ export default function IntegrationsPage() {
   return (
     <SettingsCard
       title="Integrations"
-      description="Connect third-party tools to sync your data with DoAide Desk."
+      description="Connect third-party tools to sync your data with GoSumo Realty."
     >
       <div className="rounded-lg border border-border p-4">
         <div className="flex flex-wrap items-start justify-between gap-4">

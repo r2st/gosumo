@@ -80,7 +80,7 @@ export function CsatCalculator() {
           </div>
         </div>
 
-        <ShareButtons url="https://desk.doaide.com/tools/csat-calculator" title="CSAT Calculator — Free tool by DoAide Desk" />
+        <ShareButtons url="https://gosumo.aiknol.com/tools/csat-calculator" title="CSAT Calculator — Free tool by GoSumo Realty" />
       </div>
     </div>
   );

@@ -4,11 +4,11 @@ import { TicketVolumeForecaster } from './forecaster';
 
 export const metadata: Metadata = {
   title: 'Ticket Volume Forecaster',
-  description: 'Predict weekly and monthly ticket volume from historical data. Free tool by DoAide Desk.',
+  description: 'Predict weekly and monthly ticket volume from historical data. Free tool by GoSumo Realty.',
   openGraph: {
-    title: 'Ticket Volume Forecaster — DoAide Desk',
+    title: 'Ticket Volume Forecaster — GoSumo Realty',
     description: 'Predict weekly and monthly ticket volume from historical data.',
-    url: 'https://desk.doaide.com/tools/ticket-volume-forecaster',
+    url: 'https://gosumo.aiknol.com/tools/ticket-volume-forecaster',
   },
 };
 
@@ -28,11 +28,11 @@ export default function Page() {
             '@type': 'WebApplication',
             name: 'Ticket Volume Forecaster',
             description: 'Predict weekly and monthly ticket volume from historical data.',
-            url: 'https://desk.doaide.com/tools/ticket-volume-forecaster',
+            url: 'https://gosumo.aiknol.com/tools/ticket-volume-forecaster',
             applicationCategory: 'BusinessApplication',
             operatingSystem: 'Web',
             offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-            author: { '@type': 'Organization', name: 'Apprend Technologies', url: 'https://doaide.com' },
+            author: { '@type': 'Organization', name: 'Apprend Technologies', url: 'https://gosumo.aiknol.com' },
           }),
         }}
       />

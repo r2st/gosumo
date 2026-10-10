@@ -34,7 +34,7 @@ describe('Landing page SEO sections', () => {
     render(<LandingPage />);
 
     expect(screen.getByText('Frequently asked questions')).toBeInTheDocument();
-    expect(screen.getByText('What is DoAide Desk?')).toBeInTheDocument();
+    expect(screen.getByText('What is GoSumo Realty?')).toBeInTheDocument();
     expect(screen.getByText('Which messaging channels are supported?')).toBeInTheDocument();
     expect(screen.getByText('How does the AI help with responses?')).toBeInTheDocument();
   });
@@ -43,9 +43,9 @@ describe('Landing page SEO sections', () => {
     const { LandingPage } = await import('@/app/landing-page');
     render(<LandingPage />);
 
-    const question = screen.getByText('What is DoAide Desk?');
+    const question = screen.getByText('What is GoSumo Realty?');
     fireEvent.click(question);
-    expect(screen.getByText(/AI-powered client management platform/)).toBeInTheDocument();
+    expect(screen.getByText(/AI-powered lead management platform/)).toBeInTheDocument();
   });
 
   it('renders JSON-LD FAQPage schema', async () => {

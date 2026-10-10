@@ -3,14 +3,14 @@ import Link from 'next/link';
 import { PublicNav, PublicFooter } from '@/components/public-layout';
 
 export const metadata: Metadata = {
-  title: 'About DoAide Desk — AI Helpdesk for Indian SMBs',
+  title: 'About GoSumo Realty — AI Helpdesk for Indian SMBs',
   description:
-    'DoAide Desk is an AI-powered customer support platform built for Indian SMBs. Unified inbox across WhatsApp, email, and Instagram with smart ticket routing.',
+    'GoSumo Realty is an AI-powered customer support platform built for Indian SMBs. Unified inbox across WhatsApp, email, and Instagram with smart ticket routing.',
   openGraph: {
-    title: 'About DoAide Desk — AI Helpdesk for Indian SMBs',
+    title: 'About GoSumo Realty — AI Helpdesk for Indian SMBs',
     description:
       'AI-powered customer support platform with unified inbox, smart routing, and multilingual support for Indian businesses.',
-    url: 'https://desk.doaide.com/about',
+    url: 'https://gosumo.aiknol.com/about',
   },
 };
 
@@ -31,7 +31,7 @@ const TESTIMONIALS = [
   },
   {
     quote:
-      'During Diwali, our ticket volume tripled overnight. DoAide Desk\'s smart routing kept our SLAs intact without emergency hiring. That alone paid for the entire year.',
+      'During Diwali, our ticket volume tripled overnight. GoSumo Realty\'s smart routing kept our SLAs intact without emergency hiring. That alone paid for the entire year.',
     name: 'Amit Choudhary',
     role: 'Operations Manager, GiftBox India',
     location: 'Jaipur',
@@ -47,19 +47,19 @@ const TESTIMONIALS = [
 
 const FAQ_ITEMS = [
   {
-    question: 'What is DoAide Desk?',
+    question: 'What is GoSumo Realty?',
     answer:
-      'DoAide Desk is an AI-powered customer support platform that unifies your conversations across WhatsApp, email, Instagram, SMS, and web chat into a single intelligent inbox. It uses AI to auto-categorize tickets, suggest replies, and route conversations to the right agent.',
+      'GoSumo Realty is an AI-powered customer support platform that unifies your conversations across WhatsApp, email, Instagram, SMS, and web chat into a single intelligent inbox. It uses AI to auto-categorize tickets, suggest replies, and route conversations to the right agent.',
   },
   {
-    question: 'Is DoAide Desk suitable for small businesses?',
+    question: 'Is GoSumo Realty suitable for small businesses?',
     answer:
-      'Yes. DoAide Desk is designed specifically for Indian SMBs. Our pricing starts at affordable tiers, and teams as small as 2-3 agents see immediate improvements in response time and customer satisfaction.',
+      'Yes. GoSumo Realty is designed specifically for Indian SMBs. Our pricing starts at affordable tiers, and teams as small as 2-3 agents see immediate improvements in response time and customer satisfaction.',
   },
   {
-    question: 'Does DoAide Desk support WhatsApp?',
+    question: 'Does GoSumo Realty support WhatsApp?',
     answer:
-      'Yes. DoAide Desk integrates with the WhatsApp Business API. Every WhatsApp message automatically creates a trackable ticket, preserves conversation history, and supports media attachments like photos and documents.',
+      'Yes. GoSumo Realty integrates with the WhatsApp Business API. Every WhatsApp message automatically creates a trackable ticket, preserves conversation history, and supports media attachments like photos and documents.',
   },
   {
     question: 'What languages does the AI support?',
@@ -67,19 +67,19 @@ const FAQ_ITEMS = [
       'The AI supports English, Hindi, and other major Indian languages. It can detect the language of incoming messages automatically and suggest replies in the customer\'s preferred language, including code-switched conversations.',
   },
   {
-    question: 'Can I try DoAide Desk for free?',
+    question: 'Can I try GoSumo Realty for free?',
     answer:
       'Yes. We offer free tools including a Response Time Calculator, Ticket Volume Forecaster, and CSAT Calculator. You can also sign up for a free trial of the full platform to see the AI helpdesk in action with your team.',
   },
   {
     question: 'How does AI ticket routing work?',
     answer:
-      'DoAide Desk\'s AI reads the content of incoming messages, identifies the topic and urgency, and routes the ticket to the agent or team best equipped to handle it. This happens in under a second, eliminating manual triage and reducing transfer rates.',
+      'GoSumo Realty\'s AI reads the content of incoming messages, identifies the topic and urgency, and routes the ticket to the agent or team best equipped to handle it. This happens in under a second, eliminating manual triage and reducing transfer rates.',
   },
   {
     question: 'Is my customer data secure?',
     answer:
-      'Yes. DoAide Desk uses industry-standard encryption for data in transit and at rest. We do not share customer data with third parties, and our infrastructure is hosted on secure cloud servers with regular security audits.',
+      'Yes. GoSumo Realty uses industry-standard encryption for data in transit and at rest. We do not share customer data with third parties, and our infrastructure is hosted on secure cloud servers with regular security audits.',
   },
   {
     question: 'How long does it take to set up?',
@@ -102,7 +102,7 @@ export default function AboutPage() {
             AI-Powered Customer Support for Indian Businesses
           </h1>
           <p className="text-lg text-[var(--doaide-text-secondary)] max-w-2xl mx-auto mb-8">
-            DoAide Desk unifies WhatsApp, email, Instagram, and web chat into one intelligent inbox.
+            GoSumo Realty unifies WhatsApp, email, Instagram, and web chat into one intelligent inbox.
             AI handles the routine — your team handles what matters.
           </p>
           <Link
@@ -175,7 +175,7 @@ export default function AboutPage() {
             Ready to transform your support?
           </h2>
           <p className="text-sm text-[var(--doaide-text-secondary)] mb-6">
-            Join hundreds of Indian businesses using DoAide Desk to deliver faster, smarter support.
+            Join hundreds of Indian businesses using GoSumo Realty to deliver faster, smarter support.
           </p>
           <Link
             href="/"

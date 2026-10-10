@@ -23,11 +23,11 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
 
         {/* Title */}
         <h1 className="doaide-auth-title">
-          <span className="doaide-auth-title-brand">DoAide</span>{' '}
-          <span className="doaide-auth-title-product">Desk</span>
+          <span className="doaide-auth-title-brand">GoSumo</span>{' '}
+          <span className="doaide-auth-title-product">Realty</span>
         </h1>
         <p className="doaide-auth-subtitle">
-          AI-powered client management across every channel
+          AI-powered lead management for real estate
         </p>
 
         {/* Card */}
@@ -37,8 +37,8 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
 
         <p className="doaide-auth-footer">
           © {new Date().getFullYear()}{' '}
-          <a href="https://doaide.com" target="_blank" rel="noopener noreferrer">DoAide</a>
-          {' '}· AI tools for small businesses
+          <a href="https://gosumo.aiknol.com" target="_blank" rel="noopener noreferrer">GoSumo</a>
+          {' '}· AI-powered real estate
         </p>
       </div>
     </div>

@@ -4,11 +4,11 @@ import { EmbedGenerator } from './generator';
 
 export const metadata: Metadata = {
   title: 'Embed Widget Generator',
-  description: 'Generate an embeddable DoAide Desk support widget for your website.',
+  description: 'Generate an embeddable GoSumo Realty support widget for your website.',
   openGraph: {
-    title: 'Embed Widget Generator — DoAide Desk',
+    title: 'Embed Widget Generator — GoSumo Realty',
     description: 'Add AI-powered customer support to your website in minutes.',
-    url: 'https://desk.doaide.com/embed',
+    url: 'https://gosumo.aiknol.com/embed',
   },
 };
 

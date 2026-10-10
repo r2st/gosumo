@@ -94,7 +94,7 @@ export function TicketVolumeForecaster() {
           </div>
         )}
 
-        <ShareButtons url="https://desk.doaide.com/tools/ticket-volume-forecaster" title="Ticket Volume Forecaster — Free tool by DoAide Desk" />
+        <ShareButtons url="https://gosumo.aiknol.com/tools/ticket-volume-forecaster" title="Ticket Volume Forecaster — Free tool by GoSumo Realty" />
       </div>
     </div>
   );

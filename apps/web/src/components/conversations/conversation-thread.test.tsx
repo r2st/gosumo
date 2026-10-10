@@ -291,7 +291,7 @@ describe('ConversationThread — reply box', () => {
 
   it('translates a transport-level send failure instead of showing its raw text', () => {
     state.send.isError = true;
-    state.send.error = new ApiError(0, 'NETWORK_ERROR', 'Unable to reach the DoAide Desk API. Is it running?');
+    state.send.error = new ApiError(0, 'NETWORK_ERROR', 'Unable to reach the GoSumo Realty API. Is it running?');
     render(<ConversationThread conversationId="c1" />);
 
     expect(screen.getByText(/Check your internet connection/)).toBeInTheDocument();

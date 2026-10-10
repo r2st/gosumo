@@ -4,11 +4,11 @@ import { CsatCalculator } from './calculator';
 
 export const metadata: Metadata = {
   title: 'CSAT Calculator',
-  description: 'Calculate Customer Satisfaction Score from survey responses. Free tool by DoAide Desk.',
+  description: 'Calculate Customer Satisfaction Score from survey responses. Free tool by GoSumo Realty.',
   openGraph: {
-    title: 'CSAT Calculator — DoAide Desk',
+    title: 'CSAT Calculator — GoSumo Realty',
     description: 'Calculate Customer Satisfaction Score from survey responses.',
-    url: 'https://desk.doaide.com/tools/csat-calculator',
+    url: 'https://gosumo.aiknol.com/tools/csat-calculator',
   },
 };
 
@@ -28,11 +28,11 @@ export default function Page() {
             '@type': 'WebApplication',
             name: 'CSAT Calculator',
             description: 'Calculate Customer Satisfaction Score from survey responses.',
-            url: 'https://desk.doaide.com/tools/csat-calculator',
+            url: 'https://gosumo.aiknol.com/tools/csat-calculator',
             applicationCategory: 'BusinessApplication',
             operatingSystem: 'Web',
             offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-            author: { '@type': 'Organization', name: 'Apprend Technologies', url: 'https://doaide.com' },
+            author: { '@type': 'Organization', name: 'Apprend Technologies', url: 'https://gosumo.aiknol.com' },
           }),
         }}
       />

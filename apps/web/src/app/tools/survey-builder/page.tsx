@@ -4,11 +4,11 @@ import { SurveyBuilder } from './builder';
 
 export const metadata: Metadata = {
   title: 'Customer Satisfaction Survey Builder',
-  description: 'Build customer satisfaction surveys with pre-written questions and rating scales. Free tool by DoAide Desk.',
+  description: 'Build customer satisfaction surveys with pre-written questions and rating scales. Free tool by GoSumo Realty.',
   openGraph: {
-    title: 'Survey Builder — DoAide Desk',
+    title: 'Survey Builder — GoSumo Realty',
     description: 'Build customer satisfaction surveys with pre-written questions and rating scales.',
-    url: 'https://desk.doaide.com/tools/survey-builder',
+    url: 'https://gosumo.aiknol.com/tools/survey-builder',
   },
 };
 
@@ -28,11 +28,11 @@ export default function Page() {
             '@type': 'WebApplication',
             name: 'Customer Satisfaction Survey Builder',
             description: 'Build customer satisfaction surveys with pre-written questions and rating scales.',
-            url: 'https://desk.doaide.com/tools/survey-builder',
+            url: 'https://gosumo.aiknol.com/tools/survey-builder',
             applicationCategory: 'BusinessApplication',
             operatingSystem: 'Web',
             offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-            author: { '@type': 'Organization', name: 'Apprend Technologies', url: 'https://doaide.com' },
+            author: { '@type': 'Organization', name: 'Apprend Technologies', url: 'https://gosumo.aiknol.com' },
           }),
         }}
       />

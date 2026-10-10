@@ -14,7 +14,7 @@ export function EmbedGenerator() {
   const [copied, setCopied] = useState(false);
 
   const snippet = `<script
-  src="https://desk.doaide.com/widget.js"
+  src="https://gosumo.aiknol.com/widget.js"
   data-position="${position}"
   data-theme="${theme}"
   data-color="${brandColor}"
@@ -98,7 +98,7 @@ export function EmbedGenerator() {
           </div>
         </div>
 
-        <ShareButtons url="https://desk.doaide.com/embed" title="DoAide Desk Embed Widget Generator" />
+        <ShareButtons url="https://gosumo.aiknol.com/embed" title="GoSumo Realty Embed Widget Generator" />
       </div>
     </div>
   );

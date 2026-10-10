@@ -9,6 +9,6 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ['/api/', '/auth/'],
       },
     ],
-    sitemap: 'https://desk.doaide.com/sitemap.xml',
+    sitemap: 'https://gosumo.aiknol.com/sitemap.xml',
   };
 }

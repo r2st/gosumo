@@ -33,7 +33,7 @@ export default function ForgotPasswordPage() {
         </div>
         <h2 className="doaide-auth-heading">Check your email</h2>
         <p className="doaide-auth-hint" style={{ marginTop: '8px' }}>
-          If an account exists for <strong style={{ color: '#E5E7EB' }}>{email}</strong>, we&apos;ve sent a password reset link.
+          If an account exists for <strong className="text-foreground">{email}</strong>, we&apos;ve sent a password reset link.
         </p>
         <Link href="/login" className="doaide-auth-back-link">
           ← Back to sign in

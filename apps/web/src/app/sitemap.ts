@@ -1,7 +1,7 @@
 import type { MetadataRoute } from 'next';
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const base = 'https://desk.doaide.com';
+  const base = 'https://gosumo.aiknol.com';
   return [
     { url: base, lastModified: new Date(), changeFrequency: 'weekly', priority: 1 },
     { url: `${base}/about`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.9 },

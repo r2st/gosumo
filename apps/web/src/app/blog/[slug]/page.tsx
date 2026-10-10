@@ -41,9 +41,9 @@ Before every call, you should know: when did this client last reach out? What pr
 
 UPI references, GST numbers, and INR amounts are not afterthoughts — they are core to how you operate. Your CRM should understand Indian billing patterns natively.
 
-## How DoAide Desk Solves This
+## How GoSumo Realty Solves This
 
-DoAide Desk was built for exactly this use case — small businesses and freelancers in India who manage client relationships across multiple channels.
+GoSumo Realty was built for exactly this use case — small businesses and freelancers in India who manage client relationships across multiple channels.
 
 - **Unified inbox**: WhatsApp, Instagram, SMS, Web Chat, and Email in one place
 - **AI responses**: Smart reply suggestions that learn from your conversation style
@@ -63,7 +63,7 @@ The fastest way to improve your client management as a freelancer:
 
 If you are managing more than 10 active clients, you need a system — not more apps.
 
-[Try DoAide Desk Free →](https://desk.doaide.com)
+[Try GoSumo Realty Free →](https://gosumo.aiknol.com)
     `.trim(),
   },
   'ai-client-management-small-business': {
@@ -123,9 +123,9 @@ Start small:
 4. Set up alerts for high-priority and at-risk client patterns
 5. Measure your response time before and after — the numbers tell the story
 
-DoAide Desk provides all of these capabilities with a setup time measured in minutes, not weeks. Built for Indian small businesses, priced accordingly.
+GoSumo Realty provides all of these capabilities with a setup time measured in minutes, not weeks. Built for Indian small businesses, priced accordingly.
 
-[Start Managing Clients Smarter →](https://desk.doaide.com)
+[Start Managing Clients Smarter →](https://gosumo.aiknol.com)
     `.trim(),
   },
   'client-retention-strategies-service-businesses': {
@@ -155,7 +155,7 @@ The single most impactful retention strategy is fast response times. Clients who
 
 You do not need to solve the problem in 15 minutes — you just need to acknowledge it. "Got your message, looking into this now" is enough.
 
-**How to implement:** Set up AI-powered auto-acknowledgment for incoming messages. DoAide Desk can send contextual auto-replies that feel human while you prepare a detailed response.
+**How to implement:** Set up AI-powered auto-acknowledgment for incoming messages. GoSumo Realty can send contextual auto-replies that feel human while you prepare a detailed response.
 
 ### 2. Schedule Monthly Check-Ins
 
@@ -205,9 +205,9 @@ If retention drops below 80%, one of the seven strategies above needs attention.
 
 ## Technology That Helps
 
-You do not need expensive enterprise tools to implement these strategies. DoAide Desk provides unified inbox, AI-powered responses, client profiles with full history, and automated follow-ups — all the infrastructure these seven strategies require, built for Indian service businesses.
+You do not need expensive enterprise tools to implement these strategies. GoSumo Realty provides unified inbox, AI-powered responses, client profiles with full history, and automated follow-ups — all the infrastructure these seven strategies require, built for Indian service businesses.
 
-[Improve Your Client Retention →](https://desk.doaide.com)
+[Improve Your Client Retention →](https://gosumo.aiknol.com)
     `.trim(),
   },
   'ai-transforms-customer-support-response-times': {
@@ -252,7 +252,7 @@ Companies using AI in their support stack report:
 
 Start small: implement AI triage for routing, then add suggested replies. Once your team is comfortable, enable auto-resolution for your top 10 most common ticket types. The key is augmenting your team, not replacing them.
 
-DoAide Desk provides all of these AI capabilities out of the box — try our [free tools](/tools) to see the impact on your metrics.
+GoSumo Realty provides all of these AI capabilities out of the box — try our [free tools](/tools) to see the impact on your metrics.
     `.trim(),
   },
   '5-metrics-every-support-team-should-track': {
@@ -382,7 +382,7 @@ Track these metrics to know if your routing is working:
 2. **Ignoring channel context.** A WhatsApp message needs different handling than an email — routing should account for this.
 3. **Not updating rules.** When you launch a new product or change a policy, update your routing rules the same day.
 
-DoAide Desk combines AI-driven routing with customizable rules, giving you the best of both approaches — automatic intelligence with manual overrides when you need them.
+GoSumo Realty combines AI-driven routing with customizable rules, giving you the best of both approaches — automatic intelligence with manual overrides when you need them.
     `.trim(),
   },
   'ai-helpdesk-revolution-indian-smbs': {
@@ -404,7 +404,7 @@ With over 500 million WhatsApp users in India, customers expect support on the p
 
 ### 2. Costs Have Dropped Dramatically
 
-Cloud-based AI helpdesks like DoAide Desk start at a fraction of what enterprise solutions cost. An SMB with 5-10 support agents can afford the same AI capabilities that were once limited to large corporations.
+Cloud-based AI helpdesks like GoSumo Realty start at a fraction of what enterprise solutions cost. An SMB with 5-10 support agents can afford the same AI capabilities that were once limited to large corporations.
 
 ### 3. Customer Expectations Have Risen
 
@@ -420,7 +420,7 @@ A Bengaluru SaaS startup reduced ticket resolution time by 60% by using AI-sugge
 
 Start with your highest-volume channel — for most Indian SMBs, that is WhatsApp. Connect it to an AI helpdesk, enable auto-categorization, and let the AI learn from your first 500 conversations. Within two weeks, you will see measurable improvements in response time and agent productivity.
 
-DoAide Desk is built for Indian businesses — with native WhatsApp integration, multilingual AI, and pricing designed for SMBs. Try our [free tools](/tools) to see the difference.
+GoSumo Realty is built for Indian businesses — with native WhatsApp integration, multilingual AI, and pricing designed for SMBs. Try our [free tools](/tools) to see the difference.
     `.trim(),
   },
   'customer-support-automation-reduce-costs': {
@@ -510,7 +510,7 @@ Identify your top 10 most common queries and create automated responses for them
 
 ## Putting It All Together
 
-The best Indian SMB support teams combine WhatsApp-first design, AI-powered automation, and empathetic human agents. They plan for seasonal surges, respect linguistic diversity, and measure what matters. DoAide Desk is purpose-built for this reality — try it with your team today.
+The best Indian SMB support teams combine WhatsApp-first design, AI-powered automation, and empathetic human agents. They plan for seasonal surges, respect linguistic diversity, and measure what matters. GoSumo Realty is purpose-built for this reality — try it with your team today.
     `.trim(),
   },
   'best-help-desk-software-small-business-india': {
@@ -562,9 +562,9 @@ Zoho Desk offers competitive pricing and strong integration with the broader Zoh
 
 WhatsApp integration is available through Zoho's omnichannel features. The AI assistant (Zia) supports basic automation. However, the interface can feel overwhelming for small teams, and the most useful AI features require the Enterprise plan.
 
-### DoAide Desk
+### GoSumo Realty
 
-DoAide Desk is purpose-built for Indian small businesses and freelancers. WhatsApp is a first-class channel from the start, not an add-on. The AI understands code-switching between Hindi and English, and the pricing is designed for the Indian market.
+GoSumo Realty is purpose-built for Indian small businesses and freelancers. WhatsApp is a first-class channel from the start, not an add-on. The AI understands code-switching between Hindi and English, and the pricing is designed for the Indian market.
 
 Key advantages include a unified inbox across WhatsApp, Instagram, SMS, Web Chat, and Email, AI-powered response suggestions that learn from your conversation style, smart ticket routing that considers language and agent expertise, a setup time measured in minutes not weeks, and pricing built for Indian SMBs.
 
@@ -612,7 +612,7 @@ Factor in per-agent fees, add-on costs for WhatsApp and other channels, AI featu
 
 ### What is the best free help desk software for Indian businesses?
 
-Freshdesk offers a free plan for up to 2 agents with basic ticketing and email support. For very small teams just getting started, this is a reasonable option. However, free plans typically lack WhatsApp integration and AI features, which are essential for most Indian businesses. DoAide Desk offers a free tools suite and affordable paid plans that include WhatsApp from day one.
+Freshdesk offers a free plan for up to 2 agents with basic ticketing and email support. For very small teams just getting started, this is a reasonable option. However, free plans typically lack WhatsApp integration and AI features, which are essential for most Indian businesses. GoSumo Realty offers a free tools suite and affordable paid plans that include WhatsApp from day one.
 
 ### How much does help desk software cost in India?
 
@@ -620,7 +620,7 @@ Pricing ranges from free (limited plans) to Rs 5,000+ per agent per month for en
 
 ### Can help desk software integrate with WhatsApp Business in India?
 
-Yes, most modern help desk tools support WhatsApp Business API integration. However, the quality varies significantly. Some treat WhatsApp as a basic messaging channel, while others — like DoAide Desk — build their entire workflow around WhatsApp, preserving conversation context, supporting media attachments, and enabling AI-powered auto-responses within WhatsApp threads.
+Yes, most modern help desk tools support WhatsApp Business API integration. However, the quality varies significantly. Some treat WhatsApp as a basic messaging channel, while others — like GoSumo Realty — build their entire workflow around WhatsApp, preserving conversation context, supporting media attachments, and enabling AI-powered auto-responses within WhatsApp threads.
 
 ### Do I need help desk software if I have fewer than 5 employees?
 
@@ -628,16 +628,16 @@ Yes, even a solo founder or a 2-person team benefits from help desk software. Wi
 
 ### Which help desk software supports Hindi and regional Indian languages?
 
-Most global help desks support Hindi as a display language, but few handle code-switching — the natural mix of Hindi and English that Indian customers use daily. DoAide Desk and Freshdesk have the strongest multilingual capabilities for Indian languages. When evaluating, test with real code-switched messages rather than pure Hindi or pure English text.
+Most global help desks support Hindi as a display language, but few handle code-switching — the natural mix of Hindi and English that Indian customers use daily. GoSumo Realty and Freshdesk have the strongest multilingual capabilities for Indian languages. When evaluating, test with real code-switched messages rather than pure Hindi or pure English text.
 
-[Try DoAide Desk Free →](https://desk.doaide.com)
+[Try GoSumo Realty Free →](https://gosumo.aiknol.com)
     `.trim(),
     faqs: [
-      { question: 'What is the best free help desk software for Indian businesses?', answer: 'Freshdesk offers a free plan for up to 2 agents with basic ticketing and email support. However, free plans typically lack WhatsApp integration and AI features essential for most Indian businesses. DoAide Desk offers a free tools suite and affordable paid plans that include WhatsApp from day one.' },
+      { question: 'What is the best free help desk software for Indian businesses?', answer: 'Freshdesk offers a free plan for up to 2 agents with basic ticketing and email support. However, free plans typically lack WhatsApp integration and AI features essential for most Indian businesses. GoSumo Realty offers a free tools suite and affordable paid plans that include WhatsApp from day one.' },
       { question: 'How much does help desk software cost in India?', answer: 'Pricing ranges from free (limited plans) to Rs 5,000+ per agent per month for enterprise tools. For Indian SMBs, the sweet spot is Rs 500-1,500 per agent per month, which gets you WhatsApp integration, basic AI features, and multi-channel support.' },
-      { question: 'Can help desk software integrate with WhatsApp Business in India?', answer: 'Yes, most modern help desk tools support WhatsApp Business API integration. Some treat WhatsApp as a basic messaging channel, while others like DoAide Desk build their entire workflow around WhatsApp, preserving conversation context and enabling AI-powered auto-responses.' },
+      { question: 'Can help desk software integrate with WhatsApp Business in India?', answer: 'Yes, most modern help desk tools support WhatsApp Business API integration. Some treat WhatsApp as a basic messaging channel, while others like GoSumo Realty build their entire workflow around WhatsApp, preserving conversation context and enabling AI-powered auto-responses.' },
       { question: 'Do I need help desk software if I have fewer than 5 employees?', answer: 'Yes, even a solo founder or 2-person team benefits from help desk software. Without it, customer conversations get lost across WhatsApp, email, and Instagram. A simple help desk with a unified inbox pays for itself by preventing lost conversations and saving time on repetitive responses.' },
-      { question: 'Which help desk software supports Hindi and regional Indian languages?', answer: 'Most global help desks support Hindi as a display language, but few handle code-switching — the natural mix of Hindi and English Indian customers use daily. DoAide Desk and Freshdesk have the strongest multilingual capabilities for Indian languages.' },
+      { question: 'Which help desk software supports Hindi and regional Indian languages?', answer: 'Most global help desks support Hindi as a display language, but few handle code-switching — the natural mix of Hindi and English Indian customers use daily. GoSumo Realty and Freshdesk have the strongest multilingual capabilities for Indian languages.' },
     ],
   },
   'knowledge-base-guide-indian-business': {
@@ -711,7 +711,7 @@ Assign knowledge base ownership to one person on your team. Without a clear owne
 
 A standalone knowledge base works but an integrated one is far more powerful. When your knowledge base is connected to your help desk, agents can insert knowledge base links into replies with one click, AI can automatically suggest relevant articles when a customer submits a ticket, unresolved searches in the knowledge base can automatically create tickets, and analytics show you which articles deflect tickets and which ones customers read but still contact support about.
 
-DoAide Desk integrates knowledge base and help desk into a single platform, so every article you write immediately improves both self-service and agent-assisted support.
+GoSumo Realty integrates knowledge base and help desk into a single platform, so every article you write immediately improves both self-service and agent-assisted support.
 
 ## Measuring Knowledge Base Effectiveness
 
@@ -739,16 +739,16 @@ Track your ticket volume before and after launching the knowledge base, focusing
 
 ### Can a knowledge base work with AI-powered customer support?
 
-Absolutely — a knowledge base is essential for AI-powered support. Your knowledge base articles become the AI's training data, enabling it to suggest accurate responses, auto-resolve common tickets, and surface relevant articles in real time. DoAide Desk integrates knowledge base and AI help desk into a single platform so every article immediately improves automated responses.
+Absolutely — a knowledge base is essential for AI-powered support. Your knowledge base articles become the AI's training data, enabling it to suggest accurate responses, auto-resolve common tickets, and surface relevant articles in real time. GoSumo Realty integrates knowledge base and AI help desk into a single platform so every article immediately improves automated responses.
 
-[Build Your Knowledge Base with DoAide Desk →](https://desk.doaide.com)
+[Build Your Knowledge Base with GoSumo Realty →](https://gosumo.aiknol.com)
     `.trim(),
     faqs: [
       { question: 'What is a knowledge base and why does my business need one?', answer: 'A knowledge base is a self-service library of articles, guides, and FAQs that helps customers find answers without contacting your support team. Indian businesses need one because support volume is growing faster than teams can scale, and 67% of Indian online consumers prefer finding answers themselves. A good knowledge base reduces ticket volume by 20-40%.' },
       { question: 'How many articles should a knowledge base have to be effective?', answer: 'Start with 15-20 articles covering your most frequently asked questions — these alone will address 60-80% of common queries. A mature knowledge base for an Indian SMB typically has 50-100 articles. Quality matters more than quantity.' },
       { question: 'Should I write my knowledge base in Hindi or English?', answer: 'Both. Publish your top articles in English and Hindi at minimum. Check which languages your support tickets arrive in and prioritise accordingly. For regional businesses, add the local language. AI translation tools can help but always have a native speaker review.' },
       { question: 'How do I know if my knowledge base is actually reducing support tickets?', answer: 'Track your ticket volume before and after launching the knowledge base on covered topics. A well-built knowledge base reduces tickets by 20-40% within three months. Also track your self-service ratio and target 30% or higher.' },
-      { question: 'Can a knowledge base work with AI-powered customer support?', answer: 'Absolutely — your knowledge base articles become the AI training data, enabling it to suggest accurate responses, auto-resolve common tickets, and surface relevant articles in real time. DoAide Desk integrates knowledge base and AI help desk into a single platform.' },
+      { question: 'Can a knowledge base work with AI-powered customer support?', answer: 'Absolutely — your knowledge base articles become the AI training data, enabling it to suggest accurate responses, auto-resolve common tickets, and surface relevant articles in real time. GoSumo Realty integrates knowledge base and AI help desk into a single platform.' },
     ],
   },
   'whatsapp-customer-support-indian-business-guide': {
@@ -786,7 +786,7 @@ You cannot access the WhatsApp Business API directly — you need a BSP (Busines
 
 When choosing a BSP, compare conversation pricing as rates vary by provider, check if they offer a built-in help desk or if you need to integrate with one, look for an Indian support team that understands local compliance, and verify that they support the WhatsApp Cloud API which is the newer and usually cheaper option.
 
-Alternatively, help desk platforms like DoAide Desk include WhatsApp Business API integration built in, eliminating the need to manage a separate BSP relationship.
+Alternatively, help desk platforms like GoSumo Realty include WhatsApp Business API integration built in, eliminating the need to manage a separate BSP relationship.
 
 ### Step 2: Verify Your Business
 
@@ -806,7 +806,7 @@ This is the most critical step. Without help desk integration, WhatsApp messages
 
 A proper integration should convert every WhatsApp message into a trackable ticket, preserve the full conversation thread including media attachments, route messages to the right agent based on topic and language, enable agents to respond from the help desk interface without switching to WhatsApp, and track response time, resolution time, and CSAT per WhatsApp conversation.
 
-DoAide Desk provides this integration out of the box — connect your WhatsApp Business API account and every message automatically becomes a ticket with full context.
+GoSumo Realty provides this integration out of the box — connect your WhatsApp Business API account and every message automatically becomes a ticket with full context.
 
 ### Step 5: Configure AI-Powered Automation
 
@@ -862,9 +862,9 @@ For most Indian businesses, yes. WhatsApp messages have a 98% open rate compared
 
 ### Can AI chatbots handle WhatsApp customer support in Hindi?
 
-Modern AI models handle Hindi and Hindi-English code-switching well, especially when trained on Indian conversation data. However, purely bot-driven WhatsApp support frustrates customers when the issue is complex. The best approach is AI-assisted human support — the AI handles triage, suggests responses, and auto-resolves simple queries while routing complex issues to human agents. DoAide Desk provides this hybrid approach with native Hindi language support.
+Modern AI models handle Hindi and Hindi-English code-switching well, especially when trained on Indian conversation data. However, purely bot-driven WhatsApp support frustrates customers when the issue is complex. The best approach is AI-assisted human support — the AI handles triage, suggests responses, and auto-resolves simple queries while routing complex issues to human agents. GoSumo Realty provides this hybrid approach with native Hindi language support.
 
-[Set Up WhatsApp Support with DoAide Desk →](https://desk.doaide.com)
+[Set Up WhatsApp Support with GoSumo Realty →](https://gosumo.aiknol.com)
     `.trim(),
     faqs: [
       { question: 'How much does WhatsApp Business API cost for Indian businesses?', answer: 'WhatsApp Business API pricing is conversation-based. Marketing conversations cost approximately Rs 0.85, utility conversations cost Rs 0.35, and service conversations initiated by customers are free for the first 1,000 per month. Total monthly cost for an Indian SMB handling 2,000-5,000 conversations typically ranges from Rs 2,000-8,000.' },
@@ -977,7 +977,7 @@ Revenue per client should grow. When you track client needs systematically, you 
 
 ### What is client management software and how is it different from a CRM?
 
-Client management software focuses on managing ongoing relationships and communication across channels, while traditional CRMs are designed around sales pipelines and deal tracking. For Indian service businesses, client management software is often more relevant because the priority is maintaining and deepening existing relationships rather than tracking new leads through a funnel. DoAide Desk combines both — unified communication management with pipeline tracking when you need it.
+Client management software focuses on managing ongoing relationships and communication across channels, while traditional CRMs are designed around sales pipelines and deal tracking. For Indian service businesses, client management software is often more relevant because the priority is maintaining and deepening existing relationships rather than tracking new leads through a funnel. GoSumo Realty combines both — unified communication management with pipeline tracking when you need it.
 
 ### How much does client management software cost for small businesses in India?
 
@@ -989,13 +989,13 @@ Most modern client management tools are cloud-based and require an internet conn
 
 ### Is client management software suitable for solo freelancers or only for teams?
 
-Client management software benefits anyone managing more than 10 active client relationships — whether solo or in a team. Solo freelancers benefit from the unified inbox, client history, and automated follow-ups. Teams benefit from shared visibility and coordination features. DoAide Desk works for both, with pricing that scales from individual freelancers to growing teams.
+Client management software benefits anyone managing more than 10 active client relationships — whether solo or in a team. Solo freelancers benefit from the unified inbox, client history, and automated follow-ups. Teams benefit from shared visibility and coordination features. GoSumo Realty works for both, with pricing that scales from individual freelancers to growing teams.
 
 ### How long does it take to see results from client management software?
 
 Most businesses see measurable improvement within 30 days — faster response times and fewer missed messages. The full impact on retention and revenue typically becomes visible after 90 days as the system accumulates client history and AI features learn your communication patterns.
 
-[Try DoAide Desk Free →](https://desk.doaide.com)
+[Try GoSumo Realty Free →](https://gosumo.aiknol.com)
     `.trim(),
     faqs: [
       { question: 'What is client management software and how is it different from a CRM?', answer: 'Client management software focuses on managing ongoing relationships and communication across channels, while traditional CRMs are designed around sales pipelines and deal tracking. For Indian service businesses, client management software is often more relevant because the priority is maintaining relationships rather than tracking leads through a funnel.' },
@@ -1056,7 +1056,7 @@ You manage clients from your phone during commutes, between meetings, and at cof
 
 For Indian freelancers, the key decision is between a full-featured CRM that you will use 30% of, and a focused client management tool that covers 90% of what you need.
 
-DoAide Desk falls in the second category — built for Indian freelancers and small businesses, with WhatsApp integration, AI-powered response suggestions, and pricing that does not assume enterprise budgets. It handles client communication, project tracking, and follow-up automation without the bloat of tools designed for 500-person sales teams.
+GoSumo Realty falls in the second category — built for Indian freelancers and small businesses, with WhatsApp integration, AI-powered response suggestions, and pricing that does not assume enterprise budgets. It handles client communication, project tracking, and follow-up automation without the bloat of tools designed for 500-person sales teams.
 
 ### Step 2: Import Your Existing Clients
 
@@ -1112,7 +1112,7 @@ If you manage more than 10 active client relationships, a CRM is not overkill �
 
 ### What is the best free CRM for freelancers in India?
 
-For very basic needs, HubSpot offers a free CRM with limited features. However, free CRMs typically lack WhatsApp integration, which is essential for Indian freelancers. DoAide Desk offers affordable entry-level pricing with WhatsApp integration from day one, making it more practical for Indian freelancers than a free tool without the right channel support.
+For very basic needs, HubSpot offers a free CRM with limited features. However, free CRMs typically lack WhatsApp integration, which is essential for Indian freelancers. GoSumo Realty offers affordable entry-level pricing with WhatsApp integration from day one, making it more practical for Indian freelancers than a free tool without the right channel support.
 
 ### How much time does it take to maintain a CRM as a freelancer?
 
@@ -1120,19 +1120,19 @@ Once set up, a CRM should take 10-15 minutes per day to maintain — mostly revi
 
 ### Can I use a CRM on my phone as my primary device?
 
-Yes, and many Indian freelancers do. Look for CRMs with strong mobile apps that support full functionality — client profiles, messaging, templates, and pipeline views. DoAide Desk's mobile experience matches the desktop version so you can manage clients entirely from your phone if needed.
+Yes, and many Indian freelancers do. Look for CRMs with strong mobile apps that support full functionality — client profiles, messaging, templates, and pipeline views. GoSumo Realty's mobile experience matches the desktop version so you can manage clients entirely from your phone if needed.
 
 ### How do I get my clients to communicate through the CRM instead of personal WhatsApp?
 
 You do not need to change your clients' behaviour. The CRM integrates with WhatsApp, so clients continue messaging you the way they always have. The CRM captures and organises those conversations automatically. Your clients never need to know you are using a CRM — they just experience faster, more consistent, and more personalised service.
 
-[Try DoAide Desk Free →](https://desk.doaide.com)
+[Try GoSumo Realty Free →](https://gosumo.aiknol.com)
     `.trim(),
     faqs: [
       { question: 'Do freelancers actually need a CRM or is it overkill?', answer: 'If you manage more than 10 active client relationships, a CRM is essential. Without one, you lose track of follow-ups, miss upsell opportunities, and spend hours searching for information. Most freelancers save 1-2 hours per day and see 15-25% better client retention within three months of adoption.' },
-      { question: 'What is the best free CRM for freelancers in India?', answer: 'HubSpot offers a free CRM with limited features, but free CRMs typically lack WhatsApp integration essential for Indian freelancers. DoAide Desk offers affordable entry-level pricing with WhatsApp integration from day one, making it more practical for the Indian market.' },
+      { question: 'What is the best free CRM for freelancers in India?', answer: 'HubSpot offers a free CRM with limited features, but free CRMs typically lack WhatsApp integration essential for Indian freelancers. GoSumo Realty offers affordable entry-level pricing with WhatsApp integration from day one, making it more practical for the Indian market.' },
       { question: 'How much time does it take to maintain a CRM as a freelancer?', answer: 'Once set up, a CRM takes 10-15 minutes per day — mostly reviewing your inbox and updating statuses. With WhatsApp integration, most data entry is automatic. The weekly review takes an additional 15 minutes, compared to the 1-2 hours daily most freelancers spend without a CRM.' },
-      { question: 'Can I use a CRM on my phone as my primary device?', answer: 'Yes, many Indian freelancers do. Look for CRMs with strong mobile apps supporting full functionality. DoAide Desk mobile experience matches the desktop version so you can manage clients entirely from your phone.' },
+      { question: 'Can I use a CRM on my phone as my primary device?', answer: 'Yes, many Indian freelancers do. Look for CRMs with strong mobile apps supporting full functionality. GoSumo Realty mobile experience matches the desktop version so you can manage clients entirely from your phone.' },
       { question: 'How do I get my clients to communicate through the CRM instead of personal WhatsApp?', answer: 'You do not need to change client behaviour. The CRM integrates with WhatsApp so clients continue messaging as usual. The CRM captures and organises those conversations automatically — clients never need to know you use a CRM.' },
     ],
   },
@@ -1179,7 +1179,7 @@ Every lead from every channel must flow into one centralised system. This can be
 
 For each lead, capture the name and contact number (minimum), the source channel (WhatsApp, Instagram, walk-in, referral), what they inquired about, the date and time of first contact, and the current status (new, contacted, proposal sent, won, lost).
 
-If you are using a tool like DoAide Desk, leads from WhatsApp, Instagram, email, and web chat flow in automatically. You add walk-ins and referrals manually — which takes 30 seconds per lead.
+If you are using a tool like GoSumo Realty, leads from WhatsApp, Instagram, email, and web chat flow in automatically. You add walk-ins and referrals manually — which takes 30 seconds per lead.
 
 ### Step 3: Set Up Instant Acknowledgement
 
@@ -1233,7 +1233,7 @@ A Google Sheet with columns for lead name, contact, source, status, and follow-u
 
 ### Option 2: Dedicated Tool
 
-A platform like DoAide Desk that automatically captures leads from WhatsApp, Instagram, email, and web chat. AI handles instant acknowledgement and routing. Built-in pipeline tracking shows every lead's status at a glance. Automated follow-up reminders ensure nothing falls through. This works for businesses handling 50-500 leads per month.
+A platform like GoSumo Realty that automatically captures leads from WhatsApp, Instagram, email, and web chat. AI handles instant acknowledgement and routing. Built-in pipeline tracking shows every lead's status at a glance. Automated follow-up reminders ensure nothing falls through. This works for businesses handling 50-500 leads per month.
 
 ### Option 3: Enterprise CRM
 
@@ -1259,11 +1259,11 @@ Lead tracking is the process of capturing, organising, and following up on every
 
 ### How much does lead tracking software cost in India?
 
-Lead tracking costs range from free (Google Sheets with manual entry) to Rs 10,000+ per user per month (enterprise CRMs). For Indian SMBs, the practical range is Rs 500-2,000 per user per month for dedicated tools that include WhatsApp integration and AI features. DoAide Desk offers lead tracking with multi-channel capture at pricing designed for the Indian market.
+Lead tracking costs range from free (Google Sheets with manual entry) to Rs 10,000+ per user per month (enterprise CRMs). For Indian SMBs, the practical range is Rs 500-2,000 per user per month for dedicated tools that include WhatsApp integration and AI features. GoSumo Realty offers lead tracking with multi-channel capture at pricing designed for the Indian market.
 
 ### Can I track leads from WhatsApp automatically?
 
-Yes, with WhatsApp Business API integration. Tools like DoAide Desk automatically convert every WhatsApp inquiry into a trackable lead with full conversation history. Without API integration, you must manually copy information from WhatsApp to your tracking system — which is exactly the kind of manual step that causes leads to fall through the cracks.
+Yes, with WhatsApp Business API integration. Tools like GoSumo Realty automatically convert every WhatsApp inquiry into a trackable lead with full conversation history. Without API integration, you must manually copy information from WhatsApp to your tracking system — which is exactly the kind of manual step that causes leads to fall through the cracks.
 
 ### How quickly should I respond to a new lead?
 
@@ -1273,12 +1273,12 @@ Within 5 minutes for digital channels like WhatsApp and Instagram, within 1 hour
 
 Lead tracking focuses specifically on capturing new inquiries and following up until they convert or are disqualified. A full CRM manages the entire customer lifecycle — from initial lead through ongoing relationship management. For Indian SMBs, starting with lead tracking is practical because it addresses the most immediate revenue problem: losing potential customers. You can expand to full CRM capabilities as your business grows.
 
-[Start Tracking Leads with DoAide Desk →](https://desk.doaide.com)
+[Start Tracking Leads with GoSumo Realty →](https://gosumo.aiknol.com)
     `.trim(),
     faqs: [
       { question: 'What is lead tracking and why is it important for Indian SMBs?', answer: 'Lead tracking captures, organises, and follows up on every potential customer inquiry across WhatsApp, Instagram, email, phone, and walk-ins. Indian SMBs lose 30-40% of potential leads due to poor tracking. A proper system ensures no inquiry goes unanswered and every potential customer gets consistent follow-up.' },
       { question: 'How much does lead tracking software cost in India?', answer: 'Costs range from free (Google Sheets) to Rs 10,000+ per user per month for enterprise CRMs. For Indian SMBs, the practical range is Rs 500-2,000 per user per month for tools that include WhatsApp integration and AI features.' },
-      { question: 'Can I track leads from WhatsApp automatically?', answer: 'Yes, with WhatsApp Business API integration. Tools like DoAide Desk automatically convert every WhatsApp inquiry into a trackable lead with full conversation history, eliminating manual data entry that causes leads to fall through cracks.' },
+      { question: 'Can I track leads from WhatsApp automatically?', answer: 'Yes, with WhatsApp Business API integration. Tools like GoSumo Realty automatically convert every WhatsApp inquiry into a trackable lead with full conversation history, eliminating manual data entry that causes leads to fall through cracks.' },
       { question: 'How quickly should I respond to a new lead?', answer: 'Within 5 minutes for WhatsApp and Instagram, within 1 hour for email, and within 2 hours for website forms. Leads contacted within 5 minutes are 21 times more likely to convert than those contacted after 30 minutes.' },
       { question: 'What is the difference between lead tracking and a full CRM?', answer: 'Lead tracking focuses on capturing new inquiries and following up until conversion. A full CRM manages the entire customer lifecycle. Starting with lead tracking addresses the most immediate revenue problem — losing potential customers — and you can expand to full CRM later.' },
     ],
@@ -1297,9 +1297,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     title: post.title,
     description: post.content.slice(0, 155).replace(/\n/g, ' '),
     openGraph: {
-      title: `${post.title} — DoAide Desk Blog`,
+      title: `${post.title} — GoSumo Realty Blog`,
       description: post.content.slice(0, 155).replace(/\n/g, ' '),
-      url: `https://desk.doaide.com/blog/${slug}`,
+      url: `https://gosumo.aiknol.com/blog/${slug}`,
       type: 'article',
       publishedTime: post.date,
     },
@@ -1344,7 +1344,7 @@ export default async function BlogPost({ params }: Props) {
             })}
           </div>
           <hr className="my-8 border-[var(--doaide-border)]" />
-          <ShareButtons url={`https://desk.doaide.com/blog/${slug}`} title={`${post.title} — DoAide Desk`} />
+          <ShareButtons url={`https://gosumo.aiknol.com/blog/${slug}`} title={`${post.title} — GoSumo Realty`} />
         </article>
         <script
           type="application/ld+json"
@@ -1354,9 +1354,9 @@ export default async function BlogPost({ params }: Props) {
               '@type': 'BlogPosting',
               headline: post.title,
               datePublished: post.date,
-              author: { '@type': 'Organization', name: 'Apprend Technologies', url: 'https://doaide.com' },
-              publisher: { '@type': 'Organization', name: 'DoAide Desk', url: 'https://desk.doaide.com' },
-              url: `https://desk.doaide.com/blog/${slug}`,
+              author: { '@type': 'Organization', name: 'Apprend Technologies', url: 'https://gosumo.aiknol.com' },
+              publisher: { '@type': 'Organization', name: 'GoSumo Realty', url: 'https://gosumo.aiknol.com' },
+              url: `https://gosumo.aiknol.com/blog/${slug}`,
             }),
           }}
         />

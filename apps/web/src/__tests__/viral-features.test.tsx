@@ -197,11 +197,11 @@ describe('sitemap', () => {
   it('returns all expected URLs', () => {
     const entries = sitemap();
     const urls = entries.map((e) => e.url);
-    expect(urls).toContain('https://desk.doaide.com');
-    expect(urls).toContain('https://desk.doaide.com/tools');
-    expect(urls).toContain('https://desk.doaide.com/tools/response-time-calculator');
-    expect(urls).toContain('https://desk.doaide.com/blog');
-    expect(urls).toContain('https://desk.doaide.com/embed');
+    expect(urls).toContain('https://gosumo.aiknol.com');
+    expect(urls).toContain('https://gosumo.aiknol.com/tools');
+    expect(urls).toContain('https://gosumo.aiknol.com/tools/response-time-calculator');
+    expect(urls).toContain('https://gosumo.aiknol.com/blog');
+    expect(urls).toContain('https://gosumo.aiknol.com/embed');
     expect(entries.length).toBeGreaterThanOrEqual(10);
   });
 });
@@ -212,7 +212,7 @@ import robots from '@/app/robots';
 describe('robots', () => {
   it('returns valid robots config', () => {
     const config = robots();
-    expect(config.sitemap).toBe('https://desk.doaide.com/sitemap.xml');
+    expect(config.sitemap).toBe('https://gosumo.aiknol.com/sitemap.xml');
     expect(config.rules).toBeDefined();
   });
 });

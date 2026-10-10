@@ -118,7 +118,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     });
   } catch (err) {
     if ((err as Error).name === 'AbortError') throw err;
-    throw new ApiError(0, 'NETWORK_ERROR', 'Unable to reach the DoAide Desk API. Is it running?');
+    throw new ApiError(0, 'NETWORK_ERROR', 'Unable to reach the GoSumo Realty API. Is it running?');
   }
 
   // Transparently refresh once on a 401, then replay the request.

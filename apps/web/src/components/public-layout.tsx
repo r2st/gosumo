@@ -11,7 +11,7 @@ export function PublicNav() {
             <ellipse cx="21" cy="13" rx="2.5" ry="3" fill="#0A0A0B" />
             <path d="M12 19Q16 22 20 19" stroke="#0A0A0B" strokeWidth="1.2" fill="none" strokeLinecap="round" />
           </svg>
-          DoAide Desk
+          GoSumo Realty
         </Link>
         <div className="flex items-center gap-6 text-sm">
           <Link href="/about" className="text-[var(--doaide-text-secondary)] hover:text-[var(--doaide-gold)] no-underline transition-colors">About</Link>

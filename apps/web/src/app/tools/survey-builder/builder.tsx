@@ -77,7 +77,7 @@ export function SurveyBuilder() {
   const enabledQuestions = questions.filter((q) => q.enabled);
 
   const surveyText = survey
-    ? `${survey.label}\nRating Scale: ${survey.scale}\n\n${enabledQuestions.map((q, i) => `${i + 1}. ${q.text}`).join('\n')}\n\n---\nBuilt with DoAide Desk — https://desk.doaide.com/tools/survey-builder`
+    ? `${survey.label}\nRating Scale: ${survey.scale}\n\n${enabledQuestions.map((q, i) => `${i + 1}. ${q.text}`).join('\n')}\n\n---\nBuilt with GoSumo Realty — https://gosumo.aiknol.com/tools/survey-builder`
     : '';
 
   const copySurvey = async () => {
@@ -164,7 +164,7 @@ export function SurveyBuilder() {
               </pre>
             </div>
 
-            <ShareButtons url="https://desk.doaide.com/tools/survey-builder" title="Survey Builder — Free tool by DoAide Desk" />
+            <ShareButtons url="https://gosumo.aiknol.com/tools/survey-builder" title="Survey Builder — Free tool by GoSumo Realty" />
 
             <div className="p-6 rounded-xl border border-[var(--doaide-border)] bg-[var(--doaide-surface)] text-center">
               <p className="text-sm text-[var(--doaide-text-secondary)] mb-3">Want to send surveys automatically after each ticket?</p>

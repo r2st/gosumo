@@ -4,9 +4,9 @@ import { LandingPage } from './landing-page';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'DoAide Desk — AI-powered client management across every channel',
+  title: 'GoSumo Realty — AI-powered lead management for real estate brokers',
   description:
-    'Manage customer conversations across WhatsApp, Instagram, SMS, Web Chat, and Email through a single AI-driven interface. Built for small businesses in India.',
+    'Capture, qualify and follow up on property leads across WhatsApp, portals and Meta ads through a single AI-driven interface. Built for real estate brokers in India.',
 };
 
 export default function Home() {

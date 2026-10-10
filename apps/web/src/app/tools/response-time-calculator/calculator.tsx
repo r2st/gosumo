@@ -81,7 +81,7 @@ export function ResponseTimeCalculator() {
           </div>
         )}
 
-        <ShareButtons url="https://desk.doaide.com/tools/response-time-calculator" title="Response Time Calculator — Free tool by DoAide Desk" />
+        <ShareButtons url="https://gosumo.aiknol.com/tools/response-time-calculator" title="Response Time Calculator — Free tool by GoSumo Realty" />
       </div>
     </div>
   );

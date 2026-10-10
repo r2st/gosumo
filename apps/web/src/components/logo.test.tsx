@@ -7,7 +7,7 @@ describe('LogoMark', () => {
     // The mark is the only branding in the collapsed sidebar, so it has to
     // announce itself rather than being an unlabelled decorative <svg>.
     render(<LogoMark />);
-    expect(screen.getByRole('img', { name: 'DoAide Desk' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'GoSumo Realty' })).toBeInTheDocument();
   });
 
   it('defaults to a 32px square', () => {
@@ -31,14 +31,14 @@ describe('LogoMark', () => {
 describe('Logo', () => {
   it('shows the wordmark alongside the mark by default', () => {
     render(<Logo />);
-    expect(screen.getByRole('img', { name: 'DoAide Desk' })).toBeInTheDocument();
-    expect(screen.getByText('DoAide')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'GoSumo Realty' })).toBeInTheDocument();
+    expect(screen.getByText('GoSumo')).toBeInTheDocument();
   });
 
   it('hides the wordmark on request, for narrow rails', () => {
     render(<Logo showWordmark={false} />);
-    expect(screen.getByRole('img', { name: 'DoAide Desk' })).toBeInTheDocument();
-    expect(screen.queryByText('DoAide')).not.toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'GoSumo Realty' })).toBeInTheDocument();
+    expect(screen.queryByText('GoSumo')).not.toBeInTheDocument();
   });
 
   it('merges a caller className onto the wrapper', () => {

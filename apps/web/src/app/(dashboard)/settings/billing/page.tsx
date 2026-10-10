@@ -21,7 +21,7 @@ const PLANS: {
   {
     plan: 'FREE',
     priceMonthly: '₹0',
-    tagline: 'Try DoAide Desk',
+    tagline: 'Try GoSumo Realty',
     features: ['1 channel', '500 conversations/mo', 'Basic AI replies'],
   },
   {

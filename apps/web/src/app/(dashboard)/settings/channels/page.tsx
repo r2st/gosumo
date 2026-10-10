@@ -240,7 +240,7 @@ export default function ChannelsPage() {
       {connected.length > 0 && (
         <SettingsCard
           title="Connected channels"
-          description="Channels currently routing messages into DoAide Desk."
+          description="Channels currently routing messages into GoSumo Realty."
         >
           <div className="space-y-3">
             {connected.map((channel) => {

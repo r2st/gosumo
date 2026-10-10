@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 let pathname: string | null = '/dashboard';
@@ -44,8 +44,9 @@ describe('Sidebar', () => {
 
   it('renders each section header', () => {
     renderSidebar();
+    const nav = screen.getByRole('navigation');
     for (const section of NAV_SECTIONS) {
-      expect(screen.getByText(section.label)).toBeInTheDocument();
+      expect(within(nav).getByText(section.label)).toBeInTheDocument();
     }
   });
 
@@ -140,8 +141,8 @@ describe('Sidebar', () => {
     expect(screen.getByText('Leads')).toBeInTheDocument();
   });
 
-  it('credits DoAide in the sidebar footer', () => {
+  it('credits GoSumo in the sidebar footer', () => {
     renderSidebar();
-    expect(screen.getByText(/AI-powered client management/)).toBeInTheDocument();
+    expect(screen.getByText(/AI-powered lead management/)).toBeInTheDocument();
   });
 });

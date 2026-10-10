@@ -53,7 +53,7 @@ export function TicketTemplateGenerator() {
   const category = CATEGORIES.find((c) => c.id === selected);
 
   const template = category
-    ? `Subject: ${category.subject}\nPriority: ${category.priority}\n\n${category.description}\n\nRequired Information:\n${category.fields.map((f) => `- ${f}: `).join('\n')}\n\n---\nGenerated with DoAide Desk — https://desk.doaide.com/tools/ticket-template-generator`
+    ? `Subject: ${category.subject}\nPriority: ${category.priority}\n\n${category.description}\n\nRequired Information:\n${category.fields.map((f) => `- ${f}: `).join('\n')}\n\n---\nGenerated with GoSumo Realty — https://gosumo.aiknol.com/tools/ticket-template-generator`
     : '';
 
   const copyTemplate = async () => {
@@ -127,7 +127,7 @@ export function TicketTemplateGenerator() {
               </pre>
             </div>
 
-            <ShareButtons url="https://desk.doaide.com/tools/ticket-template-generator" title="Ticket Template Generator — Free tool by DoAide Desk" />
+            <ShareButtons url="https://gosumo.aiknol.com/tools/ticket-template-generator" title="Ticket Template Generator — Free tool by GoSumo Realty" />
 
             <div className="p-6 rounded-xl border border-[var(--doaide-border)] bg-[var(--doaide-surface)] text-center">
               <p className="text-sm text-[var(--doaide-text-secondary)] mb-3">Want to save your templates and track tickets over time?</p>

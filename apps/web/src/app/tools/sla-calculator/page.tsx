@@ -4,11 +4,11 @@ import { SlaCalculator } from './calculator';
 
 export const metadata: Metadata = {
   title: 'SLA Calculator',
-  description: 'Calculate uptime targets, allowed downtime, and staffing needs from your SLA. Free tool by DoAide Desk.',
+  description: 'Calculate uptime targets, allowed downtime, and staffing needs from your SLA. Free tool by GoSumo Realty.',
   openGraph: {
-    title: 'SLA Calculator — DoAide Desk',
+    title: 'SLA Calculator — GoSumo Realty',
     description: 'Calculate allowed downtime, response capacity, and agents needed from your SLA targets.',
-    url: 'https://desk.doaide.com/tools/sla-calculator',
+    url: 'https://gosumo.aiknol.com/tools/sla-calculator',
   },
 };
 
@@ -28,11 +28,11 @@ export default function Page() {
             '@type': 'WebApplication',
             name: 'SLA Calculator',
             description: 'Calculate allowed downtime, response capacity, and agents needed from your SLA targets.',
-            url: 'https://desk.doaide.com/tools/sla-calculator',
+            url: 'https://gosumo.aiknol.com/tools/sla-calculator',
             applicationCategory: 'BusinessApplication',
             operatingSystem: 'Web',
             offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-            author: { '@type': 'Organization', name: 'Apprend Technologies', url: 'https://doaide.com' },
+            author: { '@type': 'Organization', name: 'Apprend Technologies', url: 'https://gosumo.aiknol.com' },
           }),
         }}
       />
