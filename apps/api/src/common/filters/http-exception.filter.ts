@@ -12,6 +12,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { GoSumoError, ErrorCode, errorCodeForStatus } from '@gosumo/shared';
 import { CORRELATION_ID_HEADER } from '../context/correlation-id.util';
 import { getCorrelationId, getRequestContext } from '../context/request-context';
+import { redactObject } from '../utils/log-redact.util';
 
 /**
  * Prisma error codes that correspond to a client mistake rather than a server
@@ -138,7 +139,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     };
 
     const detail = context && Object.keys(context).length > 0
-      ? ` ${JSON.stringify(context)}`
+      ? ` ${JSON.stringify(redactObject(context))}`
       : '';
 
     const reqCtx = getRequestContext();

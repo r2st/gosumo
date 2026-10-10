@@ -74,3 +74,42 @@ export function maskPhone(value: unknown): string {
   const lead = trimmed.startsWith('+') ? '+' : '';
   return `${lead}${digits.slice(0, 4)}${'*'.repeat(Math.max(digits.length - 8, 1))}${digits.slice(-4)}`;
 }
+
+const SENSITIVE_KEYS = new Set([
+  'password',
+  'password_hash',
+  'passwordHash',
+  'secret',
+  'token',
+  'refreshToken',
+  'refresh_token',
+  'accessToken',
+  'access_token',
+  'apiKey',
+  'api_key',
+  'authorization',
+  'cookie',
+  'creditCard',
+  'credit_card',
+  'ssn',
+  'privateKey',
+  'private_key',
+]);
+
+export function redactObject(
+  obj: Record<string, unknown>,
+  depth = 0,
+): Record<string, unknown> {
+  if (depth > 3) return { '[truncated]': true };
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (SENSITIVE_KEYS.has(key)) {
+      out[key] = REDACTED;
+    } else if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      out[key] = redactObject(value as Record<string, unknown>, depth + 1);
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
+}

@@ -149,12 +149,14 @@ export class AuthService {
       // identical wording alone did not buy. See `dummyPasswordHash`.
       await this.verifyPassword(password, await this.dummyPasswordHash());
       await this.recordFailedAttempt(email);
+      this.logger.warn(`Login failed: ${maskEmail(email)} — invalid credentials`);
       throw new UnauthorizedException('Invalid email or password');
     }
 
     const isPasswordValid = await this.verifyPassword(password, teamMember.password_hash);
     if (!isPasswordValid) {
       await this.recordFailedAttempt(email);
+      this.logger.warn(`Login failed: ${maskEmail(email)} — wrong password`);
       throw new UnauthorizedException('Invalid email or password');
     }
 
@@ -169,6 +171,7 @@ export class AuthService {
     // attempts were never charged against the lockout, so that one address
     // could be guessed at without limit.
     if (teamMember.status === 'SUSPENDED') {
+      this.logger.warn(`Login blocked: ${maskEmail(email)} — account suspended`);
       throw new UnauthorizedException('Account has been suspended');
     }
 
@@ -699,6 +702,7 @@ export class AuthService {
     }
 
     const minutes = Math.max(1, Math.ceil(ttl / 60));
+    this.logger.warn(`Login locked out: ${maskEmail(email)} — ${attempts} attempts, ${minutes}m remaining`);
     throw new UnauthorizedException(
       `Too many failed login attempts. Try again in ${minutes} minute(s).`,
     );
