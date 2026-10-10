@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { PublicNav, PublicFooter } from '@/components/public-layout';
 import { ShareButtons } from '@/components/share-buttons';
 
-const POSTS: Record<string, { title: string; date: string; readTime: string; content: string }> = {
+const POSTS: Record<string, { title: string; date: string; readTime: string; content: string; faqs?: Array<{ question: string; answer: string }> }> = {
   'best-crm-for-freelancers-india': {
     title: 'Best CRM for Freelancers in India: What Actually Works in 2026',
     date: '2026-10-08',
@@ -513,6 +513,367 @@ Identify your top 10 most common queries and create automated responses for them
 The best Indian SMB support teams combine WhatsApp-first design, AI-powered automation, and empathetic human agents. They plan for seasonal surges, respect linguistic diversity, and measure what matters. DoAide Desk is purpose-built for this reality — try it with your team today.
     `.trim(),
   },
+  'best-help-desk-software-small-business-india': {
+    title: 'Best Help Desk Software for Small Businesses in India: 2026 Guide',
+    date: '2026-10-10',
+    readTime: '9 min read',
+    content: `
+Choosing help desk software in India is not the same as choosing it anywhere else. Your customers message on WhatsApp at 10 PM. Your agents switch between Hindi and English mid-conversation. Your pricing needs to make sense in rupees, not dollars. And your team of 3-10 people cannot afford to spend a month learning a complicated enterprise tool.
+
+This guide compares what actually matters when picking a help desk for an Indian small business — and why most global tools fall short.
+
+## What Indian SMBs Need from a Help Desk
+
+### WhatsApp as a First-Class Channel
+
+Over 500 million Indians use WhatsApp daily. For most small businesses, WhatsApp is where 60-80% of customer conversations happen. A help desk that treats WhatsApp as an afterthought — or charges extra for it — is not built for the Indian market.
+
+Your help desk should convert every WhatsApp message into a trackable ticket automatically, preserve conversation threads so agents see the full history, support media attachments like photos and voice notes, and integrate with the WhatsApp Business API for automated responses.
+
+### Multilingual Support
+
+India has 22 official languages and hundreds of dialects. Your customers code-switch constantly — starting a message in English and finishing in Hindi, or mixing Marathi and English in the same sentence. A help desk built for India needs AI that understands code-switching, not just basic language detection.
+
+### Affordable Per-Agent Pricing
+
+Enterprise help desks charge $50-150 per agent per month. For an Indian SMB with 5 agents, that is Rs 25,000-75,000 monthly — often more than the agents' combined salary overhead for support tools. Look for pricing under Rs 1,000 per agent per month, or flat-rate plans for small teams.
+
+### Quick Setup Without IT Staff
+
+Most Indian SMBs do not have a dedicated IT team. The help desk should be productive within hours, not weeks. No complex integrations, no mandatory training programs, no professional services engagement.
+
+## How Popular Help Desk Tools Compare for Indian SMBs
+
+### Zendesk
+
+Zendesk is the global market leader, but it has significant drawbacks for Indian small businesses. Pricing starts at $19 per agent per month (roughly Rs 1,600) for the basic plan, but the features most Indian SMBs need — WhatsApp integration, multilingual support, AI features — are locked behind the $55+ plans. That puts a 5-agent team at Rs 23,000 per month minimum.
+
+WhatsApp integration requires the Zendesk Sunshine add-on. Setup is complex and often needs a technical consultant. The AI features are powerful but trained primarily on English-language data.
+
+### Freshdesk
+
+Freshdesk, being an Indian company (Freshworks is headquartered in Chennai), understands the local market better than most. They offer a free plan for up to 2 agents, and paid plans start at Rs 999 per agent per month. WhatsApp integration is available but requires the Freshchat add-on.
+
+The platform is feature-rich and well-documented. However, the combination of Freshdesk plus Freshchat plus WhatsApp integration can become complex for small teams. The AI capabilities are solid but require higher-tier plans.
+
+### Zoho Desk
+
+Zoho Desk offers competitive pricing and strong integration with the broader Zoho ecosystem. If you already use Zoho CRM, Zoho Books, or Zoho Mail, the integration is seamless. Plans start at Rs 800 per agent per month.
+
+WhatsApp integration is available through Zoho's omnichannel features. The AI assistant (Zia) supports basic automation. However, the interface can feel overwhelming for small teams, and the most useful AI features require the Enterprise plan.
+
+### DoAide Desk
+
+DoAide Desk is purpose-built for Indian small businesses and freelancers. WhatsApp is a first-class channel from the start, not an add-on. The AI understands code-switching between Hindi and English, and the pricing is designed for the Indian market.
+
+Key advantages include a unified inbox across WhatsApp, Instagram, SMS, Web Chat, and Email, AI-powered response suggestions that learn from your conversation style, smart ticket routing that considers language and agent expertise, a setup time measured in minutes not weeks, and pricing built for Indian SMBs.
+
+## Features That Matter Most
+
+### 1. Unified Inbox
+
+Checking WhatsApp, Instagram, email, and SMS separately wastes hours daily. A unified inbox pulls every customer conversation into one view. This is the single most impactful feature for Indian SMBs, where customer communication is spread across 3-5 channels.
+
+### 2. AI-Powered Triage
+
+Every incoming message should be automatically categorized by topic, urgency, and language. Manual triage wastes 15-20 minutes per agent per shift. AI does it in milliseconds.
+
+### 3. Canned Responses with Personalisation
+
+Templates for common queries — order status, return policies, pricing — save enormous time. But they need to feel personal. The best help desks let you create templates with dynamic fields that pull in the customer's name, order details, and history.
+
+### 4. SLA Management
+
+Set response time targets by priority level and channel. WhatsApp messages should have tighter SLAs than emails. P0 issues (system down) should alert the team immediately.
+
+### 5. Reporting and Analytics
+
+At minimum, track first response time, resolution time, CSAT score, and ticket volume by channel. Use our [Response Time Calculator](/tools/response-time-calculator) and [CSAT Calculator](/tools/csat-calculator) to benchmark your team.
+
+## How to Evaluate Help Desk Software
+
+### Step 1: Run a Two-Week Trial with Real Tickets
+
+Do not evaluate help desk software with test data. Connect your actual WhatsApp Business account and email, then run real customer conversations through the tool for two weeks. This is the only way to know if it works for your specific workflow.
+
+### Step 2: Measure Setup Time
+
+Time how long it takes from sign-up to handling your first real ticket. If it takes more than a day, the tool is too complex for a small team.
+
+### Step 3: Test Multilingual Handling
+
+Send test messages in Hindi, your regional language, and code-switched Hindi-English. See how the AI categorizes them. If it misclassifies code-switched messages, it is not ready for the Indian market.
+
+### Step 4: Calculate Total Cost
+
+Factor in per-agent fees, add-on costs for WhatsApp and other channels, AI feature costs, and any setup or onboarding fees. Compare this against the time saved — if the tool does not save at least 2 hours per agent per day, the ROI may not justify the cost.
+
+## Frequently Asked Questions
+
+### What is the best free help desk software for Indian businesses?
+
+Freshdesk offers a free plan for up to 2 agents with basic ticketing and email support. For very small teams just getting started, this is a reasonable option. However, free plans typically lack WhatsApp integration and AI features, which are essential for most Indian businesses. DoAide Desk offers a free tools suite and affordable paid plans that include WhatsApp from day one.
+
+### How much does help desk software cost in India?
+
+Pricing ranges from free (limited plans) to Rs 5,000+ per agent per month for enterprise tools. For Indian SMBs, the sweet spot is Rs 500-1,500 per agent per month, which gets you WhatsApp integration, basic AI features, and multi-channel support. Always calculate total cost including add-ons, not just the base plan price.
+
+### Can help desk software integrate with WhatsApp Business in India?
+
+Yes, most modern help desk tools support WhatsApp Business API integration. However, the quality varies significantly. Some treat WhatsApp as a basic messaging channel, while others — like DoAide Desk — build their entire workflow around WhatsApp, preserving conversation context, supporting media attachments, and enabling AI-powered auto-responses within WhatsApp threads.
+
+### Do I need help desk software if I have fewer than 5 employees?
+
+Yes, even a solo founder or a 2-person team benefits from help desk software. Without it, customer conversations get lost across WhatsApp, email, and Instagram. You miss follow-ups, lose context, and spend time switching between apps. A simple help desk with a unified inbox pays for itself by preventing these losses, even before you consider the time saved on repetitive responses.
+
+### Which help desk software supports Hindi and regional Indian languages?
+
+Most global help desks support Hindi as a display language, but few handle code-switching — the natural mix of Hindi and English that Indian customers use daily. DoAide Desk and Freshdesk have the strongest multilingual capabilities for Indian languages. When evaluating, test with real code-switched messages rather than pure Hindi or pure English text.
+
+[Try DoAide Desk Free →](https://desk.doaide.com)
+    `.trim(),
+    faqs: [
+      { question: 'What is the best free help desk software for Indian businesses?', answer: 'Freshdesk offers a free plan for up to 2 agents with basic ticketing and email support. However, free plans typically lack WhatsApp integration and AI features essential for most Indian businesses. DoAide Desk offers a free tools suite and affordable paid plans that include WhatsApp from day one.' },
+      { question: 'How much does help desk software cost in India?', answer: 'Pricing ranges from free (limited plans) to Rs 5,000+ per agent per month for enterprise tools. For Indian SMBs, the sweet spot is Rs 500-1,500 per agent per month, which gets you WhatsApp integration, basic AI features, and multi-channel support.' },
+      { question: 'Can help desk software integrate with WhatsApp Business in India?', answer: 'Yes, most modern help desk tools support WhatsApp Business API integration. Some treat WhatsApp as a basic messaging channel, while others like DoAide Desk build their entire workflow around WhatsApp, preserving conversation context and enabling AI-powered auto-responses.' },
+      { question: 'Do I need help desk software if I have fewer than 5 employees?', answer: 'Yes, even a solo founder or 2-person team benefits from help desk software. Without it, customer conversations get lost across WhatsApp, email, and Instagram. A simple help desk with a unified inbox pays for itself by preventing lost conversations and saving time on repetitive responses.' },
+      { question: 'Which help desk software supports Hindi and regional Indian languages?', answer: 'Most global help desks support Hindi as a display language, but few handle code-switching — the natural mix of Hindi and English Indian customers use daily. DoAide Desk and Freshdesk have the strongest multilingual capabilities for Indian languages.' },
+    ],
+  },
+  'knowledge-base-guide-indian-business': {
+    title: 'How to Build a Knowledge Base for Your Indian Business: Step-by-Step',
+    date: '2026-10-10',
+    readTime: '8 min read',
+    content: `
+Every support ticket that a customer could have solved themselves is a ticket your team should not have been handling. A well-built knowledge base deflects 20-40% of support volume by giving customers instant answers — no waiting, no ticket, no agent time consumed.
+
+For Indian businesses, building a knowledge base has unique considerations: multilingual content, mobile-first design for customers browsing on smartphones, and topics that reflect Indian business contexts like GST, UPI payments, and COD policies.
+
+## Why Indian Businesses Need a Knowledge Base Now
+
+### Support Volume Is Growing Faster Than Teams
+
+Indian digital commerce grew 25% year-over-year in 2025. Customer inquiries grew with it. But hiring and training support agents takes months, and attrition in Indian call centres averages 40-60% annually. A knowledge base is the only way to scale support without proportionally scaling headcount.
+
+### Customers Prefer Self-Service
+
+A RedSeer study found that 67% of Indian online consumers prefer finding answers themselves over contacting support — if the information is available and easy to find. The preference is even higher among the 18-35 demographic, which makes up the majority of India's online shoppers.
+
+### AI Amplifies Knowledge Base Value
+
+A knowledge base is not just for customers. When paired with an AI help desk, your knowledge base becomes the AI's training data. Every article you write makes the AI smarter at answering questions, suggesting responses, and resolving tickets automatically.
+
+## Step 1: Identify Your Top 20 Questions
+
+Before writing a single article, analyse your last 500 support tickets. Group them by topic and count the frequency. You will find that 20 questions account for 60-80% of your ticket volume. These are your first 20 knowledge base articles.
+
+Common categories for Indian businesses include order tracking and delivery timelines, return and refund policies (especially COD returns), payment issues covering UPI failures, payment gateway errors, and EMI queries, GST invoices and billing, account management such as password resets and profile updates, and product-specific FAQs.
+
+## Step 2: Write for Mobile-First Reading
+
+Over 75% of Indian internet users access the web primarily through smartphones. Your knowledge base articles must be designed for small screens.
+
+Keep paragraphs to 2-3 sentences maximum. Use descriptive headers that answer the question in the header itself. Include step-by-step instructions with numbered lists. Add screenshots sized for mobile viewing. Avoid walls of text — break complex topics into separate articles rather than one long page.
+
+## Step 3: Support Multiple Languages
+
+At minimum, publish your knowledge base in English and Hindi. If your business serves specific regions, add the relevant regional language — Marathi for Maharashtra-based businesses, Tamil for Tamil Nadu, Kannada for Karnataka, and so on.
+
+You do not need to translate every article into every language on day one. Start with your top 10 articles in English and Hindi. Expand language coverage based on your customer demographics — check which languages your support tickets arrive in to prioritise translation.
+
+AI translation tools can help, but always have a native speaker review translations before publishing. Machine-translated Hindi often reads awkwardly and can confuse customers more than it helps.
+
+## Step 4: Structure Your Knowledge Base
+
+Organise articles into clear categories that match how your customers think, not how your internal teams are structured.
+
+A recommended structure for Indian businesses includes Getting Started covering account creation, first order, and app download. Then Payments and Billing for UPI, cards, EMI, GST invoices, and refunds. Orders and Delivery for tracking, timelines, COD, and address changes. Returns and Exchanges for return policy, pickup scheduling, and refund timeline. Account and Security for password reset, email change, and two-factor authentication. And a Product Guide covering features, sizing, and compatibility.
+
+Each category should have 5-15 articles. More than 15 means the category needs splitting. Fewer than 3 means it can be merged with a related category.
+
+## Step 5: Add Search That Works
+
+The search bar is the most important element of your knowledge base. If customers cannot find the answer in 10 seconds, they will open a support ticket instead.
+
+Your search should handle misspellings, as Indian customers often type "refund" as "refnd" or "payment" as "payement". It should support Hindi queries even for English articles, so a customer searching "paise wapas" should find the refund policy article. It should show results as the user types with autocomplete suggestions. And it should rank results by relevance, not alphabetically or by date.
+
+AI-powered search dramatically outperforms keyword-based search for Indian knowledge bases because it understands intent and handles the linguistic diversity of Indian queries.
+
+## Step 6: Keep It Updated
+
+A knowledge base with outdated information is worse than no knowledge base. Customers who follow outdated instructions get frustrated and lose trust.
+
+Set a review schedule. Review and update every article at least quarterly. Update immediately when policies, pricing, or procedures change. Archive articles that are no longer relevant rather than deleting them. Track which articles customers rate as unhelpful and prioritise rewriting them.
+
+Assign knowledge base ownership to one person on your team. Without a clear owner, articles slowly decay until the entire knowledge base becomes unreliable.
+
+## Step 7: Connect It to Your Help Desk
+
+A standalone knowledge base works but an integrated one is far more powerful. When your knowledge base is connected to your help desk, agents can insert knowledge base links into replies with one click, AI can automatically suggest relevant articles when a customer submits a ticket, unresolved searches in the knowledge base can automatically create tickets, and analytics show you which articles deflect tickets and which ones customers read but still contact support about.
+
+DoAide Desk integrates knowledge base and help desk into a single platform, so every article you write immediately improves both self-service and agent-assisted support.
+
+## Measuring Knowledge Base Effectiveness
+
+Track these metrics monthly to know if your knowledge base is working.
+
+Self-service ratio measures the percentage of customer issues resolved through the knowledge base without a support ticket. Target 30% or higher. Article helpfulness uses thumbs-up and thumbs-down ratings on each article, and rewrite any article below 70% helpfulness. Search success rate is the percentage of searches that lead to an article click rather than a search abandonment, and target 80% or higher. Ticket deflection rate measures the reduction in support tickets after publishing knowledge base articles on that topic, and the expected reduction is 20-40% for well-covered topics.
+
+## Frequently Asked Questions
+
+### What is a knowledge base and why does my business need one?
+
+A knowledge base is a self-service library of articles, guides, and FAQs that helps customers find answers without contacting your support team. Indian businesses need one because support volume is growing faster than teams can scale, and 67% of Indian online consumers prefer finding answers themselves. A good knowledge base reduces ticket volume by 20-40% while improving customer satisfaction.
+
+### How many articles should a knowledge base have to be effective?
+
+Start with 15-20 articles covering your most frequently asked questions — these alone will address 60-80% of common queries. A mature knowledge base for an Indian SMB typically has 50-100 articles. Quality matters more than quantity: 20 well-written articles that answer real customer questions outperform 200 generic articles that nobody reads.
+
+### Should I write my knowledge base in Hindi or English?
+
+Both. Publish your top articles in English and Hindi at minimum. Check which languages your support tickets arrive in and prioritise accordingly. For regional businesses, add the local language such as Tamil, Marathi, or Kannada. AI translation tools can speed up the process, but always have a native speaker review before publishing.
+
+### How do I know if my knowledge base is actually reducing support tickets?
+
+Track your ticket volume before and after launching the knowledge base, focusing on the specific topics you have covered. A well-built knowledge base reduces tickets on covered topics by 20-40% within the first three months. Also track your self-service ratio — the percentage of customer issues resolved through the knowledge base without a ticket — and target 30% or higher.
+
+### Can a knowledge base work with AI-powered customer support?
+
+Absolutely — a knowledge base is essential for AI-powered support. Your knowledge base articles become the AI's training data, enabling it to suggest accurate responses, auto-resolve common tickets, and surface relevant articles in real time. DoAide Desk integrates knowledge base and AI help desk into a single platform so every article immediately improves automated responses.
+
+[Build Your Knowledge Base with DoAide Desk →](https://desk.doaide.com)
+    `.trim(),
+    faqs: [
+      { question: 'What is a knowledge base and why does my business need one?', answer: 'A knowledge base is a self-service library of articles, guides, and FAQs that helps customers find answers without contacting your support team. Indian businesses need one because support volume is growing faster than teams can scale, and 67% of Indian online consumers prefer finding answers themselves. A good knowledge base reduces ticket volume by 20-40%.' },
+      { question: 'How many articles should a knowledge base have to be effective?', answer: 'Start with 15-20 articles covering your most frequently asked questions — these alone will address 60-80% of common queries. A mature knowledge base for an Indian SMB typically has 50-100 articles. Quality matters more than quantity.' },
+      { question: 'Should I write my knowledge base in Hindi or English?', answer: 'Both. Publish your top articles in English and Hindi at minimum. Check which languages your support tickets arrive in and prioritise accordingly. For regional businesses, add the local language. AI translation tools can help but always have a native speaker review.' },
+      { question: 'How do I know if my knowledge base is actually reducing support tickets?', answer: 'Track your ticket volume before and after launching the knowledge base on covered topics. A well-built knowledge base reduces tickets by 20-40% within three months. Also track your self-service ratio and target 30% or higher.' },
+      { question: 'Can a knowledge base work with AI-powered customer support?', answer: 'Absolutely — your knowledge base articles become the AI training data, enabling it to suggest accurate responses, auto-resolve common tickets, and surface relevant articles in real time. DoAide Desk integrates knowledge base and AI help desk into a single platform.' },
+    ],
+  },
+  'whatsapp-customer-support-indian-business-guide': {
+    title: 'WhatsApp Customer Support for Indian Businesses: Complete Setup Guide',
+    date: '2026-10-10',
+    readTime: '9 min read',
+    content: `
+WhatsApp is not just a messaging app in India — it is the default communication platform for 500 million users. When an Indian customer has a question about their order, a complaint about a service, or a query about pricing, their first instinct is to send a WhatsApp message. Not an email. Not a phone call. WhatsApp.
+
+If your business is not set up to handle customer support on WhatsApp professionally, you are losing customers to competitors who are. This guide walks you through everything you need to set up WhatsApp as a support channel — from choosing between WhatsApp Business App and WhatsApp Business API to integrating with a help desk and using AI to scale.
+
+## WhatsApp Business App vs WhatsApp Business API
+
+### WhatsApp Business App
+
+The free WhatsApp Business App is designed for micro-businesses with 1-2 people handling support. It provides a business profile with your address, hours, and website. You get quick replies to save and reuse frequent messages, labels to organise chats by status such as new customer or pending payment, a product catalogue to showcase your offerings, and automated greeting and away messages.
+
+Limitations: only one device can use the app at a time (plus up to 4 linked devices with limited features), no integration with external tools, no API access for automation, and no analytics beyond basic message statistics.
+
+Best for: solo entrepreneurs, home-based businesses, and shops with fewer than 50 daily customer messages.
+
+### WhatsApp Business API
+
+The WhatsApp Business API is built for businesses that need to handle support at scale. It provides multi-agent access so your entire team can respond from the same number, integration with help desk and CRM tools, programmatic message sending for order updates and appointment reminders, chatbot and AI integration for automated responses, rich analytics on response times, resolution rates, and agent performance, and template messages approved by Meta for outbound notifications.
+
+Limitations: requires a Business Solution Provider (BSP) to set up, conversation-based pricing (roughly Rs 0.35-0.85 per conversation depending on category), and template messages need Meta approval before use (typically 24-48 hours).
+
+Best for: businesses handling 50 or more daily customer messages, teams with 3 or more support agents, and anyone who needs automation or integration.
+
+## Setting Up WhatsApp Business API for Support
+
+### Step 1: Choose a Business Solution Provider
+
+You cannot access the WhatsApp Business API directly — you need a BSP (Business Solution Provider) that acts as the bridge. Popular BSPs in India include Gupshup, Twilio, MessageBird, and Wati.
+
+When choosing a BSP, compare conversation pricing as rates vary by provider, check if they offer a built-in help desk or if you need to integrate with one, look for an Indian support team that understands local compliance, and verify that they support the WhatsApp Cloud API which is the newer and usually cheaper option.
+
+Alternatively, help desk platforms like DoAide Desk include WhatsApp Business API integration built in, eliminating the need to manage a separate BSP relationship.
+
+### Step 2: Verify Your Business
+
+Meta requires business verification before granting API access. Prepare your business registration documents such as GST certificate, MSME registration, or company incorporation certificate. You need a Facebook Business Manager account linked to your business page, a dedicated phone number for WhatsApp that is not already registered on WhatsApp Business App or personal WhatsApp, and a business website with matching domain.
+
+The verification process typically takes 3-7 business days. Apply early — do not wait until you urgently need WhatsApp support to start the process.
+
+### Step 3: Set Up Message Templates
+
+Template messages are pre-approved message formats you can send to customers outside the 24-hour conversation window. Common support templates include order confirmation with order number, item details, and expected delivery, shipping update with tracking link and estimated arrival, appointment reminder with date, time, and reschedule link, payment confirmation with amount, transaction ID, and invoice link, and feedback request after resolution asking the customer to rate their experience.
+
+Submit templates in both English and Hindi. Keep them concise — WhatsApp users expect short messages. Include clear call-to-action buttons like Track Order and Contact Support where appropriate.
+
+### Step 4: Integrate with Your Help Desk
+
+This is the most critical step. Without help desk integration, WhatsApp messages sit in a separate app and your team loses context, tracking, and analytics.
+
+A proper integration should convert every WhatsApp message into a trackable ticket, preserve the full conversation thread including media attachments, route messages to the right agent based on topic and language, enable agents to respond from the help desk interface without switching to WhatsApp, and track response time, resolution time, and CSAT per WhatsApp conversation.
+
+DoAide Desk provides this integration out of the box — connect your WhatsApp Business API account and every message automatically becomes a ticket with full context.
+
+### Step 5: Configure AI-Powered Automation
+
+Once WhatsApp is connected to your help desk, add AI automation in layers.
+
+Start with auto-acknowledgement. When a customer sends a message outside business hours or during high volume, an immediate auto-reply sets expectations. Do not use a generic reply like "We received your message" — instead use AI to analyse the message and respond contextually. A customer asking about order status should get a reply like "I am checking your order status now — I will have an update within 15 minutes."
+
+Then add smart routing. AI reads each incoming message and routes it to the right agent or team based on content, urgency, and language. A billing question in Hindi goes to an agent who handles billing and speaks Hindi. A technical issue gets routed to the technical team. This happens in milliseconds.
+
+Finally enable suggested responses. When an agent opens a WhatsApp ticket, AI suggests a contextual reply based on the customer's question, their history, and your knowledge base. The agent reviews, edits if needed, and sends. This cuts response drafting time from 3-5 minutes to 30 seconds.
+
+## Best Practices for WhatsApp Customer Support in India
+
+### Respect the 24-Hour Window
+
+WhatsApp Business API has a 24-hour conversation window. Once a customer messages you, you can send unlimited messages for 24 hours. After that, you can only send pre-approved template messages. Design your support workflow to resolve issues within this window whenever possible.
+
+### Use Rich Media Wisely
+
+WhatsApp supports images, videos, documents, and location sharing. Use these features proactively. Send a photo showing how to locate a serial number instead of describing it in text. Share a short video tutorial instead of a 10-step written guide. Attach the GST invoice as a PDF instead of asking the customer to log into their account.
+
+### Handle Sensitive Information Carefully
+
+Never ask customers to share passwords, full card numbers, or Aadhaar details over WhatsApp. For payment-related support, guide them to secure channels. For identity verification, use OTP-based verification rather than document sharing.
+
+### Plan for Scale During Festivals
+
+Diwali, Navratri, and end-of-year sales can spike WhatsApp message volume 3-5x overnight. Prepare by increasing AI automation coverage for the top 20 festival-season queries, setting up a separate queue for order-tracking messages which will be the majority, adjusting SLAs to reflect realistic response times during peak, and if needed hiring temporary agents and training them on your help desk platform two weeks before the surge.
+
+## Measuring WhatsApp Support Performance
+
+Track these metrics weekly. WhatsApp first response time should target under 5 minutes during business hours. WhatsApp resolution rate should target 80% or higher resolved within 24 hours. WhatsApp CSAT should target 85% or higher satisfaction rating. Automation rate tracks the percentage of WhatsApp messages handled by AI without agent involvement and a target of 30-40% indicates that the AI is well trained. Cost per conversation tracks your BSP costs plus agent time divided by total conversations to ensure you remain below your customer acquisition cost.
+
+Use our [Response Time Calculator](/tools/response-time-calculator) and [CSAT Calculator](/tools/csat-calculator) to benchmark your WhatsApp support performance.
+
+## Frequently Asked Questions
+
+### How much does WhatsApp Business API cost for Indian businesses?
+
+WhatsApp Business API pricing is conversation-based. Marketing conversations cost approximately Rs 0.85 per conversation, utility conversations like order updates cost Rs 0.35, and service conversations initiated by the customer are free for the first 1,000 per month. Add your BSP's markup, which varies by provider. Total monthly cost for an Indian SMB handling 2,000-5,000 monthly conversations typically ranges from Rs 2,000-8,000.
+
+### Can I use my existing WhatsApp number for the Business API?
+
+Yes, but you must migrate it from WhatsApp or WhatsApp Business App to the API. This means the number will no longer work in the regular app — it will only be accessible through the API and your connected help desk. You cannot use the same number on both the app and API simultaneously. Many businesses use a new dedicated number for the API.
+
+### How long does it take to set up WhatsApp Business API?
+
+The technical setup takes 1-2 days if your BSP or help desk platform handles the integration. However, Meta's business verification process takes 3-7 business days, and template message approvals take 24-48 hours each. Plan for 2 weeks from start to fully operational.
+
+### Is WhatsApp customer support better than email for Indian businesses?
+
+For most Indian businesses, yes. WhatsApp messages have a 98% open rate compared to 20-25% for email. Response times are faster because the conversational format feels urgent. Customers prefer it because they already use WhatsApp daily. However, email remains important for formal communications, detailed technical support, and documentation. The best approach is to offer both channels through a unified inbox.
+
+### Can AI chatbots handle WhatsApp customer support in Hindi?
+
+Modern AI models handle Hindi and Hindi-English code-switching well, especially when trained on Indian conversation data. However, purely bot-driven WhatsApp support frustrates customers when the issue is complex. The best approach is AI-assisted human support — the AI handles triage, suggests responses, and auto-resolves simple queries while routing complex issues to human agents. DoAide Desk provides this hybrid approach with native Hindi language support.
+
+[Set Up WhatsApp Support with DoAide Desk →](https://desk.doaide.com)
+    `.trim(),
+    faqs: [
+      { question: 'How much does WhatsApp Business API cost for Indian businesses?', answer: 'WhatsApp Business API pricing is conversation-based. Marketing conversations cost approximately Rs 0.85, utility conversations cost Rs 0.35, and service conversations initiated by customers are free for the first 1,000 per month. Total monthly cost for an Indian SMB handling 2,000-5,000 conversations typically ranges from Rs 2,000-8,000.' },
+      { question: 'Can I use my existing WhatsApp number for the Business API?', answer: 'Yes, but you must migrate it from WhatsApp or WhatsApp Business App to the API. The number will no longer work in the regular app. You cannot use the same number on both simultaneously. Many businesses use a new dedicated number for the API.' },
+      { question: 'How long does it take to set up WhatsApp Business API?', answer: 'The technical setup takes 1-2 days if your BSP or help desk platform handles integration. However, Meta business verification takes 3-7 business days, and template message approvals take 24-48 hours each. Plan for 2 weeks from start to fully operational.' },
+      { question: 'Is WhatsApp customer support better than email for Indian businesses?', answer: 'For most Indian businesses, yes. WhatsApp messages have a 98% open rate compared to 20-25% for email. Response times are faster and customers prefer it because they already use WhatsApp daily. However, email remains important for formal communications and detailed technical support.' },
+      { question: 'Can AI chatbots handle WhatsApp customer support in Hindi?', answer: 'Modern AI models handle Hindi and Hindi-English code-switching well. However, purely bot-driven support frustrates customers with complex issues. The best approach is AI-assisted human support — AI handles triage and auto-resolves simple queries while routing complex issues to human agents.' },
+    ],
+  },
 };
 
 interface Props {
@@ -590,6 +951,22 @@ export default async function BlogPost({ params }: Props) {
             }),
           }}
         />
+        {post.faqs && (
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{
+              __html: JSON.stringify({
+                '@context': 'https://schema.org',
+                '@type': 'FAQPage',
+                mainEntity: post.faqs.map((faq) => ({
+                  '@type': 'Question',
+                  name: faq.question,
+                  acceptedAnswer: { '@type': 'Answer', text: faq.answer },
+                })),
+              }),
+            }}
+          />
+        )}
       </main>
       <PublicFooter />
     </div>

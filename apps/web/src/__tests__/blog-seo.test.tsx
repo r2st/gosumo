@@ -31,10 +31,19 @@ describe('Blog Index SEO articles', () => {
     expect(screen.getByText('The Complete Guide to Automated Ticket Routing')).toBeInTheDocument();
   });
 
-  it('renders all 9 blog post links', async () => {
+  it('renders new round 2 SEO blog posts', async () => {
+    const { default: BlogIndex } = await import('@/app/blog/page');
+    render(<BlogIndex />);
+
+    expect(screen.getByText('Best Help Desk Software for Small Businesses in India: 2026 Guide')).toBeInTheDocument();
+    expect(screen.getByText('How to Build a Knowledge Base for Your Indian Business: Step-by-Step')).toBeInTheDocument();
+    expect(screen.getByText('WhatsApp Customer Support for Indian Businesses: Complete Setup Guide')).toBeInTheDocument();
+  });
+
+  it('renders all 12 blog post links', async () => {
     const { default: BlogIndex } = await import('@/app/blog/page');
     const { container } = render(<BlogIndex />);
     const links = container.querySelectorAll('a[href^="/blog/"]');
-    expect(links.length).toBe(9);
+    expect(links.length).toBe(12);
   });
 });

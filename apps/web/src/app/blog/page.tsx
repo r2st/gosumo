@@ -71,6 +71,27 @@ const POSTS = [
     date: '2026-10-10',
     readTime: '8 min read',
   },
+  {
+    slug: 'best-help-desk-software-small-business-india',
+    title: 'Best Help Desk Software for Small Businesses in India: 2026 Guide',
+    excerpt: 'Comparing help desk tools built for Indian SMBs — from WhatsApp integration and multilingual support to UPI-friendly pricing. Find the right fit for your team.',
+    date: '2026-10-10',
+    readTime: '9 min read',
+  },
+  {
+    slug: 'knowledge-base-guide-indian-business',
+    title: 'How to Build a Knowledge Base for Your Indian Business: Step-by-Step',
+    excerpt: 'A practical guide to building a self-service knowledge base that reduces ticket volume, supports multilingual customers, and scales with your growing business in India.',
+    date: '2026-10-10',
+    readTime: '8 min read',
+  },
+  {
+    slug: 'whatsapp-customer-support-indian-business-guide',
+    title: 'WhatsApp Customer Support for Indian Businesses: Complete Setup Guide',
+    excerpt: 'How to set up WhatsApp Business API for customer support, integrate it with your help desk, and use AI to handle high volumes without growing your team.',
+    date: '2026-10-10',
+    readTime: '9 min read',
+  },
 ] as const;
 
 export default function BlogIndex() {

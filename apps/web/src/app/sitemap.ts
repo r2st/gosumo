@@ -16,6 +16,9 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${base}/blog/ai-helpdesk-revolution-indian-smbs`, lastModified: new Date('2026-10-06'), changeFrequency: 'monthly', priority: 0.7 },
     { url: `${base}/blog/customer-support-automation-reduce-costs`, lastModified: new Date('2026-10-08'), changeFrequency: 'monthly', priority: 0.7 },
     { url: `${base}/blog/ticketing-best-practices-indian-smbs`, lastModified: new Date('2026-10-10'), changeFrequency: 'monthly', priority: 0.7 },
+    { url: `${base}/blog/best-help-desk-software-small-business-india`, lastModified: new Date('2026-10-10'), changeFrequency: 'monthly', priority: 0.7 },
+    { url: `${base}/blog/knowledge-base-guide-indian-business`, lastModified: new Date('2026-10-10'), changeFrequency: 'monthly', priority: 0.7 },
+    { url: `${base}/blog/whatsapp-customer-support-indian-business-guide`, lastModified: new Date('2026-10-10'), changeFrequency: 'monthly', priority: 0.7 },
     { url: `${base}/embed`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.7 },
   ];
 }
