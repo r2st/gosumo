@@ -510,15 +510,26 @@ export class BookingService {
       recurrenceId,
       new Date(),
     );
-    for (const sibling of future) {
-      const status = sibling.status as BookingStatus;
-      if (status === BookingStatus.CANCELLED || status === BookingStatus.COMPLETED) {
-        continue;
+    const eligible = future.filter((s) => {
+      const st = s.status as BookingStatus;
+      return st !== BookingStatus.CANCELLED && st !== BookingStatus.COMPLETED;
+    });
+    const results = await Promise.allSettled(
+      eligible.map((sibling) =>
+        this.applyCancellation(businessId, sibling, reason, cancelledBy),
+      ),
+    );
+    for (const r of results) {
+      if (r.status === 'rejected') {
+        this.logger.warn(
+          `Series ${recurrenceId}: one cancellation failed: ${
+            r.reason instanceof Error ? r.reason.message : String(r.reason)
+          }`,
+        );
       }
-      await this.applyCancellation(businessId, sibling, reason, cancelledBy);
     }
     this.logger.log(
-      `Cancelled recurring series ${recurrenceId} (${future.length} future occurrences, business ${businessId})`,
+      `Cancelled recurring series ${recurrenceId} (${eligible.length}/${future.length} future occurrences, business ${businessId})`,
     );
   }
 

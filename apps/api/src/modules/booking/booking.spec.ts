@@ -461,6 +461,31 @@ describe('BookingService', () => {
       expect(cancelUpdates.length).toBe(2);
     });
 
+    it('continues cancelling other siblings when one fails (parallel)', async () => {
+      const seriesBooking = mockBooking({ recurrence_id: RECURRENCE_ID });
+      repository.findBookingById.mockResolvedValue(seriesBooking as never);
+      repository.findBookingsByRecurrence.mockResolvedValue([
+        mockBooking({ id: 'sib-1', status: BookingStatus.CONFIRMED }) as never,
+        mockBooking({ id: 'sib-2', status: BookingStatus.CONFIRMED }) as never,
+        mockBooking({ id: 'sib-3', status: BookingStatus.CONFIRMED }) as never,
+      ]);
+      repository.transitionStatus
+        .mockResolvedValueOnce(mockBooking({ id: BOOKING_ID, status: BookingStatus.CANCELLED }) as never)
+        .mockResolvedValueOnce(mockBooking({ id: 'sib-1', status: BookingStatus.CANCELLED }) as never)
+        .mockRejectedValueOnce(new Error('calendar unavailable'))
+        .mockResolvedValueOnce(mockBooking({ id: 'sib-3', status: BookingStatus.CANCELLED }) as never);
+
+      await service.cancelBooking(BUSINESS_ID, BOOKING_ID, {
+        reason: 'series cancel',
+        cancelSeries: true,
+      });
+
+      const cancelUpdates = repository.transitionStatus.mock.calls.filter(
+        (c) => ((c[3] as Record<string, unknown>)?.status) === BookingStatus.CANCELLED,
+      );
+      expect(cancelUpdates.length).toBe(4);
+    });
+
     it('removes the Google Calendar event on cancellation', async () => {
       repository.findBookingById.mockResolvedValue(
         mockBooking({ gcal_event_id: 'evt-1', gcal_calendar_id: 'primary' }) as never,
