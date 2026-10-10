@@ -40,10 +40,19 @@ describe('Blog Index SEO articles', () => {
     expect(screen.getByText('WhatsApp Customer Support for Indian Businesses: Complete Setup Guide')).toBeInTheDocument();
   });
 
-  it('renders all 12 blog post links', async () => {
+  it('renders round 3 SEO blog posts', async () => {
+    const { default: BlogIndex } = await import('@/app/blog/page');
+    render(<BlogIndex />);
+
+    expect(screen.getByText('Client Management Software for Indian Businesses: From Chaos to Control')).toBeInTheDocument();
+    expect(screen.getByText('CRM for Freelancers in India: The Complete Guide to Managing Clients Without Losing Your Mind')).toBeInTheDocument();
+    expect(screen.getByText('Lead Tracking for Indian SMBs: Stop Losing Potential Customers to Spreadsheet Chaos')).toBeInTheDocument();
+  });
+
+  it('renders all 15 blog post links', async () => {
     const { default: BlogIndex } = await import('@/app/blog/page');
     const { container } = render(<BlogIndex />);
     const links = container.querySelectorAll('a[href^="/blog/"]');
-    expect(links.length).toBe(12);
+    expect(links.length).toBe(15);
   });
 });

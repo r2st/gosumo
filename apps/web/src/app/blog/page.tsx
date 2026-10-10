@@ -92,6 +92,27 @@ const POSTS = [
     date: '2026-10-10',
     readTime: '9 min read',
   },
+  {
+    slug: 'client-management-software-indian-businesses',
+    title: 'Client Management Software for Indian Businesses: From Chaos to Control',
+    excerpt: 'Indian businesses juggle WhatsApp, email, phone calls, and walk-ins to manage clients. Here is how the right client management software brings order to the chaos — without enterprise pricing.',
+    date: '2026-10-10',
+    readTime: '9 min read',
+  },
+  {
+    slug: 'crm-for-freelancers-india-complete-guide',
+    title: 'CRM for Freelancers in India: The Complete Guide to Managing Clients Without Losing Your Mind',
+    excerpt: 'From tracking leads to sending invoices, Indian freelancers need a CRM that fits their workflow — not the other way around. A practical guide to choosing and using one.',
+    date: '2026-10-10',
+    readTime: '9 min read',
+  },
+  {
+    slug: 'lead-tracking-for-smbs-india',
+    title: 'Lead Tracking for Indian SMBs: Stop Losing Potential Customers to Spreadsheet Chaos',
+    excerpt: 'Most Indian SMBs lose 30-40% of leads because they cannot track them properly. Here is how to build a lead tracking system that converts more inquiries into paying customers.',
+    date: '2026-10-10',
+    readTime: '9 min read',
+  },
 ] as const;
 
 export default function BlogIndex() {

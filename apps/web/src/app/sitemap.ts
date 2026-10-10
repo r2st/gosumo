@@ -19,6 +19,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${base}/blog/best-help-desk-software-small-business-india`, lastModified: new Date('2026-10-10'), changeFrequency: 'monthly', priority: 0.7 },
     { url: `${base}/blog/knowledge-base-guide-indian-business`, lastModified: new Date('2026-10-10'), changeFrequency: 'monthly', priority: 0.7 },
     { url: `${base}/blog/whatsapp-customer-support-indian-business-guide`, lastModified: new Date('2026-10-10'), changeFrequency: 'monthly', priority: 0.7 },
+    { url: `${base}/blog/best-crm-for-freelancers-india`, lastModified: new Date('2026-10-08'), changeFrequency: 'monthly', priority: 0.7 },
+    { url: `${base}/blog/ai-client-management-small-business`, lastModified: new Date('2026-10-08'), changeFrequency: 'monthly', priority: 0.7 },
+    { url: `${base}/blog/client-retention-strategies-service-businesses`, lastModified: new Date('2026-10-08'), changeFrequency: 'monthly', priority: 0.7 },
+    { url: `${base}/blog/client-management-software-indian-businesses`, lastModified: new Date('2026-10-10'), changeFrequency: 'monthly', priority: 0.7 },
+    { url: `${base}/blog/crm-for-freelancers-india-complete-guide`, lastModified: new Date('2026-10-10'), changeFrequency: 'monthly', priority: 0.7 },
+    { url: `${base}/blog/lead-tracking-for-smbs-india`, lastModified: new Date('2026-10-10'), changeFrequency: 'monthly', priority: 0.7 },
     { url: `${base}/embed`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.7 },
   ];
 }
