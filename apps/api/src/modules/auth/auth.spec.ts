@@ -41,6 +41,8 @@ const mockTeamMember: TeamMemberWithBusiness = {
   invited_at: null,
   auth_provider: 'LOCAL' as const,
   google_id: null,
+  github_id: null,
+  microsoft_id: null,
   created_at: new Date(),
   updated_at: new Date(),
   deleted_at: null,
