@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
-import { api, ApiError } from '@/lib/api-client';
+import { api } from '@/lib/api-client';
+import { friendlyError } from '@/lib/errors';
 import { tokenStore } from '@/lib/token-store';
 
 function ResetPasswordForm() {
@@ -30,7 +31,7 @@ function ResetPasswordForm() {
       tokenStore.setRefreshToken(tokens.refreshToken);
       router.replace('/dashboard');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to reset your password. The link may have expired.');
+      setError(friendlyError(err, 'Unable to reset your password. The link may have expired.'));
     } finally {
       setSubmitting(false);
     }

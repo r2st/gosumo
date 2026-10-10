@@ -113,7 +113,7 @@ export class NotificationSettingsService {
     const current = await this.ensureRow(businessId);
 
     if (dto.timezone !== undefined && !isValidTimeZone(dto.timezone)) {
-      throw new BadRequestException(`Unknown IANA timezone: ${dto.timezone}`);
+      throw new BadRequestException('The provided timezone is not recognised — please use a valid IANA timezone (e.g. "Asia/Kolkata")');
     }
 
     const patch = this.buildPatch(dto);

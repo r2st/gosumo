@@ -7,7 +7,7 @@ import { GoogleButton } from '@/components/google-button';
 import { GitHubButton } from '@/components/github-button';
 import { MicrosoftButton } from '@/components/microsoft-button';
 import { useAuth } from '@/providers/auth-provider';
-import { ApiError } from '@/lib/api-client';
+import { friendlyError } from '@/lib/errors';
 
 function LoginForm() {
   const router = useRouter();
@@ -30,7 +30,7 @@ function LoginForm() {
         setError('Two-factor authentication is required for this account.');
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to sign in. Please try again.');
+      setError(friendlyError(err, 'Unable to sign in. Please try again.'));
     } finally {
       setSubmitting(false);
     }

@@ -558,7 +558,7 @@ export class RealtyVisitsService {
   private parseFutureInstant(value: string, field: string): Date {
     const ms = Date.parse(value);
     if (Number.isNaN(ms)) {
-      throw new BadRequestException(`Invalid ISO-8601 date for ${field}: ${value}`);
+      throw new BadRequestException(`Invalid date format for ${field} — expected an ISO-8601 timestamp`);
     }
     const date = new Date(ms);
     if (date.getTime() <= Date.now()) {

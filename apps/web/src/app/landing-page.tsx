@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { GoogleButton } from '@/components/google-button';
 import { useAuth } from '@/providers/auth-provider';
-import { ApiError } from '@/lib/api-client';
+import { friendlyError } from '@/lib/errors';
 
 const TYPEWRITER_PHRASES = [
   'Unified inbox',
@@ -365,7 +365,7 @@ function SignInForm() {
         setError('Two-factor authentication is required for this account.');
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to sign in. Please try again.');
+      setError(friendlyError(err, 'Unable to sign in. Please try again.'));
     } finally {
       setSubmitting(false);
     }
@@ -440,7 +440,7 @@ function RegisterForm() {
       });
       router.replace(ok ? '/dashboard' : '/login');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to create your account. Please try again.');
+      setError(friendlyError(err, 'Unable to create your account. Please try again.'));
     } finally {
       setSubmitting(false);
     }

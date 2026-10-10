@@ -323,6 +323,32 @@ describe('Error message quality (M19 Pass 2)', () => {
     });
   });
 
+  // ── Pass 6 Recovery: date-parse and timezone errors no longer echo raw input ──
+  describe('Pass 6 Recovery — no raw input echo', () => {
+    it('booking date-parse error does not echo the raw value', () => {
+      const err = new BadRequestException('Invalid date format for startsAt — expected an ISO-8601 timestamp');
+      const msg = extractMessage(err);
+      expect(msg).not.toContain('not-a-date');
+      expect(msg).toContain('ISO-8601');
+    });
+
+    it('site-visit date-parse error does not echo the raw value', () => {
+      const err = new BadRequestException('Invalid date format for scheduledAt — expected an ISO-8601 timestamp');
+      const msg = extractMessage(err);
+      expect(msg).not.toContain('garbage');
+      expect(msg).toContain('ISO-8601');
+    });
+
+    it('notification-settings timezone error does not echo the raw value', () => {
+      const err = new BadRequestException(
+        'The provided timezone is not recognised — please use a valid IANA timezone (e.g. "Asia/Kolkata")',
+      );
+      const msg = extractMessage(err);
+      expect(msg).not.toContain('Bogus/Timezone');
+      expect(msg).toContain('IANA timezone');
+    });
+  });
+
   // ── Cross-cutting: ErrorCode enum values are used, not arbitrary strings ──
   describe('ErrorCode enum coverage', () => {
     const validCodes = Object.values(ErrorCode);

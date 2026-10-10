@@ -7,7 +7,7 @@ import { GoogleButton } from '@/components/google-button';
 import { GitHubButton } from '@/components/github-button';
 import { MicrosoftButton } from '@/components/microsoft-button';
 import { useAuth } from '@/providers/auth-provider';
-import { ApiError } from '@/lib/api-client';
+import { friendlyError } from '@/lib/errors';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -33,7 +33,7 @@ export default function RegisterPage() {
       });
       router.replace(ok ? '/dashboard' : '/login');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to create your account. Please try again.');
+      setError(friendlyError(err, 'Unable to create your account. Please try again.'));
     } finally {
       setSubmitting(false);
     }

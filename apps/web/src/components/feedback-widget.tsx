@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Field } from '@/components/ui/field';
+import { friendlyError } from '@/lib/errors';
 
 type FeedbackType = 'bug' | 'feature' | 'general';
 
@@ -60,7 +61,7 @@ export function FeedbackWidget() {
       }
       setSubmitted(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
+      setError(friendlyError(err, 'Unable to send your feedback. Please try again.'));
     } finally {
       setSubmitting(false);
     }

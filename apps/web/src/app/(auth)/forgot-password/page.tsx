@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { api, ApiError } from '@/lib/api-client';
+import { api } from '@/lib/api-client';
+import { friendlyError } from '@/lib/errors';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -18,7 +19,7 @@ export default function ForgotPasswordPage() {
       await api.auth.forgotPassword(email);
       setSent(true);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to send the reset link. Please try again.');
+      setError(friendlyError(err, 'Unable to send the reset link. Please try again.'));
     } finally {
       setSubmitting(false);
     }

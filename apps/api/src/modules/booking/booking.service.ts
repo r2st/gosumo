@@ -1662,7 +1662,7 @@ export class BookingService {
   private parseInstant(value: string, field: string): Date {
     const ms = Date.parse(value);
     if (Number.isNaN(ms)) {
-      throw new BadRequestException(`Invalid ISO-8601 date for ${field}: ${value}`);
+      throw new BadRequestException(`Invalid date format for ${field} — expected an ISO-8601 timestamp`);
     }
     return new Date(ms);
   }
