@@ -235,14 +235,22 @@ export class CadenceEngineService {
     }
 
     const cache = new Map<string, LeadResponseDto>();
-    for (const [businessId, leadIds] of byBusiness) {
-      try {
+    const results = await Promise.allSettled(
+      [...byBusiness.entries()].map(async ([businessId, leadIds]) => {
         const leads = await this.leadsService.getLeadsByIds(businessId, leadIds);
-        for (const [leadId, lead] of leads) cache.set(`${businessId}:${leadId}`, lead);
-      } catch (err) {
+        return { businessId, leads };
+      }),
+    );
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
+        for (const [leadId, lead] of r.value.leads) {
+          cache.set(`${r.value.businessId}:${leadId}`, lead);
+        }
+      } else {
         this.logger.warn(
-          `Cadence tick: could not prefetch leads for ${businessId}: ` +
-            `${err instanceof Error ? err.message : String(err)}`,
+          `Cadence tick: could not prefetch leads for a tenant: ${
+            r.reason instanceof Error ? r.reason.message : String(r.reason)
+          }`,
         );
       }
     }
