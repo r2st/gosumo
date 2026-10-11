@@ -1,6 +1,6 @@
 /**
  * Types for the Settings → API Keys surface: tenant-owned third-party
- * credentials (payments, messaging, email) and GoSumo programmatic API keys.
+ * credentials (payments, messaging, email) and DoAide programmatic API keys.
  *
  * Secret values are write-only: the API never returns them. On read, a secret
  * field reports only whether it is `set` and its `last4` for display; the raw
@@ -41,7 +41,7 @@ export interface TestConnectionResult {
   latencyMs?: number;
 }
 
-// ── GoSumo programmatic API keys ────────────────────────────────────────────
+// ── DoAide programmatic API keys ────────────────────────────────────────────
 export interface ApiKey {
   id: string;
   name: string;

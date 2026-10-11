@@ -44,7 +44,7 @@ export default function DashboardPage() {
       <PageHeader title="Dashboard" description="Today at a glance across all your channels." />
 
       <div className="space-y-6 p-4 lg:p-6">
-        {/* GoSumo Realty — morning briefing: four glance metrics + the 7:30 AM digest */}
+        {/* DoAide Desk — morning briefing: four glance metrics + the 7:30 AM digest */}
         <BriefingMetrics />
         <MorningBriefing />
 
@@ -55,7 +55,7 @@ export default function DashboardPage() {
           />
         ) : (
           <>
-            {/* GoSumo Realty — North Star: site visits per 100 leads (goal ≥ 8) */}
+            {/* DoAide Desk — North Star: site visits per 100 leads (goal ≥ 8) */}
             <NorthStarKpi />
 
             {/* KPI cards */}

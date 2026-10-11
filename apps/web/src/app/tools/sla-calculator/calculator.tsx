@@ -32,19 +32,19 @@ export function SlaCalculator() {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold text-[var(--doaide-text)] mb-2" style={{ fontFamily: 'var(--doaide-font-display)' }}>
+      <h1 className="text-3xl font-bold text-[var(--da-text)] mb-2" style={{ fontFamily: 'var(--da-font-display)' }}>
         SLA Calculator
       </h1>
-      <p className="text-[var(--doaide-text-secondary)] mb-8">
+      <p className="text-[var(--da-text-secondary)] mb-8">
         Enter your SLA targets to calculate allowed downtime, required response capacity, and minimum agents needed — no sign-up required.
       </p>
 
       <div className="space-y-6">
-        <div className="p-6 rounded-xl border border-[var(--doaide-border)] bg-[var(--doaide-surface)]">
-          <h2 className="text-sm font-medium text-[var(--doaide-text-secondary)] mb-4">SLA Targets</h2>
+        <div className="p-6 rounded-xl border border-[var(--da-border)] bg-[var(--da-surface)]">
+          <h2 className="text-sm font-medium text-[var(--da-text-secondary)] mb-4">SLA Targets</h2>
           <div className="space-y-4">
             <div className="flex items-center gap-4">
-              <label className="text-sm text-[var(--doaide-text)] w-44">Target Uptime (%)</label>
+              <label className="text-sm text-[var(--da-text)] w-44">Target Uptime (%)</label>
               <input
                 type="number"
                 min={0}
@@ -56,7 +56,7 @@ export function SlaCalculator() {
               />
             </div>
             <div className="flex items-center gap-4">
-              <label className="text-sm text-[var(--doaide-text)] w-44">Response Time Target (hrs)</label>
+              <label className="text-sm text-[var(--da-text)] w-44">Response Time Target (hrs)</label>
               <input
                 type="number"
                 min={0}
@@ -67,7 +67,7 @@ export function SlaCalculator() {
               />
             </div>
             <div className="flex items-center gap-4">
-              <label className="text-sm text-[var(--doaide-text)] w-44">Tickets per Month</label>
+              <label className="text-sm text-[var(--da-text)] w-44">Tickets per Month</label>
               <input
                 type="number"
                 min={0}
@@ -80,43 +80,43 @@ export function SlaCalculator() {
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div className="p-4 rounded-xl border border-[var(--doaide-border)] bg-[var(--doaide-surface)]">
-            <p className="text-xs text-[var(--doaide-text-muted)] mb-1">Downtime / Month</p>
-            <p className="text-xl font-bold text-[var(--doaide-error)]">{fmt(allowedDowntimeMonth)}</p>
+          <div className="p-4 rounded-xl border border-[var(--da-border)] bg-[var(--da-surface)]">
+            <p className="text-xs text-[var(--da-text-muted)] mb-1">Downtime / Month</p>
+            <p className="text-xl font-bold text-[var(--da-error)]">{fmt(allowedDowntimeMonth)}</p>
           </div>
-          <div className="p-4 rounded-xl border border-[var(--doaide-border)] bg-[var(--doaide-surface)]">
-            <p className="text-xs text-[var(--doaide-text-muted)] mb-1">Downtime / Year</p>
-            <p className="text-xl font-bold text-[var(--doaide-warning)]">{fmt(allowedDowntimeYear)}</p>
+          <div className="p-4 rounded-xl border border-[var(--da-border)] bg-[var(--da-surface)]">
+            <p className="text-xs text-[var(--da-text-muted)] mb-1">Downtime / Year</p>
+            <p className="text-xl font-bold text-[var(--da-warning)]">{fmt(allowedDowntimeYear)}</p>
           </div>
-          <div className="p-4 rounded-xl border border-[var(--doaide-border)] bg-[var(--doaide-surface)]">
-            <p className="text-xs text-[var(--doaide-text-muted)] mb-1">Responses / Shift</p>
-            <p className="text-xl font-bold text-[var(--doaide-gold)]">{responseCapacity}</p>
+          <div className="p-4 rounded-xl border border-[var(--da-border)] bg-[var(--da-surface)]">
+            <p className="text-xs text-[var(--da-text-muted)] mb-1">Responses / Shift</p>
+            <p className="text-xl font-bold text-[var(--da-gold)]">{responseCapacity}</p>
           </div>
-          <div className="p-4 rounded-xl border border-[var(--doaide-border)] bg-[var(--doaide-surface)]">
-            <p className="text-xs text-[var(--doaide-text-muted)] mb-1">Agents Needed</p>
-            <p className="text-xl font-bold text-[var(--doaide-success)]">{agentsNeeded}</p>
+          <div className="p-4 rounded-xl border border-[var(--da-border)] bg-[var(--da-surface)]">
+            <p className="text-xs text-[var(--da-text-muted)] mb-1">Agents Needed</p>
+            <p className="text-xl font-bold text-[var(--da-success)]">{agentsNeeded}</p>
           </div>
         </div>
 
-        <div className="p-6 rounded-xl border border-[var(--doaide-border)] bg-[var(--doaide-surface)]">
-          <h2 className="text-sm font-medium text-[var(--doaide-text-secondary)] mb-3">Common SLA Tiers</h2>
+        <div className="p-6 rounded-xl border border-[var(--da-border)] bg-[var(--da-surface)]">
+          <h2 className="text-sm font-medium text-[var(--da-text-secondary)] mb-3">Common SLA Tiers</h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-[var(--doaide-border)]">
-                  <th className="text-left py-2 text-[var(--doaide-text-muted)]">Tier</th>
-                  <th className="text-left py-2 text-[var(--doaide-text-muted)]">Uptime</th>
-                  <th className="text-left py-2 text-[var(--doaide-text-muted)]">Downtime / Year</th>
+                <tr className="border-b border-[var(--da-border)]">
+                  <th className="text-left py-2 text-[var(--da-text-muted)]">Tier</th>
+                  <th className="text-left py-2 text-[var(--da-text-muted)]">Uptime</th>
+                  <th className="text-left py-2 text-[var(--da-text-muted)]">Downtime / Year</th>
                 </tr>
               </thead>
-              <tbody className="text-[var(--doaide-text)]">
+              <tbody className="text-[var(--da-text)]">
                 {[
                   { tier: 'Two nines', uptime: '99%', downtime: '3.65 days' },
                   { tier: 'Three nines', uptime: '99.9%', downtime: '8.77 hrs' },
                   { tier: 'Four nines', uptime: '99.99%', downtime: '52.6 min' },
                   { tier: 'Five nines', uptime: '99.999%', downtime: '5.26 min' },
                 ].map((row) => (
-                  <tr key={row.tier} className="border-b border-[var(--doaide-border)]">
+                  <tr key={row.tier} className="border-b border-[var(--da-border)]">
                     <td className="py-2">{row.tier}</td>
                     <td className="py-2 font-mono">{row.uptime}</td>
                     <td className="py-2 font-mono">{row.downtime}</td>
@@ -127,11 +127,11 @@ export function SlaCalculator() {
           </div>
         </div>
 
-        <ShareButtons url="https://gosumo.aiknol.com/tools/sla-calculator" title="SLA Calculator — Free tool by GoSumo Realty" />
+        <ShareButtons url="https://desk.doaide.com/tools/sla-calculator" title="SLA Calculator — Free tool by DoAide Desk" />
 
-        <div className="p-6 rounded-xl border border-[var(--doaide-border)] bg-[var(--doaide-surface)] text-center">
-          <p className="text-sm text-[var(--doaide-text-secondary)] mb-3">Want to track SLA compliance automatically?</p>
-          <a href="/register" className="inline-block px-6 py-2.5 rounded-lg bg-[var(--doaide-gold)] text-black font-medium text-sm hover:opacity-90 transition-opacity">Sign up free</a>
+        <div className="p-6 rounded-xl border border-[var(--da-border)] bg-[var(--da-surface)] text-center">
+          <p className="text-sm text-[var(--da-text-secondary)] mb-3">Want to track SLA compliance automatically?</p>
+          <a href="/register" className="inline-block px-6 py-2.5 rounded-lg bg-[var(--da-gold)] text-black font-medium text-sm hover:opacity-90 transition-opacity">Sign up free</a>
         </div>
       </div>
     </div>

@@ -106,7 +106,7 @@ function fillCredentials() {
 }
 
 describe('AuthLayout', () => {
-  it('frames the form with the brand panel, current year and GoSumo attribution', () => {
+  it('frames the form with the brand panel, current year and DoAide attribution', () => {
     render(
       <AuthLayout>
         <p>form goes here</p>
@@ -119,7 +119,7 @@ describe('AuthLayout', () => {
     ).toBeInTheDocument();
     const footer = screen.getByText(new RegExp(`© ${new Date().getFullYear()}`));
     expect(footer).toBeInTheDocument();
-    expect(footer.closest('p')!.textContent).toContain('GoSumo');
+    expect(footer.closest('p')!.textContent).toContain('DoAide');
   });
 });
 
@@ -176,7 +176,7 @@ describe('LoginPage', () => {
     fillCredentials();
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
-    expect(await screen.findByText(/Can.t reach GoSumo Realty/)).toBeInTheDocument();
+    expect(await screen.findByText(/Can.t reach DoAide Desk/)).toBeInTheDocument();
   });
 
   it('sends the Google button to the backend OAuth entry point', () => {
@@ -271,7 +271,7 @@ describe('RegisterPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
 
     expect(
-      await screen.findByText(/Can.t reach GoSumo Realty/),
+      await screen.findByText(/Can.t reach DoAide Desk/),
     ).toBeInTheDocument();
   });
 });
@@ -309,7 +309,7 @@ describe('ForgotPasswordPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send reset link' }));
 
     expect(
-      await screen.findByText(/Can.t reach GoSumo Realty/),
+      await screen.findByText(/Can.t reach DoAide Desk/),
     ).toBeInTheDocument();
   });
 });
@@ -374,7 +374,7 @@ describe('ResetPasswordPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reset password' }));
 
     expect(
-      await screen.findByText(/Can.t reach GoSumo Realty/),
+      await screen.findByText(/Can.t reach DoAide Desk/),
     ).toBeInTheDocument();
   });
 });

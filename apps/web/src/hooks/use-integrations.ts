@@ -50,7 +50,7 @@ export function useTestIntegration() {
   });
 }
 
-// ── GoSumo API keys ─────────────────────────────────────────────────────────
+// ── DoAide API keys ─────────────────────────────────────────────────────────
 export function useApiKeys() {
   return useQuery({
     queryKey: API_KEYS_KEY,

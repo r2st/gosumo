@@ -1,4 +1,4 @@
-// GoSumo Realty — presentation helpers for the Micro-Market Intelligence page.
+// DoAide Desk — presentation helpers for the Micro-Market Intelligence page.
 // Parses typed metric payloads out of aggregates and provides bilingual labels for
 // the objection / cadence / source vocabularies the backend emits as fixed codes.
 

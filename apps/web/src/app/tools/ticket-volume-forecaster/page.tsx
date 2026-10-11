@@ -4,17 +4,17 @@ import { TicketVolumeForecaster } from './forecaster';
 
 export const metadata: Metadata = {
   title: 'Ticket Volume Forecaster',
-  description: 'Predict weekly and monthly ticket volume from historical data. Free tool by GoSumo Realty.',
+  description: 'Predict weekly and monthly ticket volume from historical data. Free tool by DoAide Desk.',
   openGraph: {
-    title: 'Ticket Volume Forecaster — GoSumo Realty',
+    title: 'Ticket Volume Forecaster — DoAide Desk',
     description: 'Predict weekly and monthly ticket volume from historical data.',
-    url: 'https://gosumo.aiknol.com/tools/ticket-volume-forecaster',
+    url: 'https://desk.doaide.com/tools/ticket-volume-forecaster',
   },
 };
 
 export default function Page() {
   return (
-    <div className="min-h-screen bg-[var(--doaide-bg)]">
+    <div className="min-h-screen bg-[var(--da-bg)]">
       <PublicNav />
       <main className="max-w-3xl mx-auto px-6 py-16">
         <TicketVolumeForecaster />
@@ -28,11 +28,11 @@ export default function Page() {
             '@type': 'WebApplication',
             name: 'Ticket Volume Forecaster',
             description: 'Predict weekly and monthly ticket volume from historical data.',
-            url: 'https://gosumo.aiknol.com/tools/ticket-volume-forecaster',
+            url: 'https://desk.doaide.com/tools/ticket-volume-forecaster',
             applicationCategory: 'BusinessApplication',
             operatingSystem: 'Web',
             offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-            author: { '@type': 'Organization', name: 'Apprend Technologies', url: 'https://gosumo.aiknol.com' },
+            author: { '@type': 'Organization', name: 'Apprend Technologies', url: 'https://desk.doaide.com' },
           }),
         }}
       />

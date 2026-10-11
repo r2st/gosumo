@@ -15,7 +15,7 @@ const TYPEWRITER_PHRASES = [
 
 const TESTIMONIALS = [
   {
-    quote: 'We used to miss WhatsApp messages all the time. GoSumo pulled everything into one inbox — response time dropped from 4 hours to under 10 minutes.',
+    quote: 'We used to miss WhatsApp messages all the time. DoAide pulled everything into one inbox — response time dropped from 4 hours to under 10 minutes.',
     name: 'Meera Joshi',
     role: 'Founder, Joshi Design Studio',
     location: 'Mumbai',
@@ -33,7 +33,7 @@ const TESTIMONIALS = [
     location: 'Kochi',
   },
   {
-    quote: 'We switched from Zoho because it was built for sales teams, not service businesses. GoSumo understands how we actually work — conversations, not pipelines.',
+    quote: 'We switched from Zoho because it was built for sales teams, not service businesses. DoAide understands how we actually work — conversations, not pipelines.',
     name: 'Rohit Sharma',
     role: 'Co-founder, BrightPath Tutoring',
     location: 'Pune',
@@ -42,32 +42,32 @@ const TESTIMONIALS = [
 
 const FAQ_ITEMS = [
   {
-    q: 'What is GoSumo Realty?',
-    a: 'GoSumo Realty is an AI-powered lead management platform for real estate brokers in India. It captures buyers from WhatsApp, portals and Meta ads, qualifies them with AI, and follows up automatically.',
+    q: 'What is DoAide Desk?',
+    a: 'DoAide Desk is an AI-powered lead management platform for real estate brokers in India. It captures buyers from WhatsApp, portals and Meta ads, qualifies them with AI, and follows up automatically.',
   },
   {
     q: 'Which messaging channels are supported?',
-    a: 'GoSumo supports WhatsApp Business, Instagram DMs, SMS, Web Chat (embeddable widget), and Email. All conversations appear in one unified inbox.',
+    a: 'DoAide supports WhatsApp Business, Instagram DMs, SMS, Web Chat (embeddable widget), and Email. All conversations appear in one unified inbox.',
   },
   {
     q: 'How does the AI help with responses?',
     a: 'The AI analyzes incoming messages for intent and urgency, suggests contextual replies based on your conversation history and business context, and can auto-respond to common questions. You always review before sending.',
   },
   {
-    q: 'Is GoSumo suitable for independent brokers?',
-    a: 'Yes. GoSumo Realty is designed for independent brokers, small agencies, and real estate teams. No complex setup, no enterprise-only pricing. Connect your channels and start managing leads in minutes.',
+    q: 'Is DoAide suitable for independent brokers?',
+    a: 'Yes. DoAide Desk is designed for independent brokers, small agencies, and real estate teams. No complex setup, no enterprise-only pricing. Connect your channels and start managing leads in minutes.',
   },
   {
     q: 'How much does it cost?',
-    a: 'GoSumo Realty offers a free tier to get started. Paid plans are priced for Indian businesses — significantly more affordable than enterprise CRM tools like Salesforce or HubSpot.',
+    a: 'DoAide Desk offers a free tier to get started. Paid plans are priced for Indian businesses — significantly more affordable than enterprise CRM tools like Salesforce or HubSpot.',
   },
   {
     q: 'Can my team use it together?',
-    a: 'Yes. GoSumo supports team collaboration with smart routing — incoming leads are automatically assigned to the right team member based on expertise, availability, and history.',
+    a: 'Yes. DoAide supports team collaboration with smart routing — incoming leads are automatically assigned to the right team member based on expertise, availability, and history.',
   },
   {
     q: 'Is my data secure?',
-    a: 'Yes. All data is encrypted in transit and at rest. GoSumo complies with Indian data protection regulations and your data stays within secure infrastructure.',
+    a: 'Yes. All data is encrypted in transit and at rest. DoAide complies with Indian data protection regulations and your data stays within secure infrastructure.',
   },
   {
     q: 'How do I get started?',
@@ -76,7 +76,7 @@ const FAQ_ITEMS = [
 ] as const;
 
 const DOAIDE_PRODUCTS = [
-  { name: 'Realty', url: 'https://gosumo.aiknol.com', active: true },
+  { name: 'Desk', url: 'https://desk.doaide.com', active: true },
   { name: 'Jobs', url: 'https://job.doaide.com' },
   { name: '409A', url: 'https://409a.doaide.com' },
   { name: 'GST', url: 'https://gst.doaide.com' },
@@ -93,54 +93,26 @@ const PIPELINE_STAGES = [
   { label: 'Resolve', icon: 'check' },
 ] as const;
 
-function RobotIcon({ size = 28 }: { size?: number }) {
+function LogoIcon({ size = 28 }: { size?: number }) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width={size} height={size}>
-      <line x1="16" y1="6" x2="16" y2="2" stroke="#F0B429" strokeWidth="1.5" strokeLinecap="round" />
-      <circle cx="16" cy="1.5" r="1.5" fill="#F0B429" />
-      <rect x="5" y="6" width="22" height="17" rx="5" fill="#F0B429" />
-      <ellipse cx="11" cy="13" rx="2.5" ry="3" fill="#0A0A0B" />
-      <ellipse cx="21" cy="13" rx="2.5" ry="3" fill="#0A0A0B" />
-      <circle cx="11.5" cy="12.5" r="1" fill="#F7CC5F" />
-      <circle cx="21.5" cy="12.5" r="1" fill="#F7CC5F" />
-      <path d="M12 19Q16 22 20 19" stroke="#0A0A0B" strokeWidth="1.2" fill="none" strokeLinecap="round" />
-      <rect x="1" y="10" width="4" height="5" rx="2" fill="#D4A017" />
-      <rect x="27" y="10" width="4" height="5" rx="2" fill="#D4A017" />
+      <rect width="32" height="32" rx="8" fill="#0D9488" />
+      <text x="16" y="22" textAnchor="middle" fill="#FFFFFF" fontSize="18" fontWeight="700" fontFamily="Inter, system-ui, sans-serif">D</text>
     </svg>
   );
 }
 
-function HeroRobot() {
+function HeroLogo() {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 320" className="split-hero-robot" aria-hidden="true">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" aria-hidden="true">
       <defs>
-        <linearGradient id="rg" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#F0B429" />
-          <stop offset="100%" stopColor="#D4A017" />
+        <linearGradient id="tg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#14B8A6" />
+          <stop offset="100%" stopColor="#0D9488" />
         </linearGradient>
       </defs>
-      <line x1="200" y1="45" x2="200" y2="20" stroke="#F0B429" strokeWidth="6" strokeLinecap="round" />
-      <circle cx="200" cy="14" r="10" fill="#F0B429" className="split-antenna-glow" />
-      <circle cx="200" cy="14" r="5" fill="#F7CC5F" />
-      <rect x="110" y="50" width="180" height="140" rx="35" fill="url(#rg)" />
-      <rect x="130" y="68" width="140" height="105" rx="25" fill="#D4A017" opacity="0.4" />
-      <ellipse cx="165" cy="115" rx="18" ry="20" fill="#0A0A0B" />
-      <ellipse cx="235" cy="115" rx="18" ry="20" fill="#0A0A0B" />
-      <circle cx="170" cy="113" r="8" fill="#F7CC5F" />
-      <circle cx="240" cy="113" r="8" fill="#F7CC5F" />
-      <circle cx="174" cy="109" r="3" fill="white" opacity="0.7" />
-      <circle cx="244" cy="109" r="3" fill="white" opacity="0.7" />
-      <path d="M170 155Q200 178 230 155" stroke="#0A0A0B" strokeWidth="4" fill="none" strokeLinecap="round" />
-      <rect x="92" y="95" width="22" height="45" rx="8" fill="#D4A017" />
-      <rect x="286" y="95" width="22" height="45" rx="8" fill="#D4A017" />
-      <rect x="175" y="190" width="50" height="14" rx="5" fill="#D4A017" />
-      <rect x="145" y="204" width="110" height="55" rx="18" fill="url(#rg)" />
-      <circle cx="200" cy="228" r="7" fill="#0A0A0B" />
-      <circle cx="200" cy="228" r="3.5" fill="#0A0A0B" />
-      <path d="M145 218Q118 223 113 240Q108 257 120 262" stroke="#D4A017" strokeWidth="9" fill="none" strokeLinecap="round" />
-      <circle cx="120" cy="265" r="7" fill="#D4A017" />
-      <path d="M255 218Q282 223 287 240Q292 257 280 262" stroke="#D4A017" strokeWidth="9" fill="none" strokeLinecap="round" />
-      <circle cx="280" cy="265" r="7" fill="#D4A017" />
+      <rect x="20" y="20" width="160" height="160" rx="40" fill="url(#tg)" />
+      <text x="100" y="130" textAnchor="middle" fill="#FFFFFF" fontSize="100" fontWeight="800" fontFamily="Inter, system-ui, sans-serif">D</text>
     </svg>
   );
 }
@@ -275,7 +247,7 @@ function ParticleBackground() {
         if (p.y > canvas!.height) p.y = 0;
         ctx!.beginPath();
         ctx!.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx!.fillStyle = `rgba(240, 180, 41, ${p.o})`;
+        ctx!.fillStyle = `rgba(13, 148, 136, ${p.o})`;
         ctx!.fill();
       }
       animId = requestAnimationFrame(draw);
@@ -294,23 +266,23 @@ function ParticleBackground() {
 function FAQItem({ question, answer }: { question: string; answer: string }) {
   const [open, setOpen] = useState(false);
   return (
-    <div style={{ background: 'var(--doaide-surface)', border: '1px solid var(--doaide-border)', borderRadius: 'var(--doaide-radius-lg)', overflow: 'hidden' }}>
+    <div style={{ background: 'var(--da-surface)', border: '1px solid var(--da-border)', borderRadius: 'var(--da-radius-lg)', overflow: 'hidden' }}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
         style={{
           width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '16px 20px', background: 'none', border: 'none', cursor: 'pointer',
-          color: 'var(--doaide-text)', fontWeight: 500, fontSize: '0.9rem', textAlign: 'left',
-          fontFamily: 'var(--doaide-font)',
+          color: 'var(--da-text)', fontWeight: 500, fontSize: '0.9rem', textAlign: 'left',
+          fontFamily: 'var(--da-font)',
         }}
         aria-expanded={open}
       >
         <span style={{ paddingRight: 16 }}>{question}</span>
-        <span style={{ color: 'var(--doaide-gold)', fontSize: '1.2rem', flexShrink: 0 }}>{open ? '−' : '+'}</span>
+        <span style={{ color: 'var(--da-gold)', fontSize: '1.2rem', flexShrink: 0 }}>{open ? '−' : '+'}</span>
       </button>
       {open && (
-        <div style={{ padding: '0 20px 16px', color: 'var(--doaide-text-secondary)', fontSize: '0.85rem', lineHeight: 1.6, borderTop: '1px solid var(--doaide-border)' }}>
+        <div style={{ padding: '0 20px 16px', color: 'var(--da-text-secondary)', fontSize: '0.85rem', lineHeight: 1.6, borderTop: '1px solid var(--da-border)' }}>
           <p style={{ marginTop: 12 }}>{answer}</p>
         </div>
       )}
@@ -513,10 +485,12 @@ export function LandingPage() {
 
       {/* Header */}
       <header className={`split-header ${visible ? 'split-visible' : ''}`}>
-        <a href="https://gosumo.aiknol.com" className="split-brand">
-          <RobotIcon size={28} />
+        <a href="https://doaide.com" className="split-brand">
+          <LogoIcon size={28} />
           <span className="split-brand-text">
-            GoSumo <em>Realty</em>
+            <span style={{ color: '#14B8A6', fontWeight: 700 }}>DoAide</span>
+            <span style={{ color: 'rgba(255,255,255,0.3)', margin: '0 6px', fontWeight: 300 }}>|</span>
+            <span>Desk</span>
           </span>
         </a>
       </header>
@@ -527,7 +501,7 @@ export function LandingPage() {
         <div className="split-left">
           <div className="split-left-content">
             <div className="split-hero-robot-wrap">
-              <HeroRobot />
+              <HeroLogo />
             </div>
 
             <h1 className="split-headline">
@@ -553,22 +527,22 @@ export function LandingPage() {
       </main>
 
       {/* Social Proof — Testimonials */}
-      <section className="split-below-fold" style={{ background: 'var(--doaide-bg-alt)', padding: '64px 24px' }}>
+      <section className="split-below-fold" style={{ background: 'var(--da-bg-alt)', padding: '64px 24px' }}>
         <div style={{ maxWidth: 960, margin: '0 auto' }}>
-          <h2 style={{ fontFamily: 'var(--doaide-font-display)', fontSize: '2rem', color: 'var(--doaide-text)', textAlign: 'center', marginBottom: 8 }}>
+          <h2 style={{ fontFamily: 'var(--da-font-display)', fontSize: '2rem', color: 'var(--da-text)', textAlign: 'center', marginBottom: 8 }}>
             Trusted by businesses across India
           </h2>
-          <p style={{ textAlign: 'center', color: 'var(--doaide-text-muted)', marginBottom: 40, fontSize: '0.95rem' }}>
-            Real estate brokers and agencies managing leads with GoSumo Realty.
+          <p style={{ textAlign: 'center', color: 'var(--da-text-muted)', marginBottom: 40, fontSize: '0.95rem' }}>
+            Freelancers, agencies, and service businesses managing clients with DoAide Desk.
           </p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
             {TESTIMONIALS.map((t) => (
-              <div key={t.name} style={{ background: 'var(--doaide-surface)', border: '1px solid var(--doaide-border)', borderRadius: 'var(--doaide-radius-lg)', padding: 24 }}>
-                <p style={{ color: 'var(--doaide-text-secondary)', fontSize: '0.9rem', lineHeight: 1.6, fontStyle: 'italic', marginBottom: 16 }}>
+              <div key={t.name} style={{ background: 'var(--da-surface)', border: '1px solid var(--da-border)', borderRadius: 'var(--da-radius-lg)', padding: 24 }}>
+                <p style={{ color: 'var(--da-text-secondary)', fontSize: '0.9rem', lineHeight: 1.6, fontStyle: 'italic', marginBottom: 16 }}>
                   &ldquo;{t.quote}&rdquo;
                 </p>
-                <p style={{ color: 'var(--doaide-text)', fontWeight: 600, fontSize: '0.85rem', marginBottom: 2 }}>{t.name}</p>
-                <p style={{ color: 'var(--doaide-text-muted)', fontSize: '0.8rem' }}>{t.role} · {t.location}</p>
+                <p style={{ color: 'var(--da-text)', fontWeight: 600, fontSize: '0.85rem', marginBottom: 2 }}>{t.name}</p>
+                <p style={{ color: 'var(--da-text-muted)', fontSize: '0.8rem' }}>{t.role} · {t.location}</p>
               </div>
             ))}
           </div>
@@ -578,11 +552,11 @@ export function LandingPage() {
       {/* FAQ with JSON-LD */}
       <section style={{ padding: '64px 24px' }}>
         <div style={{ maxWidth: 720, margin: '0 auto' }}>
-          <h2 style={{ fontFamily: 'var(--doaide-font-display)', fontSize: '2rem', color: 'var(--doaide-text)', textAlign: 'center', marginBottom: 8 }}>
+          <h2 style={{ fontFamily: 'var(--da-font-display)', fontSize: '2rem', color: 'var(--da-text)', textAlign: 'center', marginBottom: 8 }}>
             Frequently asked questions
           </h2>
-          <p style={{ textAlign: 'center', color: 'var(--doaide-text-muted)', marginBottom: 40, fontSize: '0.95rem' }}>
-            Everything you need to know about GoSumo Realty.
+          <p style={{ textAlign: 'center', color: 'var(--da-text-muted)', marginBottom: 40, fontSize: '0.95rem' }}>
+            Everything you need to know about DoAide Desk.
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {FAQ_ITEMS.map((item, i) => (
@@ -607,11 +581,11 @@ export function LandingPage() {
       </section>
 
       {/* CTA */}
-      <section style={{ background: 'var(--doaide-bg-alt)', padding: '64px 24px', textAlign: 'center' }}>
-        <h2 style={{ fontFamily: 'var(--doaide-font-display)', fontSize: '2rem', color: 'var(--doaide-text)', marginBottom: 12 }}>
+      <section style={{ background: 'var(--da-bg-alt)', padding: '64px 24px', textAlign: 'center' }}>
+        <h2 style={{ fontFamily: 'var(--da-font-display)', fontSize: '2rem', color: 'var(--da-text)', marginBottom: 12 }}>
           Stop losing clients to missed messages
         </h2>
-        <p style={{ color: 'var(--doaide-text-secondary)', maxWidth: 480, margin: '0 auto 24px', fontSize: '0.95rem' }}>
+        <p style={{ color: 'var(--da-text-secondary)', maxWidth: 480, margin: '0 auto 24px', fontSize: '0.95rem' }}>
           Unify every conversation. Let AI handle the routine. Focus on what matters — your clients.
         </p>
         <a
@@ -619,9 +593,9 @@ export function LandingPage() {
           style={{
             display: 'inline-block',
             padding: '12px 32px',
-            background: 'var(--doaide-gold)',
-            color: 'var(--doaide-text-on-gold)',
-            borderRadius: 'var(--doaide-radius-md)',
+            background: 'var(--da-gold)',
+            color: 'var(--da-text-on-gold)',
+            borderRadius: 'var(--da-radius-md)',
             fontWeight: 600,
             fontSize: '0.95rem',
             textDecoration: 'none',
@@ -645,12 +619,12 @@ export function LandingPage() {
           ))}
         </div>
         <div className="doaide-footer-copy">
-          <a href="https://gosumo.aiknol.com" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-            <RobotIcon size={14} />
-            gosumo.aiknol.com
+          <a href="https://doaide.com" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+            <LogoIcon size={14} />
+            doaide.com
           </a>
           {' · '}
-          © {new Date().getFullYear()} GoSumo
+          © {new Date().getFullYear()} DoAide
         </div>
       </footer>
     </div>

@@ -24,7 +24,7 @@ export function ShareButtons({ url, title }: ShareButtonsProps) {
 
   return (
     <div className="flex items-center gap-3 flex-wrap">
-      <span className="text-sm text-[var(--doaide-text-muted)]">Share:</span>
+      <span className="text-sm text-[var(--da-text-muted)]">Share:</span>
       <a
         href={`https://wa.me/?text=${encodedTitle}%20${encoded}`}
         target="_blank"
@@ -38,14 +38,14 @@ export function ShareButtons({ url, title }: ShareButtonsProps) {
         href={`https://twitter.com/intent/tweet?text=${encodedTitle}&url=${encoded}`}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-[var(--doaide-surface)] text-[var(--doaide-text)] border border-[var(--doaide-border)] hover:bg-[var(--doaide-surface-hover)] transition-colors"
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-[var(--da-surface)] text-[var(--da-text)] border border-[var(--da-border)] hover:bg-[var(--da-surface-hover)] transition-colors"
       >
         <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
         X / Twitter
       </a>
       <button
         onClick={copy}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-[var(--doaide-surface)] text-[var(--doaide-text)] border border-[var(--doaide-border)] hover:bg-[var(--doaide-surface-hover)] transition-colors"
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-[var(--da-surface)] text-[var(--da-text)] border border-[var(--da-border)] hover:bg-[var(--da-surface-hover)] transition-colors"
       >
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
         {copied ? 'Copied!' : 'Copy link'}

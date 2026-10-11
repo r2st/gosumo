@@ -1,4 +1,4 @@
-// GoSumo Realty — Micro-Market Intelligence (L1) types.
+// DoAide Desk — Micro-Market Intelligence (L1) types.
 //
 // Mirrors the backend realty-intelligence module's response shapes. Kept local (not
 // imported from @gosumo/shared) so the web app builds independently, per the

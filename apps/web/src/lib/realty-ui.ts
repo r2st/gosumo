@@ -1,4 +1,4 @@
-// GoSumo Realty — shared UI helpers for the lead / inventory surfaces.
+// DoAide Desk — shared UI helpers for the lead / inventory surfaces.
 // Keeps card, board, dossier, and inventory components visually consistent.
 
 import type { BadgeTone } from '@/components/ui/badge';

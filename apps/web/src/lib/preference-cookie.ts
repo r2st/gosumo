@@ -3,11 +3,11 @@
  *
  * Only two exist — the theme and the UI language — and both were being written
  * inline with `path`, `max-age` and `samesite=lax` but no `Secure`. On
- * https://gosumo.aiknol.com that is the difference between a cookie that stays
+ * https://desk.doaide.com that is the difference between a cookie that stays
  * on TLS and one a browser will also send in cleartext: a single downgraded
  * request (a plain-http link to the host, a captive portal, a stripped
  * redirect) is enough to put it on the wire, and the same request tells a
- * network observer that this browser has a GoSumo session to go looking for.
+ * network observer that this browser has a DoAide session to go looking for.
  * The value itself is `light`/`dark` — worthless — but the transmission is not,
  * and there is no reason for either cookie to leave TLS.
  *

@@ -4,17 +4,17 @@ import { ResponseTimeCalculator } from './calculator';
 
 export const metadata: Metadata = {
   title: 'Response Time Calculator',
-  description: 'Calculate average support response times and SLA compliance. Free tool by GoSumo Realty.',
+  description: 'Calculate average support response times and SLA compliance. Free tool by DoAide Desk.',
   openGraph: {
-    title: 'Response Time Calculator — GoSumo Realty',
+    title: 'Response Time Calculator — DoAide Desk',
     description: 'Calculate average support response times and SLA compliance.',
-    url: 'https://gosumo.aiknol.com/tools/response-time-calculator',
+    url: 'https://desk.doaide.com/tools/response-time-calculator',
   },
 };
 
 export default function Page() {
   return (
-    <div className="min-h-screen bg-[var(--doaide-bg)]">
+    <div className="min-h-screen bg-[var(--da-bg)]">
       <PublicNav />
       <main className="max-w-3xl mx-auto px-6 py-16">
         <ResponseTimeCalculator />
@@ -28,11 +28,11 @@ export default function Page() {
             '@type': 'WebApplication',
             name: 'Response Time Calculator',
             description: 'Calculate average support response times and SLA compliance.',
-            url: 'https://gosumo.aiknol.com/tools/response-time-calculator',
+            url: 'https://desk.doaide.com/tools/response-time-calculator',
             applicationCategory: 'BusinessApplication',
             operatingSystem: 'Web',
             offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-            author: { '@type': 'Organization', name: 'Apprend Technologies', url: 'https://gosumo.aiknol.com' },
+            author: { '@type': 'Organization', name: 'Apprend Technologies', url: 'https://desk.doaide.com' },
           }),
         }}
       />

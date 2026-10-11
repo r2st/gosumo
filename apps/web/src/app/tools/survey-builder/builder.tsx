@@ -77,7 +77,7 @@ export function SurveyBuilder() {
   const enabledQuestions = questions.filter((q) => q.enabled);
 
   const surveyText = survey
-    ? `${survey.label}\nRating Scale: ${survey.scale}\n\n${enabledQuestions.map((q, i) => `${i + 1}. ${q.text}`).join('\n')}\n\n---\nBuilt with GoSumo Realty — https://gosumo.aiknol.com/tools/survey-builder`
+    ? `${survey.label}\nRating Scale: ${survey.scale}\n\n${enabledQuestions.map((q, i) => `${i + 1}. ${q.text}`).join('\n')}\n\n---\nBuilt with DoAide Desk — https://desk.doaide.com/tools/survey-builder`
     : '';
 
   const copySurvey = async () => {
@@ -90,16 +90,16 @@ export function SurveyBuilder() {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold text-[var(--doaide-text)] mb-2" style={{ fontFamily: 'var(--doaide-font-display)' }}>
+      <h1 className="text-3xl font-bold text-[var(--da-text)] mb-2" style={{ fontFamily: 'var(--da-font-display)' }}>
         Customer Satisfaction Survey Builder
       </h1>
-      <p className="text-[var(--doaide-text-secondary)] mb-8">
+      <p className="text-[var(--da-text-secondary)] mb-8">
         Choose a survey type, customize questions, and copy a ready-to-use survey — no sign-up required.
       </p>
 
       <div className="space-y-6">
-        <div className="p-6 rounded-xl border border-[var(--doaide-border)] bg-[var(--doaide-surface)]">
-          <h2 className="text-sm font-medium text-[var(--doaide-text-secondary)] mb-4">Survey Type</h2>
+        <div className="p-6 rounded-xl border border-[var(--da-border)] bg-[var(--da-surface)]">
+          <h2 className="text-sm font-medium text-[var(--da-text-secondary)] mb-4">Survey Type</h2>
           <div className="grid grid-cols-2 gap-3">
             {Object.entries(SURVEY_TYPES).map(([key, val]) => (
               <button
@@ -107,8 +107,8 @@ export function SurveyBuilder() {
                 onClick={() => selectType(key)}
                 className={`p-3 rounded-lg border text-sm font-medium transition-all text-left ${
                   selectedType === key
-                    ? 'border-[var(--doaide-gold)] bg-[var(--doaide-gold)]/10 text-[var(--doaide-gold)]'
-                    : 'border-[var(--doaide-border)] text-[var(--doaide-text)] hover:border-[var(--doaide-gold)]'
+                    ? 'border-[var(--da-gold)] bg-[var(--da-gold)]/10 text-[var(--da-gold)]'
+                    : 'border-[var(--da-border)] text-[var(--da-text)] hover:border-[var(--da-gold)]'
                 }`}
               >
                 {val.label}
@@ -119,12 +119,12 @@ export function SurveyBuilder() {
 
         {survey && (
           <>
-            <div className="p-6 rounded-xl border border-[var(--doaide-border)] bg-[var(--doaide-surface)]">
+            <div className="p-6 rounded-xl border border-[var(--da-border)] bg-[var(--da-surface)]">
               <div className="flex items-center justify-between mb-1">
-                <h2 className="text-sm font-medium text-[var(--doaide-text-secondary)]">Questions</h2>
-                <span className="text-xs text-[var(--doaide-text-muted)]">Scale: {survey.scale}</span>
+                <h2 className="text-sm font-medium text-[var(--da-text-secondary)]">Questions</h2>
+                <span className="text-xs text-[var(--da-text-muted)]">Scale: {survey.scale}</span>
               </div>
-              <p className="text-xs text-[var(--doaide-text-muted)] mb-4">Toggle questions on/off and edit text as needed.</p>
+              <p className="text-xs text-[var(--da-text-muted)] mb-4">Toggle questions on/off and edit text as needed.</p>
               <div className="space-y-3">
                 {questions.map((q, i) => (
                   <div key={i} className="flex items-start gap-3">
@@ -132,8 +132,8 @@ export function SurveyBuilder() {
                       onClick={() => toggleQuestion(i)}
                       className={`mt-1 w-5 h-5 rounded border flex-shrink-0 flex items-center justify-center text-xs transition-colors ${
                         q.enabled
-                          ? 'bg-[var(--doaide-gold)] border-[var(--doaide-gold)] text-black'
-                          : 'border-[var(--doaide-border)] text-transparent'
+                          ? 'bg-[var(--da-gold)] border-[var(--da-gold)] text-black'
+                          : 'border-[var(--da-border)] text-transparent'
                       }`}
                     >
                       ✓
@@ -142,33 +142,33 @@ export function SurveyBuilder() {
                       type="text"
                       value={q.text}
                       onChange={(e) => updateQuestion(i, e.target.value)}
-                      className={`flex-1 px-3 py-2 rounded-md text-sm ${q.enabled ? 'text-[var(--doaide-text)]' : 'text-[var(--doaide-text-muted)] line-through'}`}
+                      className={`flex-1 px-3 py-2 rounded-md text-sm ${q.enabled ? 'text-[var(--da-text)]' : 'text-[var(--da-text-muted)] line-through'}`}
                     />
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="p-6 rounded-xl border border-[var(--doaide-border)] bg-[var(--doaide-surface)]">
+            <div className="p-6 rounded-xl border border-[var(--da-border)] bg-[var(--da-surface)]">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-medium text-[var(--doaide-text-secondary)]">Survey Preview ({enabledQuestions.length} questions)</h2>
+                <h2 className="text-sm font-medium text-[var(--da-text-secondary)]">Survey Preview ({enabledQuestions.length} questions)</h2>
                 <button
                   onClick={copySurvey}
-                  className="px-4 py-1.5 rounded-lg bg-[var(--doaide-gold)] text-black text-sm font-medium hover:opacity-90 transition-opacity"
+                  className="px-4 py-1.5 rounded-lg bg-[var(--da-gold)] text-black text-sm font-medium hover:opacity-90 transition-opacity"
                 >
                   {copied ? 'Copied!' : 'Copy Survey'}
                 </button>
               </div>
-              <pre className="text-sm text-[var(--doaide-text)] whitespace-pre-wrap font-mono bg-[var(--doaide-bg)] p-4 rounded-lg overflow-x-auto">
+              <pre className="text-sm text-[var(--da-text)] whitespace-pre-wrap font-mono bg-[var(--da-bg)] p-4 rounded-lg overflow-x-auto">
                 {surveyText}
               </pre>
             </div>
 
-            <ShareButtons url="https://gosumo.aiknol.com/tools/survey-builder" title="Survey Builder — Free tool by GoSumo Realty" />
+            <ShareButtons url="https://desk.doaide.com/tools/survey-builder" title="Survey Builder — Free tool by DoAide Desk" />
 
-            <div className="p-6 rounded-xl border border-[var(--doaide-border)] bg-[var(--doaide-surface)] text-center">
-              <p className="text-sm text-[var(--doaide-text-secondary)] mb-3">Want to send surveys automatically after each ticket?</p>
-              <a href="/register" className="inline-block px-6 py-2.5 rounded-lg bg-[var(--doaide-gold)] text-black font-medium text-sm hover:opacity-90 transition-opacity">Sign up free</a>
+            <div className="p-6 rounded-xl border border-[var(--da-border)] bg-[var(--da-surface)] text-center">
+              <p className="text-sm text-[var(--da-text-secondary)] mb-3">Want to send surveys automatically after each ticket?</p>
+              <a href="/register" className="inline-block px-6 py-2.5 rounded-lg bg-[var(--da-gold)] text-black font-medium text-sm hover:opacity-90 transition-opacity">Sign up free</a>
             </div>
           </>
         )}

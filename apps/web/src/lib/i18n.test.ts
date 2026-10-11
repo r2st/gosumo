@@ -65,7 +65,7 @@ describe('dictionary parity', () => {
 
   it('writes Hindi entries in Devanagari, not copied English', () => {
     // A handful of entries are legitimately identical across languages —
-    // acronyms and product names (IVR, RERA, CSV, GoSumo). Everything else
+    // acronyms and product names (IVR, RERA, CSV, DoAide). Everything else
     // being byte-identical means someone pasted the English string in.
     // A long English string duplicated into `hi` is untranslated copy, not a
     // shared acronym, so length is what separates the two cases.

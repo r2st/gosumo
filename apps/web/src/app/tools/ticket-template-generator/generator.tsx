@@ -53,7 +53,7 @@ export function TicketTemplateGenerator() {
   const category = CATEGORIES.find((c) => c.id === selected);
 
   const template = category
-    ? `Subject: ${category.subject}\nPriority: ${category.priority}\n\n${category.description}\n\nRequired Information:\n${category.fields.map((f) => `- ${f}: `).join('\n')}\n\n---\nGenerated with GoSumo Realty — https://gosumo.aiknol.com/tools/ticket-template-generator`
+    ? `Subject: ${category.subject}\nPriority: ${category.priority}\n\n${category.description}\n\nRequired Information:\n${category.fields.map((f) => `- ${f}: `).join('\n')}\n\n---\nGenerated with DoAide Desk — https://desk.doaide.com/tools/ticket-template-generator`
     : '';
 
   const copyTemplate = async () => {
@@ -66,16 +66,16 @@ export function TicketTemplateGenerator() {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold text-[var(--doaide-text)] mb-2" style={{ fontFamily: 'var(--doaide-font-display)' }}>
+      <h1 className="text-3xl font-bold text-[var(--da-text)] mb-2" style={{ fontFamily: 'var(--da-font-display)' }}>
         Ticket Template Generator
       </h1>
-      <p className="text-[var(--doaide-text-secondary)] mb-8">
+      <p className="text-[var(--da-text-secondary)] mb-8">
         Choose a ticket category and get a ready-to-use template with the right fields and priority — no sign-up required.
       </p>
 
       <div className="space-y-6">
-        <div className="p-6 rounded-xl border border-[var(--doaide-border)] bg-[var(--doaide-surface)]">
-          <h2 className="text-sm font-medium text-[var(--doaide-text-secondary)] mb-4">Select Category</h2>
+        <div className="p-6 rounded-xl border border-[var(--da-border)] bg-[var(--da-surface)]">
+          <h2 className="text-sm font-medium text-[var(--da-text-secondary)] mb-4">Select Category</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {CATEGORIES.map((cat) => (
               <button
@@ -83,8 +83,8 @@ export function TicketTemplateGenerator() {
                 onClick={() => setSelected(cat.id)}
                 className={`p-3 rounded-lg border text-sm font-medium transition-all text-left ${
                   selected === cat.id
-                    ? 'border-[var(--doaide-gold)] bg-[var(--doaide-gold)]/10 text-[var(--doaide-gold)]'
-                    : 'border-[var(--doaide-border)] text-[var(--doaide-text)] hover:border-[var(--doaide-gold)]'
+                    ? 'border-[var(--da-gold)] bg-[var(--da-gold)]/10 text-[var(--da-gold)]'
+                    : 'border-[var(--da-border)] text-[var(--da-text)] hover:border-[var(--da-gold)]'
                 }`}
               >
                 {cat.label}
@@ -96,42 +96,42 @@ export function TicketTemplateGenerator() {
         {category && (
           <>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              <div className="p-4 rounded-xl border border-[var(--doaide-border)] bg-[var(--doaide-surface)]">
-                <p className="text-xs text-[var(--doaide-text-muted)] mb-1">Category</p>
-                <p className="text-sm font-semibold text-[var(--doaide-text)]">{category.label}</p>
+              <div className="p-4 rounded-xl border border-[var(--da-border)] bg-[var(--da-surface)]">
+                <p className="text-xs text-[var(--da-text-muted)] mb-1">Category</p>
+                <p className="text-sm font-semibold text-[var(--da-text)]">{category.label}</p>
               </div>
-              <div className="p-4 rounded-xl border border-[var(--doaide-border)] bg-[var(--doaide-surface)]">
-                <p className="text-xs text-[var(--doaide-text-muted)] mb-1">Priority</p>
-                <p className={`text-sm font-semibold ${category.priority === 'High' ? 'text-[var(--doaide-error)]' : category.priority === 'Medium' ? 'text-[var(--doaide-warning)]' : 'text-[var(--doaide-success)]'}`}>
+              <div className="p-4 rounded-xl border border-[var(--da-border)] bg-[var(--da-surface)]">
+                <p className="text-xs text-[var(--da-text-muted)] mb-1">Priority</p>
+                <p className={`text-sm font-semibold ${category.priority === 'High' ? 'text-[var(--da-error)]' : category.priority === 'Medium' ? 'text-[var(--da-warning)]' : 'text-[var(--da-success)]'}`}>
                   {category.priority}
                 </p>
               </div>
-              <div className="p-4 rounded-xl border border-[var(--doaide-border)] bg-[var(--doaide-surface)]">
-                <p className="text-xs text-[var(--doaide-text-muted)] mb-1">Fields</p>
-                <p className="text-sm font-semibold text-[var(--doaide-text)]">{category.fields.length}</p>
+              <div className="p-4 rounded-xl border border-[var(--da-border)] bg-[var(--da-surface)]">
+                <p className="text-xs text-[var(--da-text-muted)] mb-1">Fields</p>
+                <p className="text-sm font-semibold text-[var(--da-text)]">{category.fields.length}</p>
               </div>
             </div>
 
-            <div className="p-6 rounded-xl border border-[var(--doaide-border)] bg-[var(--doaide-surface)]">
+            <div className="p-6 rounded-xl border border-[var(--da-border)] bg-[var(--da-surface)]">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-medium text-[var(--doaide-text-secondary)]">Template Preview</h2>
+                <h2 className="text-sm font-medium text-[var(--da-text-secondary)]">Template Preview</h2>
                 <button
                   onClick={copyTemplate}
-                  className="px-4 py-1.5 rounded-lg bg-[var(--doaide-gold)] text-black text-sm font-medium hover:opacity-90 transition-opacity"
+                  className="px-4 py-1.5 rounded-lg bg-[var(--da-gold)] text-black text-sm font-medium hover:opacity-90 transition-opacity"
                 >
                   {copied ? 'Copied!' : 'Copy Template'}
                 </button>
               </div>
-              <pre className="text-sm text-[var(--doaide-text)] whitespace-pre-wrap font-mono bg-[var(--doaide-bg)] p-4 rounded-lg overflow-x-auto">
+              <pre className="text-sm text-[var(--da-text)] whitespace-pre-wrap font-mono bg-[var(--da-bg)] p-4 rounded-lg overflow-x-auto">
                 {template}
               </pre>
             </div>
 
-            <ShareButtons url="https://gosumo.aiknol.com/tools/ticket-template-generator" title="Ticket Template Generator — Free tool by GoSumo Realty" />
+            <ShareButtons url="https://desk.doaide.com/tools/ticket-template-generator" title="Ticket Template Generator — Free tool by DoAide Desk" />
 
-            <div className="p-6 rounded-xl border border-[var(--doaide-border)] bg-[var(--doaide-surface)] text-center">
-              <p className="text-sm text-[var(--doaide-text-secondary)] mb-3">Want to save your templates and track tickets over time?</p>
-              <a href="/register" className="inline-block px-6 py-2.5 rounded-lg bg-[var(--doaide-gold)] text-black font-medium text-sm hover:opacity-90 transition-opacity">Sign up free</a>
+            <div className="p-6 rounded-xl border border-[var(--da-border)] bg-[var(--da-surface)] text-center">
+              <p className="text-sm text-[var(--da-text-secondary)] mb-3">Want to save your templates and track tickets over time?</p>
+              <a href="/register" className="inline-block px-6 py-2.5 rounded-lg bg-[var(--da-gold)] text-black font-medium text-sm hover:opacity-90 transition-opacity">Sign up free</a>
             </div>
           </>
         )}

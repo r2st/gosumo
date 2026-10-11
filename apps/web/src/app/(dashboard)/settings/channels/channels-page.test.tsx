@@ -2,7 +2,7 @@
  * Settings → Channels — the channel management UI.
  *
  * This page is where an operator wires a real WhatsApp/Instagram/SMS account
- * into GoSumo, so the tests focus on the parts that are dangerous to get
+ * into DoAide, so the tests focus on the parts that are dangerous to get
  * wrong: credentials must never be rendered in full, the three role tiers on
  * this page (connect/disconnect/test are MANAGER, the enable toggle is STAFF)
  * must gate the right controls, and per-channel test results must not bleed

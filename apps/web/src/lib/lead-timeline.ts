@@ -1,4 +1,4 @@
-// GoSumo Realty — derive a unified lead activity timeline from the data we have.
+// DoAide Desk — derive a unified lead activity timeline from the data we have.
 // The lead record carries lifecycle timestamps and AI-extracted memory (each
 // with an `at`), and the site-visit list carries scheduled visits. We merge them
 // into one time-ordered stream for the lead detail page.

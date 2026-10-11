@@ -77,10 +77,12 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         </nav>
 
         <div className="border-t border-sidebar-border p-4 text-xs text-sidebar-muted">
-          <p className="font-heading text-sm text-sidebar-foreground">
-            GoSumo <span className="italic text-primary">Realty</span>
+          <p className="text-sm font-bold text-sidebar-foreground">
+            <span className="text-primary">DoAide</span>
+            <span className="text-sidebar-muted mx-1 font-light">|</span>
+            Desk
           </p>
-          <p className="mt-0.5 font-mono text-[10px] uppercase tracking-wider">AI-powered lead management</p>
+          <p className="mt-0.5 text-[10px] uppercase tracking-wider">A DoAide Product</p>
         </div>
       </aside>
     </>

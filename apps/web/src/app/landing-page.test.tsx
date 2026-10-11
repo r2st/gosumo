@@ -137,17 +137,17 @@ describe('landing page — branding', () => {
     ).toBeInTheDocument();
   });
 
-  it('dates the footer to the current year and credits GoSumo', () => {
+  it('dates the footer to the current year and credits DoAide', () => {
     render(<LandingPage />);
     expect(
-      screen.getByText(new RegExp(`© ${new Date().getFullYear()} GoSumo`)),
+      screen.getByText(new RegExp(`© ${new Date().getFullYear()} DoAide`)),
     ).toBeInTheDocument();
   });
 });
 
 describe('landing page — metadata', () => {
   it('describes the product in its page metadata', () => {
-    expect(homeMetadata.title).toBe('GoSumo Realty — AI-powered lead management for real estate brokers');
+    expect(homeMetadata.title).toBe('DoAide Desk — AI-powered lead management for real estate brokers');
     expect(String(homeMetadata.description)).toContain('AI-driven interface');
   });
 });
@@ -180,8 +180,8 @@ describe('RootLayout', () => {
 
   it('declares the PWA metadata the installable app depends on', () => {
     expect(rootMetadata.manifest).toBe('/manifest.json');
-    expect(rootMetadata.applicationName).toBe('GoSumo Realty');
-    expect(rootMetadata.appleWebApp).toMatchObject({ capable: true, title: 'GoSumo Realty' });
+    expect(rootMetadata.applicationName).toBe('DoAide Desk');
+    expect(rootMetadata.appleWebApp).toMatchObject({ capable: true, title: 'DoAide Desk' });
     expect(viewport.themeColor).toEqual([
       { media: '(prefers-color-scheme: dark)', color: '#0A0A0B' },
       { media: '(prefers-color-scheme: light)', color: '#FFFFFF' },
@@ -190,8 +190,8 @@ describe('RootLayout', () => {
 
   it('templates child page titles under the product name', () => {
     expect(rootMetadata.title).toMatchObject({
-      default: 'GoSumo Realty',
-      template: '%s · GoSumo Realty',
+      default: 'DoAide Desk',
+      template: '%s · DoAide Desk',
     });
   });
 });

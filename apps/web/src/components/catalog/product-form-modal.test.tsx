@@ -1,7 +1,7 @@
 /**
  * The catalog item form and the category manager.
  *
- * This form is the main place an operator types money into GoSumo, so the
+ * This form is the main place an operator types money into DoAide, so the
  * rupee→paise conversion at its boundary is the thing worth pinning: a price
  * that reaches the API a hundred times too small is a silent, expensive bug.
  * The rest of the coverage is about the form only sending what it means to —

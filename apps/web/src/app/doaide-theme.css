@@ -1,97 +1,97 @@
 /*
- * DoAide Global Theme v3.0
- * Dark theme with gold accents — canonical version for all DoAide products.
+ * DoAide Global Theme v4.0
+ * Light-default theme with teal accent — canonical version for all DoAide products.
  *
- * Products: Desk · Herald · 409A · AutoApply · Realty
- * Fonts: Schibsted Grotesk (UI) · Instrument Serif (display) · IBM Plex Mono (data)
- * Accent: Gold #F0B429
+ * Products: Desk · Jobs · 409A · GST · Pulse · Med · Realty
+ * Font: Inter (400-900)
+ * Accent: Teal #0D9488
  */
-@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Schibsted+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
 :root {
-  --doaide-bg: #0A0A0B;
-  --doaide-bg-alt: #111113;
-  --doaide-surface: #1A1A1D;
-  --doaide-surface-hover: #222225;
-  --doaide-border: #2A2A2D;
-  --doaide-border-light: #333336;
-  --doaide-gold: #F0B429;
-  --doaide-gold-hover: #D4A017;
-  --doaide-gold-light: #F7CC5F;
-  --doaide-gold-dim: #8B6914;
-  --doaide-gold-bg: rgba(240, 180, 41, 0.1);
-  --doaide-gold-bg-hover: rgba(240, 180, 41, 0.15);
-  --doaide-text: #E5E7EB;
-  --doaide-text-secondary: #9CA3AF;
-  --doaide-text-muted: #6B7280;
-  --doaide-text-on-gold: #0A0A0B;
-  --doaide-success: #34D399;
-  --doaide-error: #F87171;
-  --doaide-warning: #FBBF24;
-  --doaide-info: #60A5FA;
-  --doaide-font: 'Schibsted Grotesk', system-ui, -apple-system, sans-serif;
-  --doaide-font-display: 'Instrument Serif', Georgia, serif;
-  --doaide-font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
-  --doaide-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --doaide-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
-  --doaide-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
-  --doaide-shadow-gold: 0 0 20px rgba(240, 180, 41, 0.15);
-  --doaide-radius-sm: 6px;
-  --doaide-radius-md: 8px;
-  --doaide-radius-lg: 12px;
-  --doaide-radius-xl: 16px;
-  --doaide-transition: 150ms ease;
+  --da-bg: #0A0A0B;
+  --da-bg-alt: #111113;
+  --da-surface: #1A1A1D;
+  --da-surface-hover: #222225;
+  --da-border: #2A2A2D;
+  --da-border-light: #333336;
+  --da-primary: #14B8A6;
+  --da-primary-hover: #0D9488;
+  --da-primary-light: #5EEAD4;
+  --da-primary-dim: #0F766E;
+  --da-primary-bg: rgba(20, 184, 166, 0.1);
+  --da-primary-bg-hover: rgba(20, 184, 166, 0.15);
+  --da-text: #E5E7EB;
+  --da-text-secondary: #9CA3AF;
+  --da-text-muted: #6B7280;
+  --da-text-on-primary: #FFFFFF;
+  --da-success: #34D399;
+  --da-error: #F87171;
+  --da-warning: #FBBF24;
+  --da-info: #60A5FA;
+  --da-font: 'Inter', system-ui, -apple-system, sans-serif;
+  --da-font-display: 'Inter', system-ui, -apple-system, sans-serif;
+  --da-font-mono: 'Inter', ui-monospace, SFMono-Regular, monospace;
+  --da-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --da-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
+  --da-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
+  --da-shadow-primary: 0 0 20px rgba(20, 184, 166, 0.15);
+  --da-radius-sm: 6px;
+  --da-radius-md: 8px;
+  --da-radius-lg: 12px;
+  --da-radius-xl: 16px;
+  --da-transition: 150ms ease;
 }
 
 html:not(.dark) {
-  --doaide-bg: #FFFFFF;
-  --doaide-bg-alt: #F9FAFB;
-  --doaide-surface: #F4F4F5;
-  --doaide-surface-hover: #E4E4E7;
-  --doaide-border: #E4E4E7;
-  --doaide-border-light: #D4D4D8;
-  --doaide-gold: #C49520;
-  --doaide-gold-hover: #A67D14;
-  --doaide-gold-light: #D4A82A;
-  --doaide-gold-dim: #8B6914;
-  --doaide-gold-bg: rgba(196, 149, 32, 0.08);
-  --doaide-gold-bg-hover: rgba(196, 149, 32, 0.12);
-  --doaide-text: #18181B;
-  --doaide-text-secondary: #52525B;
-  --doaide-text-muted: #71717A;
-  --doaide-text-on-gold: #FFFFFF;
-  --doaide-success: #22A06B;
-  --doaide-error: #DC2626;
-  --doaide-warning: #B08C13;
-  --doaide-info: #2563EB;
-  --doaide-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --doaide-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.08);
-  --doaide-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.10);
-  --doaide-shadow-gold: 0 0 20px rgba(196, 149, 32, 0.12);
+  --da-bg: #FFFFFF;
+  --da-bg-alt: #F9FAFB;
+  --da-surface: #F4F4F5;
+  --da-surface-hover: #E4E4E7;
+  --da-border: #E4E4E7;
+  --da-border-light: #D4D4D8;
+  --da-primary: #0D9488;
+  --da-primary-hover: #0F766E;
+  --da-primary-light: #14B8A6;
+  --da-primary-dim: #115E59;
+  --da-primary-bg: rgba(13, 148, 136, 0.08);
+  --da-primary-bg-hover: rgba(13, 148, 136, 0.12);
+  --da-text: #18181B;
+  --da-text-secondary: #52525B;
+  --da-text-muted: #71717A;
+  --da-text-on-primary: #FFFFFF;
+  --da-success: #22A06B;
+  --da-error: #DC2626;
+  --da-warning: #B08C13;
+  --da-info: #2563EB;
+  --da-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --da-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.08);
+  --da-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.10);
+  --da-shadow-primary: 0 0 20px rgba(13, 148, 136, 0.12);
   color-scheme: light;
 }
 
 body {
-  background-color: var(--doaide-bg);
-  color: var(--doaide-text);
-  font-family: var(--doaide-font);
+  background-color: var(--da-bg);
+  color: var(--da-text);
+  font-family: var(--da-font);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: var(--doaide-bg); }
-::-webkit-scrollbar-thumb { background: var(--doaide-border); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: var(--doaide-border-light); }
-::selection { background-color: var(--doaide-gold); color: var(--doaide-text-on-gold); }
+::-webkit-scrollbar-track { background: var(--da-bg); }
+::-webkit-scrollbar-thumb { background: var(--da-border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--da-border-light); }
+::selection { background-color: var(--da-primary); color: var(--da-text-on-primary); }
 
 /* ── Utility classes ── */
-.doaide-gold { color: var(--doaide-gold); }
-.doaide-gold-bg { background-color: var(--doaide-gold); color: var(--doaide-text-on-gold); }
-.doaide-surface { background-color: var(--doaide-surface); }
-.doaide-card {
-  background-color: var(--doaide-surface);
-  border: 1px solid var(--doaide-border);
-  border-radius: var(--doaide-radius-lg);
+.da-primary { color: var(--da-primary); }
+.da-primary-bg { background-color: var(--da-primary); color: var(--da-text-on-primary); }
+.da-surface { background-color: var(--da-surface); }
+.da-card {
+  background-color: var(--da-surface);
+  border: 1px solid var(--da-border);
+  border-radius: var(--da-radius-lg);
 }
 
 /* ── Auth pages ── */
@@ -111,32 +111,26 @@ body {
   text-align: center;
 }
 
-.doaide-auth-robot {
-  width: 120px;
-  height: 96px;
-  margin: 0 auto 20px;
-}
-
 .doaide-auth-title {
   font-size: 42px;
-  font-weight: 400;
+  font-weight: 700;
   line-height: 1.1;
   margin: 0 0 8px;
 }
 
 .doaide-auth-title-brand {
-  font-family: 'Instrument Serif', serif;
-  color: #ffffff;
+  font-family: 'Inter', sans-serif;
+  color: #14B8A6;
 }
 
 .doaide-auth-title-product {
-  font-family: 'Instrument Serif', serif;
-  font-style: italic;
-  color: #F0B429;
+  font-family: 'Inter', sans-serif;
+  font-style: normal;
+  color: #ffffff;
 }
 
 .doaide-auth-subtitle {
-  font-family: 'Schibsted Grotesk', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 13px;
   color: rgba(255,255,255,0.4);
   margin: 0 0 32px;
@@ -166,7 +160,7 @@ body {
 }
 
 .doaide-auth-label {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.18em;
@@ -184,7 +178,7 @@ body {
   border: 1px solid rgba(255,255,255,0.12) !important;
   border-radius: 8px !important;
   padding: 10px 14px !important;
-  font-family: 'IBM Plex Mono', monospace !important;
+  font-family: 'Inter', sans-serif !important;
   font-size: 13px !important;
   color: #E5E7EB !important;
   width: 100%;
@@ -193,7 +187,7 @@ body {
 }
 
 .doaide-auth-input:focus {
-  border-color: rgba(240,180,41,0.5) !important;
+  border-color: rgba(13,148,136,0.5) !important;
   box-shadow: none !important;
 }
 
@@ -203,12 +197,12 @@ body {
 
 .doaide-auth-button {
   width: 100%;
-  background: #F0B429 !important;
-  color: #0A0A0B !important;
+  background: #0D9488 !important;
+  color: #FFFFFF !important;
   border: none !important;
   border-radius: 8px !important;
   padding: 10px 16px !important;
-  font-family: 'Schibsted Grotesk', sans-serif !important;
+  font-family: 'Inter', sans-serif !important;
   font-size: 14px !important;
   font-weight: 600 !important;
   cursor: pointer;
@@ -217,7 +211,7 @@ body {
 }
 
 .doaide-auth-button:hover:not(:disabled) {
-  background: #F7D070 !important;
+  background: #14B8A6 !important;
 }
 
 .doaide-auth-button:disabled {
@@ -258,17 +252,17 @@ body {
 }
 
 .doaide-auth-link {
-  color: #F0B429 !important;
+  color: #14B8A6 !important;
   text-decoration: none;
   font-weight: 500;
 }
 
 .doaide-auth-link:hover {
-  color: #F7D070 !important;
+  color: #5EEAD4 !important;
 }
 
 .doaide-auth-link-small {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -277,7 +271,7 @@ body {
 }
 
 .doaide-auth-link-small:hover {
-  color: #F0B429 !important;
+  color: #14B8A6 !important;
 }
 
 .doaide-auth-footer {
@@ -291,7 +285,7 @@ body {
 }
 
 .doaide-auth-footer a:hover {
-  color: #F0B429 !important;
+  color: #14B8A6 !important;
 }
 
 .doaide-auth-row {
@@ -307,7 +301,7 @@ body {
 }
 
 .doaide-auth-heading {
-  font-family: 'Schibsted Grotesk', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 18px;
   font-weight: 600;
   color: #E5E7EB;
@@ -331,19 +325,19 @@ body {
 }
 
 .doaide-auth-back-link:hover {
-  color: #F0B429 !important;
+  color: #14B8A6 !important;
 }
 
 .doaide-auth-icon-circle {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: rgba(240,180,41,0.1);
+  background: rgba(13,148,136,0.1);
   display: flex;
   align-items: center;
   justify-content: center;
   margin: 0 auto 16px;
-  color: #F0B429;
+  color: #14B8A6;
 }
 
 .doaide-auth-card button:not(.doaide-auth-button) {
@@ -351,7 +345,7 @@ body {
   border: 1px solid rgba(255,255,255,0.12) !important;
   border-radius: 8px !important;
   color: rgba(255,255,255,0.7) !important;
-  font-family: 'Schibsted Grotesk', sans-serif !important;
+  font-family: 'Inter', sans-serif !important;
 }
 
 .doaide-auth-card button:not(.doaide-auth-button):hover {
@@ -384,7 +378,7 @@ body {
   justify-content: center;
   gap: 6px 16px;
   margin-bottom: 16px;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.14em;
@@ -397,11 +391,11 @@ body {
 }
 
 .doaide-footer-products a:hover {
-  color: #F0B429 !important;
+  color: #14B8A6 !important;
 }
 
 .doaide-footer-products .doaide-footer-active {
-  color: #F0B429 !important;
+  color: #14B8A6 !important;
 }
 
 .doaide-footer-copy {
@@ -416,16 +410,16 @@ body {
 }
 
 .doaide-footer-copy a:hover {
-  color: #F0B429 !important;
+  color: #14B8A6 !important;
 }
 
-/* ── Split landing page (409A layout) ── */
+/* ── Split landing page ── */
 
 .split-root {
   min-height: 100vh;
   background: rgb(10, 10, 11);
   color: #E5E7EB;
-  font-family: 'Schibsted Grotesk', system-ui, -apple-system, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
   overflow-x: hidden;
   position: relative;
   display: flex;
@@ -466,15 +460,10 @@ body {
 }
 
 .split-brand-text {
-  font-family: 'Instrument Serif', Georgia, serif;
+  font-family: 'Inter', system-ui, sans-serif;
   font-size: 24px;
-  font-weight: 400;
+  font-weight: 700;
   letter-spacing: -0.3px;
-}
-
-.split-brand-text em {
-  color: #F0B429;
-  font-style: italic;
 }
 
 /* ── Main split layout ── */
@@ -513,11 +502,11 @@ body {
   width: 400px;
 }
 
-/* ── Hero robot ── */
+/* ── Hero logo ── */
 .split-hero-robot-wrap {
   margin-bottom: 24px;
   animation: split-float 4s ease-in-out infinite;
-  filter: drop-shadow(0 0 30px rgba(240, 180, 41, 0.3));
+  filter: drop-shadow(0 0 30px rgba(13, 148, 136, 0.3));
 }
 
 .split-hero-robot-wrap svg {
@@ -525,15 +514,11 @@ body {
   height: 128px;
 }
 
-.split-antenna-glow {
-  animation: split-pulse 2s ease-in-out infinite;
-}
-
 /* ── Headline ── */
 .split-headline {
-  font-family: 'Instrument Serif', Georgia, serif;
+  font-family: 'Inter', system-ui, sans-serif;
   font-size: clamp(32px, 4vw, 48px);
-  font-weight: 400;
+  font-weight: 800;
   line-height: 1.15;
   color: #ffffff;
   margin: 0 0 16px;
@@ -542,7 +527,7 @@ body {
 
 /* ── Subtitle ── */
 .split-subtitle {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 13px;
   line-height: 1.6;
   color: rgba(255, 255, 255, 0.45);
@@ -557,17 +542,17 @@ body {
 }
 
 .split-typewriter {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 15px;
   font-weight: 500;
-  color: #F0B429;
+  color: #14B8A6;
 }
 
 .split-typewriter-cursor {
   display: inline-block;
   width: 2px;
   height: 1em;
-  background: #F0B429;
+  background: #14B8A6;
   margin-left: 2px;
   vertical-align: text-bottom;
   animation: split-blink 0.8s step-end infinite;
@@ -595,20 +580,20 @@ body {
   width: 44px;
   height: 44px;
   border-radius: 12px;
-  background: rgba(240, 180, 41, 0.1);
-  border: 1px solid rgba(240, 180, 41, 0.25);
+  background: rgba(13, 148, 136, 0.1);
+  border: 1px solid rgba(13, 148, 136, 0.25);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #F0B429;
+  color: #14B8A6;
   flex-shrink: 0;
   transition: all 0.3s ease;
 }
 
 .split-pipeline-step:hover .split-pipeline-node {
-  background: rgba(240, 180, 41, 0.2);
-  border-color: rgba(240, 180, 41, 0.5);
-  box-shadow: 0 0 16px rgba(240, 180, 41, 0.2);
+  background: rgba(13, 148, 136, 0.2);
+  border-color: rgba(13, 148, 136, 0.5);
+  box-shadow: 0 0 16px rgba(13, 148, 136, 0.2);
 }
 
 .split-pipeline-icon {
@@ -621,7 +606,7 @@ body {
   top: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -645,7 +630,7 @@ body {
 .split-pipeline-line {
   position: absolute;
   inset: 0;
-  background: rgba(240, 180, 41, 0.2);
+  background: rgba(13, 148, 136, 0.2);
   border-radius: 1px;
 }
 
@@ -656,8 +641,8 @@ body {
   width: 6px;
   height: 4px;
   border-radius: 2px;
-  background: #F0B429;
-  box-shadow: 0 0 6px rgba(240, 180, 41, 0.6);
+  background: #14B8A6;
+  box-shadow: 0 0 6px rgba(13, 148, 136, 0.6);
   animation: split-particle-flow 1.5s ease-in-out infinite;
 }
 
@@ -694,7 +679,7 @@ body {
   padding: 14px 16px;
   background: none;
   border: none;
-  font-family: 'Schibsted Grotesk', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 14px;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.4);
@@ -708,7 +693,7 @@ body {
 }
 
 .split-auth-tab-active {
-  color: #F0B429;
+  color: #14B8A6;
 }
 
 .split-auth-tab-active::after {
@@ -718,7 +703,7 @@ body {
   left: 16px;
   right: 16px;
   height: 2px;
-  background: #F0B429;
+  background: #14B8A6;
   border-radius: 1px;
 }
 
@@ -736,7 +721,7 @@ body {
 }
 
 .split-auth-label {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.18em;
@@ -750,7 +735,7 @@ body {
 }
 
 .split-auth-forgot {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -759,7 +744,7 @@ body {
 }
 
 .split-auth-forgot:hover {
-  color: #F0B429;
+  color: #14B8A6;
 }
 
 .split-auth-input {
@@ -767,7 +752,7 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
   padding: 10px 14px;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 13px;
   color: #E5E7EB;
   width: 100%;
@@ -776,7 +761,7 @@ body {
 }
 
 .split-auth-input:focus {
-  border-color: rgba(240, 180, 41, 0.5);
+  border-color: rgba(13, 148, 136, 0.5);
 }
 
 .split-auth-input::placeholder {
@@ -803,12 +788,12 @@ body {
 
 .split-auth-submit {
   width: 100%;
-  background: #F0B429;
-  color: #0A0A0B;
+  background: #0D9488;
+  color: #FFFFFF;
   border: none;
   border-radius: 8px;
   padding: 10px 16px;
-  font-family: 'Schibsted Grotesk', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -817,7 +802,7 @@ body {
 }
 
 .split-auth-submit:hover:not(:disabled) {
-  background: #F7D070;
+  background: #14B8A6;
 }
 
 .split-auth-submit:disabled {
@@ -1035,7 +1020,6 @@ body {
 /* ── Reduced Motion ── */
 @media (prefers-reduced-motion: reduce) {
   .split-hero-robot-wrap,
-  .split-antenna-glow,
   .split-pipeline-particle,
   .split-typewriter-cursor {
     animation: none !important;

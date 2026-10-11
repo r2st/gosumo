@@ -1,5 +1,5 @@
 /**
- * `use-integrations.ts` — third-party credentials and GoSumo's own API keys.
+ * `use-integrations.ts` — third-party credentials and DoAide's own API keys.
  *
  * `useIntegrationCredentials` is the only hook in the codebase that reshapes
  * its response: the API returns `{ integrations: [...] }` and the hook rekeys

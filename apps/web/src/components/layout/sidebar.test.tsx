@@ -141,7 +141,7 @@ describe('Sidebar', () => {
     expect(screen.getByText('Leads')).toBeInTheDocument();
   });
 
-  it('credits GoSumo in the sidebar footer', () => {
+  it('credits DoAide in the sidebar footer', () => {
     renderSidebar();
     expect(screen.getByText(/AI-powered lead management/)).toBeInTheDocument();
   });

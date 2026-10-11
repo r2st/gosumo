@@ -3,14 +3,14 @@ import Link from 'next/link';
 import { PublicNav, PublicFooter } from '@/components/public-layout';
 
 export const metadata: Metadata = {
-  title: 'About GoSumo Realty — AI Helpdesk for Indian SMBs',
+  title: 'About DoAide Desk — AI Helpdesk for Indian SMBs',
   description:
-    'GoSumo Realty is an AI-powered customer support platform built for Indian SMBs. Unified inbox across WhatsApp, email, and Instagram with smart ticket routing.',
+    'DoAide Desk is an AI-powered customer support platform built for Indian SMBs. Unified inbox across WhatsApp, email, and Instagram with smart ticket routing.',
   openGraph: {
-    title: 'About GoSumo Realty — AI Helpdesk for Indian SMBs',
+    title: 'About DoAide Desk — AI Helpdesk for Indian SMBs',
     description:
       'AI-powered customer support platform with unified inbox, smart routing, and multilingual support for Indian businesses.',
-    url: 'https://gosumo.aiknol.com/about',
+    url: 'https://desk.doaide.com/about',
   },
 };
 
@@ -31,7 +31,7 @@ const TESTIMONIALS = [
   },
   {
     quote:
-      'During Diwali, our ticket volume tripled overnight. GoSumo Realty\'s smart routing kept our SLAs intact without emergency hiring. That alone paid for the entire year.',
+      'During Diwali, our ticket volume tripled overnight. DoAide Desk\'s smart routing kept our SLAs intact without emergency hiring. That alone paid for the entire year.',
     name: 'Amit Choudhary',
     role: 'Operations Manager, GiftBox India',
     location: 'Jaipur',
@@ -47,19 +47,19 @@ const TESTIMONIALS = [
 
 const FAQ_ITEMS = [
   {
-    question: 'What is GoSumo Realty?',
+    question: 'What is DoAide Desk?',
     answer:
-      'GoSumo Realty is an AI-powered customer support platform that unifies your conversations across WhatsApp, email, Instagram, SMS, and web chat into a single intelligent inbox. It uses AI to auto-categorize tickets, suggest replies, and route conversations to the right agent.',
+      'DoAide Desk is an AI-powered customer support platform that unifies your conversations across WhatsApp, email, Instagram, SMS, and web chat into a single intelligent inbox. It uses AI to auto-categorize tickets, suggest replies, and route conversations to the right agent.',
   },
   {
-    question: 'Is GoSumo Realty suitable for small businesses?',
+    question: 'Is DoAide Desk suitable for small businesses?',
     answer:
-      'Yes. GoSumo Realty is designed specifically for Indian SMBs. Our pricing starts at affordable tiers, and teams as small as 2-3 agents see immediate improvements in response time and customer satisfaction.',
+      'Yes. DoAide Desk is designed specifically for Indian SMBs. Our pricing starts at affordable tiers, and teams as small as 2-3 agents see immediate improvements in response time and customer satisfaction.',
   },
   {
-    question: 'Does GoSumo Realty support WhatsApp?',
+    question: 'Does DoAide Desk support WhatsApp?',
     answer:
-      'Yes. GoSumo Realty integrates with the WhatsApp Business API. Every WhatsApp message automatically creates a trackable ticket, preserves conversation history, and supports media attachments like photos and documents.',
+      'Yes. DoAide Desk integrates with the WhatsApp Business API. Every WhatsApp message automatically creates a trackable ticket, preserves conversation history, and supports media attachments like photos and documents.',
   },
   {
     question: 'What languages does the AI support?',
@@ -67,19 +67,19 @@ const FAQ_ITEMS = [
       'The AI supports English, Hindi, and other major Indian languages. It can detect the language of incoming messages automatically and suggest replies in the customer\'s preferred language, including code-switched conversations.',
   },
   {
-    question: 'Can I try GoSumo Realty for free?',
+    question: 'Can I try DoAide Desk for free?',
     answer:
       'Yes. We offer free tools including a Response Time Calculator, Ticket Volume Forecaster, and CSAT Calculator. You can also sign up for a free trial of the full platform to see the AI helpdesk in action with your team.',
   },
   {
     question: 'How does AI ticket routing work?',
     answer:
-      'GoSumo Realty\'s AI reads the content of incoming messages, identifies the topic and urgency, and routes the ticket to the agent or team best equipped to handle it. This happens in under a second, eliminating manual triage and reducing transfer rates.',
+      'DoAide Desk\'s AI reads the content of incoming messages, identifies the topic and urgency, and routes the ticket to the agent or team best equipped to handle it. This happens in under a second, eliminating manual triage and reducing transfer rates.',
   },
   {
     question: 'Is my customer data secure?',
     answer:
-      'Yes. GoSumo Realty uses industry-standard encryption for data in transit and at rest. We do not share customer data with third parties, and our infrastructure is hosted on secure cloud servers with regular security audits.',
+      'Yes. DoAide Desk uses industry-standard encryption for data in transit and at rest. We do not share customer data with third parties, and our infrastructure is hosted on secure cloud servers with regular security audits.',
   },
   {
     question: 'How long does it take to set up?',
@@ -90,24 +90,24 @@ const FAQ_ITEMS = [
 
 export default function AboutPage() {
   return (
-    <div className="min-h-screen bg-[var(--doaide-bg)]">
+    <div className="min-h-screen bg-[var(--da-bg)]">
       <PublicNav />
       <main className="max-w-4xl mx-auto px-6 py-16">
         {/* Hero */}
         <section className="text-center mb-20">
           <h1
-            className="text-4xl font-bold text-[var(--doaide-text)] mb-4"
-            style={{ fontFamily: 'var(--doaide-font-display)' }}
+            className="text-4xl font-bold text-[var(--da-text)] mb-4"
+            style={{ fontFamily: 'var(--da-font-display)' }}
           >
             AI-Powered Customer Support for Indian Businesses
           </h1>
-          <p className="text-lg text-[var(--doaide-text-secondary)] max-w-2xl mx-auto mb-8">
-            GoSumo Realty unifies WhatsApp, email, Instagram, and web chat into one intelligent inbox.
+          <p className="text-lg text-[var(--da-text-secondary)] max-w-2xl mx-auto mb-8">
+            DoAide Desk unifies WhatsApp, email, Instagram, and web chat into one intelligent inbox.
             AI handles the routine — your team handles what matters.
           </p>
           <Link
             href="/"
-            className="inline-block px-6 py-3 rounded-lg text-sm font-semibold bg-[var(--doaide-gold)] text-[var(--doaide-text-on-gold)] hover:bg-[var(--doaide-gold-hover)] no-underline transition-colors"
+            className="inline-block px-6 py-3 rounded-lg text-sm font-semibold bg-[var(--da-gold)] text-[var(--da-text-on-gold)] hover:bg-[var(--da-gold-hover)] no-underline transition-colors"
           >
             Start Free Trial
           </Link>
@@ -116,8 +116,8 @@ export default function AboutPage() {
         {/* Testimonials */}
         <section className="mb-20">
           <h2
-            className="text-2xl font-bold text-[var(--doaide-text)] text-center mb-10"
-            style={{ fontFamily: 'var(--doaide-font-display)' }}
+            className="text-2xl font-bold text-[var(--da-text)] text-center mb-10"
+            style={{ fontFamily: 'var(--da-font-display)' }}
           >
             Trusted by Indian Businesses
           </h2>
@@ -125,14 +125,14 @@ export default function AboutPage() {
             {TESTIMONIALS.map((t) => (
               <div
                 key={t.name}
-                className="p-6 rounded-xl border border-[var(--doaide-border)] bg-[var(--doaide-surface)]"
+                className="p-6 rounded-xl border border-[var(--da-border)] bg-[var(--da-surface)]"
               >
-                <p className="text-[var(--doaide-text-secondary)] text-sm leading-relaxed mb-4 italic">
+                <p className="text-[var(--da-text-secondary)] text-sm leading-relaxed mb-4 italic">
                   &ldquo;{t.quote}&rdquo;
                 </p>
                 <div>
-                  <p className="text-sm font-semibold text-[var(--doaide-text)]">{t.name}</p>
-                  <p className="text-xs text-[var(--doaide-text-muted)]">
+                  <p className="text-sm font-semibold text-[var(--da-text)]">{t.name}</p>
+                  <p className="text-xs text-[var(--da-text-muted)]">
                     {t.role} &middot; {t.location}
                   </p>
                 </div>
@@ -144,8 +144,8 @@ export default function AboutPage() {
         {/* FAQ */}
         <section className="mb-16">
           <h2
-            className="text-2xl font-bold text-[var(--doaide-text)] text-center mb-10"
-            style={{ fontFamily: 'var(--doaide-font-display)' }}
+            className="text-2xl font-bold text-[var(--da-text)] text-center mb-10"
+            style={{ fontFamily: 'var(--da-font-display)' }}
           >
             Frequently Asked Questions
           </h2>
@@ -153,15 +153,15 @@ export default function AboutPage() {
             {FAQ_ITEMS.map((faq) => (
               <details
                 key={faq.question}
-                className="group rounded-xl border border-[var(--doaide-border)] bg-[var(--doaide-surface)] overflow-hidden"
+                className="group rounded-xl border border-[var(--da-border)] bg-[var(--da-surface)] overflow-hidden"
               >
-                <summary className="cursor-pointer px-6 py-4 text-sm font-semibold text-[var(--doaide-text)] list-none flex items-center justify-between gap-4">
+                <summary className="cursor-pointer px-6 py-4 text-sm font-semibold text-[var(--da-text)] list-none flex items-center justify-between gap-4">
                   {faq.question}
-                  <span className="text-[var(--doaide-text-muted)] text-xs transition-transform group-open:rotate-45">
+                  <span className="text-[var(--da-text-muted)] text-xs transition-transform group-open:rotate-45">
                     +
                   </span>
                 </summary>
-                <div className="px-6 pb-4 text-sm text-[var(--doaide-text-secondary)] leading-relaxed">
+                <div className="px-6 pb-4 text-sm text-[var(--da-text-secondary)] leading-relaxed">
                   {faq.answer}
                 </div>
               </details>
@@ -170,16 +170,16 @@ export default function AboutPage() {
         </section>
 
         {/* CTA */}
-        <section className="text-center py-12 rounded-xl border border-[var(--doaide-border)] bg-[var(--doaide-surface)]">
-          <h2 className="text-xl font-bold text-[var(--doaide-text)] mb-3" style={{ fontFamily: 'var(--doaide-font-display)' }}>
+        <section className="text-center py-12 rounded-xl border border-[var(--da-border)] bg-[var(--da-surface)]">
+          <h2 className="text-xl font-bold text-[var(--da-text)] mb-3" style={{ fontFamily: 'var(--da-font-display)' }}>
             Ready to transform your support?
           </h2>
-          <p className="text-sm text-[var(--doaide-text-secondary)] mb-6">
-            Join hundreds of Indian businesses using GoSumo Realty to deliver faster, smarter support.
+          <p className="text-sm text-[var(--da-text-secondary)] mb-6">
+            Join hundreds of Indian businesses using DoAide Desk to deliver faster, smarter support.
           </p>
           <Link
             href="/"
-            className="inline-block px-6 py-3 rounded-lg text-sm font-semibold bg-[var(--doaide-gold)] text-[var(--doaide-text-on-gold)] hover:bg-[var(--doaide-gold-hover)] no-underline transition-colors"
+            className="inline-block px-6 py-3 rounded-lg text-sm font-semibold bg-[var(--da-gold)] text-[var(--da-text-on-gold)] hover:bg-[var(--da-gold-hover)] no-underline transition-colors"
           >
             Get Started Free
           </Link>

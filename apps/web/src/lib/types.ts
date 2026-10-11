@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// GoSumo API contract types.
+// DoAide API contract types.
 //
 // These mirror the shapes documented in API_DESIGN.md. They intentionally live in
 // the web app (rather than importing @gosumo/shared) so the frontend stays

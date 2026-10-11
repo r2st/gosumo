@@ -1,4 +1,4 @@
-// GoSumo Realty — DPDPA compliance types (backend `compliance` module).
+// DoAide Desk — DPDPA compliance types (backend `compliance` module).
 // Kept local so the web app builds independently (see apps/web/CLAUDE.md).
 
 export type ConsentType = 'PROCESSING' | 'MARKETING' | 'EXCHANGE';

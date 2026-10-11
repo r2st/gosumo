@@ -48,13 +48,13 @@ const TOOLS = [
 
 export default function ToolsIndex() {
   return (
-    <div className="min-h-screen bg-[var(--doaide-bg)]">
+    <div className="min-h-screen bg-[var(--da-bg)]">
       <PublicNav />
       <main className="max-w-5xl mx-auto px-6 py-16">
-        <h1 className="text-3xl font-bold text-[var(--doaide-text)] mb-2" style={{ fontFamily: 'var(--doaide-font-display)' }}>
+        <h1 className="text-3xl font-bold text-[var(--da-text)] mb-2" style={{ fontFamily: 'var(--da-font-display)' }}>
           Free Customer Support Tools
         </h1>
-        <p className="text-[var(--doaide-text-secondary)] mb-10 max-w-2xl">
+        <p className="text-[var(--da-text-secondary)] mb-10 max-w-2xl">
           Practical calculators to help support teams measure performance, plan capacity, and track customer satisfaction — no sign-up required.
         </p>
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -62,13 +62,13 @@ export default function ToolsIndex() {
             <Link
               key={tool.slug}
               href={`/tools/${tool.slug}`}
-              className="block p-6 rounded-xl border border-[var(--doaide-border)] bg-[var(--doaide-surface)] hover:border-[var(--doaide-gold)] hover:shadow-[var(--doaide-shadow-gold)] transition-all no-underline group"
+              className="block p-6 rounded-xl border border-[var(--da-border)] bg-[var(--da-surface)] hover:border-[var(--da-gold)] hover:shadow-[var(--da-shadow-gold)] transition-all no-underline group"
             >
               <div className="text-3xl mb-3">{tool.icon}</div>
-              <h2 className="text-lg font-semibold text-[var(--doaide-text)] group-hover:text-[var(--doaide-gold)] transition-colors mb-2">
+              <h2 className="text-lg font-semibold text-[var(--da-text)] group-hover:text-[var(--da-gold)] transition-colors mb-2">
                 {tool.title}
               </h2>
-              <p className="text-sm text-[var(--doaide-text-secondary)]">{tool.description}</p>
+              <p className="text-sm text-[var(--da-text-secondary)]">{tool.description}</p>
             </Link>
           ))}
         </div>

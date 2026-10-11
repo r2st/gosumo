@@ -59,9 +59,9 @@ const config: Config = {
         lg: 'var(--shadow-lg)',
       },
       fontFamily: {
-        sans: ["'Schibsted Grotesk'", 'system-ui', '-apple-system', 'sans-serif'],
-        heading: ["'Instrument Serif'", 'Georgia', 'serif'],
-        mono: ["'IBM Plex Mono'", 'monospace'],
+        sans: ["'Inter'", 'system-ui', '-apple-system', 'sans-serif'],
+        heading: ["'Inter'", 'system-ui', '-apple-system', 'sans-serif'],
+        mono: ["'Inter'", 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       keyframes: {
         'fade-in': {

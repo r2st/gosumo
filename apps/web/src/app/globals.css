@@ -16,12 +16,12 @@
     --muted: 240 5% 96%;                 /* #F4F4F5 */
     --muted-foreground: 240 4% 46%;      /* #71717A */
 
-    /* Gold accent as brand primary */
-    --primary: 42 87% 45%;               /* #C49520 — darkened for light-bg contrast */
+    /* Teal accent as brand primary */
+    --primary: 173 82% 30%;              /* #0D9488 — teal-600 */
     --primary-foreground: 0 0% 100%;     /* #FFFFFF */
 
-    --accent: 42 40% 94%;               /* light gold tint background */
-    --accent-foreground: 42 87% 40%;    /* dark gold text */
+    --accent: 173 40% 95%;              /* light teal tint background */
+    --accent-foreground: 173 82% 25%;   /* dark teal text */
 
     --success: 160 64% 38%;             /* #22A06B — darkened for contrast */
     --success-foreground: 0 0% 100%;
@@ -34,12 +34,12 @@
 
     --border: 240 6% 90%;               /* #E4E4E7 */
     --input: 240 6% 90%;                /* #E4E4E7 */
-    --ring: 42 87% 45%;                 /* gold */
+    --ring: 173 82% 30%;                /* teal */
 
     --sidebar: 0 0% 98%;                /* #FAFAFA */
     --sidebar-foreground: 240 5% 10%;
     --sidebar-muted: 240 4% 46%;        /* #71717A */
-    --sidebar-active: 42 87% 45%;       /* gold */
+    --sidebar-active: 173 82% 30%;      /* teal */
     --sidebar-border: 240 6% 90%;
 
     --radius: 0.5rem;
@@ -62,11 +62,11 @@
     --muted: 240 4% 14%;               /* ~#222225 */
     --muted-foreground: 218 11% 65%;    /* #9CA3AF */
 
-    --primary: 42 87% 55%;             /* #F0B429 */
-    --primary-foreground: 240 5% 4%;   /* #0A0A0B */
+    --primary: 173 58% 39%;            /* #14B8A6 — teal-400 */
+    --primary-foreground: 0 0% 100%;   /* #FFFFFF */
 
-    --accent: 42 40% 12%;              /* subtle gold tint background */
-    --accent-foreground: 42 87% 55%;   /* #F0B429 */
+    --accent: 173 40% 12%;             /* subtle teal tint background */
+    --accent-foreground: 173 58% 39%;  /* #14B8A6 */
 
     --success: 160 64% 52%;            /* #34D399 */
     --success-foreground: 240 5% 4%;
@@ -79,12 +79,12 @@
 
     --border: 240 4% 17%;              /* #2A2A2D */
     --input: 240 4% 20%;               /* #303033 */
-    --ring: 42 87% 55%;                /* gold */
+    --ring: 173 58% 39%;               /* teal */
 
     --sidebar: 240 5% 4%;              /* #0A0A0B */
     --sidebar-foreground: 220 13% 91%;
     --sidebar-muted: 220 9% 46%;       /* #6B7280 */
-    --sidebar-active: 42 87% 55%;      /* gold */
+    --sidebar-active: 173 58% 39%;     /* teal */
     --sidebar-border: 240 4% 17%;
 
     --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.30);
@@ -104,8 +104,7 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: 'Schibsted Grotesk', system-ui, -apple-system, sans-serif;
-    font-feature-settings: 'cv11', 'ss01';
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
     overflow-x: hidden;
   }
 

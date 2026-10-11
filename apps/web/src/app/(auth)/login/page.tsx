@@ -87,7 +87,7 @@ function LoginForm() {
       </div>
 
       <p className="doaide-auth-switch">
-        New to GoSumo Realty?{' '}
+        New to DoAide Desk?{' '}
         <Link href="/register" className="doaide-auth-link">Create a business account</Link>
       </p>
     </div>

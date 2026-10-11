@@ -1,4 +1,4 @@
-// GoSumo Realty — frontend types mirroring the API DTOs (apps/api realty modules).
+// DoAide Desk — frontend types mirroring the API DTOs (apps/api realty modules).
 
 export type LeadStage =
   | 'NEW'

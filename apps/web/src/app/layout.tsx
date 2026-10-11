@@ -10,17 +10,17 @@ import { FeedbackWidget } from '@/components/feedback-widget';
 
 export const metadata: Metadata = {
   title: {
-    default: 'GoSumo Realty',
-    template: '%s · GoSumo Realty',
+    default: 'DoAide Desk',
+    template: '%s · DoAide Desk',
   },
   description:
-    'GoSumo Realty is an AI-powered lead management platform for real estate brokers in India — capture, qualify and follow up across WhatsApp, portals and Meta ads.',
-  applicationName: 'GoSumo Realty',
+    'DoAide Desk is an AI-powered lead management platform for real estate brokers in India — capture, qualify and follow up across WhatsApp, portals and Meta ads.',
+  applicationName: 'DoAide Desk',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'GoSumo Realty',
+    title: 'DoAide Desk',
   },
   icons: {
     icon: [
@@ -32,24 +32,24 @@ export const metadata: Metadata = {
     apple: [{ url: '/favicon-192x192.png', sizes: '192x192', type: 'image/png' }],
   },
   openGraph: {
-    title: 'GoSumo Realty — AI-Powered Lead Management',
+    title: 'DoAide Desk — AI-Powered Lead Management',
     description:
       'AI-powered lead management for real estate brokers — capture buyers from WhatsApp, portals and Meta ads, qualify with AI, and close more deals.',
-    url: 'https://gosumo.aiknol.com',
-    siteName: 'GoSumo',
+    url: 'https://desk.doaide.com',
+    siteName: 'DoAide',
     type: 'website',
     images: [
       {
-        url: 'https://gosumo.aiknol.com/og-image.png',
+        url: 'https://desk.doaide.com/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'GoSumo Realty — AI-Powered Lead Management',
+        alt: 'DoAide Desk — AI-Powered Lead Management',
       },
     ],
   },
   twitter: {
     card: 'summary',
-    title: 'GoSumo Realty — AI-Powered Lead Management',
+    title: 'DoAide Desk — AI-Powered Lead Management',
     description: 'AI-powered lead management for real estate brokers.',
   },
 };
@@ -79,17 +79,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             __html: JSON.stringify({
               '@context': 'https://schema.org',
               '@type': 'SoftwareApplication',
-              name: 'GoSumo Realty',
+              name: 'DoAide Desk',
               description:
                 'AI-powered lead management platform for real estate brokers in India.',
-              url: 'https://gosumo.aiknol.com',
+              url: 'https://desk.doaide.com',
               applicationCategory: 'BusinessApplication',
               operatingSystem: 'Web',
               offers: { '@type': 'Offer', price: '0', priceCurrency: 'INR' },
               author: {
                 '@type': 'Organization',
                 name: 'Apprend Technologies',
-                url: 'https://gosumo.aiknol.com',
+                url: 'https://desk.doaide.com',
               },
             }),
           }}
