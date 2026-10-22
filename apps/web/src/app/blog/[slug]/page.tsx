@@ -1296,6 +1296,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: post.title,
     description: post.content.slice(0, 155).replace(/\n/g, ' '),
+    alternates: { canonical: `/blog/${slug}` },
     openGraph: {
       title: `${post.title} — DoAide Desk Blog`,
       description: post.content.slice(0, 155).replace(/\n/g, ' '),

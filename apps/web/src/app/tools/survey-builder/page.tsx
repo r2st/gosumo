@@ -3,6 +3,7 @@ import { PublicNav, PublicFooter } from '@/components/public-layout';
 import { SurveyBuilder } from './builder';
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/tools/survey-builder' },
   title: 'Customer Satisfaction Survey Builder',
   description: 'Build customer satisfaction surveys with pre-written questions and rating scales. Free tool by DoAide Desk.',
   openGraph: {

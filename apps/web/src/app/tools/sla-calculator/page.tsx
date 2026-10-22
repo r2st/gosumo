@@ -3,6 +3,7 @@ import { PublicNav, PublicFooter } from '@/components/public-layout';
 import { SlaCalculator } from './calculator';
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/tools/sla-calculator' },
   title: 'SLA Calculator',
   description: 'Calculate uptime targets, allowed downtime, and staffing needs from your SLA. Free tool by DoAide Desk.',
   openGraph: {

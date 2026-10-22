@@ -3,6 +3,7 @@ import { PublicNav, PublicFooter } from '@/components/public-layout';
 import { CsatCalculator } from './calculator';
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/tools/csat-calculator' },
   title: 'CSAT Calculator',
   description: 'Calculate Customer Satisfaction Score from survey responses. Free tool by DoAide Desk.',
   openGraph: {

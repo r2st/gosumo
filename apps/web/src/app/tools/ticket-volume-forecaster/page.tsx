@@ -3,6 +3,7 @@ import { PublicNav, PublicFooter } from '@/components/public-layout';
 import { TicketVolumeForecaster } from './forecaster';
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/tools/ticket-volume-forecaster' },
   title: 'Ticket Volume Forecaster',
   description: 'Predict weekly and monthly ticket volume from historical data. Free tool by DoAide Desk.',
   openGraph: {

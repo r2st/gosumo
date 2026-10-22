@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { PublicNav, PublicFooter } from '@/components/public-layout';
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/tools' },
   title: 'Free Customer Support Tools',
   description: 'Free calculators for support teams: response time calculator, ticket volume forecaster, and CSAT calculator.',
 };

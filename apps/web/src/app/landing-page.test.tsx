@@ -147,8 +147,11 @@ describe('landing page — branding', () => {
 
 describe('landing page — metadata', () => {
   it('describes the product in its page metadata', () => {
-    expect(homeMetadata.title).toBe('DoAide Desk — AI-powered lead management for real estate brokers');
-    expect(String(homeMetadata.description)).toContain('AI-driven interface');
+    expect(homeMetadata.title).toEqual({
+      absolute: 'DoAide Desk — AI Helpdesk & Customer Support for Indian Businesses',
+    });
+    expect(String(homeMetadata.description)).toContain('without signing up');
+    expect(homeMetadata.alternates?.canonical).toBe('/');
   });
 });
 

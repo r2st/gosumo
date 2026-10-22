@@ -3,6 +3,7 @@ import { PublicNav, PublicFooter } from '@/components/public-layout';
 import { EmbedGenerator } from './generator';
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/embed' },
   title: 'Embed Widget Generator',
   description: 'Generate an embeddable DoAide Desk support widget for your website.',
   openGraph: {

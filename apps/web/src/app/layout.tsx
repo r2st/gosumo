@@ -14,7 +14,8 @@ export const metadata: Metadata = {
     template: '%s · DoAide Desk',
   },
   description:
-    'DoAide Desk is an AI-powered lead management platform for real estate brokers in India — capture, qualify and follow up across WhatsApp, portals and Meta ads.',
+    'DoAide Desk is an AI-powered helpdesk for Indian businesses — one inbox for WhatsApp, Instagram, SMS, email and web chat, with AI-drafted replies and login-free ticket submission.',
+  metadataBase: new URL('https://desk.doaide.com'),
   applicationName: 'DoAide Desk',
   manifest: '/manifest.json',
   appleWebApp: {
@@ -32,9 +33,9 @@ export const metadata: Metadata = {
     apple: [{ url: '/favicon-192x192.png', sizes: '192x192', type: 'image/png' }],
   },
   openGraph: {
-    title: 'DoAide Desk — AI-Powered Lead Management',
+    title: 'DoAide Desk — AI Helpdesk for Indian Businesses',
     description:
-      'AI-powered lead management for real estate brokers — capture buyers from WhatsApp, portals and Meta ads, qualify with AI, and close more deals.',
+      'One inbox for WhatsApp, Instagram, SMS, email and web chat. AI-drafted replies, smart routing, and support tickets customers can raise without signing up.',
     url: 'https://desk.doaide.com',
     siteName: 'DoAide',
     type: 'website',
@@ -43,14 +44,14 @@ export const metadata: Metadata = {
         url: 'https://desk.doaide.com/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'DoAide Desk — AI-Powered Lead Management',
+        alt: 'DoAide Desk — AI Helpdesk for Indian Businesses',
       },
     ],
   },
   twitter: {
     card: 'summary',
-    title: 'DoAide Desk — AI-Powered Lead Management',
-    description: 'AI-powered lead management for real estate brokers.',
+    title: 'DoAide Desk — AI Helpdesk for Indian Businesses',
+    description: 'One inbox for WhatsApp, email and web chat, with AI-drafted replies.',
   },
 };
 
@@ -81,7 +82,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               '@type': 'SoftwareApplication',
               name: 'DoAide Desk',
               description:
-                'AI-powered lead management platform for real estate brokers in India.',
+                'AI-powered helpdesk and customer support platform for Indian businesses.',
               url: 'https://desk.doaide.com',
               applicationCategory: 'BusinessApplication',
               operatingSystem: 'Web',

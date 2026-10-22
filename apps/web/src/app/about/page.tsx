@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { PublicNav, PublicFooter } from '@/components/public-layout';
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/about' },
   title: 'About DoAide Desk — AI Helpdesk for Indian SMBs',
   description:
     'DoAide Desk is an AI-powered customer support platform built for Indian SMBs. Unified inbox across WhatsApp, email, and Instagram with smart ticket routing.',
@@ -14,34 +15,22 @@ export const metadata: Metadata = {
   },
 };
 
-const TESTIMONIALS = [
+const PRINCIPLES = [
   {
-    quote:
-      'We went from 4-hour response times to under 15 minutes. Our 3-person team now handles 200+ daily queries across WhatsApp and email without breaking a sweat.',
-    name: 'Rajesh Mehta',
-    role: 'Founder, Mehta Textiles',
-    location: 'Surat',
+    title: 'Every channel, one queue',
+    body: 'WhatsApp, email, Instagram, SMS and web chat arrive in a single inbox with the full customer history alongside.',
   },
   {
-    quote:
-      'The AI auto-replies handle 60% of our routine questions — order tracking, return status, payment confirmations. Our agents finally have time for the conversations that matter.',
-    name: 'Priya Nair',
-    role: 'Head of CX, ShopKart',
-    location: 'Bengaluru',
+    title: 'AI that knows when to ask',
+    body: 'High-confidence answers are sent automatically, uncertain ones are drafted for review, and anything unclear goes to a person.',
   },
   {
-    quote:
-      'During Diwali, our ticket volume tripled overnight. DoAide Desk\'s smart routing kept our SLAs intact without emergency hiring. That alone paid for the entire year.',
-    name: 'Amit Choudhary',
-    role: 'Operations Manager, GiftBox India',
-    location: 'Jaipur',
+    title: 'Customers never need an account',
+    body: 'A public support link lets anyone raise a ticket from their phone in under a minute.',
   },
   {
-    quote:
-      'Our customers message us in Hindi, English, and Gujarati — sometimes all in one conversation. The multilingual AI handles it seamlessly and suggests replies in the right language.',
-    name: 'Sneha Patel',
-    role: 'Co-founder, UrbanCraft Studio',
-    location: 'Ahmedabad',
+    title: 'Hindi, English and Hinglish',
+    body: 'Replies are suggested in the language the customer wrote in, including mixed-language messages.',
   },
 ];
 
@@ -113,29 +102,22 @@ export default function AboutPage() {
           </Link>
         </section>
 
-        {/* Testimonials */}
+        {/* Principles */}
         <section className="mb-20">
           <h2
             className="text-2xl font-bold text-[var(--da-text)] text-center mb-10"
             style={{ fontFamily: 'var(--da-font-display)' }}
           >
-            Trusted by Indian Businesses
+            How DoAide Desk works
           </h2>
           <div className="grid gap-6 sm:grid-cols-2">
-            {TESTIMONIALS.map((t) => (
+            {PRINCIPLES.map((p) => (
               <div
-                key={t.name}
+                key={p.title}
                 className="p-6 rounded-xl border border-[var(--da-border)] bg-[var(--da-surface)]"
               >
-                <p className="text-[var(--da-text-secondary)] text-sm leading-relaxed mb-4 italic">
-                  &ldquo;{t.quote}&rdquo;
-                </p>
-                <div>
-                  <p className="text-sm font-semibold text-[var(--da-text)]">{t.name}</p>
-                  <p className="text-xs text-[var(--da-text-muted)]">
-                    {t.role} &middot; {t.location}
-                  </p>
-                </div>
+                <h3 className="text-sm font-semibold text-[var(--da-text)] mb-2">{p.title}</h3>
+                <p className="text-[var(--da-text-secondary)] text-sm leading-relaxed">{p.body}</p>
               </div>
             ))}
           </div>

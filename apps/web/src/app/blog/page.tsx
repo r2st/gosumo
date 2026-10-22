@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { PublicNav, PublicFooter } from '@/components/public-layout';
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/blog' },
   title: 'Blog',
   description: 'Insights on AI-powered customer support, team metrics, and automation strategies.',
 };

@@ -3,6 +3,7 @@ import { PublicNav, PublicFooter } from '@/components/public-layout';
 import { TicketTemplateGenerator } from './generator';
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/tools/ticket-template-generator' },
   title: 'Ticket Template Generator',
   description: 'Generate structured support ticket templates for bug reports, feature requests, and more. Free tool by DoAide Desk.',
   openGraph: {

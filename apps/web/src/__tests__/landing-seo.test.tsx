@@ -18,15 +18,16 @@ vi.mock('@/providers/auth-provider', () => ({
 }));
 
 describe('Landing page SEO sections', () => {
-  it('renders testimonials section', async () => {
+  it('renders capability highlights instead of attributed testimonials', async () => {
     const { LandingPage } = await import('@/app/landing-page');
     render(<LandingPage />);
 
-    expect(screen.getByText('Trusted by businesses across India')).toBeInTheDocument();
-    expect(screen.getByText('Meera Joshi')).toBeInTheDocument();
-    expect(screen.getByText('Arjun Reddy')).toBeInTheDocument();
-    expect(screen.getByText('Kavitha Nair')).toBeInTheDocument();
-    expect(screen.getByText('Rohit Sharma')).toBeInTheDocument();
+    expect(screen.getByText('Built for how Indian support teams work')).toBeInTheDocument();
+    expect(screen.getByText('One inbox for every channel')).toBeInTheDocument();
+    expect(screen.getByText('No sign-up for your customers')).toBeInTheDocument();
+    // No invented customer names or quotes.
+    expect(screen.queryByText('Meera Joshi')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Trusted by/)).not.toBeInTheDocument();
   });
 
   it('renders FAQ section', async () => {
@@ -45,7 +46,7 @@ describe('Landing page SEO sections', () => {
 
     const question = screen.getByText('What is DoAide Desk?');
     fireEvent.click(question);
-    expect(screen.getByText(/AI-powered lead management platform/)).toBeInTheDocument();
+    expect(screen.getByText(/AI-powered helpdesk for Indian businesses/)).toBeInTheDocument();
   });
 
   it('renders JSON-LD FAQPage schema', async () => {

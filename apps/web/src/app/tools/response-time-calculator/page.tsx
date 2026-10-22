@@ -3,6 +3,7 @@ import { PublicNav, PublicFooter } from '@/components/public-layout';
 import { ResponseTimeCalculator } from './calculator';
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/tools/response-time-calculator' },
   title: 'Response Time Calculator',
   description: 'Calculate average support response times and SLA compliance. Free tool by DoAide Desk.',
   openGraph: {

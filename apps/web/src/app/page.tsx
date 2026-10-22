@@ -4,9 +4,10 @@ import { LandingPage } from './landing-page';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'DoAide Desk — AI-powered lead management for real estate brokers',
+  title: { absolute: 'DoAide Desk — AI Helpdesk & Customer Support for Indian Businesses' },
   description:
-    'Capture, qualify and follow up on property leads across WhatsApp, portals and Meta ads through a single AI-driven interface. Built for real estate brokers in India.',
+    'Answer customers on WhatsApp, Instagram, SMS, email and web chat from one AI-powered inbox. Free to start, priced in rupees, and customers raise tickets without signing up.',
+  alternates: { canonical: '/' },
 };
 
 export default function Home() {

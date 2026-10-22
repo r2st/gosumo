@@ -13,37 +13,31 @@ const TYPEWRITER_PHRASES = [
   'Omnichannel support',
 ];
 
-const TESTIMONIALS = [
+// What the product actually does — stated as capabilities, not as quotes from
+// customers. The previous section carried named testimonials nobody gave.
+const HIGHLIGHTS = [
   {
-    quote: 'We used to miss WhatsApp messages all the time. DoAide pulled everything into one inbox — response time dropped from 4 hours to under 10 minutes.',
-    name: 'Meera Joshi',
-    role: 'Founder, Joshi Design Studio',
-    location: 'Mumbai',
+    title: 'One inbox for every channel',
+    body: 'WhatsApp, Instagram, SMS, email and web chat land in the same queue, so nothing slips through a tab you forgot to check.',
   },
   {
-    quote: 'Managing 50 clients across WhatsApp, email, and Instagram was chaos. Now my team of 3 handles it all from one screen. We have not lost a client to missed messages since.',
-    name: 'Arjun Reddy',
-    role: 'Managing Director, Reddy Consulting',
-    location: 'Hyderabad',
+    title: 'AI drafts, you approve',
+    body: 'Confident answers go out on their own; anything uncertain is drafted for a human to review before it is sent.',
   },
   {
-    quote: 'The AI reply suggestions save me at least an hour every day. It learns my tone and my pricing — I just review and send. Game changer for a solo freelancer.',
-    name: 'Kavitha Nair',
-    role: 'Independent Tax Consultant',
-    location: 'Kochi',
+    title: 'No sign-up for your customers',
+    body: 'Share a support link and customers raise a ticket in seconds — no account, no app to install.',
   },
   {
-    quote: 'We switched from Zoho because it was built for sales teams, not service businesses. DoAide understands how we actually work — conversations, not pipelines.',
-    name: 'Rohit Sharma',
-    role: 'Co-founder, BrightPath Tutoring',
-    location: 'Pune',
+    title: 'Priced for Indian teams',
+    body: 'Start on the free tier and pay in rupees as you grow. No per-seat enterprise contracts.',
   },
 ] as const;
 
 const FAQ_ITEMS = [
   {
     q: 'What is DoAide Desk?',
-    a: 'DoAide Desk is an AI-powered lead management platform for real estate brokers in India. It captures buyers from WhatsApp, portals and Meta ads, qualifies them with AI, and follows up automatically.',
+    a: 'DoAide Desk is an AI-powered helpdesk for Indian businesses. It brings customer conversations from WhatsApp, Instagram, SMS, email and web chat into one inbox, drafts replies with AI, and lets customers raise tickets without signing up.',
   },
   {
     q: 'Which messaging channels are supported?',
@@ -54,8 +48,8 @@ const FAQ_ITEMS = [
     a: 'The AI analyzes incoming messages for intent and urgency, suggests contextual replies based on your conversation history and business context, and can auto-respond to common questions. You always review before sending.',
   },
   {
-    q: 'Is DoAide suitable for independent brokers?',
-    a: 'Yes. DoAide Desk is designed for independent brokers, small agencies, and real estate teams. No complex setup, no enterprise-only pricing. Connect your channels and start managing leads in minutes.',
+    q: 'Is DoAide suitable for small teams?',
+    a: 'Yes. DoAide Desk is designed for freelancers, small agencies and support teams of a few people. No complex setup, no enterprise-only pricing. Connect your channels and start answering customers in minutes.',
   },
   {
     q: 'How much does it cost?',
@@ -526,23 +520,20 @@ export function LandingPage() {
         </div>
       </main>
 
-      {/* Social Proof — Testimonials */}
+      {/* Highlights */}
       <section className="split-below-fold" style={{ background: 'var(--da-bg-alt)', padding: '64px 24px' }}>
         <div style={{ maxWidth: 960, margin: '0 auto' }}>
           <h2 style={{ fontFamily: 'var(--da-font-display)', fontSize: '2rem', color: 'var(--da-text)', textAlign: 'center', marginBottom: 8 }}>
-            Trusted by businesses across India
+            Built for how Indian support teams work
           </h2>
           <p style={{ textAlign: 'center', color: 'var(--da-text-muted)', marginBottom: 40, fontSize: '0.95rem' }}>
-            Freelancers, agencies, and service businesses managing clients with DoAide Desk.
+            Freelancers, agencies and service businesses answering customers on the channels they already use.
           </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
-            {TESTIMONIALS.map((t) => (
-              <div key={t.name} style={{ background: 'var(--da-surface)', border: '1px solid var(--da-border)', borderRadius: 'var(--da-radius-lg)', padding: 24 }}>
-                <p style={{ color: 'var(--da-text-secondary)', fontSize: '0.9rem', lineHeight: 1.6, fontStyle: 'italic', marginBottom: 16 }}>
-                  &ldquo;{t.quote}&rdquo;
-                </p>
-                <p style={{ color: 'var(--da-text)', fontWeight: 600, fontSize: '0.85rem', marginBottom: 2 }}>{t.name}</p>
-                <p style={{ color: 'var(--da-text-muted)', fontSize: '0.8rem' }}>{t.role} · {t.location}</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 20 }}>
+            {HIGHLIGHTS.map((h) => (
+              <div key={h.title} style={{ background: 'var(--da-surface)', border: '1px solid var(--da-border)', borderRadius: 'var(--da-radius-lg)', padding: 24 }}>
+                <h3 style={{ color: 'var(--da-text)', fontWeight: 600, fontSize: '1rem', marginBottom: 8 }}>{h.title}</h3>
+                <p style={{ color: 'var(--da-text-secondary)', fontSize: '0.9rem', lineHeight: 1.6 }}>{h.body}</p>
               </div>
             ))}
           </div>
