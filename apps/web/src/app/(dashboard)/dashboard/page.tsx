@@ -20,6 +20,7 @@ import { MorningBriefing } from '@/components/dashboard/morning-briefing';
 import { BriefingMetrics } from '@/components/dashboard/briefing-metrics';
 import { NorthStarKpi } from '@/components/dashboard/north-star-kpi';
 import { SupportMetrics } from '@/components/dashboard/support-metrics';
+import { SupportLinkCard } from '@/components/dashboard/support-link-card';
 import {
   useBookings,
   useConversationReport,
@@ -47,6 +48,7 @@ export default function DashboardPage() {
       <div className="space-y-6 p-4 lg:p-6">
         {/* Helpdesk headline: open tickets, first response, satisfaction */}
         <SupportMetrics />
+        <SupportLinkCard />
 
         {/* DoAide Desk — morning briefing: four glance metrics + the 7:30 AM digest */}
         <BriefingMetrics />

@@ -63,3 +63,21 @@ describe('openWhatsApp', () => {
     expect(window.open).not.toHaveBeenCalled();
   });
 });
+
+describe('WhatsApp message helpers', () => {
+  it('writes a status update addressed to the customer', async () => {
+    const { ticketStatusMessage } = await import('./whatsapp-link');
+    expect(ticketStatusMessage('Asha', 'RESOLVED')).toBe(
+      'Hi Asha, your support request has been resolved. Reply here if anything is still not right.',
+    );
+    expect(ticketStatusMessage(null, 'PENDING')).toMatch(/^Hi, your support request is waiting on a reply from you/);
+    expect(ticketStatusMessage('A', 'SOMETHING_NEW')).toContain('has been updated');
+  });
+
+  it('builds a recipient-less share link with the support URL encoded', async () => {
+    const { buildWhatsAppShareLink, supportLinkMessage } = await import('./whatsapp-link');
+    const href = buildWhatsAppShareLink(supportLinkMessage('https://desk.doaide.com/support?w=abc'));
+    expect(href.startsWith('https://wa.me/?text=')).toBe(true);
+    expect(decodeURIComponent(href.split('text=')[1])).toContain('https://desk.doaide.com/support?w=abc');
+  });
+});

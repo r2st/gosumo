@@ -24,7 +24,7 @@ import { formatDayLabelIST, istDayKey } from '@/lib/format';
 import { friendlyError } from '@/lib/errors';
 import type { HitlTask, Message } from '@/lib/types';
 import { usePermissions } from '@/hooks/use-permissions';
-import { buildWhatsAppLink } from '@/lib/whatsapp-link';
+import { buildWhatsAppLink, ticketStatusMessage } from '@/lib/whatsapp-link';
 
 const QUICK_REPLIES = [
   'Thanks for reaching out! How can I help? 😊',
@@ -120,11 +120,14 @@ export function ConversationThread({ conversationId }: { conversationId: string 
         </div>
         {conversation.client?.phone && (
           <a
-            href={buildWhatsAppLink(conversation.client.phone)}
+            href={buildWhatsAppLink(
+              conversation.client.phone,
+              ticketStatusMessage(conversation.client.name, conversation.status),
+            )}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex h-8 items-center gap-1.5 rounded-md bg-green-600 px-2.5 text-xs font-medium text-white transition-colors hover:bg-green-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-1"
-            title="Open in WhatsApp"
+            title="Send a status update on WhatsApp"
           >
             <MessageCircle className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">WhatsApp</span>
