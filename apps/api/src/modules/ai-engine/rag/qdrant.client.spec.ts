@@ -29,7 +29,7 @@ describe('QdrantClient', () => {
 
   function build(url = 'http://qdrant.test:6333'): QdrantClient {
     const config = {
-      get: jest.fn((_key: string, fallback: string) => url || fallback),
+      get: jest.fn((key: string, fallback: string) => key === 'qdrant.url' ? url || fallback : undefined),
     };
     const client = new QdrantClient(config as unknown as ConfigService);
     warnSpy = jest
@@ -55,6 +55,13 @@ describe('QdrantClient', () => {
   // ─────────────────────────────────────────────
 
   describe('base URL', () => {
+    it('authenticates health and data requests with the configured API key', async () => {
+      const config = { get: jest.fn((key: string, fallback: string) => key === 'QDRANT_API_KEY' ? 'synthetic-key' : fallback) };
+      const client = new QdrantClient(config as unknown as ConfigService);
+      fetchMock.mockResolvedValue(ok);
+      expect(await client.isReachable()).toBe(true);
+      expect(fetchMock.mock.calls[0][1].headers['api-key']).toBe('synthetic-key');
+    });
     it('uses the configured Qdrant URL', async () => {
       fetchMock.mockResolvedValue(ok);
 

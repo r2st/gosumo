@@ -150,11 +150,12 @@ export class QdrantClient {
   }
 
   private request(method: string, path: string, body?: unknown): Promise<Response> {
+    const apiKey = this.configService.get<string>('QDRANT_API_KEY');
     return fetchWithTimeout(
       `${this.baseUrl}${path}`,
       {
         method,
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', ...(apiKey && { 'api-key': apiKey }) },
         ...(body !== undefined && { body: JSON.stringify(body) }),
       },
       { service: 'Qdrant' },
