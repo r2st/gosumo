@@ -8,6 +8,7 @@ import type {
   AgentPerformance,
   AutonomyReport,
   ClientReport,
+  ConversationQuality,
   DateRangeParams,
   FulfillmentBreakdown,
 } from '@/lib/feature-types';
@@ -21,6 +22,15 @@ export function useAutonomyReport(params: DateRangeParams) {
   return useQuery({
     queryKey: ['analytics', 'autonomy', params],
     queryFn: () => apiRequest<AutonomyReport>(`/analytics/autonomy${toQuery({ ...params })}`),
+  });
+}
+
+/** Resolution, first-response latency and CSAT (explicit + proxy) for a range. */
+export function useConversationQuality(params: DateRangeParams = {}) {
+  return useQuery({
+    queryKey: ['analytics', 'quality', params],
+    queryFn: () =>
+      apiRequest<ConversationQuality>(`/analytics/conversations/quality${toQuery({ ...params })}`),
   });
 }
 

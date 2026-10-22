@@ -11,6 +11,26 @@ export type AssignableRole = 'MANAGER' | 'STAFF' | 'VIEWER';
 
 export type Granularity = 'HOUR' | 'DAY' | 'WEEK';
 
+/** `GET /analytics/conversations/quality` — the fields the dashboard reads. */
+export interface ConversationQuality {
+  volume: { created: number; resolved: number; open: number; pendingHuman: number; escalated: number };
+  resolutionRate: number;
+  responseTime: {
+    avgFirstResponseSeconds: number;
+    p50FirstResponseSeconds: number;
+    p90FirstResponseSeconds: number;
+    sampleSize: number;
+  };
+  csat: {
+    explicitResponses: number;
+    explicitAverage: number | null;
+    proxySampled: number;
+    proxyAverage: number | null;
+    combinedAverage: number | null;
+    combinedSampled: number;
+  };
+}
+
 export interface DateRangeParams {
   from?: string;
   to?: string;

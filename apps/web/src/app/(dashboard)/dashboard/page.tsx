@@ -19,6 +19,7 @@ import { EmptyState, ErrorState } from '@/components/ui/states';
 import { MorningBriefing } from '@/components/dashboard/morning-briefing';
 import { BriefingMetrics } from '@/components/dashboard/briefing-metrics';
 import { NorthStarKpi } from '@/components/dashboard/north-star-kpi';
+import { SupportMetrics } from '@/components/dashboard/support-metrics';
 import {
   useBookings,
   useConversationReport,
@@ -44,6 +45,9 @@ export default function DashboardPage() {
       <PageHeader title="Dashboard" description="Today at a glance across all your channels." />
 
       <div className="space-y-6 p-4 lg:p-6">
+        {/* Helpdesk headline: open tickets, first response, satisfaction */}
+        <SupportMetrics />
+
         {/* DoAide Desk — morning briefing: four glance metrics + the 7:30 AM digest */}
         <BriefingMetrics />
         <MorningBriefing />

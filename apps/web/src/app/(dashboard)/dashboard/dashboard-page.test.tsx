@@ -55,6 +55,9 @@ vi.mock('next/link', () => ({
 vi.mock('@/components/dashboard/briefing-metrics', () => ({
   BriefingMetrics: () => <div data-testid="briefing-metrics" />,
 }));
+vi.mock('@/components/dashboard/support-metrics', () => ({
+  SupportMetrics: () => <div data-testid="support-metrics" />,
+}));
 vi.mock('@/components/dashboard/morning-briefing', () => ({
   MorningBriefing: () => <div data-testid="morning-briefing" />,
 }));
