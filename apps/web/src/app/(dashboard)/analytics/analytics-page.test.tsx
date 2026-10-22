@@ -185,7 +185,14 @@ vi.mock('@/lib/csv-export', async () => {
 
 import AnalyticsPage from './page';
 
-const goToTab = (label: string) => fireEvent.click(screen.getByRole('button', { name: label }));
+const goToTab = async (label: string) => {
+  fireEvent.click(screen.getByRole('button', { name: label }));
+  // The non-default sections are next/dynamic chunks; wait for the chunk
+  // import to settle so assertions see the loaded section.
+  await act(async () => {
+    await vi.dynamicImportSettled();
+  });
+};
 
 beforeEach(() => {
   state.metrics = q(METRICS);
@@ -201,7 +208,7 @@ beforeEach(() => {
 });
 
 describe('AnalyticsPage tabs', () => {
-  it('opens on Overview with the headline KPIs', () => {
+  it('opens on Overview with the headline KPIs', async () => {
     render(<AnalyticsPage />);
     // "Conversations" is also a tab label, so it is matched loosely here.
     expect(screen.getAllByText('Conversations').length).toBeGreaterThan(1);
@@ -209,36 +216,36 @@ describe('AnalyticsPage tabs', () => {
     expect(screen.getByText('Net revenue')).toBeInTheDocument();
   });
 
-  it('shows each tab its own section and drops the previous one', () => {
+  it('shows each tab its own section and drops the previous one', async () => {
     render(<AnalyticsPage />);
-    goToTab('Revenue');
+    await goToTab('Revenue');
     expect(screen.getByText('Revenue trend')).toBeInTheDocument();
     expect(screen.queryByText('AI vs human resolution')).toBeNull();
 
-    goToTab('Clients');
+    await goToTab('Clients');
     expect(screen.getByText('Client acquisition')).toBeInTheDocument();
     expect(screen.queryByText('Revenue trend')).toBeNull();
 
-    goToTab('AI Performance');
+    await goToTab('AI Performance');
     expect(screen.getByText('Confidence distribution')).toBeInTheDocument();
 
-    goToTab('Team');
+    await goToTab('Team');
     expect(screen.getByText('Agent leaderboard')).toBeInTheDocument();
 
-    goToTab('Conversations');
+    await goToTab('Conversations');
     expect(screen.getByText('Conversation volume')).toBeInTheDocument();
   });
 
-  it('puts the funnel and source ROI side by side on the Leads tab', () => {
+  it('puts the funnel and source ROI side by side on the Leads tab', async () => {
     render(<AnalyticsPage />);
-    goToTab('Leads');
+    await goToTab('Leads');
     expect(screen.getByText('No leads in the pipeline yet')).toBeInTheDocument();
     expect(screen.getByText('No leads to compare yet')).toBeInTheDocument();
   });
 });
 
 describe('AnalyticsPage exports', () => {
-  it('queues a PDF for the report type matching the active tab', () => {
+  it('queues a PDF for the report type matching the active tab', async () => {
     render(<AnalyticsPage />);
     fireEvent.click(screen.getByRole('button', { name: /PDF/ }));
     expect(exportReport).toHaveBeenCalledWith(
@@ -246,14 +253,14 @@ describe('AnalyticsPage exports', () => {
       expect.anything(),
     );
 
-    goToTab('Revenue');
+    await goToTab('Revenue');
     fireEvent.click(screen.getByRole('button', { name: /PDF/ }));
     expect(exportReport).toHaveBeenLastCalledWith(
       expect.objectContaining({ reportType: 'REVENUE' }),
       expect.anything(),
     );
 
-    goToTab('AI Performance');
+    await goToTab('AI Performance');
     fireEvent.click(screen.getByRole('button', { name: /PDF/ }));
     expect(exportReport).toHaveBeenLastCalledWith(
       expect.objectContaining({ reportType: 'AI_AUTONOMY' }),
@@ -267,7 +274,7 @@ describe('AnalyticsPage exports', () => {
    * a broken timer leaves the control reading "Queued" forever, and an operator
    * who wants a second export has no way to tell whether the first one landed.
    */
-  it('confirms the queue, then returns the button to its normal label', () => {
+  it('confirms the queue, then returns the button to its normal label', async () => {
     vi.useFakeTimers();
     try {
       render(<AnalyticsPage />);
@@ -287,9 +294,9 @@ describe('AnalyticsPage exports', () => {
     }
   });
 
-  it('exports the Leads tab as a client report', () => {
+  it('exports the Leads tab as a client report', async () => {
     render(<AnalyticsPage />);
-    goToTab('Leads');
+    await goToTab('Leads');
     fireEvent.click(screen.getByRole('button', { name: /PDF/ }));
     expect(exportReport).toHaveBeenCalledWith(
       expect.objectContaining({ reportType: 'CLIENTS' }),
@@ -297,7 +304,7 @@ describe('AnalyticsPage exports', () => {
     );
   });
 
-  it('passes the selected range through to the export', () => {
+  it('passes the selected range through to the export', async () => {
     render(<AnalyticsPage />);
     fireEvent.click(screen.getByRole('button', { name: '7 days' }));
     fireEvent.click(screen.getByRole('button', { name: /PDF/ }));
@@ -306,14 +313,14 @@ describe('AnalyticsPage exports', () => {
     expect(days).toBeLessThan(8);
   });
 
-  it('offers a VIEWER the CSV but not the server-rendered PDF', () => {
+  it('offers a VIEWER the CSV but not the server-rendered PDF', async () => {
     role = 'VIEWER';
     render(<AnalyticsPage />);
     expect(screen.queryByRole('button', { name: /PDF/ })).toBeNull();
     expect(screen.getByRole('button', { name: /Export/ })).toBeEnabled();
   });
 
-  it('builds a CSV of the on-screen summary, one row per metric', () => {
+  it('builds a CSV of the on-screen summary, one row per metric', async () => {
     render(<AnalyticsPage />);
     fireEvent.click(screen.getByRole('button', { name: /Export/ }));
 
@@ -328,7 +335,7 @@ describe('AnalyticsPage exports', () => {
     expect(csv).toContain('Channel — Instagram conversations');
   });
 
-  it('disables the CSV button and writes nothing until the metrics arrive', () => {
+  it('disables the CSV button and writes nothing until the metrics arrive', async () => {
     state.metrics = { ...q(undefined), isLoading: true };
     render(<AnalyticsPage />);
     expect(screen.getByRole('button', { name: /Export/ })).toBeDisabled();
@@ -337,7 +344,7 @@ describe('AnalyticsPage exports', () => {
 });
 
 describe('OverviewSection', () => {
-  it('summarises conversations, revenue, autonomy and clients', () => {
+  it('summarises conversations, revenue, autonomy and clients', async () => {
     render(<AnalyticsPage />);
     expect(screen.getByText('30 open · 380 resolved')).toBeInTheDocument();
     expect(screen.getByText(/40 orders/)).toBeInTheDocument();
@@ -345,7 +352,7 @@ describe('OverviewSection', () => {
     expect(screen.getByText('25 new · 12 at risk')).toBeInTheDocument();
   });
 
-  it('splits resolution into AI, human and escalated, dropping empty slices', () => {
+  it('splits resolution into AI, human and escalated, dropping empty slices', async () => {
     render(<AnalyticsPage />);
     expect(screen.getByText('AI handled')).toBeInTheDocument();
     expect(screen.getByText('Human handled')).toBeInTheDocument();
@@ -353,7 +360,7 @@ describe('OverviewSection', () => {
     expect(screen.getAllByText('Escalated').length).toBeGreaterThan(1);
   });
 
-  it('says so when nothing has been handled at all', () => {
+  it('says so when nothing has been handled at all', async () => {
     state.metrics = q({
       ...METRICS,
       messages: { inbound: 0, outbound: 0, aiSent: 0, humanSent: 0 },
@@ -363,7 +370,7 @@ describe('OverviewSection', () => {
     expect(screen.getByText('No resolution data yet.')).toBeInTheDocument();
   });
 
-  it('retries a failed overview', () => {
+  it('retries a failed overview', async () => {
     const refetch = vi.fn();
     state.metrics = { ...q(undefined), isError: true, refetch };
     render(<AnalyticsPage />);
@@ -373,27 +380,27 @@ describe('OverviewSection', () => {
 });
 
 describe('ConversationsSection', () => {
-  it('renders the CSAT to one decimal out of five', () => {
+  it('renders the CSAT to one decimal out of five', async () => {
     render(<AnalyticsPage />);
-    goToTab('Conversations');
+    await goToTab('Conversations');
     expect(screen.getByText('4.3/5')).toBeInTheDocument();
   });
 
-  it('falls back to an em dash when CSAT was never collected', () => {
+  it('falls back to an em dash when CSAT was never collected', async () => {
     state.conversations = q({ ...CONVERSATIONS, summary: { ...CONVERSATIONS.summary, csat: undefined } });
     render(<AnalyticsPage />);
-    goToTab('Conversations');
+    await goToTab('Conversations');
     expect(screen.getByText('—')).toBeInTheDocument();
   });
 
-  it('humanises the intent codes', () => {
+  it('humanises the intent codes', async () => {
     render(<AnalyticsPage />);
-    goToTab('Conversations');
+    await goToTab('Conversations');
     expect(screen.getByText('Price Enquiry')).toBeInTheDocument();
     expect(screen.queryByText('PRICE_ENQUIRY')).toBeNull();
   });
 
-  it('reports empty series without collapsing the whole section', () => {
+  it('reports empty series without collapsing the whole section', async () => {
     state.conversations = q({
       ...CONVERSATIONS,
       timeSeries: [],
@@ -401,7 +408,7 @@ describe('ConversationsSection', () => {
       topIntents: [],
     });
     render(<AnalyticsPage />);
-    goToTab('Conversations');
+    await goToTab('Conversations');
     expect(screen.getByText('No conversations in this period')).toBeInTheDocument();
     expect(screen.getByText('No channel data')).toBeInTheDocument();
     expect(screen.getByText('No intents detected')).toBeInTheDocument();
@@ -409,21 +416,21 @@ describe('ConversationsSection', () => {
 });
 
 describe('RevenueSection', () => {
-  it('shows the refunded amount alongside net revenue', () => {
+  it('shows the refunded amount alongside net revenue', async () => {
     render(<AnalyticsPage />);
-    goToTab('Revenue');
+    await goToTab('Revenue');
     expect(screen.getByText('₹50,000.00 refunded')).toBeInTheDocument();
   });
 
-  it('lists the top products and the fulfillment mix', () => {
+  it('lists the top products and the fulfillment mix', async () => {
     render(<AnalyticsPage />);
-    goToTab('Revenue');
+    await goToTab('Revenue');
     expect(screen.getByText('Deluxe Package')).toBeInTheDocument();
     expect(screen.getByText('Home Delivery')).toBeInTheDocument();
     expect(screen.getByText('30 orders')).toBeInTheDocument();
   });
 
-  it('reports the empty cases per card', () => {
+  it('reports the empty cases per card', async () => {
     state.revenue = q({
       ...REVENUE,
       timeSeries: [],
@@ -431,7 +438,7 @@ describe('RevenueSection', () => {
       fulfillmentBreakdown: {},
     });
     render(<AnalyticsPage />);
-    goToTab('Revenue');
+    await goToTab('Revenue');
     expect(screen.getByText('No revenue in this period')).toBeInTheDocument();
     expect(screen.getByText('No sales data yet')).toBeInTheDocument();
     expect(screen.getByText('No fulfillment data')).toBeInTheDocument();
@@ -439,83 +446,83 @@ describe('RevenueSection', () => {
 });
 
 describe('ClientsSection', () => {
-  it('reports the high-churn share of all rated clients', () => {
+  it('reports the high-churn share of all rated clients', async () => {
     render(<AnalyticsPage />);
-    goToTab('Clients');
+    await goToTab('Clients');
     // 12 high out of 300 rated.
     expect(screen.getByText('4.0%')).toBeInTheDocument();
     expect(screen.getByText('12 clients')).toBeInTheDocument();
   });
 
-  it('avoids dividing by zero when no client has a churn rating', () => {
+  it('avoids dividing by zero when no client has a churn rating', async () => {
     state.clients = q({ ...CLIENTS, churnRiskBreakdown: { low: 0, medium: 0, high: 0 } });
     render(<AnalyticsPage />);
-    goToTab('Clients');
+    await goToTab('Clients');
     expect(screen.getByText('0.0%')).toBeInTheDocument();
   });
 
-  it('drops an empty slice from the new-vs-returning split', () => {
+  it('drops an empty slice from the new-vs-returning split', async () => {
     state.clients = q({ ...CLIENTS, summary: { ...CLIENTS.summary, newClients: 0, returning: 0 } });
     render(<AnalyticsPage />);
-    goToTab('Clients');
+    await goToTab('Clients');
     expect(screen.getByText('No client data')).toBeInTheDocument();
   });
 });
 
 describe('AiSection', () => {
-  it('renders the autonomy rate, decision count and trend direction', () => {
+  it('renders the autonomy rate, decision count and trend direction', async () => {
     render(<AnalyticsPage />);
-    goToTab('AI Performance');
+    await goToTab('AI Performance');
     expect(screen.getByText('850')).toBeInTheDocument();
     expect(screen.getByText('+3.4%')).toBeInTheDocument();
   });
 
-  it('signs a falling trend without a plus', () => {
+  it('signs a falling trend without a plus', async () => {
     state.autonomy = q({ ...AUTONOMY, summary: { ...AUTONOMY.summary, trend: -2.5 } });
     render(<AnalyticsPage />);
-    goToTab('AI Performance');
+    await goToTab('AI Performance');
     expect(screen.getByText('-2.5%')).toBeInTheDocument();
   });
 
-  it('labels the three confidence routing bands', () => {
+  it('labels the three confidence routing bands', async () => {
     render(<AnalyticsPage />);
-    goToTab('AI Performance');
+    await goToTab('AI Performance');
     expect(screen.getByText('< 70 · Escalate')).toBeInTheDocument();
     expect(screen.getByText('70–89 · Draft review')).toBeInTheDocument();
     expect(screen.getByText('≥ 90 · Auto-execute')).toBeInTheDocument();
   });
 
-  it('reports the empty cases per card', () => {
+  it('reports the empty cases per card', async () => {
     state.autonomy = q({
       ...AUTONOMY,
       confidenceDistribution: [],
       timeSeries: [],
     });
     render(<AnalyticsPage />);
-    goToTab('AI Performance');
+    await goToTab('AI Performance');
     expect(screen.getByText('Not enough data for a trend')).toBeInTheDocument();
   });
 });
 
 describe('TeamSection', () => {
-  it('ranks agents by conversations resolved, not by API order', () => {
+  it('ranks agents by conversations resolved, not by API order', async () => {
     render(<AnalyticsPage />);
-    goToTab('Team');
+    await goToTab('Team');
     const rows = screen.getAllByRole('row').slice(1);
     expect(within(rows[0]).getByText('Ravi Kumar')).toBeInTheDocument();
     expect(within(rows[1]).getByText('Nina Shah')).toBeInTheDocument();
   });
 
-  it('computes each agent’s approval rate from their own tasks', () => {
+  it('computes each agent’s approval rate from their own tasks', async () => {
     render(<AnalyticsPage />);
-    goToTab('Team');
+    await goToTab('Team');
     const ravi = screen.getByText('Ravi Kumar').closest('tr') as HTMLElement;
     const nina = screen.getByText('Nina Shah').closest('tr') as HTMLElement;
     expect(within(ravi).getByText('40%')).toBeInTheDocument();
     expect(within(nina).getByText('90%')).toBeInTheDocument();
   });
 
-  it('shows 0% rather than NaN for an agent who reviewed nothing', () => {
+  it('shows 0% rather than NaN for an agent who reviewed nothing', async () => {
     state.conversations = q({
       ...CONVERSATIONS,
       agentPerformance: [
@@ -530,14 +537,14 @@ describe('TeamSection', () => {
       ],
     });
     render(<AnalyticsPage />);
-    goToTab('Team');
+    await goToTab('Team');
     expect(screen.getByText('0%')).toBeInTheDocument();
   });
 
-  it('says so when nobody handled anything in the period', () => {
+  it('says so when nobody handled anything in the period', async () => {
     state.conversations = q({ ...CONVERSATIONS, agentPerformance: [] });
     render(<AnalyticsPage />);
-    goToTab('Team');
+    await goToTab('Team');
     expect(screen.getByText('No agent activity in this period')).toBeInTheDocument();
   });
 });

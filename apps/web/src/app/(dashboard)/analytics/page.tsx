@@ -11,14 +11,43 @@ import {
   defaultRange,
   type DateRange,
 } from '@/components/analytics/date-range-picker';
+import dynamic from 'next/dynamic';
 import { OverviewSection } from '@/components/analytics/sections/overview-section';
-import { ConversationsSection } from '@/components/analytics/sections/conversations-section';
-import { RevenueSection } from '@/components/analytics/sections/revenue-section';
-import { ClientsSection } from '@/components/analytics/sections/clients-section';
-import { AiSection } from '@/components/analytics/sections/ai-section';
-import { TeamSection } from '@/components/analytics/sections/team-section';
-import { FunnelSection } from '@/components/analytics/sections/funnel-section';
-import { SourceRoiSection } from '@/components/analytics/sections/source-roi-section';
+
+// Overview is the landing tab, so it stays in the page chunk; the other six
+// report sections (and their recharts graphs) only download when their tab is
+// first opened.
+const sectionLoading = () => (
+  <div className="h-48 animate-pulse rounded-lg bg-muted" aria-hidden="true" />
+);
+const ConversationsSection = dynamic(
+  () => import('@/components/analytics/sections/conversations-section').then((m) => m.ConversationsSection),
+  { loading: sectionLoading },
+);
+const RevenueSection = dynamic(
+  () => import('@/components/analytics/sections/revenue-section').then((m) => m.RevenueSection),
+  { loading: sectionLoading },
+);
+const ClientsSection = dynamic(
+  () => import('@/components/analytics/sections/clients-section').then((m) => m.ClientsSection),
+  { loading: sectionLoading },
+);
+const AiSection = dynamic(
+  () => import('@/components/analytics/sections/ai-section').then((m) => m.AiSection),
+  { loading: sectionLoading },
+);
+const TeamSection = dynamic(
+  () => import('@/components/analytics/sections/team-section').then((m) => m.TeamSection),
+  { loading: sectionLoading },
+);
+const FunnelSection = dynamic(
+  () => import('@/components/analytics/sections/funnel-section').then((m) => m.FunnelSection),
+  { loading: sectionLoading },
+);
+const SourceRoiSection = dynamic(
+  () => import('@/components/analytics/sections/source-roi-section').then((m) => m.SourceRoiSection),
+  { loading: sectionLoading },
+);
 import { useExportReport, type ExportReportRequest } from '@/hooks/use-analytics';
 import { useDashboardMetrics } from '@/hooks/use-queries';
 import { toCsv, downloadCsv } from '@/lib/csv-export';
