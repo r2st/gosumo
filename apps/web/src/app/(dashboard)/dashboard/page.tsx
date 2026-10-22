@@ -21,6 +21,7 @@ import { BriefingMetrics } from '@/components/dashboard/briefing-metrics';
 import { NorthStarKpi } from '@/components/dashboard/north-star-kpi';
 import { SupportMetrics } from '@/components/dashboard/support-metrics';
 import { SupportLinkCard } from '@/components/dashboard/support-link-card';
+import { GettingStartedGuide } from '@/components/onboarding/getting-started-guide';
 import {
   useBookings,
   useConversationReport,
@@ -46,6 +47,9 @@ export default function DashboardPage() {
       <PageHeader title="Dashboard" description="Today at a glance across all your channels." />
 
       <div className="space-y-6 p-4 lg:p-6">
+        {/* First-run checklist; hides itself once every step is done */}
+        <GettingStartedGuide />
+
         {/* Helpdesk headline: open tickets, first response, satisfaction */}
         <SupportMetrics />
         <SupportLinkCard />

@@ -55,6 +55,9 @@ vi.mock('next/link', () => ({
 vi.mock('@/components/dashboard/briefing-metrics', () => ({
   BriefingMetrics: () => <div data-testid="briefing-metrics" />,
 }));
+vi.mock('@/components/onboarding/getting-started-guide', () => ({
+  GettingStartedGuide: () => <div data-testid="getting-started-guide" />,
+}));
 vi.mock('@/components/dashboard/support-link-card', () => ({
   SupportLinkCard: () => <div data-testid="support-link-card" />,
 }));

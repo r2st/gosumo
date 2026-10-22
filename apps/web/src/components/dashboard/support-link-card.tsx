@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useChannels } from '@/hooks/use-settings';
+import { markSupportLinkShared } from '@/components/onboarding/getting-started-guide';
 import {
   buildWhatsAppLink,
   buildWhatsAppShareLink,
@@ -58,6 +59,7 @@ export function SupportLinkCard() {
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(link);
+      markSupportLinkShared();
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -66,7 +68,7 @@ export function SupportLinkCard() {
   };
 
   return (
-    <Card>
+    <Card id="support-link">
       <CardHeader>
         <CardTitle>Your support link</CardTitle>
       </CardHeader>
@@ -82,6 +84,7 @@ export function SupportLinkCard() {
           </Button>
           <a
             href={buildWhatsAppShareLink(message)}
+            onClick={markSupportLinkShared}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-green-600 px-4 text-sm font-medium text-white hover:bg-green-700 max-sm:h-12"
@@ -94,7 +97,9 @@ export function SupportLinkCard() {
           className="flex flex-col gap-2 sm:flex-row"
           onSubmit={(e) => {
             e.preventDefault();
-            if (direct) window.open(direct, '_blank', 'noopener');
+            if (!direct) return;
+            markSupportLinkShared();
+            window.open(direct, '_blank', 'noopener');
           }}
         >
           <Input
