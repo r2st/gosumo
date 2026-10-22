@@ -12,6 +12,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${base}/tools/sla-calculator`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
     { url: `${base}/tools/survey-builder`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
     { url: `${base}/tools/ticket-template-generator`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
+    { url: `${base}/support`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
     { url: `${base}/login`, lastModified: new Date(), changeFrequency: 'yearly', priority: 0.5 },
     { url: `${base}/register`, lastModified: new Date(), changeFrequency: 'yearly', priority: 0.6 },
     { url: `${base}/blog`, lastModified: new Date(), changeFrequency: 'weekly', priority: 0.9 },

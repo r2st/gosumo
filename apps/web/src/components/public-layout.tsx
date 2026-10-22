@@ -16,6 +16,7 @@ export function PublicNav() {
           <Link href="/tools" className="text-[var(--da-text-secondary)] hover:text-[var(--da-primary)] no-underline transition-colors">Free Tools</Link>
           <Link href="/blog" className="text-[var(--da-text-secondary)] hover:text-[var(--da-primary)] no-underline transition-colors">Blog</Link>
           <Link href="/embed" className="text-[var(--da-text-secondary)] hover:text-[var(--da-primary)] no-underline transition-colors">Embed</Link>
+          <Link href="/support" className="text-[var(--da-text-secondary)] hover:text-[var(--da-primary)] no-underline transition-colors">Support</Link>
           <Link href="/" className="px-4 py-1.5 rounded-md text-sm font-medium bg-[var(--da-primary)] text-[var(--da-text-on-primary)] hover:bg-[var(--da-primary-hover)] no-underline transition-colors">Get Started</Link>
         </div>
       </div>
