@@ -14,11 +14,13 @@ const variants: Record<Variant, string> = {
   success: 'bg-success text-success-foreground hover:bg-success/90',
 };
 
+// Below `sm` every size grows to a 48px touch target (WCAG 2.5.5 / Material);
+// desktop keeps the dense sizes the tables and toolbars were laid out for.
 const sizes: Record<Size, string> = {
-  sm: 'h-8 px-3 text-xs',
-  md: 'h-9 px-4 text-sm',
-  lg: 'h-11 px-6 text-base',
-  icon: 'h-9 w-9',
+  sm: 'h-8 px-3 text-xs max-sm:h-12 max-sm:px-4 max-sm:text-sm',
+  md: 'h-9 px-4 text-sm max-sm:h-12',
+  lg: 'h-11 px-6 text-base max-sm:h-12',
+  icon: 'h-9 w-9 max-sm:h-12 max-sm:w-12',
 };
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

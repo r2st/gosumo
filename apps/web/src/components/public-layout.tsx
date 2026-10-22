@@ -3,7 +3,7 @@ import Link from 'next/link';
 export function PublicNav() {
   return (
     <nav className="border-b border-[var(--da-border)] bg-[var(--da-bg)]">
-      <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 min-h-14 flex items-center justify-between gap-2">
         <Link href="/" className="flex items-center gap-2 font-bold text-[var(--da-primary)] no-underline">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="24" height="24">
             <rect width="32" height="32" rx="8" fill="#0D9488" />
@@ -11,13 +11,13 @@ export function PublicNav() {
           </svg>
           <span><span className="text-[var(--da-primary)]">DoAide</span> <span className="text-[var(--da-text-muted)] font-light">|</span> Desk</span>
         </Link>
-        <div className="flex items-center gap-6 text-sm">
-          <Link href="/about" className="text-[var(--da-text-secondary)] hover:text-[var(--da-primary)] no-underline transition-colors">About</Link>
-          <Link href="/tools" className="text-[var(--da-text-secondary)] hover:text-[var(--da-primary)] no-underline transition-colors">Free Tools</Link>
-          <Link href="/blog" className="text-[var(--da-text-secondary)] hover:text-[var(--da-primary)] no-underline transition-colors">Blog</Link>
-          <Link href="/embed" className="text-[var(--da-text-secondary)] hover:text-[var(--da-primary)] no-underline transition-colors">Embed</Link>
-          <Link href="/support" className="text-[var(--da-text-secondary)] hover:text-[var(--da-primary)] no-underline transition-colors">Support</Link>
-          <Link href="/" className="px-4 py-1.5 rounded-md text-sm font-medium bg-[var(--da-primary)] text-[var(--da-text-on-primary)] hover:bg-[var(--da-primary-hover)] no-underline transition-colors">Get Started</Link>
+        <div className="flex items-center gap-1 sm:gap-6 text-sm">
+          <Link href="/about" className="hidden sm:inline text-[var(--da-text-secondary)] hover:text-[var(--da-primary)] no-underline transition-colors">About</Link>
+          <Link href="/tools" className="inline-flex min-h-12 items-center px-2 sm:px-0 sm:min-h-0 text-[var(--da-text-secondary)] hover:text-[var(--da-primary)] no-underline transition-colors">Free Tools</Link>
+          <Link href="/blog" className="hidden sm:inline text-[var(--da-text-secondary)] hover:text-[var(--da-primary)] no-underline transition-colors">Blog</Link>
+          <Link href="/embed" className="hidden sm:inline text-[var(--da-text-secondary)] hover:text-[var(--da-primary)] no-underline transition-colors">Embed</Link>
+          <Link href="/support" className="inline-flex min-h-12 items-center px-2 sm:px-0 sm:min-h-0 text-[var(--da-text-secondary)] hover:text-[var(--da-primary)] no-underline transition-colors">Support</Link>
+          <Link href="/" className="inline-flex min-h-12 sm:min-h-0 items-center px-4 py-1.5 rounded-md text-sm font-medium bg-[var(--da-primary)] text-[var(--da-text-on-primary)] hover:bg-[var(--da-primary-hover)] no-underline transition-colors">Get Started</Link>
         </div>
       </div>
     </nav>

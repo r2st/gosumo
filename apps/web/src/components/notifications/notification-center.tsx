@@ -71,7 +71,7 @@ export function NotificationCenter() {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="relative rounded-md p-2 hover:bg-muted"
+        className="relative rounded-md p-2 hover:bg-muted max-sm:flex max-sm:h-12 max-sm:w-12 max-sm:items-center max-sm:justify-center"
         aria-label="Notifications"
       >
         <Bell className="h-5 w-5" />

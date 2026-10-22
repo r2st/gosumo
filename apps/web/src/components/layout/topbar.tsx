@@ -47,7 +47,7 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
           onClick={() => {
             setMenuOpen((v) => !v);
           }}
-          className="flex items-center gap-2 rounded-md p-1 pr-2 text-foreground hover:bg-muted"
+          className="flex items-center gap-2 rounded-md p-1 pr-2 text-foreground hover:bg-muted max-sm:min-h-12 max-sm:min-w-12 max-sm:justify-center max-sm:pr-1"
         >
           <Avatar name={user?.name ?? 'User'} src={user?.avatarUrl} size="sm" />
           <span className="hidden text-sm font-medium sm:block">{user?.name ?? 'User'}</span>
@@ -93,7 +93,7 @@ function ThemeToggle() {
   return (
     <button
       onClick={toggleTheme}
-      className="flex h-9 items-center gap-1 rounded-md px-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="flex h-9 items-center justify-center gap-1 rounded-md px-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:h-12 max-sm:min-w-12"
       aria-label={`Switch to ${THEME_LABEL[next]} theme`}
       title={`${THEME_LABEL[theme]} theme — click for ${THEME_LABEL[next]}`}
     >
@@ -109,7 +109,7 @@ function LanguageToggle() {
   return (
     <button
       onClick={() => setLang(next)}
-      className="flex h-9 items-center gap-1 rounded-md px-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="flex h-9 items-center justify-center gap-1 rounded-md px-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:h-12 max-sm:min-w-12"
       aria-label={`Switch to ${UI_LANGUAGE_LABELS[next]}`}
       title={`Switch to ${UI_LANGUAGE_LABELS[next]}`}
     >

@@ -126,7 +126,7 @@ export function ConversationThread({ conversationId }: { conversationId: string 
             )}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-green-600 px-2.5 text-xs font-medium text-white transition-colors hover:bg-green-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-1"
+            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-green-600 px-2.5 max-sm:h-12 max-sm:min-w-12 text-xs font-medium text-white transition-colors hover:bg-green-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-1"
             title="Send a status update on WhatsApp"
           >
             <MessageCircle className="h-3.5 w-3.5" />
