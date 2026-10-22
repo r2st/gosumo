@@ -5,6 +5,134 @@ import { PublicNav, PublicFooter } from '@/components/public-layout';
 import { ShareButtons } from '@/components/share-buttons';
 
 const POSTS: Record<string, { title: string; date: string; readTime: string; content: string; faqs?: Array<{ question: string; answer: string }> }> = {
+  'free-salary-slip-generator-2026': {
+    title: 'Free Salary Slip Generator 2026: Create Professional Payslips in Minutes',
+    date: '2026-10-22',
+    readTime: '8 min read',
+    content: `
+Every month, millions of Indian businesses create salary slips manually — copying numbers into Word templates, recalculating PF and TDS by hand, and hoping nothing is wrong. A single error in a payslip can mean an unhappy employee, a compliance notice, or a rejected loan application for your staff. Here is everything you need to know about generating salary slips correctly in 2026, and how to do it for free.
+
+## Why Salary Slips Matter More Than You Think
+
+A salary slip is not just an internal document. Your employees need it for income tax filing and Form 16 reconciliation, home and vehicle loan applications where banks demand the last 3-6 months of payslips, visa applications for several countries, rental agreements in metro cities, and credit card approvals.
+
+For employers, salary slips are mandatory evidence of compliance with the Payment of Wages Act, EPF Act, and ESI Act. During a labour department inspection or a PF audit, properly structured payslips are your first line of defence.
+
+## Mandatory Components of a Salary Slip in 2026
+
+### Earnings Side
+
+Every Indian salary slip should itemise basic salary which is typically 40-50% of CTC, dearness allowance where applicable, house rent allowance usually 40-50% of basic, conveyance and transport allowance, special allowance as the balancing figure, and any performance incentives or bonuses for the month.
+
+### Deductions Side
+
+The deductions section must show employee PF contribution at 12% of basic plus DA, professional tax which varies by state from Rs 200 per month in Maharashtra and Karnataka to nil in Delhi, TDS on salary as per the applicable tax regime, ESI at 0.75% of gross for employees earning up to Rs 21,000 per month, and any loan recoveries or advances.
+
+Use our free [TDS Calculator](/tools/tds-calculator) to verify the monthly TDS deduction for FY 2025-26, and the [Gratuity Calculator](/tools/gratuity-calculator) when an employee exits.
+
+### Employer Details
+
+The slip should carry your company name, address, and CIN or GST number where applicable, the employee's name, designation, employee code, PF account number (UAN), and ESI number if applicable, plus the pay period and payment date.
+
+## Common Payslip Mistakes That Cause Problems
+
+**Mistake 1: Basic salary set too low.** Some employers set basic at 20-25% of CTC to reduce PF outgo. The EPFO has challenged this practice, and courts have held that artificially splitting wages to avoid PF is non-compliant. Keep basic at 40-50% of CTC.
+
+**Mistake 2: Missing UAN on the slip.** Employees cannot verify their PF deposits without it, and it is required for PF transfers when they change jobs.
+
+**Mistake 3: TDS deducted but not deposited visibility.** The payslip shows TDS deducted, but employees discover at ITR filing time that it was never deposited. Reconcile your TDS deposits with payslips quarterly.
+
+**Mistake 4: No digital trail.** Paper slips get lost. Emailed PDFs with consistent formatting create an audit trail for both sides.
+
+## How a Salary Slip Generator Saves You Time
+
+A good salary slip generator automates the error-prone parts. It calculates PF, ESI, professional tax, and TDS from the gross salary automatically, applies the correct state-specific professional tax slab, generates consistent PDF output with your company branding, maintains a month-by-month archive for every employee, and handles revisions like mid-month joiners, loss-of-pay days, and arrears.
+
+For a 10-person team, this converts roughly 3-4 hours of monthly spreadsheet work into a 10-minute review.
+
+## What to Look For in a Free Generator
+
+Not all free tools are equal. Check for correct FY 2025-26 tax slabs including the ₹75,000 standard deduction and Section 87A rebate in the new regime, PF calculation capped correctly with the EPS split, state-wise professional tax, no watermarks on the generated PDF, and no forced sign-up before you can download.
+
+## Beyond Payslips: Streamline the Rest of Your Admin
+
+Payroll is one of several repetitive workflows eating your team's time. Customer conversations are another — if your business handles customer queries on WhatsApp, Instagram, and email, DoAide Desk consolidates them into one AI-powered inbox so your team responds faster with less effort.
+
+[Explore Free HR & Support Tools →](/tools)
+    `.trim(),
+    faqs: [
+      { question: 'Is a salary slip mandatory for Indian employers in 2026?', answer: 'Yes. Under the Payment of Wages Act and state Shops and Establishments Acts, employers must provide wage statements to employees. Payslips are also essential evidence of PF, ESI, and TDS compliance during audits and inspections.' },
+      { question: 'What should a salary slip include?', answer: 'Earnings (basic, DA, HRA, allowances), deductions (employee PF at 12% of basic+DA, professional tax, TDS, ESI where applicable), employer details, employee name and code, UAN, pay period, and net pay. Both gross and net amounts should be clearly shown.' },
+      { question: 'How is TDS on salary calculated for FY 2025-26?', answer: 'Under the new regime: ₹75,000 standard deduction, then slab rates from 5% (above ₹4 lakh) to 30% (above ₹24 lakh), with a Section 87A rebate making income up to ₹12 lakh effectively tax-free, plus 4% cess. The annual tax is divided across remaining months as monthly TDS.' },
+      { question: 'Can I generate salary slips for free?', answer: 'Yes. Free salary slip generators let you enter gross salary and employee details, then auto-calculate PF, professional tax, and TDS and produce a PDF. For teams above 15-20 employees, dedicated payroll software usually pays for itself in time saved.' },
+      { question: 'What is the difference between CTC and net salary on a payslip?', answer: 'CTC includes everything the employer spends — gross salary plus employer PF contribution, gratuity provision, and insurance premiums. Net salary (take-home) is gross earnings minus employee-side deductions like PF, professional tax, and TDS. Net pay is typically 70-85% of monthly CTC.' },
+    ],
+  },
+  'pf-calculator-india': {
+    title: 'PF Calculator India: How EPF Contributions and Interest Really Work in 2026',
+    date: '2026-10-22',
+    readTime: '8 min read',
+    content: `
+The Employee Provident Fund is the largest retirement savings scheme in India, covering over 70 million active members. Yet most employees cannot explain where their 12% actually goes, why the employer's 12% does not all reach their PF account, or how the interest credit works. This guide breaks down the real mechanics — so you can verify your payslip and project your retirement corpus.
+
+## The Contribution Split Nobody Explains
+
+Every month, you and your employer each contribute 12% of your basic salary plus dearness allowance. But the two halves follow different paths.
+
+### Your 12%
+
+The entire employee contribution of 12% goes into your EPF account. Simple.
+
+### Employer's 12%
+
+The employer contribution splits two ways. 8.33% goes to the Employee Pension Scheme (EPS), but only on salary up to ₹15,000 — so the EPS portion is capped at ₹1,250 per month. The remaining 3.67% (plus anything above the EPS cap) goes into your EPF account.
+
+For an employee with basic + DA of ₹30,000: your contribution is ₹3,600, the employer puts ₹1,250 into EPS, and ₹2,350 into EPF. Total monthly EPF accumulation: ₹5,950, plus ₹1,250 building your pension.
+
+## Interest: 8.25% But Not How You Think
+
+The EPF interest rate for recent years has been 8.25% per annum. Three details matter.
+
+First, interest is calculated monthly on the running balance but credited once a year, after the EPFO announces the rate. Second, interest accrues on the opening balance plus monthly contributions — so contributions early in the year earn more. Third, EPS contributions earn no interest; they buy you a pension entitlement instead.
+
+## The Tax Treatment That Makes EPF Unbeatable
+
+EPF enjoys EEE status — exempt at contribution (your 12% qualifies for Section 80C in the old regime), exempt on interest (up to contributions of ₹2.5 lakh per year), and exempt at withdrawal after 5 years of continuous service.
+
+A fixed deposit at 7% taxed at 30% yields 4.9% effectively. EPF at 8.25% tax-free is nearly 70% better post-tax — with sovereign backing.
+
+## Projecting Your Corpus: A Worked Example
+
+Take a 28-year-old with basic + DA of ₹40,000, growing 8% annually, working until 58.
+
+Monthly EPF inflow starts at ₹4,800 (employee) + ₹2,218 (employer after EPS cap) = ₹7,018. Over 30 years with 8.25% compounding and salary growth, the corpus crosses ₹2.8 crore. The EPS side separately provides a monthly pension based on pensionable service and salary.
+
+The two biggest levers are starting early — the first 5 years of contributions contribute disproportionately due to compounding — and never withdrawing between jobs. Transferring your PF via UAN instead of withdrawing preserves both the corpus and the 5-year continuity for tax exemption.
+
+## Common PF Questions on Payslips
+
+**Why is my employer deducting PF on only ₹15,000 when my basic is higher?** The statutory minimum obligation is on ₹15,000. Many employers voluntarily contribute on full basic — check your CTC structure.
+
+**Can I contribute more?** Yes, through Voluntary Provident Fund (VPF), up to 100% of basic + DA, earning the same 8.25%. Note the ₹2.5 lakh annual threshold beyond which interest becomes taxable.
+
+**When can I withdraw?** Full withdrawal at retirement or after 2 months of unemployment. Partial withdrawals are allowed for home purchase, medical emergencies, education, and marriage, subject to service-period conditions.
+
+## Verify Your Own Numbers
+
+Check your payslip against your UAN passbook on the EPFO portal every quarter. The deducted amount should appear in the passbook within a month of your pay date. If it does not, your employer is deducting but not depositing — a serious compliance violation you should escalate early.
+
+Use our free [TDS Calculator](/tools/tds-calculator) to check the tax side of your payslip, the [Gratuity Calculator](/tools/gratuity-calculator) for exit planning, and the [Leave Encashment Calculator](/tools/leave-calculator) for unused leave value.
+
+[Explore All Free Tools →](/tools)
+    `.trim(),
+    faqs: [
+      { question: 'How is PF calculated on salary in India?', answer: 'Both employee and employer contribute 12% of basic salary plus dearness allowance. The employee contribution goes fully to EPF. The employer contribution splits: 8.33% to the Employee Pension Scheme (capped at ₹1,250/month on a ₹15,000 wage ceiling) and the rest to EPF.' },
+      { question: 'What is the current EPF interest rate?', answer: 'The EPF interest rate has been 8.25% per annum in recent years. Interest is computed monthly on the running balance but credited annually after the EPFO declares the rate. EPS contributions do not earn interest — they fund a pension entitlement instead.' },
+      { question: 'Is EPF withdrawal tax-free?', answer: 'Yes, if you have completed 5 years of continuous service (transfers between employers count). Withdrawals before 5 years attract TDS at 10% (with PAN) and the amount becomes taxable. Interest on annual contributions above ₹2.5 lakh is also taxable.' },
+      { question: 'What is the difference between EPF and EPS?', answer: 'EPF is your savings corpus — contributions plus compounding interest, withdrawable as a lump sum. EPS is a pension scheme funded from 8.33% of the employer contribution (capped), which pays a monthly pension after age 58 based on pensionable salary and service years.' },
+      { question: 'Can I increase my PF contribution beyond 12%?', answer: 'Yes, through the Voluntary Provident Fund (VPF) you can contribute up to 100% of basic + DA. VPF earns the same interest rate as EPF and has the same tax treatment, making it one of the best debt investments available to salaried Indians.' },
+    ],
+  },
   'best-crm-for-freelancers-india': {
     title: 'Best CRM for Freelancers in India: What Actually Works in 2026',
     date: '2026-10-08',

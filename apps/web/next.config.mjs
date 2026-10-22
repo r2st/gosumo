@@ -5,6 +5,11 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   output: "standalone",
+  // Tree-shake barrel imports so each page only bundles the chart/date helpers
+  // it actually uses, instead of the whole package.
+  experimental: {
+    optimizePackageImports: ["recharts", "date-fns", "date-fns-tz"],
+  },
   eslint: {
     ignoreDuringBuilds: true,
   },

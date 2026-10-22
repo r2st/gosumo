@@ -45,6 +45,24 @@ const TOOLS = [
     description: 'Build customer satisfaction surveys with pre-written questions and rating scales.',
     icon: '📋',
   },
+  {
+    slug: 'leave-calculator',
+    title: 'Leave Encashment Calculator',
+    description: 'Calculate earned leave accrual and the cash value of unused leave for Indian employees.',
+    icon: '🏖️',
+  },
+  {
+    slug: 'gratuity-calculator',
+    title: 'Gratuity Calculator',
+    description: 'Calculate gratuity under the Payment of Gratuity Act with the ₹20 lakh tax-free limit.',
+    icon: '💰',
+  },
+  {
+    slug: 'tds-calculator',
+    title: 'TDS on Salary Calculator',
+    description: 'Estimate monthly TDS on salary for FY 2025-26 under the new and old tax regimes.',
+    icon: '🧾',
+  },
 ] as const;
 
 export default function ToolsIndex() {

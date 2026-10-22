@@ -49,10 +49,18 @@ describe('Blog Index SEO articles', () => {
     expect(screen.getByText('Lead Tracking for Indian SMBs: Stop Losing Potential Customers to Spreadsheet Chaos')).toBeInTheDocument();
   });
 
-  it('renders all 15 blog post links', async () => {
+  it('renders round 4 SEO blog posts', async () => {
+    const { default: BlogIndex } = await import('@/app/blog/page');
+    render(<BlogIndex />);
+
+    expect(screen.getByText('Free Salary Slip Generator 2026: Create Professional Payslips in Minutes')).toBeInTheDocument();
+    expect(screen.getByText('PF Calculator India: How EPF Contributions and Interest Really Work in 2026')).toBeInTheDocument();
+  });
+
+  it('renders all 17 blog post links', async () => {
     const { default: BlogIndex } = await import('@/app/blog/page');
     const { container } = render(<BlogIndex />);
     const links = container.querySelectorAll('a[href^="/blog/"]');
-    expect(links.length).toBe(15);
+    expect(links.length).toBe(17);
   });
 });

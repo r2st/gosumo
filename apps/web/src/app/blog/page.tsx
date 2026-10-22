@@ -10,6 +10,20 @@ export const metadata: Metadata = {
 
 const POSTS = [
   {
+    slug: 'free-salary-slip-generator-2026',
+    title: 'Free Salary Slip Generator 2026: Create Professional Payslips in Minutes',
+    excerpt: 'Everything Indian employers need to know about generating salary slips in 2026 — mandatory components, PF and TDS calculations, formats, and free tools to automate the process.',
+    date: '2026-10-22',
+    readTime: '8 min read',
+  },
+  {
+    slug: 'pf-calculator-india',
+    title: 'PF Calculator India: How EPF Contributions and Interest Really Work in 2026',
+    excerpt: 'A practical guide to Employee Provident Fund calculations — contribution splits, EPS caps, the 8.25% interest rate, and how to project your retirement corpus.',
+    date: '2026-10-22',
+    readTime: '8 min read',
+  },
+  {
     slug: 'best-crm-for-freelancers-india',
     title: 'Best CRM for Freelancers in India: What Actually Works in 2026',
     excerpt: 'Why generic CRMs fail freelancers, and how AI-powered client management tools built for the Indian market help you retain clients and grow revenue.',

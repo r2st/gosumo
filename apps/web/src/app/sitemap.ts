@@ -12,6 +12,9 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${base}/tools/sla-calculator`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
     { url: `${base}/tools/survey-builder`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
     { url: `${base}/tools/ticket-template-generator`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
+    { url: `${base}/tools/leave-calculator`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
+    { url: `${base}/tools/gratuity-calculator`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
+    { url: `${base}/tools/tds-calculator`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
     { url: `${base}/support`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
     { url: `${base}/login`, lastModified: new Date(), changeFrequency: 'yearly', priority: 0.5 },
     { url: `${base}/register`, lastModified: new Date(), changeFrequency: 'yearly', priority: 0.6 },
@@ -31,6 +34,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${base}/blog/client-management-software-indian-businesses`, lastModified: new Date('2026-10-10'), changeFrequency: 'monthly', priority: 0.7 },
     { url: `${base}/blog/crm-for-freelancers-india-complete-guide`, lastModified: new Date('2026-10-10'), changeFrequency: 'monthly', priority: 0.7 },
     { url: `${base}/blog/lead-tracking-for-smbs-india`, lastModified: new Date('2026-10-10'), changeFrequency: 'monthly', priority: 0.7 },
+    { url: `${base}/blog/free-salary-slip-generator-2026`, lastModified: new Date('2026-10-22'), changeFrequency: 'monthly', priority: 0.7 },
+    { url: `${base}/blog/pf-calculator-india`, lastModified: new Date('2026-10-22'), changeFrequency: 'monthly', priority: 0.7 },
     { url: `${base}/embed`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.7 },
   ];
 }
