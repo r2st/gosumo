@@ -63,6 +63,30 @@ const TOOLS = [
     description: 'Estimate monthly TDS on salary for FY 2025-26 under the new and old tax regimes.',
     icon: '🧾',
   },
+  {
+    slug: 'canned-responses',
+    title: 'Canned Response Templates',
+    description: 'Ready-to-use response templates for acknowledgements, updates, resolutions, and apologies.',
+    icon: '💬',
+  },
+  {
+    slug: 'ticket-priority',
+    title: 'Ticket Priority System',
+    description: 'Score and rank support tickets by impact, urgency, customer tier, and age using a weighted matrix.',
+    icon: '🎯',
+  },
+  {
+    slug: 'satisfaction-survey',
+    title: 'Customer Satisfaction Survey Builder',
+    description: 'Build CSAT and NPS surveys with rating scales, free text, and multiple choice. Preview and export.',
+    icon: '📊',
+  },
+  {
+    slug: 'kb-editor',
+    title: 'Knowledge Base Editor',
+    description: 'Create and manage knowledge base articles in Markdown. Organize by category, preview, and export.',
+    icon: '📚',
+  },
 ] as const;
 
 export default function ToolsIndex() {

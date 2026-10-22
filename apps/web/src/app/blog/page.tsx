@@ -128,6 +128,13 @@ const POSTS = [
     date: '2026-10-10',
     readTime: '9 min read',
   },
+  {
+    slug: 'customer-support-best-practices-2026',
+    title: 'Customer Support Best Practices: The Complete Guide for 2026',
+    excerpt: 'From ticket prioritization and canned responses to knowledge bases and CSAT surveys — the practical playbook for support teams that want faster resolution times and happier customers.',
+    date: '2026-10-23',
+    readTime: '10 min read',
+  },
 ] as const;
 
 export default function BlogIndex() {

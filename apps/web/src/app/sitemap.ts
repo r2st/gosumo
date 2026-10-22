@@ -36,6 +36,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${base}/blog/lead-tracking-for-smbs-india`, lastModified: new Date('2026-10-10'), changeFrequency: 'monthly', priority: 0.7 },
     { url: `${base}/blog/free-salary-slip-generator-2026`, lastModified: new Date('2026-10-22'), changeFrequency: 'monthly', priority: 0.7 },
     { url: `${base}/blog/pf-calculator-india`, lastModified: new Date('2026-10-22'), changeFrequency: 'monthly', priority: 0.7 },
+    { url: `${base}/tools/canned-responses`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
+    { url: `${base}/tools/ticket-priority`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
+    { url: `${base}/tools/satisfaction-survey`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
+    { url: `${base}/tools/kb-editor`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
+    { url: `${base}/blog/customer-support-best-practices-2026`, lastModified: new Date('2026-10-23'), changeFrequency: 'monthly', priority: 0.7 },
     { url: `${base}/embed`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.7 },
   ];
 }
