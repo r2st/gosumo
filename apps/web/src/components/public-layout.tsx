@@ -31,7 +31,7 @@ export function PublicFooter() {
         <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 mb-6 text-xs uppercase tracking-wider text-[var(--da-text-muted)]">
           <a href="https://desk.doaide.com" className="text-[var(--da-primary)] no-underline">Desk</a>
           <a href="https://job.doaide.com" className="hover:text-[var(--da-primary)] no-underline transition-colors">Jobs</a>
-          <a href="https://409a.doaide.com" className="hover:text-[var(--da-primary)] no-underline transition-colors">409A</a>
+          <a href="https://409.doaide.com" className="hover:text-[var(--da-primary)] no-underline transition-colors">409A</a>
           <a href="https://gst.doaide.com" className="hover:text-[var(--da-primary)] no-underline transition-colors">GST</a>
           <a href="https://pulse.doaide.com" className="hover:text-[var(--da-primary)] no-underline transition-colors">Pulse</a>
           <a href="https://med.doaide.com" className="hover:text-[var(--da-primary)] no-underline transition-colors">Med</a>
